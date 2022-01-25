@@ -7,7 +7,7 @@ on:
     branches: master
 
 jobs:
-  local-fs:
+  linux:
     name: ${{ matrix.python-version }}-posix
     runs-on: ubuntu-latest
     strategy:
@@ -15,56 +15,75 @@ jobs:
       matrix:
         python-version: ['3.8', '3.9']
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup Miniconda
+      uses: conda-incubator/setup-miniconda@v2
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Add conda to system path
-      run: |
-        echo $CONDA/bin >> $GITHUB_PATH
-    - name: Install Dependencies
-      run: |
-        conda create -q -y --name py_${{ matrix.python-version }} \
-          python=${{ matrix.python-version }}
-        source $CONDA/etc/profile.d/conda.sh
-        conda activate py_${{ matrix.python-version }}
-        conda install -q -y \
-          dask-core distributed numcodecs pyarrow pytest pytest-cov xarray zarr
+        mamba-version: "*"
+        auto-update-conda: true
+        auto-activate-base: false
+        activate-environment: test_env
+        environment-file: conda/environment.yml
+
     - name: Run Tests
+      shell: bash -l {0}
       run: |
-        source $CONDA/etc/profile.d/conda.sh
-        conda activate py_${{ matrix.python-version }}
-        pytest -v -ra --cov=zcollection
+        pytest -v -ra
+
   s3-fs:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup Micromamba
-      run: |
-        wget -nv -O /tmp/latest \
-          https://micromamba.snakepit.net/api/micromamba/linux-64/latest
-        mkdir /opt/conda
-        tar -xf /tmp/latest -C /opt/conda
-        rm -f /tmp/latest
-    - name: Add Conda To System Path
-      run: |
-        echo /opt/conda/bin >> $GITHUB_PATH
-    - name: Install Dependencies
-      run: |
-        micromamba install python=3.9 -q -y -r /opt/conda/ -p /opt/conda \
-          -c conda-forge
-        micromamba install -q -y \
-          dask-core distributed numcodecs pyarrow pytest requests s3fs xarray \
-          zarr -r /opt/conda/ -p /opt/conda -c conda-forge
+    - name: Checkout
+      uses: actions/checkout@v2
+
     - name: Install MinIO
       run: |
         mkdir -p /opt/minio/bin
         wget -nv -P /opt/minio/bin \
           https://dl.min.io/server/minio/release/linux-amd64/minio
         chmod +x /opt/minio/bin/minio
+
     - name: Add MinIO To System Path
       run: |
         echo /opt/minio/bin >> $GITHUB_PATH
+
+    - name: Setup Miniconda
+      uses: conda-incubator/setup-miniconda@v2
+      with:
+        python-version: 3.9
+        mamba-version: "*"
+        auto-update-conda: true
+        auto-activate-base: false
+        activate-environment: test_env
+        environment-file: conda/environment.yml
+
     - name: Run Tests
-      run: pytest -ra -v --s3
+      shell: bash -l {0}
+      run: |
+        pytest -v -ra --s3
+
+  win:
+    name: win
+    runs-on: windows-2019
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup Miniconda
+      uses: conda-incubator/setup-miniconda@v2
+      with:
+        python-version: 3.9
+        mamba-version: "*"
+        auto-update-conda: true
+        auto-activate-base: false
+        activate-environment: test_env
+        environment-file: conda/environment.yml
+
+    - name: Run Tests
+      shell: bash -l {0}
+      run: |
+        pytest -v -ra

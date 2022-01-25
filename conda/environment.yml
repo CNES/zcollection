@@ -1,0 +1,14 @@
+name: test_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - dask-core
+  - distributed
+  - numcodecs
+  - pyarrow
+  - pytest
+  - requests
+  - s3fs
+  - xarray
+  - zarr
