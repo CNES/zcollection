@@ -1,0 +1,74 @@
+API Documentation
+#################
+
+Partitioning
+============
+
+Handles the partitioning of the collection.
+
+.. autosummary::
+  :toctree: _generated/
+
+  zcollection.partitioning
+  zcollection.partitioning.abc
+  zcollection.partitioning.date
+  zcollection.partitioning.expression
+  zcollection.partitioning.registry
+  zcollection.partitioning.sequence
+
+Mergings of datasets
+====================
+
+Merging of existing datasets in a partition.
+
+.. autosummary::
+  :toctree: _generated/
+
+  zcollection.merging
+  zcollection.merging.time_series
+  zcollection.merging.period
+
+Collection
+==========
+
+.. autosummary::
+  :toctree: _generated/
+
+  zcollection.collection
+  zcollection.dataset
+  zcollection.meta
+  zcollection.sync
+  zcollection.typing
+  zcollection.utilities
+  zcollection.version
+  zcollection.view
+
+Indexing
+========
+
+.. autosummary::
+  :toctree: _generated/
+
+  zcollection.indexing
+  zcollection.indexing.abc
+
+Convenience functions
+=====================
+
+Collection
+----------
+
+.. autosummary::
+  :toctree: _generated/
+
+  zcollection.create_collection
+  zcollection.open_collection
+
+view
+----
+
+.. autosummary::
+  :toctree: _generated/
+
+  zcollection.create_view
+  zcollection.open_view

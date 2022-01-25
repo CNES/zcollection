@@ -1,0 +1,588 @@
+{
+    "attrs": [
+        [
+            "Conventions",
+            "CF-1.7"
+        ],
+        [
+            "title",
+            "Level 2 Low Rate Sea Surface Height Data Product - Expert SSH with Wind and Wave"
+        ],
+        [
+            "institution",
+            "CNES/JPL"
+        ],
+        [
+            "source",
+            "Simulate product"
+        ],
+        [
+            "platform",
+            "SWOT"
+        ],
+        [
+            "references",
+            "Gaultier, L., C. Ubelmann, and L.-L. Fu, 2016: The Challenge of Using Future SWOT Data for Oceanic Field Reconstruction. J. Atmos. Oceanic Technol., 33, 119-126, doi:10.1175/jtech-d-15-0160.1. http://dx.doi.org/10.1175/JTECH-D-15-0160.1."
+        ],
+        [
+            "reference_document",
+            "D-56407_SWOT_Product_Description_L2_LR_SSH"
+        ],
+        [
+            "contact",
+            "CNES aviso@altimetry.fr, JPL podaac@podaac.jpl.nasa.gov"
+        ],
+        [
+            "orbit_solution",
+            "POE"
+        ],
+        [
+            "ellipsoid_semi_major_axis",
+            6378137.0
+        ],
+        [
+            "ellipsoid_flattening",
+            0.003352810664781205
+        ]
+    ],
+    "dimensions": [
+        "num_lines",
+        "num_pixels"
+    ],
+    "variables": [
+        {
+            "attrs": [
+                [
+                    "long_name",
+                    "time in UTC"
+                ],
+                [
+                    "standard_name",
+                    "time"
+                ],
+                [
+                    "calendar",
+                    "gregorian"
+                ],
+                [
+                    "tai_utc_difference",
+                    "[Value of TAI-UTC at time of first record]"
+                ],
+                [
+                    "leap_second",
+                    "YYYY-MM-DDThh:mm:ssZ"
+                ],
+                [
+                    "comment",
+                    "Time of measurement in seconds in the UTC time scale since 1 Jan 2000 00:00:00 UTC. [tai_utc_difference] is the difference between TAI and UTC reference time (seconds) for the first measurement of the data set. If a leap second occurs within the data set, the attribute leap_second is set to the UTC time at which the leap second occurs."
+                ]
+            ],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines"
+            ],
+            "dtype": "<M8[ns]",
+            "fill_value": -9223372036854775808,
+            "filters": [
+                {
+                    "id": "delta",
+                    "dtype": "<i8",
+                    "astype": "<i8"
+                }
+            ],
+            "name": "time"
+        },
+        {
+            "attrs": [
+                [
+                    "long_name",
+                    "latitude (positive N, negative S)"
+                ],
+                [
+                    "standard_name",
+                    "latitude"
+                ],
+                [
+                    "units",
+                    "degrees_north"
+                ],
+                [
+                    "valid_min",
+                    -80000000
+                ],
+                [
+                    "valid_max",
+                    80000000
+                ],
+                [
+                    "comment",
+                    "Latitude of measurement [-80,80]. Positive latitude is North latitude, negative latitude is South latitude."
+                ]
+            ],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines",
+                "num_pixels"
+            ],
+            "dtype": "<f8",
+            "fill_value": 2147.483647,
+            "filters": [
+                {
+                    "id": "fixedscaleoffset",
+                    "scale": 1000000.0,
+                    "offset": 0.0,
+                    "dtype": "<f8",
+                    "astype": "<i4"
+                }
+            ],
+            "name": "latitude"
+        },
+        {
+            "attrs": [
+                [
+                    "long_name",
+                    "longitude (degrees East)"
+                ],
+                [
+                    "standard_name",
+                    "longitude"
+                ],
+                [
+                    "units",
+                    "degrees_east"
+                ],
+                [
+                    "valid_min",
+                    0
+                ],
+                [
+                    "valid_max",
+                    359999999
+                ],
+                [
+                    "comment",
+                    "Longitude of measurement. East longitude relative to Greenwich meridian."
+                ]
+            ],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines",
+                "num_pixels"
+            ],
+            "dtype": "<f8",
+            "fill_value": 2147.483647,
+            "filters": [
+                {
+                    "id": "fixedscaleoffset",
+                    "scale": 1000000.0,
+                    "offset": 0.0,
+                    "dtype": "<f8",
+                    "astype": "<i4"
+                }
+            ],
+            "name": "longitude"
+        },
+        {
+            "attrs": [
+                [
+                    "long_name",
+                    "latitude of satellite nadir point"
+                ],
+                [
+                    "standard_name",
+                    "latitude"
+                ],
+                [
+                    "units",
+                    "degrees_north"
+                ],
+                [
+                    "valid_min",
+                    -80000000
+                ],
+                [
+                    "valid_max",
+                    80000000
+                ],
+                [
+                    "comment",
+                    "Geodetic latitude [-80,80] (degrees north of equator) of the satellite nadir point."
+                ]
+            ],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines"
+            ],
+            "dtype": "<f8",
+            "fill_value": 2147.483647,
+            "filters": [
+                {
+                    "id": "fixedscaleoffset",
+                    "scale": 1000000.0,
+                    "offset": 0.0,
+                    "dtype": "<f8",
+                    "astype": "<i4"
+                }
+            ],
+            "name": "latitude_nadir"
+        },
+        {
+            "attrs": [
+                [
+                    "long_name",
+                    "longitude of satellite nadir point"
+                ],
+                [
+                    "standard_name",
+                    "longitude"
+                ],
+                [
+                    "units",
+                    "degrees_east"
+                ],
+                [
+                    "valid_min",
+                    0
+                ],
+                [
+                    "valid_max",
+                    359999999
+                ],
+                [
+                    "comment",
+                    "Longitude (degrees east of Grenwich meridian) of the satellite nadir point."
+                ]
+            ],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines"
+            ],
+            "dtype": "<f8",
+            "fill_value": 2147.483647,
+            "filters": [
+                {
+                    "id": "fixedscaleoffset",
+                    "scale": 1000000.0,
+                    "offset": 0.0,
+                    "dtype": "<f8",
+                    "astype": "<i4"
+                }
+            ],
+            "name": "longitude_nadir"
+        },
+        {
+            "attrs": [
+                [
+                    "long_name",
+                    "cross track distance"
+                ],
+                [
+                    "units",
+                    "m"
+                ],
+                [
+                    "valid_min",
+                    -75000.0
+                ],
+                [
+                    "valid_max",
+                    75000.0
+                ],
+                [
+                    "coordinates",
+                    "longitude latitude"
+                ],
+                [
+                    "comment",
+                    "Distance of sample from nadir. Negative values indicate the left side of the swath, and positive values indicate the right side of the swath."
+                ]
+            ],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines",
+                "num_pixels"
+            ],
+            "dtype": "<f4",
+            "fill_value": 9.969209968386869e+36,
+            "filters": [],
+            "name": "cross_track_distance"
+        },
+        {
+            "attrs": [
+                [
+                    "long_name",
+                    "Error due to roll"
+                ],
+                [
+                    "units",
+                    "m"
+                ],
+                [
+                    "coordinates",
+                    "longitude latitude"
+                ]
+            ],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines",
+                "num_pixels"
+            ],
+            "dtype": "<f8",
+            "fill_value": 214748.3647,
+            "filters": [
+                {
+                    "id": "fixedscaleoffset",
+                    "scale": 10000.0,
+                    "offset": 0.0,
+                    "dtype": "<f8",
+                    "astype": "<i4"
+                }
+            ],
+            "name": "simulated_error_roll"
+        },
+        {
+            "attrs": [
+                [
+                    "long_name",
+                    "KaRIn error"
+                ],
+                [
+                    "units",
+                    "m"
+                ],
+                [
+                    "coordinates",
+                    "longitude latitude"
+                ]
+            ],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines",
+                "num_pixels"
+            ],
+            "dtype": "<f8",
+            "fill_value": 214748.3647,
+            "filters": [
+                {
+                    "id": "fixedscaleoffset",
+                    "scale": 10000.0,
+                    "offset": 0.0,
+                    "dtype": "<f8",
+                    "astype": "<i4"
+                }
+            ],
+            "name": "simulated_error_karin"
+        },
+        {
+            "attrs": [
+                [
+                    "long_name",
+                    "Timing error"
+                ],
+                [
+                    "units",
+                    "m"
+                ],
+                [
+                    "coordinates",
+                    "longitude latitude"
+                ]
+            ],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines",
+                "num_pixels"
+            ],
+            "dtype": "<f8",
+            "fill_value": 214748.3647,
+            "filters": [
+                {
+                    "id": "fixedscaleoffset",
+                    "scale": 10000.0,
+                    "offset": 0.0,
+                    "dtype": "<f8",
+                    "astype": "<i4"
+                }
+            ],
+            "name": "simulated_error_timing"
+        },
+        {
+            "attrs": [
+                [
+                    "long_name",
+                    "Error due to baseline mast dilation"
+                ],
+                [
+                    "units",
+                    "m"
+                ],
+                [
+                    "coordinates",
+                    "longitude latitude"
+                ]
+            ],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines",
+                "num_pixels"
+            ],
+            "dtype": "<f8",
+            "fill_value": 214748.3647,
+            "filters": [
+                {
+                    "id": "fixedscaleoffset",
+                    "scale": 10000.0,
+                    "offset": 0.0,
+                    "dtype": "<f8",
+                    "astype": "<i4"
+                }
+            ],
+            "name": "simulated_error_baseline_dilation"
+        },
+        {
+            "attrs": [
+                [
+                    "long_name",
+                    "Error due to phase"
+                ],
+                [
+                    "units",
+                    "m"
+                ],
+                [
+                    "coordinates",
+                    "longitude latitude"
+                ]
+            ],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines",
+                "num_pixels"
+            ],
+            "dtype": "<f8",
+            "fill_value": 214748.3647,
+            "filters": [
+                {
+                    "id": "fixedscaleoffset",
+                    "scale": 10000.0,
+                    "offset": 0.0,
+                    "dtype": "<f8",
+                    "astype": "<i4"
+                }
+            ],
+            "name": "simulated_error_phase"
+        },
+        {
+            "attrs": [],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines"
+            ],
+            "dtype": "<u2",
+            "fill_value": 0,
+            "filters": [
+                {
+                    "id": "delta",
+                    "dtype": "<u2",
+                    "astype": "<u2"
+                }
+            ],
+            "name": "cycle_number"
+        },
+        {
+            "attrs": [],
+            "compressor": {
+                "id": "blosc",
+                "cname": "lz4",
+                "clevel": 5,
+                "shuffle": 0,
+                "blocksize": 0
+            },
+            "dimensions": [
+                "num_lines"
+            ],
+            "dtype": "<u2",
+            "fill_value": 0,
+            "filters": [
+                {
+                    "id": "delta",
+                    "dtype": "<u2",
+                    "astype": "<u2"
+                }
+            ],
+            "name": "pass_number"
+        }
+    ]
+}

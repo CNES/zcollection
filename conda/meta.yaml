@@ -1,0 +1,39 @@
+{% set name = "zcollection" %}
+{% set version = "0.1.1" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+    path: ..
+
+build:
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv --use-feature=in-tree-build
+  skip: true  # [linux32 or win32 or py<36]
+
+requirements:
+  build:
+    - python
+  run:
+    - dask
+    - fsspec
+    - numcodecs
+    - numpy >=1.20
+    - python
+    - xarray
+    - zarr
+test:
+  requires:
+    - pytest
+  commands:
+    - pytest --pyargs zcollection
+
+about:
+  home: https://gitlab.cls.fr/fbriol/zcollection
+  license: Proprietary
+  license_family: Proprietary
+  summary: 'Handle a collection of Zarr groups'
+  # doc_url: TODO
+  dev_url: https://gitlab.cls.fr/fbriol/zcollection

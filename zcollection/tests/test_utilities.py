@@ -1,0 +1,122 @@
+# Copyright (c) 2022 CNES
+#
+# All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
+"""
+Testing utilities
+=================
+"""
+import pathlib
+
+import dask.distributed
+
+from .. import utilities
+# pylint: disable=unused-import # Need to import for fixtures
+from .cluster import dask_configurable
+
+# pylint: disable=unused-import
+
+
+def test_fs_walk(tmpdir):
+    """Test the fs_walk function."""
+    for ix, item in enumerate([
+        ("year=2014", "month=5"),
+        ("year=2014", "month=5", "day=2"),
+        ("year=2014", "month=5", "day=1"),
+        ("year=2014", "month=5", "day=3"),
+        ("year=2014", "month=4"),
+        ("year=2014", "month=4", "day=16"),
+        ("year=2014", "month=4", "day=24"),
+        ("year=2014", "month=4", "day=27"),
+        ("year=2014", "month=4", "day=20"),
+        ("year=2014", "month=4", "day=29"),
+        ("year=2014", "month=4", "day=14"),
+        ("year=2014", "month=4", "day=25"),
+        ("year=2014", "month=4", "day=19"),
+        ("year=2014", "month=4", "day=12"),
+        ("year=2014", "month=4", "day=23"),
+        ("year=2014", "month=4", "day=17"),
+        ("year=2014", "month=4", "day=28"),
+        ("year=2014", "month=4", "day=13"),
+        ("year=2014", "month=4", "day=21"),
+        ("year=2014", "month=4", "day=15"),
+        ("year=2014", "month=4", "day=18"),
+        ("year=2014", "month=4", "day=26"),
+        ("year=2014", "month=4", "day=22"),
+        ("year=2014", "month=4", "day=30"),
+    ]):
+        path = pathlib.Path(tmpdir).joinpath(*item)
+        path.mkdir(parents=True, exist_ok=False)
+        if "day" in item[-1]:
+            with path.joinpath(f"file_{ix}.txt").open(mode="w",
+                                                      encoding="utf-8"):
+                ...
+
+    fs = utilities.get_fs()
+    listing1 = []
+    for root, _dirs, files in utilities.fs_walk(fs, tmpdir, sort=True):
+        for item in files:
+            listing1.append(fs.sep.join([root, item]))
+
+    listing2 = []
+    for root, _dirs, files in utilities.fs_walk(fs, tmpdir, sort=False):
+        for item in files:
+            listing2.append(fs.sep.join([root, item]))
+
+    assert listing1 == sorted(listing2)
+
+    assert list(
+        utilities.fs_walk(fs,
+                          str(pathlib.Path(tmpdir).joinpath("inexistent")),
+                          sort=True)) == [('', [], [])]
+
+
+def test_get_client():
+    """Test the get_client function."""
+    client = utilities.get_client()
+    assert isinstance(client, dask.distributed.Client)
+    client.close()
+    local_cluster = dask.distributed.LocalCluster()
+    local_client = dask.distributed.Client(local_cluster)
+    client = utilities.get_client()
+    assert isinstance(client, dask.distributed.Client)
+    client.close()
+    local_client.close()
+    local_cluster.close()
+
+
+def test_dask_workers():
+    """Test the dask_workers function."""
+    local_cluster = dask.distributed.LocalCluster()
+    local_client = dask.distributed.Client(local_cluster)
+    assert utilities.dask_workers(local_client, cores_only=True) == len(
+        local_client.ncores())  # type: ignore
+    assert utilities.dask_workers(local_client, cores_only=False) == sum(
+        item for item in local_client.nthreads().values())  # type: ignore
+    local_client.close()
+    local_cluster.close()
+
+
+def test_calculation_stream(dask_configurable):
+    """Test the calculation_stream function."""
+
+    def add_1_return_list(item):
+        """Add 1 to each item in the list and return the result in a list."""
+        return [item + 1]
+
+    def add_1(item):
+        """Add 1 to each item in the list and return the result."""
+        return item + 1
+
+    stream = utilities.calculation_stream(add_1_return_list,
+                                          iter(list(range(100))),
+                                          max_workers=4)
+    assert sorted(list(stream)) == [[item + 1] for item in range(100)]
+
+    stream = utilities.calculation_stream(add_1,
+                                          iter(list(range(100))),
+                                          max_workers=4)
+    assert sorted(list(stream)) == [item + 1 for item in range(100)]
+
+    stream = utilities.calculation_stream(add_1, iter([1]), max_workers=4)
+    assert sorted(list(stream)) == [2]
