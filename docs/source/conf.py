@@ -17,12 +17,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent))
 
 # -- Project information -----------------------------------------------------
 
-project = "zcollection"
-copyright = "(2022, CNES/CLS)"
-author = "CLS"
+project = 'zcollection'
+copyright = '(2022, CNES/CLS)'
+author = 'CLS'
 
 # The full version, including alpha/beta/rc tags
-release = "0.1.1.dev16"
+release = '0.0'
 
 # -- General configuration ---------------------------------------------------
 
@@ -71,8 +71,9 @@ html_static_path = ["_static"]
 
 intersphinx_mapping = {
     "dask": ("https://docs.dask.org/en/latest/", None),
-    "python": ("http://docs.python.org/", None),
+    "fsspec": ("https://filesystem-spec.readthedocs.io/en/latest/", None),
     "numpy": ("https://docs.scipy.org/doc/numpy/", None),
+    "python": ("http://docs.python.org/", None),
     "xarray": ("http://xarray.pydata.org/en/stable/", None),
     "zarr": ("https://zarr.readthedocs.io/en/stable", None),
 }
