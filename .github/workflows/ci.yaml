@@ -55,8 +55,8 @@ jobs:
         micromamba install python=3.9 -q -y -r /opt/conda/ -p /opt/conda \
           -c conda-forge
         micromamba install -q -y \
-          dask-core distributed numcodecs pyarrow pytest s3fs xarray zarr \
-          -r /opt/conda/ -p /opt/conda -c conda-forge
+          dask-core distributed numcodecs pyarrow pytest requests s3fs xarray \
+          zarr -r /opt/conda/ -p /opt/conda -c conda-forge
     - name: Install MinIO
       run: |
         mkdir -p /opt/minio/bin
@@ -67,4 +67,4 @@ jobs:
       run: |
         echo /opt/minio/bin >> $GITHUB_PATH
     - name: Run Tests
-      run: pytest -v --minio
+      run: pytest -ra -v --minio
