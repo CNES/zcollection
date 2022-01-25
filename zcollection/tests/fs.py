@@ -7,9 +7,9 @@ Fixture for testing the file system.
 ====================================
 """
 import pathlib
-import uuid
 
 import fsspec
+import fsspec.implementations.memory
 import pytest
 
 try:
@@ -23,42 +23,30 @@ except ImportError as err:
 
 
 class Local:
-    """Local filesystem"""
+    """Local files system"""
 
-    def __init__(self, tmpdir) -> None:
-        self.rool = pathlib.Path(tmpdir)
-        self.collection = pathlib.Path(tmpdir).joinpath("collection")
-        self.view = pathlib.Path(tmpdir).joinpath("view")
-        self.fs = fsspec.filesystem("file")
-
-
-class Memory:
-    """Memory filesystem"""
-
-    def __init__(self) -> None:
-        self.fs = fsspec.filesystem("memory")
-        self.root = self.fs.sep.join(("", str(uuid.uuid4())))
-        self.collection = self.fs.sep.join((self.root, "collection"))
-        self.view = self.fs.sep.join((self.root, "view"))
+    def __init__(self, tmpdir, protocol) -> None:
+        self.fs = fsspec.filesystem(protocol)
+        self.root = pathlib.Path(tmpdir)
+        self.collection = self.root.joinpath("collection")
+        self.view = self.root.joinpath("view")
 
     def __getattr__(self, name):
         return getattr(self.fs, name)
 
 
 @pytest.fixture
-def local_fs(tmpdir):
+def local_fs(tmpdir, pytestconfig):
     """Local filesystem"""
-    return Local(tmpdir)
-
-
-@pytest.fixture
-def memory_fs():
-    """Memory filesystem"""
-    instance = Memory()
-    instance.fs.mkdir(instance.root)
+    protocol = "memory" if pytestconfig.getoption("memory") else "file"
+    instance = Local(tmpdir, protocol)
     yield instance
     try:
-        instance.fs.rm(instance.root, recursive=True)
+        # For the memory protocol we delete the written data to free the
+        # memory.
+        if isinstance(instance.fs,
+                      fsspec.implementations.memory.MemoryFileSystem):
+            instance.fs.rm(str(instance.root), recursive=True)
     except FileNotFoundError:
         pass
 

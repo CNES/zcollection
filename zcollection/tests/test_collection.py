@@ -18,7 +18,7 @@ from .cluster import dask_configurable
 from .data import (DELTA, END_DATE, FILE_SYSTEM_DATASET, START_DATE,
                    create_test_collection, create_test_dataset,
                    create_test_dataset_with_fillvalue)
-from .fs import local_fs, memory_fs, s3, s3_base, s3_fs
+from .fs import local_fs, s3, s3_base, s3_fs
 
 # pylint: disable=unused-import
 
@@ -166,7 +166,7 @@ def test_update(dask_configurable, arg, create_test_data, request):
                           rtol=0)
 
 
-@pytest.mark.parametrize("arg", ["memory_fs", "s3_fs"])
+@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
 def test_drop_partitions(dask_configurable, arg, request):
     """Test the dropping of a dataset"""
     tested_fs = request.getfixturevalue(arg)
@@ -190,7 +190,7 @@ def test_drop_partitions(dask_configurable, arg, request):
         zcollection.drop_partitions()
 
 
-@pytest.mark.parametrize("arg", ["memory_fs", "s3_fs"])
+@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
 def test_drop_variable(dask_configurable, arg, request):
     """Test the dropping of a variable"""
     tested_fs = request.getfixturevalue(arg)
@@ -214,7 +214,7 @@ def test_drop_variable(dask_configurable, arg, request):
         zcollection.drop_partitions()
 
 
-@pytest.mark.parametrize("arg", ["memory_fs", "s3_fs"])
+@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
 def test_add_variable(dask_configurable, arg, request):
     """Test the adding of a variable"""
     tested_fs = request.getfixturevalue(arg)
@@ -316,7 +316,7 @@ def test_add_update(dask_configurable, arg, create_test_data, request):
                           rtol=0)
 
 
-@pytest.mark.parametrize("arg", ["memory_fs", "s3_fs"])
+@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
 def test_fillvalue(dask_configurable, arg, request):
     """Test the management of masked values."""
     tested_fs = request.getfixturevalue(arg)
@@ -334,7 +334,7 @@ def test_fillvalue(dask_configurable, arg, request):
     assert numpy.any(values.mask)  # type: ignore
 
 
-@pytest.mark.parametrize("arg", ["memory_fs", "s3_fs"])
+@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
 def test_degraded_tests(dask_configurable, arg, request):
     """Test the degraded functionality."""
     tested_fs = request.getfixturevalue(arg)
@@ -348,7 +348,7 @@ def test_degraded_tests(dask_configurable, arg, request):
         zcollection.insert(fake_ds)
 
 
-@pytest.mark.parametrize("arg", ["memory_fs", "s3_fs"])
+@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
 def test_insert_with_missing_variable(dask_configurable, arg, request):
     """Test of the insertion of a dataset in which a variable is missing.
 
@@ -379,7 +379,7 @@ def test_insert_with_missing_variable(dask_configurable, arg, request):
             ds.variables["var1"].fill_value))
 
 
-@pytest.mark.parametrize("arg", ["memory_fs", "s3_fs"])
+@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
 def test_insert_failed(dask_configurable, arg, request):
     """Test the insertion of a dataset in which the insertion failed."""
     tested_fs = request.getfixturevalue(arg)
@@ -406,7 +406,7 @@ def test_insert_failed(dask_configurable, arg, request):
     zcollection.insert(ds)
 
 
-@pytest.mark.parametrize("arg", ["memory_fs", "s3_fs"])
+@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
 def test_map_partition(dask_configurable, arg, request):
     """Test the update of a dataset"""
     tested_fs = request.getfixturevalue(arg)
@@ -422,7 +422,7 @@ def test_map_partition(dask_configurable, arg, request):
         assert numpy.allclose(item[1], ds.variables["var1"].values * 2)
 
 
-@pytest.mark.parametrize("arg", ["memory_fs", "s3_fs"])
+@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
 def test_indexer(dask_configurable, arg, request):
     """Test the update of a dataset"""
     tested_fs = request.getfixturevalue(arg)

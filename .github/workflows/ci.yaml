@@ -67,4 +67,4 @@ jobs:
       run: |
         echo /opt/minio/bin >> $GITHUB_PATH
     - name: Run Tests
-      run: pytest -ra -v --minio
+      run: pytest -ra -v --s3

@@ -13,12 +13,12 @@ from .. import meta, view
 # pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_configurable
 from .data import create_test_collection
-from .fs import memory_fs, s3, s3_base, s3_fs
+from .fs import local_fs, s3, s3_base, s3_fs
 
 # pylint: enable=unused-import
 
 
-@pytest.mark.parametrize("arg", ["memory_fs", "s3_fs"])
+@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
 def test_view(dask_configurable, arg, request):
     """Test the creation of a view"""
     # import dask.distributed

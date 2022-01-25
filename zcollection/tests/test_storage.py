@@ -15,7 +15,7 @@ import zarr
 from .. import dataset, storage, sync
 # pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_configurable, dask_threaded
-from .fs import memory_fs
+from .fs import local_fs
 
 # pylint: enable=unused-import
 
@@ -83,13 +83,15 @@ def create_dataset(shape):
                            ])
 
 
-def test_write_attrs(memory_fs):
+def test_write_attrs(local_fs):
     """Test the write_attrs function."""
     var = create_variable((10, 2))
-    storage.write_zattrs(memory_fs.root, var, memory_fs.fs)
-    path = memory_fs.sep.join((memory_fs.root, "var", storage.ZATTRS))
-    assert memory_fs.exists(path)
-    with memory_fs.open(path) as stream:
+    path = local_fs.root.joinpath("var")
+    local_fs.mkdir(str(path))
+    storage.write_zattrs(str(local_fs.root), var, local_fs.fs)
+    path = str(path.joinpath(storage.ZATTRS))
+    assert local_fs.exists(path)
+    with local_fs.open(path) as stream:
         lines = stream.readlines()
         assert lines == [
             b'{\n',
@@ -102,17 +104,16 @@ def test_write_attrs(memory_fs):
             b'  ]\n',
             b'}',
         ]
-    assert memory_fs.exists(
-        memory_fs.sep.join((memory_fs.root, "var", storage.ZATTRS)))
+    assert local_fs.exists(str(local_fs.root.joinpath("var", storage.ZATTRS)))
 
 
-def test_write_variable(memory_fs):
+def test_write_variable(local_fs):
     """Test the write_variable function."""
     var = create_variable((1024, 1024))
-    storage.write_zarr_variable(("var", var), memory_fs.root, memory_fs.fs)
-    path = memory_fs.sep.join((memory_fs.root, "var"))
-    assert memory_fs.exists(path)
-    mapper = memory_fs.get_mapper(path)
+    storage.write_zarr_variable(("var", var), str(local_fs.root), local_fs.fs)
+    path = str(local_fs.root.joinpath("var"))
+    assert local_fs.exists(path)
+    mapper = local_fs.get_mapper(path)
     zarray = zarr.open(mapper)
     assert zarray.shape == (1024, 1024)
     assert numpy.all(zarray[...] == 1)
@@ -122,15 +123,16 @@ def test_write_variable(memory_fs):
     assert numpy.all(other.values == var.values)
 
 
-def test_write_zarr_group(memory_fs, dask_threaded):
+def test_write_zarr_group(local_fs, dask_threaded):
     """Test the write_zarr_group function."""
     ds = create_dataset((1024, 1024))
     # memory fs does not support multi-processes
     future = dask_threaded.submit(storage.write_zarr_group,
-                                  dask_threaded.scatter(ds), memory_fs.root,
-                                  memory_fs.fs, sync.NoSync())
+                                  dask_threaded.scatter(ds),
+                                  str(local_fs.root), local_fs.fs,
+                                  sync.NoSync())
     future.result()
-    mapper = memory_fs.get_mapper(memory_fs.root)
+    mapper = local_fs.get_mapper(str(local_fs.root))
     zarray = zarr.open_group(mapper)
     assert numpy.all(zarray["var"][...] == 1)
     assert zarray.attrs["a"] == 1
@@ -138,45 +140,46 @@ def test_write_zarr_group(memory_fs, dask_threaded):
     assert zarray.attrs["long_name"] == "long name"
     assert zarray["var"].attrs["_ARRAY_DIMENSIONS"] == ["x", "y"]
 
-    other = storage.open_zarr_group(memory_fs.root, memory_fs.fs)
+    other = storage.open_zarr_group(str(local_fs.root), local_fs.fs)
     assert other.metadata() == ds.metadata()
 
 
-def test_update_zarr_array(memory_fs):
+def test_update_zarr_array(local_fs):
     """Test the update_zarr_array function."""
     var = create_variable((1024, 1024), fill_value=10)
-    storage.write_zarr_variable(("var", var), memory_fs.root, memory_fs.fs)
-    path = memory_fs.sep.join((memory_fs.root, "var"))
+    storage.write_zarr_variable(("var", var), str(local_fs.root), local_fs.fs)
+    path = str(local_fs.root.joinpath("var"))
     storage.update_zarr_array(path, dask.array.full((1024, 1024), 2),
-                              memory_fs.fs)
-    mapper = memory_fs.get_mapper(path)
+                              local_fs.fs)
+    mapper = local_fs.get_mapper(path)
     zarray = zarr.open(mapper)
     assert numpy.all(zarray[...] == 2)
     data = numpy.full((1024, 1024), 2)
     data[:, 0] = 5
     data = numpy.ma.masked_equal(data, 5)
     assert numpy.all(data[:, 0].mask)
-    storage.update_zarr_array(path, data, memory_fs.fs)
+    storage.update_zarr_array(path, data, local_fs.fs)
     zarray = zarr.open(mapper)
     assert numpy.all(zarray[:, 0] == 10)
 
 
-def test_del_zarr_array(memory_fs):
+def test_del_zarr_array(local_fs):
     """Test the del_zarr_array function."""
     var = create_variable((1024, 1024))
-    storage.write_zarr_variable(("var", var), memory_fs.root, memory_fs.fs)
-    storage.del_zarr_array(memory_fs.root, "var", memory_fs.fs)
-    assert not memory_fs.exists(memory_fs.sep.join((memory_fs.root, "var")))
+    root = str(local_fs.root)
+    storage.write_zarr_variable(("var", var), root, local_fs.fs)
+    storage.del_zarr_array(root, "var", local_fs.fs)
+    assert not local_fs.exists(str(local_fs.root.joinpath("var")))
 
 
-def test_add_zarr_array(memory_fs):
+def test_add_zarr_array(local_fs):
     """Test the add_zarr_array function."""
     var = create_variable((1024, 1024), fill_value=10)
+    root = str(local_fs.root)
     var.name = "var1"
-    storage.write_zarr_variable(("var1", var), memory_fs.root, memory_fs.fs)
+    storage.write_zarr_variable(("var1", var), root, local_fs.fs)
     var.name = "var2"
-    storage.add_zarr_array(memory_fs.root, var.metadata(), "var1",
-                           memory_fs.fs)
-    mapper = memory_fs.get_mapper(memory_fs.root)
+    storage.add_zarr_array(root, var.metadata(), "var1", local_fs.fs)
+    mapper = local_fs.get_mapper(root)
     zarray = zarr.open(mapper)
     assert numpy.all(zarray["var2"][...] == 10)

@@ -34,7 +34,7 @@ def have_minio():
         subprocess.check_output(["minio", "--version"])
         return True
     except:
-        raise ImportError("minio not installed") from None
+        raise ImportError("minio: command not found") from None
 
 
 have_minio()
@@ -43,7 +43,7 @@ have_minio()
 @pytest.fixture()
 def s3_base(tmpdir, pytestconfig):
     """Launch minio server"""
-    if pytestconfig.getoption("minio") is False:
+    if pytestconfig.getoption("s3") is False:
         pytest.skip("S3 disabled")
     try:
         # should fail since we didn't start server yet

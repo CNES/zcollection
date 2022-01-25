@@ -14,7 +14,7 @@ from ... import sync
 from ...tests import data
 # pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_configurable, dask_threaded
-from ...tests.fs import memory_fs
+from ...tests.fs import local_fs
 # pylint: enable=unused-import
 from .. import _update_fs, merge_time_series, perform
 
@@ -34,29 +34,30 @@ class ThrowError(sync.Sync):
         ...
 
 
-def test_update_fs(memory_fs, dask_threaded):
+def test_update_fs(local_fs, dask_threaded):
     """Test the _update_fs function."""
     generator = data.create_test_dataset()
     ds = next(generator)
 
-    zattrs = memory_fs.sep.join((memory_fs.root, ".zattrs"))
-    future = dask_threaded.submit(_update_fs, memory_fs.root,
-                                  dask_threaded.scatter(ds), memory_fs.fs)
+    zattrs = str(local_fs.root.joinpath(".zattrs"))
+    root = str(local_fs.root)
+    future = dask_threaded.submit(_update_fs, root, dask_threaded.scatter(ds),
+                                  local_fs.fs)
     dask_threaded.gather(future)
-    assert memory_fs.exists(zattrs)
+    assert local_fs.exists(zattrs)
 
-    memory_fs.fs.rm(memory_fs.root, recursive=True)
-    assert not memory_fs.exists(zattrs)
+    local_fs.fs.rm(root, recursive=True)
+    assert not local_fs.exists(zattrs)
     seen_exception = False
     try:
-        future = dask_threaded.submit(_update_fs, memory_fs.root,
-                                      dask_threaded.scatter(ds), memory_fs.fs,
+        future = dask_threaded.submit(_update_fs, root,
+                                      dask_threaded.scatter(ds), local_fs.fs,
                                       ThrowError())
         dask_threaded.gather(future)
     except MyError:
         seen_exception = True
     assert seen_exception
-    assert not memory_fs.exists(zattrs)
+    assert not local_fs.exists(zattrs)
 
 
 def test_perform(dask_threaded):

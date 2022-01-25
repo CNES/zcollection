@@ -160,10 +160,10 @@ def test_indexer(dask_threaded, local_fs):
         filesystem=local_fs.fs)
     zcollection.insert(ds, collection.merging.merge_time_series)
 
-    indexer = HalfOrbitIndexer.create(
-        local_fs.collection.joinpath("index.parquet"),
-        zcollection,
-        filesystem=local_fs.fs)
+    indexer = HalfOrbitIndexer.create(str(
+        local_fs.collection.joinpath("index.parquet")),
+                                      zcollection,
+                                      filesystem=local_fs.fs)
 
     # Index not yet created
     with pytest.raises(ValueError):
@@ -209,8 +209,9 @@ def test_indexer(dask_threaded, local_fs):
     assert set(selection.variables['cycle_number'].values) == {2, 4}
     assert set(selection.variables['pass_number'].values) == {1, 5}
 
-    indexer = HalfOrbitIndexer.open(
-        local_fs.collection.joinpath("index.parquet"), filesystem=local_fs.fs)
+    indexer = HalfOrbitIndexer.open(str(
+        local_fs.collection.joinpath("index.parquet")),
+                                    filesystem=local_fs.fs)
     assert indexer.meta == dict(attribute=b"value")
     selection = zcollection.load(
         indexers=indexer.query(dict(cycle_number=[2, 4], pass_number=[1, 5])))
