@@ -11,6 +11,7 @@ from __future__ import annotations
 import abc
 import functools
 import pathlib
+import typing
 from typing import Dict, Iterable, List, Optional, Protocol, Tuple, Union
 
 import fsspec
@@ -24,10 +25,14 @@ from .. import collection, dataset
 from ..typing import NDArray
 
 #: Scalar data type for the index.
-SCALAR = int, float, bytes
-
-#: Scalar data type for the index.
 Scalar = Union[int, float, bytes]
+
+#: Index data type.
+DType = Union[Scalar, Iterable[Scalar]]
+
+#: Type of associative dictionary used for index queries, which matches a
+#: column of the index to the requested values.
+QueryDict = Dict[str, DType]
 
 
 #: pylint: disable=too-few-public-methods
@@ -387,7 +392,7 @@ class Indexer:
 
     def query(
         self,
-        columns: Dict[str, Union[Scalar, Iterable[Scalar]]],
+        columns: QueryDict,
         logical_op: Optional[str] = None,
     ) -> collection.Indexer:
         """
@@ -416,7 +421,7 @@ class Indexer:
                 f'Invalid column names: {", ".join(columns.keys())}')
 
         # Transform the columns values into a list if they are not iterable.
-        values = dict((k, [v] if isinstance(v, SCALAR) else v)
+        values = dict((k, [v] if isinstance(v, typing.get_args(Scalar)) else v)
                       for k, v in columns.items())
 
         table = self._read()

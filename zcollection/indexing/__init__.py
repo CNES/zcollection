@@ -9,8 +9,8 @@ Indexing a Collection.
 import warnings
 
 try:
-    from .abc import Indexer
-    __all__ = ['Indexer']
+    from .abc import Indexer, QueryDict, Scalar
+    __all__ = ['Indexer', 'QueryDict', 'Scalar']
 except ImportError:  # pragma: no cover
     warnings.warn(
         "Install PyArrow to use the indexing capabilities of zcollection.")

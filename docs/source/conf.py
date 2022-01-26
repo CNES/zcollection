@@ -40,11 +40,14 @@ extensions = [
 
 autosummary_generate = True
 
-autodoc_type_aliases = dict(DTypeLike="DTypeLike",
-                            ArrayLike="ArrayLike",
-                            Indexer="Indexer",
-                            Scalar="Scalar",
-                            PartitionCallback="PartitionCallback")
+autodoc_type_aliases = dict(
+    ArrayLike="ArrayLike",
+    DTypeLike="DTypeLike",
+    Indexer="Indexer",
+    PartitionCallback="PartitionCallback",
+    QueryDict="QueryDict",
+    Scalar="Scalar",
+)
 
 numpydoc_class_members_toctree = True
 numpydoc_show_class_members = False
