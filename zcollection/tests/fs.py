@@ -17,9 +17,9 @@ try:
     from .s3 import S3, s3, s3_base  # type: ignore
 
     # pylint: disable=unused-import
-    S3_ENABLED = None
+    S3_IMPORT_EXCEPTION = None
 except ImportError as err:
-    S3_ENABLED = str(err)
+    S3_IMPORT_EXCEPTION = str(err)
 
 
 class Local:
@@ -52,7 +52,7 @@ def local_fs(tmpdir, pytestconfig):
 
 
 # pylint: disable=redefined-outer-name,function-redefined
-if S3_ENABLED is None:
+if S3_IMPORT_EXCEPTION is None:
 
     @pytest.fixture
     def s3_fs(s3):  # type: ignore (enabled only if S3 is available)
@@ -71,10 +71,12 @@ else:
         ...
 
     @pytest.fixture
-    def s3_fs():
+    def s3_fs(pytestconfig):
         """S3 filesystem"""
-        assert S3_ENABLED is not None
-        pytest.skip("Prerequisites are missing to test S3: " + S3_ENABLED)
+        if pytestconfig.getoption("s3"):
+            pytest.fail(f"Unable to test S3: {S3_IMPORT_EXCEPTION}")
+        else:
+            pytest.skip("S3 is disabled")
 
 
 # pylint: enable=redefined-outer-name,function-redefined

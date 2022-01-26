@@ -24,6 +24,7 @@ def dask_configurable(pytestconfig):
         threads_per_worker=threads_per_worker,
         processes=False)
     client = dask.distributed.Client(cluster)
+    client.wait_for_workers(1)
 
     try:
         yield client

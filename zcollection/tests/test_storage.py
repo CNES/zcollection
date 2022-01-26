@@ -6,9 +6,10 @@
 Testing the storage module.
 ===========================
 """
+import platform
+
 import dask.array
 import dask.distributed
-import fsspec
 import numpy
 import zarr
 
@@ -90,20 +91,23 @@ def test_write_attrs(local_fs):
     local_fs.mkdir(str(path))
     storage.write_zattrs(str(local_fs.root), var, local_fs.fs)
     path = str(path.joinpath(storage.ZATTRS))
+    expected = [
+        b'{\n',
+        b'  "a": 1,\n',
+        b'  "b": 2,\n',
+        b'  "long_name": "long name",\n',
+        b'  "_ARRAY_DIMENSIONS": [\n',
+        b'    "x",\n',
+        b'    "y"\n',
+        b'  ]\n',
+        b'}',
+    ]
+    if platform.platform().startswith("Windows"):
+        expected = [item.replace(b"\n", b"\r\n") for item in expected]
     assert local_fs.exists(path)
     with local_fs.open(path) as stream:
         lines = stream.readlines()
-        assert lines == [
-            b'{\n',
-            b'  "a": 1,\n',
-            b'  "b": 2,\n',
-            b'  "long_name": "long name",\n',
-            b'  "_ARRAY_DIMENSIONS": [\n',
-            b'    "x",\n',
-            b'    "y"\n',
-            b'  ]\n',
-            b'}',
-        ]
+        assert lines == expected
     assert local_fs.exists(str(local_fs.root.joinpath("var", storage.ZATTRS)))
 
 
