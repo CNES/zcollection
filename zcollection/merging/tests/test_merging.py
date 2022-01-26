@@ -39,18 +39,19 @@ def test_update_fs(local_fs, dask_cluster):
     generator = data.create_test_dataset()
     ds = next(generator)
 
-    zattrs = str(local_fs.root.joinpath(".zattrs"))
-    root = str(local_fs.root)
-    future = dask_cluster.submit(_update_fs, root, dask_cluster.scatter(ds),
-                                 local_fs.fs)
+    partition_folder = local_fs.root.joinpath("partition_folder")
+
+    zattrs = str(partition_folder.joinpath(".zattrs"))
+    future = dask_cluster.submit(_update_fs, str(partition_folder),
+                                 dask_cluster.scatter(ds), local_fs.fs)
     dask_cluster.gather(future)
     assert local_fs.exists(zattrs)
 
-    local_fs.fs.rm(root, recursive=True)
+    local_fs.fs.rm(str(partition_folder), recursive=True)
     assert not local_fs.exists(zattrs)
     seen_exception = False
     try:
-        future = dask_cluster.submit(_update_fs, root,
+        future = dask_cluster.submit(_update_fs, str(partition_folder),
                                      dask_cluster.scatter(ds), local_fs.fs,
                                      ThrowError())
         dask_cluster.gather(future)
