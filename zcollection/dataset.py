@@ -361,14 +361,21 @@ class Variable:
             other = [other]
         if not other:
             raise ValueError("other must be a non-empty sequence")
-        axis = self.dimensions.index(dim)
-        result = self.duplicate(self._raw_data)
-        # pylint: disable=protected-access
-        # (_raw_data is a protected member of this class)
-        result._raw_data = dask.array.concatenate(
-            [self._raw_data, *[item._raw_data for item in other]], axis=axis)
-        # pylint: enable=protected-access
-        return result
+        try:
+            axis = self.dimensions.index(dim)
+            result = self.duplicate(self._raw_data)
+            # pylint: disable=protected-access
+            # (_raw_data is a protected member of this class)
+            result._raw_data = dask.array.concatenate(
+                [self._raw_data, *[item._raw_data for item in other]],
+                axis=axis)
+            # pylint: enable=protected-access
+            return result
+        except ValueError:
+            # If the concatenation dimension is not within the dimensions of the
+            # variable, then the original variable is returned (i.e.
+            # concatenation is not necessary).
+            return self.duplicate(self._raw_data)
 
     def to_xarray(self) -> xarray.Variable:
         """Convert the variable to an xarray.Variable

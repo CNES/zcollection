@@ -346,3 +346,22 @@ def test_dataset_add_variable():
                         zarr.Blosc(), 255, (zarr.Delta("int64", "int64"), ))
     with pytest.raises(ValueError, match="has dimension"):
         ds.add_variable(var)
+
+
+def test_variable_dimension_less():
+    """Concatenate two dimensionless variables.
+    """
+    data = numpy.array([0, 1], dtype=numpy.int32)
+    args = ("nv", data, ("nv", ), (dataset.Attribute("comment", "vertex"),
+                                   dataset.Attribute("units", "1")))
+    nv = dataset.Variable(*args)
+    assert nv.fill_value is None
+    metadata = nv.metadata()
+    assert metadata.fill_value is None
+    assert meta.Variable.from_config(metadata.get_config()) == metadata
+
+    other = dataset.Variable(*args)
+
+    concatenated = nv.concat((other, ), "time")
+    assert numpy.all(concatenated.values == nv.values)
+    assert concatenated.metadata() == nv.metadata()
