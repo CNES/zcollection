@@ -139,7 +139,7 @@ class Variable:
         #: Data type of the variable.
         self.dtype = numpy.dtype(dtype)  # type: ignore
         #: Fill value for the variable.
-        self.fill_value = fill_value or numpy.array(0, dtype)[()]
+        self.fill_value = fill_value
         #: Filter codecs for the variable.
         self.filters = filters or tuple()
         #: Variable name.

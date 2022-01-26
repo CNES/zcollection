@@ -545,7 +545,7 @@ class Dataset:
                     Attribute(*attr)  # type: ignore
                     for attr in array.attrs.items()),
                 array.encoding.get("compressor", None),
-                array.encoding.get("_FillValue", 0),
+                array.encoding.get("_FillValue", None),
                 array.encoding.get("filters", None))
             for name, array in ds.variables.items()
         ]
