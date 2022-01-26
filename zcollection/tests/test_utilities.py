@@ -12,7 +12,7 @@ import dask.distributed
 
 from .. import utilities
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_configurable
+from .cluster import dask_cluster
 
 # pylint: disable=unused-import
 
@@ -97,7 +97,7 @@ def test_dask_workers():
     local_cluster.close()
 
 
-def test_calculation_stream(dask_configurable):
+def test_calculation_stream(dask_cluster):
     """Test the calculation_stream function."""
 
     def add_1_return_list(item):

@@ -15,17 +15,16 @@ import zarr
 
 from .. import dataset, storage, sync
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_configurable, dask_threaded
+from .cluster import dask_cluster
 from .fs import local_fs
 
 # pylint: enable=unused-import
 
 
-def test_execute_transaction(dask_configurable):
+def test_execute_transaction(dask_cluster):
     """Test the execute_transaction function."""
     # First case: no transaction to execute
-    assert storage.execute_transaction(dask_configurable, sync.NoSync(),
-                                       []) is None
+    assert storage.execute_transaction(dask_cluster, sync.NoSync(), []) is None
 
     # General case: execute a transaction without error
     def func():
@@ -33,8 +32,8 @@ def test_execute_transaction(dask_configurable):
 
     assert sum(
         storage.execute_transaction(
-            dask_configurable, sync.NoSync(),
-            [dask_configurable.submit(func) for i in range(10)])) == 10
+            dask_cluster, sync.NoSync(),
+            [dask_cluster.submit(func) for i in range(10)])) == 10
 
     # Degraded case: execute a transaction with error
     def fail(data):
@@ -48,8 +47,8 @@ def test_execute_transaction(dask_configurable):
     futures = []
     try:
         futures += storage.execute_transaction(
-            dask_configurable, sync.NoSync(),
-            [dask_configurable.submit(fail, i) for i in range(10)])
+            dask_cluster, sync.NoSync(),
+            [dask_cluster.submit(fail, i) for i in range(10)])
     except ValueError:
         exception_seen = True
     assert exception_seen
@@ -127,14 +126,13 @@ def test_write_variable(local_fs):
     assert numpy.all(other.values == var.values)
 
 
-def test_write_zarr_group(local_fs, dask_threaded):
+def test_write_zarr_group(local_fs, dask_cluster):
     """Test the write_zarr_group function."""
     ds = create_dataset((1024, 1024))
     # memory fs does not support multi-processes
-    future = dask_threaded.submit(storage.write_zarr_group,
-                                  dask_threaded.scatter(ds),
-                                  str(local_fs.root), local_fs.fs,
-                                  sync.NoSync())
+    future = dask_cluster.submit(storage.write_zarr_group,
+                                 dask_cluster.scatter(ds), str(local_fs.root),
+                                 local_fs.fs, sync.NoSync())
     future.result()
     mapper = local_fs.get_mapper(str(local_fs.root))
     zarray = zarr.open_group(mapper)

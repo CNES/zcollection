@@ -2,12 +2,13 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
+import dask.config
 import dask.distributed
 import pytest
 
 
 @pytest.fixture()
-def dask_configurable(pytestconfig):
+def dask_cluster(pytestconfig, tmpdir):
     """Launch a Dask LocalCluster with a configurable number of workers."""
     try:
         n_workers = int(pytestconfig.getoption("n_workers"))
@@ -19,25 +20,14 @@ def dask_configurable(pytestconfig):
     except TypeError:
         threads_per_worker = None
 
+    # We don't want to create temporary files in the source tree.
+    dask.config.set(temporary_directory=str(tmpdir))
     cluster = dask.distributed.LocalCluster(
         n_workers=n_workers,
         threads_per_worker=threads_per_worker,
         processes=False)
     client = dask.distributed.Client(cluster)
     client.wait_for_workers(1)
-
-    try:
-        yield client
-    finally:
-        client.close()
-        cluster.close()
-
-
-@pytest.fixture()
-def dask_threaded():
-    """Launch Dask LocalCluster with no processes."""
-    cluster = dask.distributed.LocalCluster(processes=False)
-    client = dask.distributed.Client(cluster)
 
     try:
         yield client

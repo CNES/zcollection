@@ -13,7 +13,7 @@ import zarr
 from ... import sync
 from ...tests import data
 # pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_configurable, dask_threaded
+from ...tests.cluster import dask_cluster
 from ...tests.fs import local_fs
 # pylint: enable=unused-import
 from .. import _update_fs, merge_time_series, perform
@@ -34,33 +34,33 @@ class ThrowError(sync.Sync):
         ...
 
 
-def test_update_fs(local_fs, dask_threaded):
+def test_update_fs(local_fs, dask_cluster):
     """Test the _update_fs function."""
     generator = data.create_test_dataset()
     ds = next(generator)
 
     zattrs = str(local_fs.root.joinpath(".zattrs"))
     root = str(local_fs.root)
-    future = dask_threaded.submit(_update_fs, root, dask_threaded.scatter(ds),
-                                  local_fs.fs)
-    dask_threaded.gather(future)
+    future = dask_cluster.submit(_update_fs, root, dask_cluster.scatter(ds),
+                                 local_fs.fs)
+    dask_cluster.gather(future)
     assert local_fs.exists(zattrs)
 
     local_fs.fs.rm(root, recursive=True)
     assert not local_fs.exists(zattrs)
     seen_exception = False
     try:
-        future = dask_threaded.submit(_update_fs, root,
-                                      dask_threaded.scatter(ds), local_fs.fs,
-                                      ThrowError())
-        dask_threaded.gather(future)
+        future = dask_cluster.submit(_update_fs, root,
+                                     dask_cluster.scatter(ds), local_fs.fs,
+                                     ThrowError())
+        dask_cluster.gather(future)
     except MyError:
         seen_exception = True
     assert seen_exception
     assert not local_fs.exists(zattrs)
 
 
-def test_perform(dask_threaded):
+def test_perform(dask_cluster):
     """Test the perform function."""
     generator = data.create_test_dataset()
     ds = next(generator)
@@ -68,13 +68,13 @@ def test_perform(dask_threaded):
     fs = fsspec.filesystem("memory")
     path = fs.sep.join(("", "folder"))
 
-    future = dask_threaded.submit(_update_fs, path, dask_threaded.scatter(ds),
-                                  fs)
-    dask_threaded.gather(future)
+    future = dask_cluster.submit(_update_fs, path, dask_cluster.scatter(ds),
+                                 fs)
+    dask_cluster.gather(future)
 
-    future = dask_threaded.submit(perform, dask_threaded.scatter(ds), path,
-                                  "time", fs, "time", merge_time_series)
-    dask_threaded.gather(future)
+    future = dask_cluster.submit(perform, dask_cluster.scatter(ds), path,
+                                 "time", fs, "time", merge_time_series)
+    dask_cluster.gather(future)
 
     zgroup = zarr.open_consolidated(fs.get_mapper(path))
     assert numpy.all(zgroup["time"][...] == ds["time"].values)
