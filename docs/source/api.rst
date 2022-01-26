@@ -16,8 +16,10 @@ Handles the partitioning of the collection.
   zcollection.partitioning.registry
   zcollection.partitioning.sequence
 
-Mergings of datasets
-====================
+.. _merging_datasets:
+
+Merging of datasets
+===================
 
 Merging of existing datasets in a partition.
 
