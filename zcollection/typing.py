@@ -6,25 +6,25 @@
 Numpy typings
 =============
 """
-import distutils.version
 import sys
 from typing import TYPE_CHECKING, Any, Union
 
 import dask.array
 import numpy
 import numpy.typing
+import packaging.version
 
 #: An array object represents a multidimensional, homogeneous array of
 #: fixed-size items.
-if not TYPE_CHECKING or distutils.version.LooseVersion(
-        numpy.__version__) < distutils.version.LooseVersion(
-            "1.20") or sys.version_info < (3, 9):
-    NDArray = numpy.ndarray  # pragma: no cover
-    NDMaskedArray = numpy.ma.MaskedArray  # pragma: no cover
-else:
+if TYPE_CHECKING and packaging.version.Version(
+        numpy.__version__) > packaging.version.Version(
+            "1.20") and sys.version_info > (3, 8):
     NDArray = numpy.typing.NDArray  # pragma: no cover
     NDMaskedArray = numpy.ma.MaskedArray[Any, numpy.dtype[
         numpy.typing._generic_alias.ScalarType]]  # pragma: no cover
+else:
+    NDArray = numpy.ndarray  # pragma: no cover
+    NDMaskedArray = numpy.ma.MaskedArray  # pragma: no cover
 
 #: Anything that can be coerced into numpy.dtype.
 DTypeLike = numpy.typing.DTypeLike

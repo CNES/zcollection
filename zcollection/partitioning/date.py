@@ -8,11 +8,9 @@ Partitioning by date
 """
 from typing import Any, ClassVar, Dict, Iterator, Sequence, Tuple
 
-#
 import dask.array
 import numpy
 
-#
 from . import abc
 
 #: Numpy time units
@@ -101,7 +99,8 @@ class Date(abc.Partitioning):
 
         # We don't use here the function `numpy.diff` but `abc.difference` for
         # optimization purposes.
-        if not numpy.all(abc.difference(index.view(numpy.int64)) >= 0):
+        if not numpy.all(
+                abc.difference(index.view(numpy.int64)) >= 0):  # type: ignore
             raise ValueError("index is not monotonic")
 
         indices = abc.concatenate_item(indices, values.size)

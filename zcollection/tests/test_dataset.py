@@ -92,7 +92,7 @@ def test_variable_duplicate():
         zarr.Delta("int64", "int32"),
         zarr.Delta("int32", "int32"),
     )
-    assert numpy.all(var.values == other.values / 2)
+    assert numpy.all(var.values == other.values / 2)  # type: ignore
     assert var.have_same_properties(other)
 
     with pytest.raises(ValueError):

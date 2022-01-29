@@ -11,7 +11,6 @@ from typing import Dict, Iterator
 
 import dask.array
 import numpy
-import pyexpat
 import pytest
 import xarray
 

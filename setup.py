@@ -6,7 +6,6 @@
 this module using distutils/setuptools."""
 
 import datetime
-import distutils.command.sdist
 import os
 import pathlib
 import re
@@ -14,6 +13,7 @@ import subprocess
 from typing import List, Optional, Pattern, Tuple
 
 import setuptools
+import setuptools.command.sdist
 
 # Working directory
 WORKING_DIRECTORY = pathlib.Path(__file__).parent.absolute()
@@ -166,10 +166,10 @@ REQUIRES = [
 ]
 
 
-class SDist(distutils.command.sdist.sdist):
+class SDist(setuptools.command.sdist.sdist):
     """Custom sdist command that copies the pytest configuration file
     into the package"""
-    user_options = distutils.command.sdist.sdist.user_options
+    user_options = setuptools.command.sdist.sdist.user_options
 
     def run(self):
         """A command's raison d'etre: carry out the action"""

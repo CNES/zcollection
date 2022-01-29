@@ -15,12 +15,10 @@ import typing
 from typing import Dict, Iterable, List, Optional, Protocol, Tuple, Union
 
 import fsspec
-#
 import numpy
 import pyarrow
 import pyarrow.parquet
 
-#
 from .. import collection, dataset
 from ..typing import NDArray
 

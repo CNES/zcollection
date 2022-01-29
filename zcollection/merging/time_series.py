@@ -9,7 +9,6 @@ Merging a time series
 import dask
 import numpy
 
-#
 from .. import dataset
 from . import period
 
@@ -76,7 +75,8 @@ def merge_time_series(
     # between the two datasets.
     if relation.is_before_overlapping():
         # pylint: disable=comparison-with-callable
-        indices = numpy.where(existing_axis > intersection.end())[0]
+        indices = numpy.where(
+            existing_axis > intersection.end())[0]  # type: ignore
         # pylint: enable=comparison-with-callable
         return inserted_ds.concat(
             existing_ds.isel({partitioning_dim: indices}), partitioning_dim)
@@ -85,19 +85,20 @@ def merge_time_series(
     # between the two datasets.
     if relation.is_after_overlapping():
         # pylint: disable=comparison-with-callable
-        indices = numpy.where(existing_axis < intersection.begin)[0]
+        indices = numpy.where(
+            existing_axis < intersection.begin)[0]  # type: ignore
         # pylint: enable=comparison-with-callable
         return existing_ds.isel({
             partitioning_dim: indices
         }).concat(inserted_ds, partitioning_dim)
 
     assert relation.is_inside()
-    index = numpy.where(existing_axis < intersection.begin)[0]
+    index = numpy.where(existing_axis < intersection.begin)[0]  # type: ignore
     before = existing_ds.isel(
         {partitioning_dim: slice(0, index[-1] + 1, None)})
 
     # pylint: disable=comparison-with-callable
-    index = numpy.where(existing_axis > intersection.end())[0]
+    index = numpy.where(existing_axis > intersection.end())[0]  # type: ignore
     # pylint: enable=comparison-with-callable
     after = existing_ds.isel(
         {partitioning_dim: slice(index[0], index[-1] + 1, None)})
