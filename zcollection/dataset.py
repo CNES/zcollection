@@ -11,8 +11,17 @@ from __future__ import annotations
 import collections
 import functools
 import operator
-from typing import (Any, Dict, Iterable, Iterator, Optional, Sequence, Tuple,
-                    Type, Union)
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    Iterator,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
 import dask.array
 import numcodecs.abc

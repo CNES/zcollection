@@ -14,8 +14,20 @@ import json
 import logging
 import pathlib
 import types
-from typing import (Any, Callable, ClassVar, Dict, Iterable, Iterator, List,
-                    Optional, Protocol, Sequence, Tuple, Union)
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import dask
 import dask.array

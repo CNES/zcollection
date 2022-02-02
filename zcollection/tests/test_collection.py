@@ -15,9 +15,15 @@ import zarr
 from .. import collection, dataset, merging, meta, partitioning, storage
 # pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_cluster
-from .data import (DELTA, END_DATE, FILE_SYSTEM_DATASET, START_DATE,
-                   create_test_collection, create_test_dataset,
-                   create_test_dataset_with_fillvalue)
+from .data import (
+    DELTA,
+    END_DATE,
+    FILE_SYSTEM_DATASET,
+    START_DATE,
+    create_test_collection,
+    create_test_dataset,
+    create_test_dataset_with_fillvalue,
+)
 from .fs import local_fs, s3, s3_base, s3_fs
 
 # pylint: disable=unused-import

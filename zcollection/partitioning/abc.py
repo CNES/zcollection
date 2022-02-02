@@ -11,8 +11,16 @@ from __future__ import annotations
 import abc
 import collections
 import re
-from typing import (Any, ClassVar, Dict, Iterator, Optional, Sequence, Tuple,
-                    Union)
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    Iterator,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import dask.array
 import numpy
