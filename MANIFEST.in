@@ -1,4 +1,0 @@
-recursive-include docs *
-recursive-include notebooks *.ipynb
-prune docs/build
-prune docs/source/_generated

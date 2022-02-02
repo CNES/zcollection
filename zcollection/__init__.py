@@ -6,17 +6,20 @@
 Handle a collection of Zarr groups.
 ===================================
 """
-from . import merging, partitioning, version
-from .collection import (Collection, Indexer, PartitionCallable,
-                         create_collection, open_collection)
+from . import merging, partitioning
+from .collection import (
+    Collection,
+    Indexer,
+    PartitionCallable,
+    create_collection,
+    open_collection,
+)
 from .dataset import Attribute, Dataset, Variable
+from .version import __version__
 from .view import View, create_view, open_view
 
-__version__ = version.release()
-__date__ = version.date()
-del version
-
 __all__ = [
+    "__version__",
     "Attribute",
     "Collection",
     "create_collection",
