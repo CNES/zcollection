@@ -9,6 +9,7 @@ dependencies:
   - pyarrow
   - pytest
   - requests
+  - setuptools-scm
   - s3fs
   - xarray
   - zarr
