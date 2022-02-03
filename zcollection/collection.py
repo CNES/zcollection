@@ -303,8 +303,7 @@ class Collection:
 
         params = dict(axis=self.axis,
                       dataset=self.metadata.get_config(),
-                      partitioning=self.partitioning.get_config(),
-                      partition_base_dir=base_dir)
+                      partitioning=self.partitioning.get_config())
 
         with self.fs.open(config, mode="w") as stream:
             json.dump(params, stream, indent=4)  # type: ignore
