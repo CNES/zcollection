@@ -23,6 +23,7 @@ def dask_cluster(pytestconfig, tmpdir):
     # We don't want to create temporary files in the source tree.
     dask.config.set(temporary_directory=str(tmpdir))
     cluster = dask.distributed.LocalCluster(
+        protocol="tcp://",
         n_workers=n_workers,
         threads_per_worker=threads_per_worker,
         processes=False)
