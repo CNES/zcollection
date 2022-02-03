@@ -214,6 +214,7 @@ class Collection:
         ds: meta.Dataset,
         partition_handler: partitioning.Partitioning,
         partition_base_dir: str,
+        *,
         mode: Optional[str] = None,
         filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
         synchronizer: Optional[sync.Sync] = None,
@@ -312,6 +313,7 @@ class Collection:
     def from_config(
         cls,
         path: str,
+        *,
         mode: Optional[str] = None,
         filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
         synchronizer: Optional[sync.Sync] = None,
@@ -342,34 +344,35 @@ class Collection:
             meta.Dataset.from_config(data["dataset"]),
             partitioning.get_codecs(data["partitioning"]),
             path,
-            mode or "r",
-            fs,
-            synchronizer,
+            mode=mode or "r",
+            filesystem=fs,
+            synchronizer=synchronizer,
         )
 
     def _is_selected(
         self,
         partition: Sequence[str],
-        filters: Optional[partitioning.Expression],
+        expression: Optional[partitioning.Expression],
     ) -> bool:
         """Return whether the partition is selected.
 
         Args:
             partition: The partition to check.
-            filters: The filters to apply.
+            expression: The expression used to select the partition.
 
         Returns:
             Whether the partition is selected.
         """
-        if filters is not None:
+        if expression is not None:
             variables = dict(self.partitioning.parse("/".join(partition)))
-            return filters(variables)
+            return expression(variables)
         return True
 
     # pylint: disable=method-hidden
     def insert(
         self,
         ds: Union[xarray.Dataset, dataset.Dataset],
+        *,
         merge_callable: Optional[merging.MergeCallable] = None,
         parallel_tasks: Optional[int] = None,
     ) -> None:
@@ -426,19 +429,21 @@ class Collection:
 
     def partitions(
         self,
-        filters: Optional[str] = None,
+        *,
+        expression: Optional[str] = None,
         relative: bool = False,
     ) -> Iterator[str]:
         """List the partitions of the collection.
 
         Args:
-            filters: The filters to apply.
+            expression: The expression to use to filter the partitions to
+                list.
             relative: Whether to return the relative path.
 
         Returns:
             The list of partitions.
         """
-        expr = partitioning.Expression(filters) if filters else None
+        expr = partitioning.Expression(expression) if expression else None
         base_dir = self.partition_properties.dir
         sep = self.fs.sep
         for root, dirs, files in utilities.fs_walk(self.fs,
@@ -458,16 +463,17 @@ class Collection:
     # pylint: disable=method-hidden
     def drop_partitions(
         self,
-        filters: Optional[str] = None,
+        *,
+        expression: Optional[str] = None,
     ) -> None:
         # pylint: disable=method-hidden
         """Drop the selected partitions.
 
         Args:
-            filters: The filters to select the partition to drop.
+            expression: The expression used to select the partitions to drop.
         """
         client = utilities.get_client()
-        folders = list(self.partitions(filters))
+        folders = list(self.partitions(expression=expression))
         storage.execute_transaction(
             client, self.synchronizer,
             client.map(self.fs.rm, folders, recursive=True))
@@ -479,7 +485,7 @@ class Collection:
         self,
         func: MapCallable,
         *args,
-        filters: Optional[str] = None,
+        expression: Optional[str] = None,
         bag_partition_size: Optional[int] = None,
         bag_npartitions: Optional[int] = None,
         **kwargs,
@@ -489,7 +495,7 @@ class Collection:
         Args:
             func: The function to apply to every partition of the collection.
             *args: The positional arguments to pass to the function.
-            filters: The filters to select the partition to map.
+            expression: The expression used to select the partitions to map.
             bag_partition_size: The length of each bag partition.
             bag_npartitions: The number of desired bag partitions.
             **kwargs: The keyword arguments to pass to the function.
@@ -520,20 +526,21 @@ class Collection:
             return self.partitioning.parse(partition), func(
                 ds, *args, **kwargs)
 
-        bag = dask.bag.from_sequence(self.partitions(filters),
+        bag = dask.bag.from_sequence(self.partitions(expression=expression),
                                      partition_size=bag_partition_size,
                                      npartitions=bag_npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
 
     def load(
         self,
-        filters: Optional[str] = None,
+        *,
+        expression: Optional[str] = None,
         indexers: Optional[Indexer] = None,
     ) -> Optional[dataset.Dataset]:
         """Load the selected partitions.
 
         Args:
-            filters: The filters to select the partition to load.
+            expression: The expression used to select the partitions to load.
             indexers: The indexers to apply.
 
         Returns:
@@ -541,7 +548,8 @@ class Collection:
 
         Example:
             >>> collection = ...
-            >>> collection.load("year=2019 and month=3 and day % 2 == 0")
+            >>> collection.load(
+            ...     expression="year=2019 and month=3 and day % 2 == 0")
         """
         arrays = []
         if indexers is None:
@@ -549,13 +557,13 @@ class Collection:
             # selected partition.
             arrays += [
                 storage.open_zarr_group(partition, self.fs)
-                for partition in self.partitions(filters)
+                for partition in self.partitions(expression=expression)
             ]
         else:
             # Retrieves the selected partitions
             selected_partitions = tuple(
                 self.partitioning.parse(item)
-                for item in self.partitions(filters))
+                for item in self.partitions(expression=expression))
 
             # Build an indexer dictionary between the partition scheme and
             # indexers.
@@ -594,7 +602,8 @@ class Collection:
         self,
         func: PartitionCallback,
         variable: str,
-        filters: Optional[str] = None,
+        *,
+        expression: Optional[str] = None,
     ) -> None:
         # pylint: disable=method-hidden
         """Update the selected partitions.
@@ -602,7 +611,7 @@ class Collection:
         Args:
             func: The function to apply on each partition.
             variable: The variable to update.
-            filters: The filters to select the partition to update.
+            expression: The expression used to select the partitions to update.
 
         Examples:
             >>> import dask.array
@@ -615,7 +624,7 @@ class Collection:
         _LOGGER.info("Updating of the %r variable in the collection", variable)
         arrays = []
         client = utilities.get_client()
-        for partition in self.partitions(filters):
+        for partition in self.partitions(expression=expression):
             arrays.append((storage.open_zarr_group(partition,
                                                    self.fs), partition))
 
@@ -707,6 +716,7 @@ class Collection:
 
     def iterate_on_records(
         self,
+        *,
         relative: bool = False,
     ) -> Iterator[Tuple[str, zarr.Group]]:
         """Iterate over the partitions and the zarr groups.
@@ -758,12 +768,17 @@ def create_collection(
     """
     if isinstance(ds, xarray.Dataset):
         ds = dataset.Dataset.from_xarray(ds)
-    return Collection(axis, ds.metadata(), partition_handler,
-                      partition_base_dir, "w", **kwargs)
+    return Collection(axis,
+                      ds.metadata(),
+                      partition_handler,
+                      partition_base_dir,
+                      mode="w",
+                      **kwargs)
 
 
 # pylint: disable=redefined-builtin
 def open_collection(path: str,
+                    *,
                     mode: Optional[str] = None,
                     **kwargs) -> Collection:
     """Open a collection.
@@ -781,5 +796,5 @@ def open_collection(path: str,
         >>> collection = zcollection.open_collection(
         ...     "/tmp/mycollection", mode="r")
     """
-    return Collection.from_config(path, mode, **kwargs)
+    return Collection.from_config(path, mode=mode, **kwargs)
     # pylint: enable=redefined-builtin

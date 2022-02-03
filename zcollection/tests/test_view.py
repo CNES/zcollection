@@ -51,7 +51,7 @@ def test_view(dask_cluster, arg, request):
     with pytest.raises(ValueError):
         instance.add_variable(var)
 
-    instance = view.open_view(str(tested_fs.view), tested_fs.fs)
+    instance = view.open_view(str(tested_fs.view), filesystem=tested_fs.fs)
     ds = instance.load()
     assert ds is not None
 
@@ -74,4 +74,4 @@ def test_view(dask_cluster, arg, request):
     instance.drop_variable("var3")
 
     with pytest.raises(ValueError):
-        view.open_view(str(tested_fs.collection), tested_fs.fs)
+        view.open_view(str(tested_fs.collection), filesystem=tested_fs.fs)

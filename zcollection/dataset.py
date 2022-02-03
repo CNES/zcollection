@@ -477,6 +477,7 @@ class Dataset:
 
     def add_variable(self,
                      variable: meta.Variable,
+                     /,
                      data: Optional[ArrayLike] = None):
         """Add a variable to the dataset.
 

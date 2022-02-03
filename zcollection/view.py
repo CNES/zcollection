@@ -157,6 +157,7 @@ class View:
         self,
         base_dir: str,
         view_ref: ViewReference,
+        *,
         ds: Optional[meta.Dataset] = None,
         filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
         synchronizer: Optional[sync.Sync] = None,
@@ -208,6 +209,7 @@ class View:
     def from_config(
         cls,
         path: str,
+        *,
         filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
         synchronizer: Optional[sync.Sync] = None,
     ) -> "View":
@@ -326,12 +328,13 @@ class View:
 
     def load(
         self,
-        filters: Optional[str] = None,
+        *,
+        expression: Optional[str] = None,
     ) -> Optional[dataset.Dataset]:
         """Load the view.
 
         Args:
-            filters: The filters to select the partition to load.
+            expression: The expression used to select the partitions to load.
 
         Returns:
             The dataset.
@@ -342,7 +345,9 @@ class View:
         client = utilities.get_client()
         futures = client.map(
             _load_dataset,
-            tuple(self.view_ref.partitions(filters, relative=True)),
+            tuple(
+                self.view_ref.partitions(expression=expression,
+                                         relative=True)),
             base_dir=self.base_dir,
             fs=self.fs,
             view_ref=ViewReference(self.view_ref.partition_properties.dir,
@@ -368,7 +373,8 @@ class View:
         self,
         func: collection.PartitionCallback,
         variable: str,
-        filters: Optional[str] = None,
+        *,
+        expression: Optional[str] = None,
     ) -> None:
         """Update a variable stored int the view.
 
@@ -376,7 +382,7 @@ class View:
             func: The function to apply to calculate the new values for the
                 target variable.
             variable: The name of the variable to update.
-            filters: The filters to select the partition to update.
+            expression: The expression to select the partition to update.
 
         Raises:
             ValueError: If the variable does not exist or if the variable
@@ -397,7 +403,9 @@ class View:
         client = utilities.get_client()
         futures = client.map(
             _load_dataset,
-            tuple(self.view_ref.partitions(filters, relative=True)),
+            tuple(
+                self.view_ref.partitions(expression=expression,
+                                         relative=True)),
             base_dir=self.base_dir,
             fs=self.fs,
             view_ref=ViewReference(self.view_ref.partition_properties.dir,
@@ -420,11 +428,13 @@ class View:
         storage.execute_transaction(client, self.synchronizer, futures)
 
 
-def create_view(path: str,
-                view_ref: ViewReference,
-                filesystem: Optional[Union[fsspec.AbstractFileSystem,
-                                           str]] = None,
-                synchronizer: Optional[sync.Sync] = None) -> View:
+def create_view(
+    path: str,
+    view_ref: ViewReference,
+    *,
+    filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
+    synchronizer: Optional[sync.Sync] = None,
+) -> View:
     """Create a new view.
 
     Args:
@@ -448,10 +458,12 @@ def create_view(path: str,
                 synchronizer=synchronizer)
 
 
-def open_view(path: str,
-              filesystem: Optional[Union[fsspec.AbstractFileSystem,
-                                         str]] = None,
-              synchronizer: Optional[sync.Sync] = None) -> View:
+def open_view(
+    path: str,
+    *,
+    filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
+    synchronizer: Optional[sync.Sync] = None,
+) -> View:
     """Open an existing view.
 
     Args:

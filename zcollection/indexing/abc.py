@@ -79,7 +79,7 @@ class Indexer:
 
     Args:
         path: The path to the index.
-        fs: The filesystem to use.
+        filesystem: The filesystem to use.
     """
     #: The name of the column containing the start of the slice.
     START = "start"
@@ -90,14 +90,15 @@ class Indexer:
     def __init__(
         self,
         path: Union[pathlib.Path, str],
-        fs: Optional[fsspec.AbstractFileSystem] = None,
+        *,
+        filesystem: Optional[fsspec.AbstractFileSystem] = None,
     ) -> None:
         if isinstance(path, pathlib.Path):
             path = str(path)
         #: Path to the index.
         self._path = path
         #: Filesystem to use.
-        self._fs = fs or fsspec.filesystem("file")
+        self._fs = filesystem or fsspec.filesystem("file")
         #: Metadata to attach to the index.
         self._meta: Dict[str, bytes] = {}
         #: Partitioning keys of the indexed collection.
@@ -200,7 +201,7 @@ class Indexer:
         """
         partition_schema = tuple((name, getattr(pyarrow, value)())
                                  for name, value in ds.partitioning.dtype())
-        self = cls(path, filesystem)
+        self = cls(path, filesystem=filesystem)
         self._meta = meta or {}
         self._set_schema(partition_schema, **kwargs)
         return self
@@ -211,6 +212,7 @@ class Indexer:
         cls,
         path: Union[pathlib.Path, str],
         ds: collection.Collection,
+        *,
         filesystem: Optional[fsspec.AbstractFileSystem] = None,
         **kwargs,
     ) -> "Indexer":
@@ -230,6 +232,7 @@ class Indexer:
     def open(
         cls,
         path: Union[pathlib.Path, str],
+        *,
         filesystem: Optional[fsspec.AbstractFileSystem] = None,
     ) -> "Indexer":
         """Open an index.
@@ -241,7 +244,7 @@ class Indexer:
         Returns:
             The index.
         """
-        self = cls(path, filesystem)
+        self = cls(path, filesystem=filesystem)
         with self._fs.open(path, "rb") as stream:
             schema = pyarrow.parquet.read_schema(stream)
         columns = tuple(name for name, _ in self.dtype())
@@ -333,6 +336,7 @@ class Indexer:
     def update(
         self,
         ds: collection.Collection,
+        *,
         bag_partition_size: Optional[int] = None,
         bag_npartitions: Optional[int] = None,
     ) -> None:
@@ -399,6 +403,7 @@ class Indexer:
     def query(
         self,
         columns: QueryDict,
+        *,
         logical_op: Optional[str] = None,
     ) -> collection.Indexer:
         """

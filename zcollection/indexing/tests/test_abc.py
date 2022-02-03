@@ -158,7 +158,7 @@ def test_indexer(dask_cluster, local_fs):
         partitioning.Date(("time", ), "M"),
         partition_base_dir=str(local_fs.collection),
         filesystem=local_fs.fs)
-    zcollection.insert(ds, collection.merging.merge_time_series)
+    zcollection.insert(ds, merge_callable=collection.merging.merge_time_series)
 
     indexer = HalfOrbitIndexer.create(str(
         local_fs.collection.joinpath("index.parquet")),
@@ -219,5 +219,5 @@ def test_indexer(dask_cluster, local_fs):
     assert set(selection.variables['cycle_number'].values) == {2, 4}
     assert set(selection.variables['pass_number'].values) == {1, 5}
 
-    indexer = abc.Indexer("", fsspec.filesystem("memory"))
+    indexer = abc.Indexer("", filesystem=fsspec.filesystem("memory"))
     assert indexer.query(dict(cycle_number=[2, 4])) == tuple()
