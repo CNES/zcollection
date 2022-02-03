@@ -10,6 +10,7 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
+import importlib.metadata
 import pathlib
 import sys
 
@@ -25,7 +26,11 @@ copyright = '(2022, CNES/CLS)'
 author = 'CLS'
 
 # The full version, including alpha/beta/rc tags
-release = '0.0'
+try:
+    release = importlib.metadata.version(project)
+except importlib.metadata.PackageNotFoundError:
+    release = '0.0.0'
+version = '.'.join(release.split('.')[:2])
 
 # -- General configuration ---------------------------------------------------
 
