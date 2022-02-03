@@ -60,7 +60,7 @@ and S3 file systems have been tested.
    :caption: Contents:
 
    install
-   first_steps
+   auto_examples/index.rst
    api
 
 Indices and tables

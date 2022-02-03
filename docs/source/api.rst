@@ -42,7 +42,6 @@ Collection
   zcollection.sync
   zcollection.typing
   zcollection.utilities
-  zcollection.version
   zcollection.view
 
 Indexing

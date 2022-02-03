@@ -13,7 +13,10 @@
 import pathlib
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent))
+HERE = pathlib.Path(__file__).absolute().parent
+
+# Insert the project root dir as the first element in the PYTHONPATH.
+sys.path.insert(0, str(HERE.parent.parent))
 
 # -- Project information -----------------------------------------------------
 
@@ -30,11 +33,12 @@ release = '0.0'
 # extensions coming with Sphinx (named "sphinx.ext.*") or your custom
 # ones.
 extensions = [
+    "sphinx_gallery.gen_gallery",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
-    "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "sphinx.ext.mathjax",
+    "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
 ]
 
@@ -79,4 +83,11 @@ intersphinx_mapping = {
     "python": ("http://docs.python.org/", None),
     "xarray": ("http://xarray.pydata.org/en/stable/", None),
     "zarr": ("https://zarr.readthedocs.io/en/stable", None),
+}
+
+# -- Extension configuration -------------------------------------------------
+sphinx_gallery_conf = {
+    'examples_dirs': [HERE.joinpath("examples")],
+    'filename_pattern': r'[\\\/]ex_',
+    'pypandoc': True,
 }
