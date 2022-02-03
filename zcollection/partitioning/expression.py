@@ -6,9 +6,9 @@
 Handles the partition selection expressions
 ===========================================
 """
+from typing import Any, ClassVar, Dict
 import ast
 import dataclasses
-from typing import Any, ClassVar, Dict
 
 
 @dataclasses.dataclass

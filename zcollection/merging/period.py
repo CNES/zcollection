@@ -6,9 +6,9 @@
 Time period
 ===========
 """
+from typing import Any, Optional, Tuple, Union
 import enum
 import re
-from typing import Any, Optional, Tuple, Union
 
 import numpy
 

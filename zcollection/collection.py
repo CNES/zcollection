@@ -8,12 +8,6 @@ Collection of Zarr groups
 """
 from __future__ import annotations
 
-import dataclasses
-import io
-import json
-import logging
-import pathlib
-import types
 from typing import (
     Any,
     Callable,
@@ -28,6 +22,12 @@ from typing import (
     Tuple,
     Union,
 )
+import dataclasses
+import io
+import json
+import logging
+import pathlib
+import types
 
 import dask
 import dask.array

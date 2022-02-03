@@ -10,13 +10,13 @@ import fsspec
 import numpy
 import zarr
 
+# pylint: enable=unused-import
+from .. import _update_fs, merge_time_series, perform
 from ... import sync
 from ...tests import data
 # pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_cluster
 from ...tests.fs import local_fs
-# pylint: enable=unused-import
-from .. import _update_fs, merge_time_series, perform
 
 
 class MyError(RuntimeError):

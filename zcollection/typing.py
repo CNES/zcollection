@@ -6,8 +6,8 @@
 Numpy typings
 =============
 """
-import sys
 from typing import TYPE_CHECKING, Any, Union
+import sys
 
 import dask.array
 import numpy

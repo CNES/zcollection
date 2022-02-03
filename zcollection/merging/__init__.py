@@ -6,8 +6,8 @@
 Handle merging of datasets of a partition.
 ==========================================
 """
-import random
 from typing import Optional, Protocol
+import random
 
 import fsspec
 import zarr.storage

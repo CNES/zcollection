@@ -8,9 +8,6 @@ Dataset
 """
 from __future__ import annotations
 
-import collections
-import functools
-import operator
 from typing import (
     Any,
     Dict,
@@ -22,6 +19,9 @@ from typing import (
     Type,
     Union,
 )
+import collections
+import functools
+import operator
 
 import dask.array
 import numcodecs.abc

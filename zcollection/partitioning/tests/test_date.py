@@ -6,16 +6,16 @@
 Test partitioning by date.
 ==========================
 """
-import pickle
 from typing import Iterator
+import pickle
 
 import dask.array
 import numpy
 import pytest
 import xarray
 
-from ... import dataset
 from .. import Date, get_codecs
+from ... import dataset
 
 
 def test_split_dataset():

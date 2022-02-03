@@ -2,14 +2,15 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-import pathlib
 from typing import Dict, Iterator, List, Optional, Tuple, Union
+import pathlib
 
 import fsspec
 import numpy
 import pyarrow
 import pytest
 
+from .. import abc
 from ... import collection, dataset, partitioning
 from ...partitioning.tests import data
 # pylint: disable=unused-import # Need to import for fixtures
@@ -17,7 +18,6 @@ from ...tests.cluster import dask_cluster
 from ...tests.fs import local_fs
 # pylint: enable=unused-import
 from ...typing import NDArray
-from .. import abc
 
 
 def split_half_orbit(

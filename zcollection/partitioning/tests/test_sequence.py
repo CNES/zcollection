@@ -6,17 +6,17 @@
 Test partitioning by sequence.
 ==============================
 """
-import pickle
 from typing import Dict, Iterator
+import pickle
 
 import dask.array
 import numpy
 import pytest
 import xarray
 
-from ... import dataset
-from .. import Sequence, get_codecs
 from . import data
+from .. import Sequence, get_codecs
+from ... import dataset
 
 
 def test_construction():

@@ -9,8 +9,8 @@ import copy
 
 import numpy
 
-from ...tests import data
 from .. import time_series
+from ...tests import data
 
 
 def test_merge_disjoint():

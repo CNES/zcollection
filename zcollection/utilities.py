@@ -6,8 +6,8 @@
 Internal utilities
 ==================
 """
-import time
 from typing import Any, Callable, Iterator, List, Optional, Set, Tuple, Union
+import time
 
 import dask.distributed
 import fsspec

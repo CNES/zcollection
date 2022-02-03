@@ -8,9 +8,6 @@ Partitioning scheme.
 """
 from __future__ import annotations
 
-import abc
-import collections
-import re
 from typing import (
     Any,
     ClassVar,
@@ -21,6 +18,9 @@ from typing import (
     Tuple,
     Union,
 )
+import abc
+import collections
+import re
 
 import dask.array
 import numpy

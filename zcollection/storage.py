@@ -6,10 +6,10 @@
 I/O operations
 ==============
 """
+from typing import Any, Sequence, Tuple, Union
 import collections
 import json
 import logging
-from typing import Any, Sequence, Tuple, Union
 
 import dask
 import dask.array

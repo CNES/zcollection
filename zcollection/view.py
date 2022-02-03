@@ -6,10 +6,10 @@
 View on a reference collection.
 ===============================
 """
+from typing import ClassVar, Optional, Sequence, Tuple, Union
 import dataclasses
 import json
 import logging
-from typing import ClassVar, Optional, Sequence, Tuple, Union
 
 import dask.array
 import fsspec

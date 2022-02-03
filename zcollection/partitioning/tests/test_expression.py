@@ -6,15 +6,15 @@
 Tests of the expression evaluation
 ==================================
 """
-import timeit
 from typing import Optional
+import timeit
 
 import numpy
 import pytest
 import xarray
 
-from ... import dataset
 from .. import Date, Expression
+from ... import dataset
 
 
 def make_dataset(num_samples: Optional[int] = None) -> dataset.Dataset:

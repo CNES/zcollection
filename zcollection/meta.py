@@ -8,8 +8,8 @@ Configuration metadata
 """
 from __future__ import annotations
 
-import abc
 from typing import Any, Dict, Optional, Sequence, Tuple
+import abc
 
 import numcodecs.abc
 import numpy

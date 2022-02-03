@@ -9,8 +9,8 @@ Merging a time series
 import dask
 import numpy
 
-from .. import dataset
 from . import period
+from .. import dataset
 
 
 def merge_time_series(

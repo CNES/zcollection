@@ -11,8 +11,8 @@ from typing import ClassVar, Dict, Iterator
 import dask.array
 import numpy
 
-from ..typing import NDArray
 from . import abc
+from ..typing import NDArray
 
 
 def _is_monotonic(arr: NDArray) -> bool:
