@@ -196,7 +196,7 @@ indexer.table.to_pandas()
 
 # %%
 # This index can now be used to load a part of a collection.
-selection = collection.load(indexers=indexer.query(dict(pass_number=[1, 2])))
+selection = collection.load(indexer=indexer.query(dict(pass_number=[1, 2])))
 assert selection is not None
 selection.to_xarray().compute()
 

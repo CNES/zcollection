@@ -175,7 +175,7 @@ def test_indexer(dask_cluster, local_fs):
     indexer.update(zcollection)
     assert isinstance(indexer.table, pyarrow.Table)
 
-    selection = zcollection.load(indexers=indexer.query(dict(cycle_number=2)))
+    selection = zcollection.load(indexer=indexer.query(dict(cycle_number=2)))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2}
 
@@ -187,24 +187,24 @@ def test_indexer(dask_cluster, local_fs):
 
     # Updating the index should not change the indexer.
     indexer.update(zcollection)
-    other = zcollection.load(indexers=indexer.query(dict(cycle_number=2)))
+    other = zcollection.load(indexer=indexer.query(dict(cycle_number=2)))
     assert other is not None
     assert numpy.all(
         other["observation"].values == selection["observation"].values)
 
     selection = zcollection.load(
-        indexers=indexer.query(dict(cycle_number=[2, 4])))
+        indexer=indexer.query(dict(cycle_number=[2, 4])))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2, 4}
 
     selection = zcollection.load(
-        indexers=indexer.query(dict(cycle_number=[2, 4], pass_number=1)))
+        indexer=indexer.query(dict(cycle_number=[2, 4], pass_number=1)))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2, 4}
     assert set(selection.variables['pass_number'].values) == {1}
 
     selection = zcollection.load(
-        indexers=indexer.query(dict(cycle_number=[2, 4], pass_number=[1, 5])))
+        indexer=indexer.query(dict(cycle_number=[2, 4], pass_number=[1, 5])))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2, 4}
     assert set(selection.variables['pass_number'].values) == {1, 5}
@@ -214,7 +214,7 @@ def test_indexer(dask_cluster, local_fs):
                                     filesystem=local_fs.fs)
     assert indexer.meta == dict(attribute=b"value")
     selection = zcollection.load(
-        indexers=indexer.query(dict(cycle_number=[2, 4], pass_number=[1, 5])))
+        indexer=indexer.query(dict(cycle_number=[2, 4], pass_number=[1, 5])))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2, 4}
     assert set(selection.variables['pass_number'].values) == {1, 5}

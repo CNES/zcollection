@@ -115,28 +115,27 @@ def test_insert(dask_cluster, arg, request):
     numpy.all(values == numpy.vstack((numpy.arange(values.shape[0]), ) *
                                      values.shape[1]).T)
 
-    data = zcollection.load(expression="year == 2020")
+    data = zcollection.load(select="year == 2020")
     assert data is None
 
-    data = zcollection.load(expression="year == 2000")
+    data = zcollection.load(select="year == 2000")
     assert data is not None
     assert data.variables["time"].shape[0] == 61
 
-    data = zcollection.load(expression="year == 2000 and month == 4")
+    data = zcollection.load(select="year == 2000 and month == 4")
     assert data is not None
     dates = data.variables["time"].values
     assert numpy.all(
         dates.astype("datetime64[M]") == numpy.datetime64("2000-04-01"))
 
-    data = zcollection.load(
-        expression="year == 2000 and month == 4 and day == 15")
+    data = zcollection.load(select="year == 2000 and month == 4 and day == 15")
     assert data is not None
     dates = data.variables["time"].values
     assert numpy.all(
         dates.astype("datetime64[D]") == numpy.datetime64("2000-04-15"))
 
     data = zcollection.load(
-        expression="year == 2000 and month == 4 and day in range(5, 25)")
+        select="year == 2000 and month == 4 and day in range(5, 25)")
     assert data is not None
     dates = data.variables["time"].values.astype("datetime64[D]")
     assert dates.min() == numpy.datetime64("2000-04-06")
@@ -184,7 +183,7 @@ def test_drop_partitions(dask_cluster, arg, request):
         item.split(zcollection.fs.sep)[-2] for item in all_partitions
     ]
 
-    zcollection.drop_partitions(expression="year == 2000 and month==1")
+    zcollection.drop_partitions(select="year == 2000 and month==1")
     partitions = list(zcollection.partitions())
     assert "month=01" not in [
         item.split(zcollection.fs.sep)[-2] for item in partitions
@@ -438,7 +437,7 @@ def test_indexer(dask_cluster, arg, request):
     indexers = zcollection.map(
         lambda x: slice(0, x.dimensions["num_lines"])  # type: ignore
     ).compute()
-    ds1 = zcollection.load(indexers=indexers)
+    ds1 = zcollection.load(indexer=indexers)
     assert ds1 is not None
     ds2 = zcollection.load()
     assert ds2 is not None
