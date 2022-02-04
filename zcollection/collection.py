@@ -39,7 +39,16 @@ import xarray
 import zarr
 import zarr.storage
 
-from . import dataset, merging, meta, partitioning, storage, sync, utilities
+from . import (
+    dataset,
+    expression,
+    merging,
+    meta,
+    partitioning,
+    storage,
+    sync,
+    utilities,
+)
 from .typing import ArrayLike
 
 #: Type of functions to handle partitions.
@@ -352,20 +361,20 @@ class Collection:
     def _is_selected(
         self,
         partition: Sequence[str],
-        expression: Optional[partitioning.Expression],
+        expr: Optional[expression.Expression],
     ) -> bool:
         """Return whether the partition is selected.
 
         Args:
             partition: The partition to check.
-            expression: The expression used to select the partition.
+            expr: The expression used to select the partition.
 
         Returns:
             Whether the partition is selected.
         """
-        if expression is not None:
+        if expr is not None:
             variables = dict(self.partitioning.parse("/".join(partition)))
-            return expression(variables)
+            return expr(variables)
         return True
 
     # pylint: disable=method-hidden
@@ -443,7 +452,7 @@ class Collection:
         Returns:
             The list of partitions.
         """
-        expr = partitioning.Expression(select) if select else None
+        expr = expression.Expression(select) if select else None
         base_dir = self.partition_properties.dir
         sep = self.fs.sep
         for root, dirs, files in utilities.fs_walk(self.fs,

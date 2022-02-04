@@ -13,8 +13,9 @@ import numpy
 import pytest
 import xarray
 
-from .. import Date, Expression
-from ... import dataset
+from .. import dataset
+from ..expression import Expression
+from ..partitioning import Date
 
 
 def make_dataset(num_samples: Optional[int] = None) -> dataset.Dataset:
