@@ -328,16 +328,20 @@ def test_fillvalue(dask_cluster, arg, request):
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs, with_fillvalue=True)
 
+    # Load the dataset written with masked values in the collection and
+    # compare it to the original dataset.
     data = zcollection.load()
     assert data is not None
 
+    ds = next(create_test_dataset_with_fillvalue())
+
     values = data.variables["var1"].values
     assert isinstance(values, numpy.ma.MaskedArray)
-    assert numpy.any(values.mask)  # type: ignore
+    assert numpy.ma.allclose(ds.variables["var1"].values, values)
 
     values = data.variables["var2"].values
     assert isinstance(values, numpy.ma.MaskedArray)
-    assert numpy.any(values.mask)  # type: ignore
+    assert numpy.ma.allclose(ds.variables["var2"].values, values)
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])

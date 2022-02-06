@@ -84,7 +84,7 @@ html_static_path = ["_static"]
 intersphinx_mapping = {
     "dask": ("https://docs.dask.org/en/latest/", None),
     "fsspec": ("https://filesystem-spec.readthedocs.io/en/latest/", None),
-    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
     "python": ("http://docs.python.org/", None),
     "xarray": ("http://xarray.pydata.org/en/stable/", None),
     "zarr": ("https://zarr.readthedocs.io/en/stable", None),

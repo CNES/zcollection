@@ -123,7 +123,7 @@ def write_zarr_variable(
     """
     name, variable = args
     kwargs = dict(filters=variable.filters)
-    data = variable.raw_data
+    data = variable.array
 
     with dask.config.set(scheduler="synchronous"):
         data = data.rechunk(

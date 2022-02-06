@@ -28,7 +28,7 @@ import numcodecs.abc
 import numpy
 import xarray
 
-from . import meta
+from . import expression, meta
 from .meta import Attribute
 from .typing import ArrayLike, NDArray, NDMaskedArray
 
@@ -149,7 +149,7 @@ def _dataset_repr(ds: "Dataset") -> str:
         dims_str = f"({', '.join(map(str, variable.dimensions))} "
         name_str = f"    {name:<{width}s} {dims_str} {variable.dtype}"
         lines.append(
-            _pretty_print(f"{name_str}: {_dask_repr(variable.raw_data)}"))
+            _pretty_print(f"{name_str}: {_dask_repr(variable.array)}"))
     # Attributes
     if len(ds.attrs):
         lines.append("  Attributes:")
@@ -171,7 +171,7 @@ def _variable_repr(var: "Variable") -> str:
     dims_str = _dimensions_repr(dict(zip(var.dimensions, var.shape)))
     lines = [
         f"<{var.__module__}.{var.__class__.__name__} {dims_str}>",
-        f"{var.raw_data!r}"
+        f"{var.array!r}"
     ]
     # Attributes
     if len(var.attrs):
@@ -188,6 +188,36 @@ def _variable_repr(var: "Variable") -> str:
     return "\n".join(lines)
 
 
+def _asarray(
+    arr: ArrayLike,
+    fill_value: Optional[Any] = None,
+) -> Tuple[dask.array.Array, Any]:
+    """Convert an array-like object to a dask array.
+
+    Args:
+        arr: An array-like object.
+        fill_value: The fill value.
+
+    Returns:
+        If the data provided is a masked array, the functions returns a tuple
+        containing:
+        - an array with masked data replaced by its fill value
+        - the fill value of the provided masked array
+        otherwise:
+        - the provided array
+        - the provided fill value
+    """
+    result = dask.array.asarray(arr)  # type: dask.array.Array
+    _meta = result._meta  # pylint: disable=protected-access
+    if isinstance(_meta, numpy.ma.MaskedArray):
+        if fill_value is not None and fill_value != _meta.fill_value:
+            raise ValueError(
+                f"The fill value {fill_value!r} does not match the fill value "
+                f"{_meta.fill_value!r} of the array.")
+        return dask.array.ma.filled(result, _meta.fill_value), _meta.fill_value
+    return result, fill_value
+
+
 class Variable:
     """Variables hold multi-dimensional arrays of data
 
@@ -200,7 +230,7 @@ class Variable:
         fill_value: Value to use for uninitialized values
         filters: Filters to apply before writing data to disk
     """
-    __slots__ = ("_raw_data", "name", "dimensions", "attrs", "compressor",
+    __slots__ = ("_array", "name", "dimensions", "attrs", "compressor",
                  "fill_value", "filters")
 
     def __init__(
@@ -212,10 +242,11 @@ class Variable:
             compressor: Optional[numcodecs.abc.Codec] = None,
             fill_value: Optional[Any] = None,
             filters: Optional[Sequence[numcodecs.abc.Codec]] = None) -> None:
+        array, fill_value = _asarray(data, fill_value)
         #: Variable name
         self.name = name
-        #: Variable data
-        self._raw_data: dask.array.Array = dask.array.asarray(data)
+        #: Variable data as a dask array.
+        self._array = array
         #: Variable dimensions
         self.dimensions = dimensions
         #: Variable attributes
@@ -230,12 +261,12 @@ class Variable:
     @property
     def dtype(self) -> numpy.dtype:
         """Return the data type of the variable"""
-        return self._raw_data.dtype
+        return self._array.dtype
 
     @property
     def shape(self) -> Tuple[int, ...]:
         """Return the shape of the variable"""
-        return self._raw_data.shape
+        return self._array.shape
 
     @property
     def size(self: Any) -> int:
@@ -253,7 +284,7 @@ class Variable:
         Returns:
             Variable metadata
         """
-        return meta.Variable(self.name, self._raw_data.dtype, self.dimensions,
+        return meta.Variable(self.name, self.dtype, self.dimensions,
                              self.attrs, self.compressor, self.fill_value,
                              self.filters)
 
@@ -263,7 +294,7 @@ class Variable:
         return self.metadata() == other.metadata()
 
     @property
-    def raw_data(self) -> dask.array.Array:
+    def array(self) -> dask.array.Array:
         """Return the dask array underlying the variable.
 
         Returns:
@@ -273,23 +304,20 @@ class Variable:
 
             :meth:`Variable.data`
         """
-        return self._raw_data
+        return self._array
 
-    @raw_data.setter
-    def raw_data(self, data: Any) -> None:
-        """Set the dask array underlying the variable.
+    def persist(self, **kwargs) -> "Variable":
+        """Persist the variable data into memory.
 
         Args:
-            data: The new data to use
+            **kwargs: Keyword arguments passed to
+                :func:`dask.array.Array.persist`.
 
-        Raises:
-            ValueError: If the shape of the data does not match the shape of
-                the stored data.
+        Returns:
+            The variable
         """
-        data = dask.array.asarray(data)
-        if len(data.shape) != len(self.dimensions):
-            raise ValueError("data shape does not match variable dimensions")
-        self._raw_data = data
+        self._array = self._array.persist()
+        return self
 
     @property
     def data(self) -> dask.array.Array:
@@ -302,10 +330,30 @@ class Variable:
 
         .. seealso::
 
-            :meth:`Variable.raw_data`
+            :meth:`Variable.array`
         """
-        return (self._raw_data if self.fill_value is None else
-                dask.array.ma.masked_equal(self._raw_data, self.fill_value))
+        return (self._array if self.fill_value is None else
+                dask.array.ma.masked_equal(self._array, self.fill_value))
+
+    @data.setter
+    def data(self, data: Any) -> None:
+        """Defines the underlying dask array. If the data provided is a masked
+        array, it's converted to an array, where the masked values are replaced
+        by its fill value, and its fill value becomes the new fill value of this
+        instance. Otherwise, the underlying array is defined as the new data
+        and the fill value is set to None.
+
+        Args:
+            data: The new data to use
+
+        Raises:
+            ValueError: If the shape of the data does not match the shape of
+                the stored data.
+        """
+        data, fill_value = _asarray(data, self.fill_value)
+        if len(data.shape) != len(self.dimensions):
+            raise ValueError("data shape does not match variable dimensions")
+        self._array, self.fill_value = data, fill_value
 
     @property
     def values(self) -> Union[NDArray, NDMaskedArray]:
@@ -372,19 +420,15 @@ class Variable:
             raise ValueError("other must be a non-empty sequence")
         try:
             axis = self.dimensions.index(dim)
-            result = self.duplicate(self._raw_data)
-            # pylint: disable=protected-access
-            # (_raw_data is a protected member of this class)
-            result._raw_data = dask.array.concatenate(
-                [self._raw_data, *[item._raw_data for item in other]],
-                axis=axis)
-            # pylint: enable=protected-access
+            result = self.duplicate(self._array)
+            result._array = dask.array.concatenate(
+                [self._array, *[item._array for item in other]], axis=axis)
             return result
         except ValueError:
             # If the concatenation dimension is not within the dimensions of the
             # variable, then the original variable is returned (i.e.
             # concatenation is not necessary).
-            return self.duplicate(self._raw_data)
+            return self.duplicate(self._array)
 
     def to_xarray(self) -> xarray.Variable:
         """Convert the variable to an xarray.Variable
@@ -397,7 +441,7 @@ class Variable:
             encoding["filters"] = self.filters
         if self.compressor:
             encoding["compressor"] = self.compressor
-        data = self._raw_data
+        data = self._array
         if self.dtype.kind == "M":
             # xarray need a datetime64[ns] dtype
             data = data.astype("datetime64[ns]")
@@ -410,11 +454,138 @@ class Variable:
             attrs["_FillValue"] = self.fill_value
         return xarray.Variable(self.dimensions, data, attrs, encoding)
 
+    def masked_values(self,
+                      value: float,
+                      *,
+                      rtol=1e-5,
+                      atol=1e-8,
+                      shrink: bool = True) -> "Variable":
+        """Create a new variable masked where approximately equal to the
+        value provided.
+
+        Args:
+            value: Masking value
+            rtol, atol: Tolerance parameters passed on to
+                :py:func:`numpy.isclose`
+
+        Return:
+            The variable masked where approximately equal to value.
+        """
+        data = dask.array.ma.masked_values(self._array,
+                                           value,
+                                           rtol=rtol,
+                                           atol=atol,
+                                           shrink=shrink)
+        return Variable(self.name, data, self.dimensions, self.attrs,
+                        self.compressor, None, self.filters)
+
+    def masked_where(self, condition: Any) -> "Variable":
+        """Create a new variable with the data masked according to the
+        provided mask.
+
+        Args:
+            condition: Masking condition.
+
+        Returns:
+            New variable.
+        """
+        condition = dask.array.asarray(condition)
+        if condition.shape != self.shape:
+            raise IndexError(
+                "Inconsistent shape between the condition and "
+                f"the input (got {self.shape} and {condition.shape})")
+        data = dask.array.ma.masked_where(condition, self._array)
+        return Variable(self.name, data, self.dimensions, self.attrs,
+                        self.compressor, None, self.filters)
+
     def __str__(self) -> str:
         return _variable_repr(self)
 
     def __repr__(self) -> str:
         return _variable_repr(self)
+
+    def __hash__(self) -> int:
+        return hash(self.name)
+
+    def __eq__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data == other.data
+        return self.data == other
+
+    def __ne__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data != other.data
+        return self.data != other
+
+    def __lt__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data < other.data
+        return self.data < other
+
+    def __le__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data <= other.data
+        return self.data <= other
+
+    def __gt__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data > other.data
+        return self.data > other
+
+    def __ge__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data >= other.data
+        return self.data >= other
+
+    def __add__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data + other.data
+        return self.data + other
+
+    def __sub__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data - other.data
+        return self.data - other
+
+    def __mul__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data * other.data
+        return self.data * other
+
+    def __truediv__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data / other.data
+        return self.data / other
+
+    def __floordiv__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data // other.data
+        return self.data // other
+
+    def __mod__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data % other.data
+        return self.data % other
+
+    def __pow__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data**other.data
+        return self.data**other
+
+    def __and__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data & other.data
+        return self.data & other
+
+    def __xor__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data ^ other.data
+        return self.data ^ other
+
+    def __or__(self, other: Any) -> dask.array.Array:
+        if isinstance(other, Variable):
+            return self.data | other.data
+        return self.data | other
 
 
 class Dataset:
@@ -431,7 +602,7 @@ class Dataset:
     __slots__ = ("dimensions", "variables", "attrs")
 
     def __init__(self,
-                 variables: Sequence[Variable],
+                 variables: Iterable[Variable],
                  attrs: Sequence[Attribute] = None) -> None:
         #: The list of global attributes on this dataset
         self.attrs = attrs or []
@@ -444,8 +615,8 @@ class Dataset:
         for var in self.variables.values():
             for ix, dim in enumerate(var.dimensions):
                 if dim not in self.dimensions:
-                    self.dimensions[dim] = var.raw_data.shape[ix]
-                elif self.dimensions[dim] != var.raw_data.shape[ix]:
+                    self.dimensions[dim] = var.array.shape[ix]
+                elif self.dimensions[dim] != var.array.shape[ix]:
                     raise ValueError(f"variable {var.name} has conflicting "
                                      "dimensions")
 
@@ -609,7 +780,7 @@ class Dataset:
             raise ValueError(
                 f"Slices contain invalid dimension name(s): {dims_invalid}")
         variables = [
-            var.duplicate(var.raw_data[tuple(
+            var.duplicate(var.array[tuple(
                 slices[dim] if dim in slices else slice(None)
                 for dim in var.dimensions)])
             for var in self.variables.values()
@@ -631,7 +802,7 @@ class Dataset:
         """
         variables = [
             var.duplicate(
-                dask.array.delete(var.raw_data, indexer,
+                dask.array.delete(var.array, indexer,
                                   var.dimensions.index(axis)))
             for var in self.variables.values()
         ]
@@ -648,7 +819,21 @@ class Dataset:
         ]
         return Dataset(variables=variables, attrs=self.attrs)
 
-    def concat(self, other: Union["Dataset", Sequence["Dataset"]],
+    def persist(self, **kwargs) -> "Dataset":
+        """Persist the dataset variables.
+
+        Args:
+            **kwargs: Additional parameters are passed to the function
+                :py:func:`dask.array.Array.persist`.
+
+        Returns:
+            The dataset with the variables persisted into memory.
+        """
+        for variable in self.variables.values():
+            variable.persist(**kwargs)
+        return self
+
+    def concat(self, other: Union["Dataset", Iterable["Dataset"]],
                dim: str) -> "Dataset":
         """Concatenate datasets along a dimension.
 
@@ -663,7 +848,7 @@ class Dataset:
             ValueError: If the provided sequence of datasets is empty.
         """
         variables = []
-        if not isinstance(other, Sequence):
+        if not isinstance(other, Iterable):
             other = [other]
         if not other:
             raise ValueError("cannot concatenate an empty sequence")
@@ -672,6 +857,44 @@ class Dataset:
             for name, variable in self.variables.items()
         ]
         return Dataset(variables=variables, attrs=self.attrs)
+
+    def masked_where(self, condition: Union[str, NDArray]) -> "Dataset":
+        """Mask the dataset where the expression evaluates to True.
+
+        Args:
+            condition: Masking consition. If a string, it is compiled as a
+                dask expression and evaluated as a boolean array. If an array,
+                it is used directly.
+
+        Returns:
+            New dataset.
+
+        Examples:
+            >>> ds = Dataset(
+            ...     variables=[
+            ...         Variable(
+            ...             name="a",
+            ...             data=np.array([1, 2, 3]),
+            ...             dimensions=("x",),
+            ...             attrs={"units": "m"}),
+            ...         Variable(
+            ...             name="b",
+            ...             data=np.array([4, 5, 6]),
+            ...             dimensions=("x",),
+            ...             attrs={"units": "m"})
+            ...     ],
+            ...     attrs={"units": "m"})
+            >>> ds.masked_where((ds["a"].data > 2) & (ds["b"].data > 5))
+            >>> ds.masked_where("(a > 2) & (b > 5)")
+        """
+        if isinstance(condition, str):
+            mask = expression.Expression(condition)(
+                {name: var.data
+                 for name, var in self.variables.items()})
+        else:
+            mask = condition
+        return Dataset((item.masked_where(mask)
+                        for item in self.variables.values()), self.attrs)
 
     def __str__(self) -> str:
         return _dataset_repr(self)

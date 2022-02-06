@@ -210,7 +210,7 @@ class Partitioning(abc.ABC):
                 is not monotonic.
         """
         variables = collections.OrderedDict(
-            (name, ds.variables[name].raw_data) for name in self.variables)
+            (name, ds.variables[name].array) for name in self.variables)
         # If the dask array is too chunked, the calculation is excessively
         # long.
         for item, array in variables.items():
@@ -237,7 +237,7 @@ class Partitioning(abc.ABC):
                 is not a one-dimensional array.
         """
         for item in self.variables:
-            if len(ds.variables[item].raw_data.shape) != 1:
+            if len(ds.variables[item].shape) != 1:
                 raise ValueError(f"f{item!r} must be a one-dimensional array")
         return ((self._partition(selection), {
             axis: indexer

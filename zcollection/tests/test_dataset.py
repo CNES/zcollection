@@ -24,14 +24,14 @@ def test_maybe_truncate():
     assert dataset._maybe_truncate(data, len(str(data))) == str(data)
 
 
-def create_test_variable(name="var1"):
+def create_test_variable(name="var1", fill_value=0):
     """Create a test variable"""
     return dataset.Variable(name=name,
                             data=numpy.arange(10, dtype="int64").reshape(5, 2),
                             dimensions=("x", "y"),
                             attrs=(dataset.Attribute(name="attr", value=1), ),
                             compressor=zarr.Blosc(cname="zstd", clevel=1),
-                            fill_value=0,
+                            fill_value=fill_value,
                             filters=(zarr.Delta("int64", "int32"),
                                      zarr.Delta("int32", "int32")))
 
@@ -67,19 +67,19 @@ def test_variable():
     assert isinstance(str(var), str)
     assert isinstance(repr(var), str)
 
-    var.raw_data = numpy.ones((10, 4), dtype="int64")
-    assert var.raw_data.shape == (10, 4)
-    assert isinstance(var.raw_data, dask.array.Array)
+    var.data = numpy.ones((10, 4), dtype="int64")
+    assert var.data.shape == (10, 4)
+    assert isinstance(var.data, dask.array.Array)
     assert numpy.all(var.values == 1)
 
     with pytest.raises(ValueError):
-        var.raw_data = numpy.ones((10, 4, 2), dtype="int64")
+        var.data = numpy.ones((10, 4, 2), dtype="int64")
 
 
 def test_variable_duplicate():
     """Test of the duplication of variables."""
     var = create_test_variable()
-    other = var.duplicate(var.raw_data * 2)
+    other = var.duplicate(var.array * 2)
     assert other.name == "var1"
     assert other.dtype == numpy.dtype("int64")
     assert other.shape == (5, 2)
@@ -161,6 +161,117 @@ def test_variable_timedelta64_to_xarray():
     assert xr_var.dtype.kind == "m"
 
 
+def test_variable_dimension_less():
+    """Concatenate two dimensionless variables.
+    """
+    data = numpy.array([0, 1], dtype=numpy.int32)
+    args = ("nv", data, ("nv", ), (dataset.Attribute("comment", "vertex"),
+                                   dataset.Attribute("units", "1")))
+    nv = dataset.Variable(*args)
+    assert nv.fill_value is None
+    metadata = nv.metadata()
+    assert metadata.fill_value is None
+    assert meta.Variable.from_config(metadata.get_config()) == metadata
+
+    other = dataset.Variable(*args)
+
+    concatenated = nv.concat((other, ), "time")
+    assert numpy.all(concatenated.values == nv.values)
+    assert concatenated.metadata() == nv.metadata()
+
+
+def test_variable_masked_values():
+    """Test the masked where function."""
+    var = create_test_variable(fill_value=None)
+    other = var.masked_values(1).values
+    assert isinstance(other, numpy.ma.MaskedArray)
+    assert numpy.all(other == numpy.ma.masked_values(var.values, 1))
+
+
+def test_variable_masked_where():
+    """Test the masked where function."""
+    var = create_test_variable(fill_value=None)
+    other = var.masked_where(var.data % 2 == 0)
+    x, y = other.values, var.values
+    assert isinstance(x, numpy.ma.MaskedArray)
+    assert numpy.all(x == numpy.ma.masked_where(y % 2 == 0, y))
+    other = other.masked_where(other.data % 2 == 1)
+    assert numpy.all(other.values.mask)  # type: ignore
+
+
+def test_variable_operators():
+    var = create_test_variable(fill_value=None)
+    var = var.duplicate(var.data + numpy.pi)
+    other = var.duplicate(var.data * 5)
+    result = (other > var).compute()
+    assert numpy.all(result == (other.values > var.values))
+    result = (var < other).compute()
+    assert numpy.all(result == (var.values < other.values))
+    result = (var == var).compute()
+    assert numpy.all(result == (var.values == var.values))
+    result = (var != other).compute()
+    assert numpy.all(result == (var.values != other.values))
+    result = (var >= other).compute()
+    assert numpy.all(result == (var.values >= other.values))
+    result = (var <= other).compute()
+    assert numpy.all(result == (var.values <= other.values))
+    result = (var + other).compute()
+    assert numpy.all(result == (var.values + other.values))
+    result = (var - other).compute()
+    assert numpy.all(result == (var.values - other.values))
+    result = (var * other).compute()
+    assert numpy.all(result == (var.values * other.values))
+    result = (var / other).compute()
+    assert numpy.all(result == (var.values / other.values))
+    result = (var**other).compute()
+    assert numpy.all(result == (var.values**other.values))
+    result = (var % other).compute()
+    assert numpy.all(result == (var.values % other.values))
+    result = (var // var).compute()
+    assert numpy.all(result == (var.values // var.values))
+    result = (var > 1.5).compute()
+    assert numpy.all(result == (var.values > 1.5))
+    result = (var < 1.5).compute()
+    assert numpy.all(result == (var.values < 1.5))
+    result = (var >= 1.5).compute()
+    assert numpy.all(result == (var.values >= 1.5))
+    result = (var <= 1.5).compute()
+    assert numpy.all(result == (var.values <= 1.5))
+    result = (var == 1.5).compute()
+    assert numpy.all(result == (var.values == 1.5))
+    result = (var != 1.5).compute()
+    assert numpy.all(result == (var.values != 1.5))
+    result = (var + 1.5).compute()
+    assert numpy.all(result == (var.values + 1.5))
+    result = (var - 1.5).compute()
+    assert numpy.all(result == (var.values - 1.5))
+    result = (var * 1.5).compute()
+    assert numpy.all(result == (var.values * 1.5))
+    result = (var / 1.5).compute()
+    assert numpy.all(result == (var.values / 1.5))
+    result = (var**1.5).compute()
+    assert numpy.all(result == (var.values**1.5))
+    result = (var % 1.5).compute()
+    assert numpy.all(result == (var.values % 1.5))
+    result = (var // 1.5).compute()
+    assert numpy.all(result == (var.values // 1.5))
+
+    var = create_test_variable()
+    other = var.duplicate(var.data * 3)
+    result = (var & other).compute()
+    assert numpy.all(result == (var.values & other.values))
+    result = (var | other).compute()
+    assert numpy.all(result == (var.values | other.values))
+    result = (var ^ other).compute()
+    assert numpy.all(result == (var.values ^ other.values))
+    result = (var ^ 3).compute()
+    assert numpy.all(result == (var.values ^ 3))
+    result = (var & 3).compute()
+    assert numpy.all(result == (var.values & 3))
+    result = (var | 3).compute()
+    assert numpy.all(result == (var.values | 3))
+
+
 def test_dataset():
     """Test dataset creation"""
     ds = create_test_dataset()
@@ -178,7 +289,7 @@ def test_dataset():
         ds["varX"]
     var2 = create_test_variable("var2")
     assert numpy.all(ds.variables["var2"].values == var2.values)
-    assert ds["var2"] == ds.variables["var2"]
+    assert id(ds["var2"]) == id(ds.variables["var2"])
     assert ds.variables["var2"].have_same_properties(var2)
     assert isinstance(ds.metadata(), meta.Dataset)
     other = ds.compute()
@@ -348,20 +459,18 @@ def test_dataset_add_variable():
         ds.add_variable(var)
 
 
-def test_variable_dimension_less():
-    """Concatenate two dimensionless variables.
-    """
-    data = numpy.array([0, 1], dtype=numpy.int32)
-    args = ("nv", data, ("nv", ), (dataset.Attribute("comment", "vertex"),
-                                   dataset.Attribute("units", "1")))
-    nv = dataset.Variable(*args)
-    assert nv.fill_value is None
-    metadata = nv.metadata()
-    assert metadata.fill_value is None
-    assert meta.Variable.from_config(metadata.get_config()) == metadata
-
-    other = dataset.Variable(*args)
-
-    concatenated = nv.concat((other, ), "time")
-    assert numpy.all(concatenated.values == nv.values)
-    assert concatenated.metadata() == nv.metadata()
+def test_dataset_masked_where():
+    """Test dataset creation"""
+    ds = create_test_dataset()
+    mask = ds["var2"].values == 1
+    other = ds.masked_where("var2 == 1")
+    assert numpy.all(other.variables["var1"].values == numpy.ma.masked_where(
+        mask, ds["var1"].values))
+    assert numpy.all(other.variables["var2"].values == numpy.ma.masked_where(
+        mask, ds["var2"].values))
+    mask = ((ds["var2"].values > 1) & (ds["var2"].values < 5))
+    other = ds.masked_where("(var2 > 1) & (var2 < 5)")
+    assert numpy.all(other.variables["var1"].values == numpy.ma.masked_where(
+        mask, ds["var1"].values))
+    assert numpy.all(other.variables["var2"].values == numpy.ma.masked_where(
+        mask, ds["var2"].values))

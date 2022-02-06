@@ -66,7 +66,7 @@ def test_split_dataset():
             xr_ds.where((xr_ds.cycle_number == cycle_number)
                         & (xr_ds.pass_number == pass_number),
                         drop=True).observation ==
-            subset.variables["observation"].raw_data)
+            subset.variables["observation"].array)
 
         partition_keys = partitioning.parse("/".join(partition))
         assert partition_keys == (("cycle_number", cycle_number),

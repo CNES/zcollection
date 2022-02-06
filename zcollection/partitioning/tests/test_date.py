@@ -92,7 +92,7 @@ def test_split_dataset():
             expected_selection = dates[(dates >= parsed_date)
                                        & (dates < parsed_date + timedelta)]
             assert numpy.all(
-                subset.variables["dates"].raw_data == expected_selection)
+                subset.variables["dates"].array == expected_selection)
 
             fields = partitioning.parse("/".join(partition))
             expected = (

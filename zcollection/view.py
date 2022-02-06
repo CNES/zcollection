@@ -113,7 +113,7 @@ def _load_dataset(
         return None
 
     _ = {
-        ds.add_variable(item.metadata(), item.raw_data)
+        ds.add_variable(item.metadata(), item.array)
         for item in (
             storage.open_zarr_array(
                 zarr.open(  # type: ignore
