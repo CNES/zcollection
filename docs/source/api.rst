@@ -12,7 +12,6 @@ Handles the partitioning of the collection.
   zcollection.partitioning
   zcollection.partitioning.abc
   zcollection.partitioning.date
-  zcollection.partitioning.expression
   zcollection.partitioning.registry
   zcollection.partitioning.sequence
 
@@ -38,6 +37,7 @@ Collection
 
   zcollection.collection
   zcollection.dataset
+  zcollection.expression
   zcollection.meta
   zcollection.sync
   zcollection.typing

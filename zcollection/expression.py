@@ -36,7 +36,7 @@ class Expression:
     def __init__(self, expression: str) -> None:
         self.code = compile(ast.parse(expression, mode="eval"), " ", "eval")
 
-    def __call__(self, variables: Dict[str, int]) -> bool:
+    def __call__(self, variables: Dict[str, Any]) -> Any:
         try:
             __locals = {
                 name: variables[name]
