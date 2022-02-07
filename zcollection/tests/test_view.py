@@ -11,7 +11,7 @@ import pytest
 
 from .. import meta, view
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_cluster
+from .cluster import dask_client
 from .data import create_test_collection
 from .fs import local_fs, s3, s3_base, s3_fs
 
@@ -19,7 +19,7 @@ from .fs import local_fs, s3, s3_base, s3_fs
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_view(dask_cluster, arg, request):
+def test_view(dask_client, arg, request):
     """Test the creation of a view"""
     # import dask.distributed
     # cluster = dask.distributed.LocalCluster(n_workers=1,

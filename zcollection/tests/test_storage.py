@@ -15,16 +15,16 @@ import zarr
 
 from .. import dataset, storage, sync
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_cluster
+from .cluster import dask_client
 from .fs import local_fs
 
 # pylint: enable=unused-import
 
 
-def test_execute_transaction(dask_cluster):
+def test_execute_transaction(dask_client):
     """Test the execute_transaction function."""
     # First case: no transaction to execute
-    assert storage.execute_transaction(dask_cluster, sync.NoSync(), []) is None
+    assert storage.execute_transaction(dask_client, sync.NoSync(), []) is None
 
     # General case: execute a transaction without error
     def func():
@@ -32,8 +32,8 @@ def test_execute_transaction(dask_cluster):
 
     assert sum(
         storage.execute_transaction(
-            dask_cluster, sync.NoSync(),
-            [dask_cluster.submit(func) for i in range(10)])) == 10
+            dask_client, sync.NoSync(),
+            [dask_client.submit(func) for i in range(10)])) == 10
 
     # Degraded case: execute a transaction with error
     def fail(data):
@@ -47,8 +47,8 @@ def test_execute_transaction(dask_cluster):
     futures = []
     try:
         futures += storage.execute_transaction(
-            dask_cluster, sync.NoSync(),
-            [dask_cluster.submit(fail, i) for i in range(10)])
+            dask_client, sync.NoSync(),
+            [dask_client.submit(fail, i) for i in range(10)])
     except ValueError:
         exception_seen = True
     assert exception_seen
@@ -110,7 +110,7 @@ def test_write_attrs(local_fs):
     assert local_fs.exists(str(local_fs.root.joinpath("var", storage.ZATTRS)))
 
 
-def test_write_variable(local_fs):
+def test_write_variable(local_fs, dask_client):
     """Test the write_variable function."""
     var = create_variable((1024, 1024))
     storage.write_zarr_variable(("var", var), str(local_fs.root), local_fs.fs)
@@ -126,13 +126,13 @@ def test_write_variable(local_fs):
     assert numpy.all(other.values == var.values)
 
 
-def test_write_zarr_group(local_fs, dask_cluster):
+def test_write_zarr_group(local_fs, dask_client):
     """Test the write_zarr_group function."""
     ds = create_dataset((1024, 1024))
     # memory fs does not support multi-processes
-    future = dask_cluster.submit(storage.write_zarr_group,
-                                 dask_cluster.scatter(ds), str(local_fs.root),
-                                 local_fs.fs, sync.NoSync())
+    future = dask_client.submit(storage.write_zarr_group,
+                                dask_client.scatter(ds), str(local_fs.root),
+                                local_fs.fs, sync.NoSync())
     future.result()
     mapper = local_fs.get_mapper(str(local_fs.root))
     zarray = zarr.open_group(mapper)
@@ -146,7 +146,7 @@ def test_write_zarr_group(local_fs, dask_cluster):
     assert other.metadata() == ds.metadata()
 
 
-def test_update_zarr_array(local_fs):
+def test_update_zarr_array(local_fs, dask_client):
     """Test the update_zarr_array function."""
     var = create_variable((1024, 1024), fill_value=10)
     storage.write_zarr_variable(("var", var), str(local_fs.root), local_fs.fs)
@@ -165,7 +165,7 @@ def test_update_zarr_array(local_fs):
     assert numpy.all(zarray[:, 0] == 10)
 
 
-def test_del_zarr_array(local_fs):
+def test_del_zarr_array(local_fs, dask_client):
     """Test the del_zarr_array function."""
     var = create_variable((1024, 1024))
     root = str(local_fs.root)
@@ -174,7 +174,7 @@ def test_del_zarr_array(local_fs):
     assert not local_fs.exists(str(local_fs.root.joinpath("var")))
 
 
-def test_add_zarr_array(local_fs):
+def test_add_zarr_array(local_fs, dask_client):
     """Test the add_zarr_array function."""
     var = create_variable((1024, 1024), fill_value=10)
     root = str(local_fs.root)

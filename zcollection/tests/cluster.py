@@ -2,13 +2,15 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
+import logging
+
 import dask.config
 import dask.distributed
 import pytest
 
 
 @pytest.fixture()
-def dask_cluster(pytestconfig, tmpdir):
+def dask_client(pytestconfig, tmpdir, request):
     """Launch a Dask LocalCluster with a configurable number of workers."""
     try:
         n_workers = int(pytestconfig.getoption("n_workers"))
@@ -27,11 +29,16 @@ def dask_cluster(pytestconfig, tmpdir):
         n_workers=n_workers,
         threads_per_worker=threads_per_worker,
         processes=False)
+
+    # Make sure we can connect to the cluster.
     client = dask.distributed.Client(cluster)
     client.wait_for_workers(1)
 
-    try:
-        yield client
-    finally:
+    def teardown():
+        """Teardown the cluster."""
         client.close()
         cluster.close()
+
+    request.addfinalizer(teardown)
+
+    return client

@@ -15,7 +15,7 @@ from .. import _update_fs, merge_time_series, perform
 from ... import sync
 from ...tests import data
 # pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_cluster
+from ...tests.cluster import dask_client
 from ...tests.fs import local_fs
 
 
@@ -34,7 +34,7 @@ class ThrowError(sync.Sync):
         ...
 
 
-def test_update_fs(local_fs, dask_cluster):
+def test_update_fs(dask_client, local_fs):
     """Test the _update_fs function."""
     generator = data.create_test_dataset()
     ds = next(generator)
@@ -42,26 +42,26 @@ def test_update_fs(local_fs, dask_cluster):
     partition_folder = local_fs.root.joinpath("partition_folder")
 
     zattrs = str(partition_folder.joinpath(".zattrs"))
-    future = dask_cluster.submit(_update_fs, str(partition_folder),
-                                 dask_cluster.scatter(ds), local_fs.fs)
-    dask_cluster.gather(future)
+    future = dask_client.submit(_update_fs, str(partition_folder),
+                                dask_client.scatter(ds), local_fs.fs)
+    dask_client.gather(future)
     assert local_fs.exists(zattrs)
 
     local_fs.fs.rm(str(partition_folder), recursive=True)
     assert not local_fs.exists(zattrs)
     seen_exception = False
     try:
-        future = dask_cluster.submit(_update_fs, str(partition_folder),
-                                     dask_cluster.scatter(ds), local_fs.fs,
-                                     ThrowError())
-        dask_cluster.gather(future)
+        future = dask_client.submit(_update_fs, str(partition_folder),
+                                    dask_client.scatter(ds), local_fs.fs,
+                                    ThrowError())
+        dask_client.gather(future)
     except MyError:
         seen_exception = True
     assert seen_exception
     assert not local_fs.exists(zattrs)
 
 
-def test_perform(dask_cluster):
+def test_perform(dask_client):
     """Test the perform function."""
     generator = data.create_test_dataset()
     ds = next(generator)
@@ -69,13 +69,12 @@ def test_perform(dask_cluster):
     fs = fsspec.filesystem("memory")
     path = fs.sep.join(("", "folder"))
 
-    future = dask_cluster.submit(_update_fs, path, dask_cluster.scatter(ds),
-                                 fs)
-    dask_cluster.gather(future)
+    future = dask_client.submit(_update_fs, path, dask_client.scatter(ds), fs)
+    dask_client.gather(future)
 
-    future = dask_cluster.submit(perform, dask_cluster.scatter(ds), path,
-                                 "time", fs, "time", merge_time_series)
-    dask_cluster.gather(future)
+    future = dask_client.submit(perform, dask_client.scatter(ds), path, "time",
+                                fs, "time", merge_time_series)
+    dask_client.gather(future)
 
     zgroup = zarr.open_consolidated(fs.get_mapper(path))
     assert numpy.all(zgroup["time"][...] == ds["time"].values)

@@ -14,7 +14,7 @@ from .. import abc
 from ... import collection, dataset, partitioning
 from ...partitioning.tests import data
 # pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_cluster
+from ...tests.cluster import dask_client
 from ...tests.fs import local_fs
 # pylint: enable=unused-import
 from ...typing import NDArray
@@ -147,7 +147,7 @@ class HalfOrbitIndexer(abc.Indexer):
                         **kwargs)
 
 
-def test_indexer(dask_cluster, local_fs):
+def test_indexer(dask_client, local_fs):
     """Test the base class of the indexer.
     """
     ds = dataset.Dataset.from_xarray(data.create_test_sequence(5, 20, 10))

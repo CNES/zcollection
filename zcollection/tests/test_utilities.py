@@ -12,7 +12,7 @@ import dask.distributed
 
 from .. import utilities
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_cluster
+from .cluster import dask_client
 
 # pylint: disable=unused-import
 
@@ -71,33 +71,27 @@ def test_fs_walk(tmpdir):
                           sort=True)) == [('', [], [])]
 
 
-def test_get_client():
-    """Test the get_client function."""
-    client = utilities.get_client()
-    assert isinstance(client, dask.distributed.Client)
-    client.close()
-    local_cluster = dask.distributed.LocalCluster()
-    local_client = dask.distributed.Client(local_cluster)
-    client = utilities.get_client()
-    assert isinstance(client, dask.distributed.Client)
-    client.close()
-    local_client.close()
-    local_cluster.close()
+def test_get_client_with_no_cluster():
+    """Test the get_client function with no cluster."""
+    with utilities.get_client() as client:
+        assert isinstance(client, dask.distributed.Client)
 
 
-def test_dask_workers():
+def test_get_client_with_cluster(dask_client):
+    """Test the get_client function with a cluster."""
+    with utilities.get_client() as client:
+        assert isinstance(client, dask.distributed.Client)
+
+
+def test_dask_workers(dask_client):
     """Test the dask_workers function."""
-    local_cluster = dask.distributed.LocalCluster()
-    local_client = dask.distributed.Client(local_cluster)
-    assert utilities.dask_workers(local_client, cores_only=True) == len(
-        local_client.ncores())  # type: ignore
-    assert utilities.dask_workers(local_client, cores_only=False) == sum(
-        item for item in local_client.nthreads().values())  # type: ignore
-    local_client.close()
-    local_cluster.close()
+    assert utilities.dask_workers(dask_client, cores_only=True) == len(
+        dask_client.ncores())  # type: ignore
+    assert utilities.dask_workers(dask_client, cores_only=False) == sum(
+        item for item in dask_client.nthreads().values())  # type: ignore
 
 
-def test_calculation_stream(dask_cluster):
+def test_calculation_stream(dask_client):
     """Test the calculation_stream function."""
 
     def add_1_return_list(item):

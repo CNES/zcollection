@@ -11,9 +11,10 @@ import numpy
 
 from .. import time_series
 from ...tests import data
+from ...tests.cluster import dask_client
 
 
-def test_merge_disjoint():
+def test_merge_disjoint(dask_client):
     """Test the update of two disjoint time series."""
     generator = data.create_test_dataset()
     ds0 = next(generator)
@@ -32,7 +33,7 @@ def test_merge_disjoint():
         ds.variables["time"].values == ds0.variables["time"].values)
 
 
-def test_merge_intersection():
+def test_merge_intersection(dask_client):
     """Test the update of two intersecting time series."""
     generator = data.create_test_dataset()
     ds0 = next(generator)
