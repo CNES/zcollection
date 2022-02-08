@@ -329,18 +329,23 @@ class View:
     def load(
         self,
         *,
-        filters: Optional[str] = None,
+        filters: collection.PartitionFilter = None,
     ) -> Optional[dataset.Dataset]:
         """Load the view.
 
         Args:
-            filters: The expression used to filter the partitions to load.
+            filters: The predicate used to filter the partitions to drop.
+                To get more information on the predicate, see the
+                documentation of the :meth:`Collection.partitions
+                <zcollection.collection.Collection.partitions>` method.
 
         Returns:
             The dataset.
 
         Example:
             >>> view.load()
+            >>> view.load(filters="time == '2020-01-01'")
+            >>> view.load(filters=lambda x: x["time"] == "2020-01-01")
         """
         client = utilities.get_client()
         futures = client.map(
@@ -372,7 +377,7 @@ class View:
         func: collection.PartitionCallback,
         variable: str,
         *,
-        filters: Optional[str] = None,
+        filters: collection.PartitionFilter = None,
     ) -> None:
         """Update a variable stored int the view.
 
@@ -380,7 +385,10 @@ class View:
             func: The function to apply to calculate the new values for the
                 target variable.
             variable: The name of the variable to update.
-            filters: The expression to filter the partition to update.
+            filters: The predicate used to filter the partitions to drop.
+                To get more information on the predicate, see the
+                documentation of the :meth:`Collection.partitions
+                <zcollection.collection.Collection.partitions>` method.
 
         Raises:
             ValueError: If the variable does not exist or if the variable
