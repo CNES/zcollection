@@ -367,7 +367,7 @@ class Collection:
 
         Args:
             partition: The partition to check.
-            expr: The expression used to select the partition.
+            expr: The expression used to filter the partition.
 
         Returns:
             Whether the partition is selected.
@@ -439,20 +439,20 @@ class Collection:
     def partitions(
         self,
         *,
-        select: Optional[str] = None,
+        filter: Optional[str] = None,
         relative: bool = False,
     ) -> Iterator[str]:
         """List the partitions of the collection.
 
         Args:
-            select: The expression to use to filter the partitions to
+            filter: The expression to use to filter the partitions to
                 list.
             relative: Whether to return the relative path.
 
         Returns:
             The list of partitions.
         """
-        expr = expression.Expression(select) if select else None
+        expr = expression.Expression(filter) if filter else None
         base_dir = self.partition_properties.dir
         sep = self.fs.sep
         for root, dirs, files in utilities.fs_walk(self.fs,
@@ -473,16 +473,16 @@ class Collection:
     def drop_partitions(
         self,
         *,
-        select: Optional[str] = None,
+        filter: Optional[str] = None,
     ) -> None:
         # pylint: disable=method-hidden
         """Drop the selected partitions.
 
         Args:
-            select: The expression used to select the partitions to drop.
+            filter: The expression used to filter the partitions to drop.
         """
         client = utilities.get_client()
-        folders = list(self.partitions(select=select))
+        folders = list(self.partitions(filter=filter))
         storage.execute_transaction(
             client, self.synchronizer,
             client.map(self.fs.rm, folders, recursive=True))
@@ -494,7 +494,7 @@ class Collection:
         self,
         func: MapCallable,
         *args,
-        select: Optional[str] = None,
+        filter: Optional[str] = None,
         bag_partition_size: Optional[int] = None,
         bag_npartitions: Optional[int] = None,
         **kwargs,
@@ -504,7 +504,7 @@ class Collection:
         Args:
             func: The function to apply to every partition of the collection.
             *args: The positional arguments to pass to the function.
-            select: The expression used to select the partitions to map.
+            filter: The expression used to filter the partitions to map.
             bag_partition_size: The length of each bag partition.
             bag_npartitions: The number of desired bag partitions.
             **kwargs: The keyword arguments to pass to the function.
@@ -535,7 +535,7 @@ class Collection:
             return self.partitioning.parse(partition), func(
                 ds, *args, **kwargs)
 
-        bag = dask.bag.from_sequence(self.partitions(select=select),
+        bag = dask.bag.from_sequence(self.partitions(filter=filter),
                                      partition_size=bag_partition_size,
                                      npartitions=bag_npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
@@ -543,13 +543,13 @@ class Collection:
     def load(
         self,
         *,
-        select: Optional[str] = None,
+        filter: Optional[str] = None,
         indexer: Optional[Indexer] = None,
     ) -> Optional[dataset.Dataset]:
         """Load the selected partitions.
 
         Args:
-            select: The expression used to select the partitions to load.
+            filter: The expression used to filter the partitions to load.
             indexer: The indexer to apply.
 
         Returns:
@@ -558,7 +558,7 @@ class Collection:
         Example:
             >>> collection = ...
             >>> collection.load(
-            ...     select="year=2019 and month=3 and day % 2 == 0")
+            ...     filter="year=2019 and month=3 and day % 2 == 0")
         """
         arrays = []
         if indexer is None:
@@ -566,13 +566,13 @@ class Collection:
             # selected partition.
             arrays += [
                 storage.open_zarr_group(partition, self.fs)
-                for partition in self.partitions(select=select)
+                for partition in self.partitions(filter=filter)
             ]
         else:
             # Retrieves the selected partitions
             selected_partitions = tuple(
                 self.partitioning.parse(item)
-                for item in self.partitions(select=select))
+                for item in self.partitions(filter=filter))
 
             # Build an indexer dictionary between the partition scheme and
             # indexer.
@@ -612,7 +612,7 @@ class Collection:
         func: PartitionCallback,
         variable: str,
         *,
-        select: Optional[str] = None,
+        filter: Optional[str] = None,
     ) -> None:
         # pylint: disable=method-hidden
         """Update the selected partitions.
@@ -620,7 +620,7 @@ class Collection:
         Args:
             func: The function to apply on each partition.
             variable: The variable to update.
-            select: The expression used to select the partitions to update.
+            filter: The expression used to filter the partitions to update.
 
         Example:
             >>> import dask.array
@@ -633,7 +633,7 @@ class Collection:
         _LOGGER.info("Updating of the %r variable in the collection", variable)
         arrays = []
         client = utilities.get_client()
-        for partition in self.partitions(select=select):
+        for partition in self.partitions(filter=filter):
             arrays.append((storage.open_zarr_group(partition,
                                                    self.fs), partition))
 
