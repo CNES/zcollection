@@ -129,7 +129,7 @@ def concatenate_item(arr: NDArray, item: Any) -> NDArray:
 
 
 class Partitioning(abc.ABC):
-    """Partitioning scheme
+    """Partitioning scheme.
 
     Args:
         variables:  List of variables to be used for partitioning
@@ -150,7 +150,7 @@ class Partitioning(abc.ABC):
         #: Variables to be used for the partitioning.
         self.variables = tuple(variables)
         #: Data type used to store variable values in a binary representation
-        #:  without data loss.
+        #: without data loss.
         self._dtype = dtype or ("int64", ) * len(self.variables)
         #: The regular expression that matches the partitioning scheme.
         self._pattern = self._regex().search
@@ -285,6 +285,33 @@ class Partitioning(abc.ABC):
         return tuple((groups[ix], int(groups[ix + 1]))
                      for ix in range(0, len(groups), 2))
 
+    @abc.abstractmethod
+    def encode(
+        self,
+        partition: Tuple[Tuple[str, int], ...],
+    ) -> Tuple[Any, ...]:
+        """Encode a partitioning scheme to the handled values.
+
+        Args:
+            partition: The partitioning scheme to be encoded.
+
+        Returns:
+            The encoded partitioning scheme.
+        """
+        ...
+
+    @abc.abstractmethod
+    def decode(self, values: Tuple[Any, ...]) -> Tuple[Tuple[str, int], ...]:
+        """Decode a partitioning scheme.
+
+        Args:
+            values: The encoded partitioning scheme.
+
+        Returns:
+            The decoded partitioning scheme.
+        """
+        ...
+
     @staticmethod
     def join(partition_scheme: Tuple[Tuple[str, int], ...], sep: str) -> str:
         """Join a partitioning scheme.
@@ -297,14 +324,3 @@ class Partitioning(abc.ABC):
             The joined partitioning scheme.
         """
         return sep.join(f"{k}={v}" for k, v in partition_scheme)
-
-    def values(self, partition: str) -> Tuple[Tuple[str, Any], ...]:
-        """Return the values of the partitioning scheme.
-
-        Args:
-            partition: The partitioning scheme to be parsed.
-
-        Returns:
-            The values of the keys constituting the partitioning scheme.
-        """
-        return self.parse(partition)

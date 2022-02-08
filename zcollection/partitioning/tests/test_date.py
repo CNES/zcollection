@@ -85,16 +85,18 @@ def test_split_dataset():
             )
             assert partition == expected[indices]
 
-            parsed_date = partitioning.values("/".join(partition))[0][-1]
+            folder = "/".join(partition)
+            fields = partitioning.parse(folder)
+            parsed_date, = partitioning.encode(fields)
             assert parsed_date == numpy.datetime64(date).astype(
                 f"datetime64[{resolution}]")
 
-            expected_selection = dates[(dates >= parsed_date)
-                                       & (dates < parsed_date + timedelta)]
+            expected_selection = dates[
+                (dates >= parsed_date)  # type: ignore
+                & (dates < parsed_date + timedelta)]  # type: ignore
             assert numpy.all(
                 subset.variables["dates"].array == expected_selection)
 
-            fields = partitioning.parse("/".join(partition))
             expected = (
                 ("year", item.year),
                 ("month", item.month),
@@ -102,7 +104,10 @@ def test_split_dataset():
                 ("hour", item.hour),
             )
             assert fields == expected[indices]
-            assert partitioning.join(fields, "/") == "/".join(partition)
+            assert partitioning.join(fields, "/") == folder
+            assert partitioning.join(partitioning.decode((parsed_date, )),
+                                     "/") == folder
+
             date += timedelta
 
 

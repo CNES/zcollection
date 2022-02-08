@@ -118,26 +118,59 @@ class Date(abc.Partitioning):
 
         Returns:
             The joined partitioning scheme.
-        """
-        return sep.join(f"{k}={v:02d}" for k, v in partition_scheme)
-
-    def values(self, partition: str) -> Tuple[Tuple[str, Any], ...]:
-        """Return the values of the partitioning scheme
-
-        Args:
-            partition: Partitioning scheme
-
-        Returns:
-            Values of the partitioning scheme
 
         Example:
             >>> partitioning = Date(variables=("time", ), resolution="D")
-            >>> partitioning.values("year=2018/month=12/day=31")
-            ((("time", numpy.datetime64("2018-12-31"), ), )
+            >>> partitioning.join((("year", 2020), ("month", 1), ("day", 1)),
+            ...                   "/")
+            'year=2020/month=01/day=01'
         """
-        fields = dict(item for item in self.parse(partition))
+        return sep.join(f"{k}={v:02d}" for k, v in partition_scheme)
+
+    def encode(
+        self,
+        partition: Tuple[Tuple[str, int], ...],
+    ) -> Tuple[numpy.datetime64]:
+        """Encode a partitioning scheme.
+
+        Args:
+            partition: The partitioning scheme to be encoded.
+
+        Returns:
+            The encoded partitioning scheme.
+
+        Example:
+            >>> partitioning = Date(variables=("time", ), resolution="D")
+            >>> fields = partitioning.parse("year=2020/month=01/day=01")
+            >>> fields
+            (("year", 2020), ("month", 1), ("day", 1))
+            >>> partitioning.encode(fields)
+            (numpy.datetime64('2020-01-01'),)
+        """
         string = "".join(f"{value:02d}" + SEPARATORS[item]
-                         for item, value in fields.items())
+                         for item, value in partition)
         if string[-1] in SEPARATORS.values():
             string = string[:-1]
-        return tuple(((self.variables[0], numpy.datetime64(string)), ))
+        return tuple((numpy.datetime64(string), ))
+
+    def decode(
+        self,
+        values: Tuple[numpy.datetime64],
+    ) -> Tuple[Tuple[str, int], ...]:
+        """Decode a partitioning scheme.
+
+        Args:
+            values: The partitioning scheme to be decoded.
+
+        Returns:
+            The decoded partitioning scheme.
+
+        Example:
+            >>> partitioning = Date(variables=("time", ), resolution="D")
+            >>> partitioning.decode((numpy.datetime64('2020-01-01'), ))
+            (("year", 2020), ("month", 1), ("day", 1))
+        """
+        datetime64, = values
+        datetime = datetime64.astype("M8[s]").item()
+        return tuple((UNITS[ix], getattr(datetime, self._attrs[ix]))
+                     for ix in self._index)

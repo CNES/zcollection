@@ -30,6 +30,10 @@ def test_construction():
         Sequence(("a", "b"), dtype=("int32"))
     partitioning = Sequence(("a", "b"))
     partition_keys = partitioning.parse("a=1/b=2")
+    partitioning.encode(partition_keys) == (("a", 1), ("b", 2))
+    with pytest.raises(ValueError):
+        partitioning.encode(((("A", 1), ("b", 2))))
+    partitioning.decode((("a", 1), ("b", 2))) == (("a", 1), ("b", 2))
     assert partition_keys == (("a", 1), ("b", 2))
     with pytest.raises(ValueError):
         partitioning.parse("a=1/b=2/c=3")
@@ -71,7 +75,8 @@ def test_split_dataset():
         partition_keys = partitioning.parse("/".join(partition))
         assert partition_keys == (("cycle_number", cycle_number),
                                   ("pass_number", pass_number))
-        assert partition_keys == partitioning.values("/".join(partition))
+        assert partitioning.decode(
+            partitioning.encode(partition_keys)) == partition_keys
         assert partitioning.join(partition_keys, "/") == "/".join(partition)
 
         pass_number += 1
