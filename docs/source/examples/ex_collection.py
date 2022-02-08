@@ -105,12 +105,12 @@ collection.load()
 # %%
 # You can also filter the partitions to be considered by filtering the
 # partitions using keywords used for partitioning.
-collection.load(filter="year == 2000 and month == 2")
+collection.load(filters="year == 2000 and month == 2")
 
 # %%
 # Note that the :py:meth:`load<zcollection.collection.Collection.load>`
 # function may return None if no partition has been selected.
-collection.load(filter="year == 2002 and month == 2") is None
+collection.load(filters="year == 2002 and month == 2") is None
 
 # %%
 # Editing variables

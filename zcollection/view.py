@@ -329,12 +329,12 @@ class View:
     def load(
         self,
         *,
-        filter: Optional[str] = None,
+        filters: Optional[str] = None,
     ) -> Optional[dataset.Dataset]:
         """Load the view.
 
         Args:
-            filter: The expression used to filter the partitions to load.
+            filters: The expression used to filter the partitions to load.
 
         Returns:
             The dataset.
@@ -345,7 +345,7 @@ class View:
         client = utilities.get_client()
         futures = client.map(
             _load_dataset,
-            tuple(self.view_ref.partitions(filter=filter, relative=True)),
+            tuple(self.view_ref.partitions(filters=filters, relative=True)),
             base_dir=self.base_dir,
             fs=self.fs,
             view_ref=ViewReference(self.view_ref.partition_properties.dir,
@@ -372,7 +372,7 @@ class View:
         func: collection.PartitionCallback,
         variable: str,
         *,
-        filter: Optional[str] = None,
+        filters: Optional[str] = None,
     ) -> None:
         """Update a variable stored int the view.
 
@@ -380,7 +380,7 @@ class View:
             func: The function to apply to calculate the new values for the
                 target variable.
             variable: The name of the variable to update.
-            filter: The expression to filter the partition to update.
+            filters: The expression to filter the partition to update.
 
         Raises:
             ValueError: If the variable does not exist or if the variable
@@ -401,7 +401,7 @@ class View:
         client = utilities.get_client()
         futures = client.map(
             _load_dataset,
-            tuple(self.view_ref.partitions(filter=filter, relative=True)),
+            tuple(self.view_ref.partitions(filters=filters, relative=True)),
             base_dir=self.base_dir,
             fs=self.fs,
             view_ref=ViewReference(self.view_ref.partition_properties.dir,
