@@ -54,6 +54,12 @@ from .typing import ArrayLike
 #: Type of functions to handle partitions.
 PartitionCallback = Callable[[dataset.Dataset], ArrayLike]
 
+#: Type of functions filtering the partitions.
+PartitionFilterCallback = Callable[[Dict[str, int]], bool]
+
+#: Type of argument to filter the partitions.
+PartitionFilter = Optional[Union[str, PartitionFilterCallback]]
+
 #: Indexer's type.
 Indexer = Iterable[Tuple[Tuple[Tuple[str, int], ...], slice]]
 
@@ -361,7 +367,7 @@ class Collection:
     def _is_selected(
         self,
         partition: Sequence[str],
-        expr: Optional[expression.Expression],
+        expr: Optional[Callable[[Dict[str, int]], bool]],
     ) -> bool:
         """Return whether the partition is selected.
 
@@ -439,20 +445,37 @@ class Collection:
     def partitions(
         self,
         *,
-        filters: Optional[str] = None,
+        filters: PartitionFilter = None,
         relative: bool = False,
     ) -> Iterator[str]:
         """List the partitions of the collection.
 
         Args:
-            filters: The expression to use to filter the partitions to
-                list.
+            filters: The predicate used to filter the partitions to load. If
+                the predicate is a string, it is a valid python expression to
+                filter the partitions, using the partitioning scheme as
+                variables. If the predicate is a function, it is a function
+                that takes the partition scheme as input and returns a boolean.
             relative: Whether to return the relative path.
 
         Returns:
             The list of partitions.
+
+        Example:
+            >>> tuple(collection.partitions(
+            ...     filters="year == 2019 and month == 1"))
+            ('year=2019/month=01/day=01', 'year=2019/month=01/day=02/', ...)
+            >>> tuple(collection.partitions(
+            ...     filters=lambda x: x["year"] == 2019 and x["month"] == 1))
+            ('year=2019/month=01/day=01', 'year=2019/month=01/day=02/', ...)
         """
-        expr = expression.Expression(filters) if filters else None
+        if isinstance(filters, str):
+            expr = expression.Expression(filters)
+        elif callable(filters):
+            expr = filters
+        else:
+            expr = None
+
         base_dir = self.partition_properties.dir
         sep = self.fs.sep
         for root, dirs, files in utilities.fs_walk(self.fs,
@@ -473,13 +496,18 @@ class Collection:
     def drop_partitions(
         self,
         *,
-        filters: Optional[str] = None,
+        filters: PartitionFilter = None,
     ) -> None:
         # pylint: disable=method-hidden
         """Drop the selected partitions.
 
         Args:
-            filters: The expression used to filter the partitions to drop.
+            filters: The predicate used to filter the partitions to drop.
+                To get more information on the predicate, see the
+                documentation of the :meth:`partitions` method.
+
+        Example:
+            >>> collection.drop_partitions(filters="year == 2019")
         """
         client = utilities.get_client()
         folders = list(self.partitions(filters=filters))
@@ -494,7 +522,7 @@ class Collection:
         self,
         func: MapCallable,
         *args,
-        filters: Optional[str] = None,
+        filters: PartitionFilter = None,
         bag_partition_size: Optional[int] = None,
         bag_npartitions: Optional[int] = None,
         **kwargs,
@@ -504,7 +532,9 @@ class Collection:
         Args:
             func: The function to apply to every partition of the collection.
             *args: The positional arguments to pass to the function.
-            filters: The expression used to filter the partitions to map.
+            filters: The predicate used to filter the partitions to process.
+                To get more information on the predicate, see the
+                documentation of the :meth:`partitions` method.
             bag_partition_size: The length of each bag partition.
             bag_npartitions: The number of desired bag partitions.
             **kwargs: The keyword arguments to pass to the function.
@@ -512,6 +542,14 @@ class Collection:
         Returns:
             A bag containing the tuple of the partition scheme and the result
             of the function.
+
+        Example:
+            >>> futures = collection.map(
+            ...     lambda x: (x["var1"] + x["var2"]).values)
+            >>> for item in futures:
+            ...     print(item)
+            [1.0, 2.0, 3.0, 4.0]
+            [5.0, 6.0, 7.0, 8.0]
         """
 
         def _wrap(
@@ -543,13 +581,15 @@ class Collection:
     def load(
         self,
         *,
-        filters: Optional[str] = None,
+        filters: PartitionFilter = None,
         indexer: Optional[Indexer] = None,
     ) -> Optional[dataset.Dataset]:
         """Load the selected partitions.
 
         Args:
-            filters: The expression used to filter the partitions to load.
+            filters: The predicate used to filter the partitions to load.
+                To get more information on the predicate, see the
+                documentation of the :meth:`partitions` method.
             indexer: The indexer to apply.
 
         Returns:
@@ -559,6 +599,9 @@ class Collection:
             >>> collection = ...
             >>> collection.load(
             ...     filters="year=2019 and month=3 and day % 2 == 0")
+            >>> collection.load(
+            ...     filters=lambda keys: keys["year"] == 2019 and
+            ...     keys["month"] == 3 and keys["day"] % 2 == 0)
         """
         arrays = []
         if indexer is None:

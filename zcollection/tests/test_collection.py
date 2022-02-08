@@ -6,6 +6,7 @@
 Test of the collections
 =======================
 """
+import datetime
 import io
 
 import numpy
@@ -137,6 +138,10 @@ def test_insert(dask_client, arg, request):
 
     data = zcollection.load(
         filters="year == 2000 and month == 4 and day in range(5, 25)")
+    assert data is not None
+    data = zcollection.load(filters=lambda keys: datetime.date(
+        2000, 4, 5) <= datetime.date(keys["year"], keys["month"], keys["day"])
+                            <= datetime.date(2000, 4, 24))
     assert data is not None
     dates = data.variables["time"].values.astype("datetime64[D]")
     assert dates.min() == numpy.datetime64("2000-04-06")
