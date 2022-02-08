@@ -22,7 +22,7 @@ class Expression:
     Raises:
         NameError: If a variable is not defined.
 
-    Examples:
+    Example:
         >>> expr = Expression("year==2000 and month==1 and day in range(1, 12)")
     """
     __slots__ = ("code", )

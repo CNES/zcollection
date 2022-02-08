@@ -869,7 +869,7 @@ class Dataset:
         Returns:
             New dataset.
 
-        Examples:
+        Example:
             >>> ds = Dataset(
             ...     variables=[
             ...         Variable(

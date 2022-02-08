@@ -622,7 +622,7 @@ class Collection:
             variable: The variable to update.
             select: The expression used to select the partitions to update.
 
-        Examples:
+        Example:
             >>> import dask.array
             >>> import zcollection
             >>> def ones(ds):
@@ -664,7 +664,7 @@ class Collection:
             ValueError: If the variable doesn't exist in the collection or is
                 used by the partitioning.
 
-        Examples:
+        Example:
             >>> import zcollection
             >>> collection = zcollection.open_collection(
             ...     "my_collection", mode="w")
@@ -693,7 +693,7 @@ class Collection:
                 doesn’t use the partitioning dimension or use a dimension that
                 is not part of the dataset.
 
-        Examples:
+        Example:
             >>> import zcollection
             >>> collection = zcollection.open_collection(
             ...     "my_collection", mode="w")

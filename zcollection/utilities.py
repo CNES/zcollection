@@ -52,7 +52,7 @@ def get_fs(
     Returns:
         File system object.
 
-    Examples:
+    Example:
         >>> from fsspec.implementations.local import LocalFileSystem
         >>> get_fs("hdfs")
         >>> get_fs(LocalFileSystem("/tmp/swot"))
