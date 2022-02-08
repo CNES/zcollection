@@ -5,6 +5,7 @@ Overview of a Collection.
 This section outlines the steps required to get started with the main features
 of a ``Collection``.
 """
+import datetime
 import pprint
 
 import dask.distributed
@@ -104,8 +105,15 @@ collection.load()
 
 # %%
 # You can also filter the partitions to be considered by filtering the
-# partitions using keywords used for partitioning.
+# partitions using keywords used for partitioning in a valid Python expression.
 collection.load(filters="year == 2000 and month == 2")
+
+# %%
+# You can also used a callback function to filter partitions with a complex
+# condition.
+collection.load(
+    filters=lambda keys: datetime.date(2000, 2, 15) <= datetime.date(
+        keys["year"], keys["month"], 1) <= datetime.date(2000, 3, 15))
 
 # %%
 # Note that the :py:meth:`load<zcollection.collection.Collection.load>`
