@@ -147,6 +147,8 @@ class Partitioning(abc.ABC):
                  dtype: Optional[Sequence[str]] = None) -> None:
         if isinstance(dtype, str):
             raise TypeError("dtype must be a sequence of strings")
+        if len(variables) == 0:
+            raise ValueError("variables must not be empty")
         #: Variables to be used for the partitioning.
         self.variables = tuple(variables)
         #: Data type used to store variable values in a binary representation
@@ -158,6 +160,10 @@ class Partitioning(abc.ABC):
         if len(set(self._dtype) - set(DATA_TYPES)) != 0:
             raise ValueError(
                 f"Data type must be one of {', '.join(DATA_TYPES)}.")
+
+    def __len__(self) -> int:
+        """Return the number of partitions."""
+        return len(self._dtype)
 
     def dtype(self) -> Tuple[Tuple[str, str], ...]:
         """Return the data type of the partitioning scheme."""

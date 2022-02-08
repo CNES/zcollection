@@ -41,7 +41,7 @@ def test_split_dataset():
         ),
         (
             numpy.datetime64("2000-01-31", "h"),
-            slice(0, None),
+            slice(0, 4),
             "h",
         ),
     ]:
@@ -62,6 +62,7 @@ def test_split_dataset():
                                               dims=("num_lines", ))))
 
         partitioning = Date(("dates", ), resolution)
+        assert len(partitioning) == len(range(indices.start, indices.stop))
 
         # Date of the current partition
         date = numpy.datetime64(start_date, resolution)

@@ -23,6 +23,8 @@ def test_construction():
     """Test the sequence constructor."""
     assert isinstance(Sequence(("a", "b")), Sequence)
     with pytest.raises(ValueError):
+        Sequence(())
+    with pytest.raises(ValueError):
         Sequence(("a", "b"), dtype=("c", "d"))
     with pytest.raises(ValueError):
         Sequence(("a", "b"), dtype=("float32", "int32"))
@@ -30,10 +32,10 @@ def test_construction():
         Sequence(("a", "b"), dtype=("int32"))
     partitioning = Sequence(("a", "b"))
     partition_keys = partitioning.parse("a=1/b=2")
-    partitioning.encode(partition_keys) == (("a", 1), ("b", 2))
+    assert partitioning.encode(partition_keys) == (1, 2)
     with pytest.raises(ValueError):
         partitioning.encode(((("A", 1), ("b", 2))))
-    partitioning.decode((("a", 1), ("b", 2))) == (("a", 1), ("b", 2))
+    assert partitioning.decode((1, 2)) == (("a", 1), ("b", 2))
     assert partition_keys == (("a", 1), ("b", 2))
     with pytest.raises(ValueError):
         partitioning.parse("a=1/b=2/c=3")
