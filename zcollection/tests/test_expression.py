@@ -16,6 +16,10 @@ import xarray
 from .. import dataset
 from ..expression import Expression
 from ..partitioning import Date
+# pylint: disable=unused-import # Need to import for fixtures
+from .cluster import dask_client, dask_cluster
+
+# pylint enable=unused-import
 
 
 def make_dataset(num_samples: Optional[int] = None) -> dataset.Dataset:
@@ -46,7 +50,9 @@ def test_expression():
         assert expr(dict(a=1, c=1))
 
 
-def test_date_expression():
+def test_date_expression(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test of expressions handling dates.."""
     ds = make_dataset(5 * 24)
     partitioning = Date(("dates", ), "D")
