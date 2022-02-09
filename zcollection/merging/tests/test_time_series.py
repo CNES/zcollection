@@ -11,10 +11,15 @@ import numpy
 
 from .. import time_series
 from ...tests import data
-from ...tests.cluster import dask_client
+# pylint: disable=unused-import # Need to import for fixtures
+from ...tests.cluster import dask_client, dask_cluster
+
+# pylint: enable=unused-import # Need to import for fixtures
 
 
-def test_merge_disjoint(dask_client):
+def test_merge_disjoint(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the update of two disjoint time series."""
     generator = data.create_test_dataset()
     ds0 = next(generator)
@@ -33,7 +38,9 @@ def test_merge_disjoint(dask_client):
         ds.variables["time"].values == ds0.variables["time"].values)
 
 
-def test_merge_intersection(dask_client):
+def test_merge_intersection(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the update of two intersecting time series."""
     generator = data.create_test_dataset()
     ds0 = next(generator)

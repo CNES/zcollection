@@ -15,13 +15,19 @@ import xarray
 import zarr
 
 from .. import dataset, meta
+# pylint: disable=unused-import # Need to import for fixtures
+from .cluster import dask_client, dask_cluster
+
+# pylint enable=unused-import
 
 
 def test_maybe_truncate():
     """Test the truncation of a string to a given length"""
     data = list(range(1000))
+    # pylint: disable=protected-access
     assert dataset._maybe_truncate(data, 10) == "[0, 1, ..."
     assert dataset._maybe_truncate(data, len(str(data))) == str(data)
+    # pylint: enable=protected-access
 
 
 def create_test_variable(name="var1", fill_value=0):
@@ -43,7 +49,9 @@ def create_test_dataset():
                                       create_test_variable("var2")))
 
 
-def test_variable():
+def test_variable(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test variable creation"""
     var = create_test_variable()
     assert var.name == "var1"
@@ -76,7 +84,9 @@ def test_variable():
         var.data = numpy.ones((10, 4, 2), dtype="int64")
 
 
-def test_variable_duplicate():
+def test_variable_duplicate(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test of the duplication of variables."""
     var = create_test_variable()
     other = var.duplicate(var.array * 2)
@@ -99,7 +109,9 @@ def test_variable_duplicate():
         var.duplicate(numpy.ones((10, 4, 2), dtype="int64"))
 
 
-def test_variable_concat():
+def test_variable_concat(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test concatenation of variables."""
     var_a = create_test_variable()
     var_b = create_test_variable()
@@ -117,7 +129,9 @@ def test_variable_concat():
         var_a.concat([], "y")
 
 
-def test_variable_datetime64_to_xarray():
+def test_variable_datetime64_to_xarray(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test conversion to xarray"""
     dates = numpy.arange(
         numpy.datetime64("2000-01-01", "ms"),
@@ -138,7 +152,9 @@ def test_variable_datetime64_to_xarray():
     assert xr_var.dtype == "datetime64[ns]"
 
 
-def test_variable_timedelta64_to_xarray():
+def test_variable_timedelta64_to_xarray(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test conversion to xarray"""
     delta = numpy.diff(
         numpy.arange(
@@ -161,26 +177,30 @@ def test_variable_timedelta64_to_xarray():
     assert xr_var.dtype.kind == "m"
 
 
-def test_variable_dimension_less():
+def test_variable_dimension_less(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Concatenate two dimensionless variables.
     """
     data = numpy.array([0, 1], dtype=numpy.int32)
     args = ("nv", data, ("nv", ), (dataset.Attribute("comment", "vertex"),
                                    dataset.Attribute("units", "1")))
-    nv = dataset.Variable(*args)
-    assert nv.fill_value is None
-    metadata = nv.metadata()
+    n_vertex = dataset.Variable(*args)
+    assert n_vertex.fill_value is None
+    metadata = n_vertex.metadata()
     assert metadata.fill_value is None
     assert meta.Variable.from_config(metadata.get_config()) == metadata
 
     other = dataset.Variable(*args)
 
-    concatenated = nv.concat((other, ), "time")
-    assert numpy.all(concatenated.values == nv.values)
-    assert concatenated.metadata() == nv.metadata()
+    concatenated = n_vertex.concat((other, ), "time")
+    assert numpy.all(concatenated.values == n_vertex.values)
+    assert concatenated.metadata() == n_vertex.metadata()
 
 
-def test_variable_masked_values():
+def test_variable_masked_values(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the masked where function."""
     var = create_test_variable(fill_value=None)
     other = var.masked_values(1).values
@@ -188,18 +208,24 @@ def test_variable_masked_values():
     assert numpy.all(other == numpy.ma.masked_values(var.values, 1))
 
 
-def test_variable_masked_where():
+def test_variable_masked_where(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the masked where function."""
     var = create_test_variable(fill_value=None)
     other = var.masked_where(var.data % 2 == 0)
-    x, y = other.values, var.values
-    assert isinstance(x, numpy.ma.MaskedArray)
-    assert numpy.all(x == numpy.ma.masked_where(y % 2 == 0, y))
+    x_values, y_values = other.values, var.values
+    assert isinstance(x_values, numpy.ma.MaskedArray)
+    assert numpy.all(x_values == numpy.ma.masked_where(y_values %
+                                                       2 == 0, y_values))
     other = other.masked_where(other.data % 2 == 1)
     assert numpy.all(other.values.mask)  # type: ignore
 
 
-def test_variable_operators():
+def test_variable_logical_operators(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
+    """Test the logical operators."""
     var = create_test_variable(fill_value=None)
     var = var.duplicate(var.data + numpy.pi)
     other = var.duplicate(var.data * 5)
@@ -207,7 +233,7 @@ def test_variable_operators():
     assert numpy.all(result == (other.values > var.values))
     result = (var < other).compute()
     assert numpy.all(result == (var.values < other.values))
-    result = (var == var).compute()
+    result = (var.__eq__(var)).compute()
     assert numpy.all(result == (var.values == var.values))
     result = (var != other).compute()
     assert numpy.all(result == (var.values != other.values))
@@ -215,6 +241,15 @@ def test_variable_operators():
     assert numpy.all(result == (var.values >= other.values))
     result = (var <= other).compute()
     assert numpy.all(result == (var.values <= other.values))
+
+
+def test_variable_arithmetic_operators(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
+    """Test the arithmetic operators."""
+    var = create_test_variable(fill_value=None)
+    var = var.duplicate(var.data + numpy.pi)
+    other = var.duplicate(var.data * 5)
     result = (var + other).compute()
     assert numpy.all(result == (var.values + other.values))
     result = (var - other).compute()
@@ -256,6 +291,11 @@ def test_variable_operators():
     result = (var // 1.5).compute()
     assert numpy.all(result == (var.values // 1.5))
 
+
+def test_variable_binary_operators(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
+    """Test the binary operators."""
     var = create_test_variable()
     other = var.duplicate(var.data * 3)
     result = (var & other).compute()
@@ -272,7 +312,9 @@ def test_variable_operators():
     assert numpy.all(result == (var.values | 3))
 
 
-def test_dataset():
+def test_dataset(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test dataset creation"""
     ds = create_test_dataset()
     assert ds.dimensions == dict(x=5, y=2)
@@ -286,7 +328,7 @@ def test_dataset():
     assert numpy.all(var1.values == ds["var1"].values)
     assert var1.metadata() == ds["var1"].metadata()
     with pytest.raises(KeyError):
-        ds["varX"]
+        var1 = ds["varX"]
     var2 = create_test_variable("var2")
     assert numpy.all(ds.variables["var2"].values == var2.values)
     assert id(ds["var2"]) == id(ds.variables["var2"])
@@ -296,7 +338,9 @@ def test_dataset():
     assert isinstance(other, dataset.Dataset)
 
 
-def test_dataset_dimensions_conflict():
+def test_dataset_dimensions_conflict(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test dataset creation with dimensions conflict"""
     with pytest.raises(ValueError):
         dataset.Dataset([
@@ -320,7 +364,9 @@ def test_dataset_dimensions_conflict():
         ])
 
 
-def test_xarray():
+def test_xarray(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test xarray creation"""
     ds = create_test_dataset()
     xr1 = ds.to_xarray()
@@ -330,7 +376,9 @@ def test_xarray():
     assert xr1 == xr2
 
 
-def test_dataset_isel():
+def test_dataset_isel(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test dataset selection"""
     ds = create_test_dataset()
     selected_ds = ds.isel(slices=dict(x=slice(0, 2)))
@@ -351,7 +399,9 @@ def test_dataset_isel():
         ds.isel(slices=dict(var1=slice(0, 1)))
 
 
-def test_dataset_delete():
+def test_dataset_delete(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test dataset deletion"""
     ds = create_test_dataset()
 
@@ -366,7 +416,9 @@ def test_dataset_delete():
         10).reshape(5, 2)[1:, :])
 
 
-def test_dataset_concat():
+def test_dataset_concat(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test concatenation of datasets."""
     ds1 = create_test_dataset()
     ds2 = create_test_dataset()
@@ -384,7 +436,9 @@ def test_dataset_concat():
         ds1.concat([], "z")
 
 
-def test_variable_pickle():
+def test_variable_pickle(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test pickling of variables."""
     variable = create_test_variable()
     other = pickle.loads(pickle.dumps(variable))
@@ -398,7 +452,9 @@ def test_variable_pickle():
     assert variable.name == other.name
 
 
-def test_dataset_pickle():
+def test_dataset_pickle(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test pickling of datasets."""
     ds = create_test_dataset()
     other = pickle.loads(pickle.dumps(ds))
@@ -414,7 +470,9 @@ def test_dataset_pickle():
         assert variable.name == other.variables[varname].name
 
 
-def test_dataset_add_variable():
+def test_dataset_add_variable(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test for adding a variable.
     """
     ds = create_test_dataset()
@@ -459,7 +517,9 @@ def test_dataset_add_variable():
         ds.add_variable(var)
 
 
-def test_dataset_masked_where():
+def test_dataset_masked_where(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test dataset creation"""
     ds = create_test_dataset()
     mask = ds["var2"].values == 1

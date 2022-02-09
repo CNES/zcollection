@@ -316,7 +316,7 @@ class Variable:
         Returns:
             The variable
         """
-        self._array = self._array.persist()
+        self._array = self._array.persist(**kwargs)
         return self
 
     @property
@@ -421,8 +421,11 @@ class Variable:
         try:
             axis = self.dimensions.index(dim)
             result = self.duplicate(self._array)
+            # pylint: disable=protected-access
+            # _array is a protected member of this class
             result._array = dask.array.concatenate(
                 [self._array, *[item._array for item in other]], axis=axis)
+            # pylint: enable=protected-access
             return result
         except ValueError:
             # If the concatenation dimension is not within the dimensions of the

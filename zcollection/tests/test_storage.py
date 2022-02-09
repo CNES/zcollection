@@ -7,6 +7,7 @@ Testing the storage module.
 ===========================
 """
 import platform
+import time
 
 import dask.array
 import dask.distributed
@@ -15,13 +16,15 @@ import zarr
 
 from .. import dataset, storage, sync
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_client
+from .cluster import dask_client, dask_cluster
 from .fs import local_fs
 
 # pylint: enable=unused-import
 
 
-def test_execute_transaction(dask_client):
+def test_execute_transaction(
+        dask_client,  # pylint: disable=redefined-outer-name
+):
     """Test the execute_transaction function."""
     # First case: no transaction to execute
     assert storage.execute_transaction(dask_client, sync.NoSync(), []) is None
@@ -37,7 +40,6 @@ def test_execute_transaction(dask_client):
 
     # Degraded case: execute a transaction with error
     def fail(data):
-        import time
         time.sleep((10 - data) / 100)
         if data % 2 == 0:
             raise ValueError("Odd")
@@ -60,6 +62,7 @@ def test_execute_transaction(dask_client):
 
 
 def create_variable(shape, fill_value=None):
+    """Create a variable."""
     data = numpy.ones(shape, dtype="uint8")
     if fill_value is not None:
         data[:, 0] = fill_value
@@ -75,6 +78,7 @@ def create_variable(shape, fill_value=None):
 
 
 def create_dataset(shape):
+    """Create a dataset."""
     return dataset.Dataset([create_variable(shape)],
                            attrs=[
                                dataset.Attribute("a", 1),
@@ -83,7 +87,10 @@ def create_dataset(shape):
                            ])
 
 
-def test_write_attrs(local_fs):
+def test_write_attrs(
+        local_fs,  # pylint: disable=redefined-outer-name
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the write_attrs function."""
     var = create_variable((10, 2))
     path = local_fs.root.joinpath("var")
@@ -110,7 +117,10 @@ def test_write_attrs(local_fs):
     assert local_fs.exists(str(local_fs.root.joinpath("var", storage.ZATTRS)))
 
 
-def test_write_variable(local_fs, dask_client):
+def test_write_variable(
+        local_fs,  # pylint: disable=redefined-outer-name
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the write_variable function."""
     var = create_variable((1024, 1024))
     storage.write_zarr_variable(("var", var), str(local_fs.root), local_fs.fs)
@@ -126,7 +136,10 @@ def test_write_variable(local_fs, dask_client):
     assert numpy.all(other.values == var.values)
 
 
-def test_write_zarr_group(local_fs, dask_client):
+def test_write_zarr_group(
+        local_fs,  # pylint: disable=redefined-outer-name
+        dask_client,  # pylint: disable=redefined-outer-name
+):
     """Test the write_zarr_group function."""
     ds = create_dataset((1024, 1024))
     # memory fs does not support multi-processes
@@ -146,7 +159,10 @@ def test_write_zarr_group(local_fs, dask_client):
     assert other.metadata() == ds.metadata()
 
 
-def test_update_zarr_array(local_fs, dask_client):
+def test_update_zarr_array(
+        local_fs,  # pylint: disable=redefined-outer-name
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the update_zarr_array function."""
     var = create_variable((1024, 1024), fill_value=10)
     storage.write_zarr_variable(("var", var), str(local_fs.root), local_fs.fs)
@@ -165,7 +181,10 @@ def test_update_zarr_array(local_fs, dask_client):
     assert numpy.all(zarray[:, 0] == 10)
 
 
-def test_del_zarr_array(local_fs, dask_client):
+def test_del_zarr_array(
+        local_fs,  # pylint: disable=redefined-outer-name
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the del_zarr_array function."""
     var = create_variable((1024, 1024))
     root = str(local_fs.root)
@@ -174,7 +193,10 @@ def test_del_zarr_array(local_fs, dask_client):
     assert not local_fs.exists(str(local_fs.root.joinpath("var")))
 
 
-def test_add_zarr_array(local_fs, dask_client):
+def test_add_zarr_array(
+        local_fs,  # pylint: disable=redefined-outer-name
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the add_zarr_array function."""
     var = create_variable((1024, 1024), fill_value=10)
     root = str(local_fs.root)

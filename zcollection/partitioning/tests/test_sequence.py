@@ -17,6 +17,10 @@ import xarray
 from . import data
 from .. import Sequence, get_codecs
 from ... import dataset
+# pylint: disable=unused-import # Need to import for fixtures
+from ...tests.cluster import dask_client, dask_cluster
+
+# pylint: enable=unused-import # Need to import for fixtures
 
 
 def test_construction():
@@ -43,7 +47,9 @@ def test_construction():
         partitioning.parse("field=1")
 
 
-def test_split_dataset():
+def test_split_dataset(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the split_dataset method."""
     repeatability = 5
     xr_ds = data.create_test_sequence(repeatability, 20, 10)
@@ -110,7 +116,10 @@ def test_pickle():
     assert other.variables == ("cycle_number", "pass_number")
 
 
-def test_multiple_sequence():
+# pylint: disable=protected-access
+def test_multiple_sequence(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the creation of a sequence with multiple variables."""
     arrays = dict(_a=numpy.array([], dtype="i8"),
                   _b=numpy.array([], dtype="i8"),
@@ -157,11 +166,16 @@ def test_multiple_sequence():
         assert item[0] == (("_a", _a), )
         _a += 1
         assert item[1] == slice(ix * 25, ix * 25 + 25)
+    # pylint: enable=protected-access
 
 
-def test_values_must_be_integer():
+def test_values_must_be_integer(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test that the values must be integer."""
     values = numpy.arange(0, 100, dtype="f8")
     partitioning = Sequence(("values", ))
+    # pylint: disable=protected-access
     with pytest.raises(TypeError):
         list(partitioning._split({"values": dask.array.from_array(values)}))
+    # pylint: enable=protected-access

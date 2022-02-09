@@ -16,9 +16,15 @@ import xarray
 
 from .. import Date, get_codecs
 from ... import dataset
+# pylint: disable=unused-import # Need to import for fixtures
+from ...tests.cluster import dask_client, dask_cluster
+
+# pylint: disable=disable=unused-argument
 
 
-def test_split_dataset():
+def test_split_dataset(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the split_dataset method"""
     start_date = numpy.datetime64("2000-01-06", "us")
     delta = numpy.timedelta64(1, "h")
@@ -151,7 +157,9 @@ def test_pickle():
     assert other.variables == ("dates", )
 
 
-def test_no_monotonic():
+def test_no_monotonic(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test that the Date partitioning raises an error if the temporal axis is
     not monotonic."""
     dates = numpy.arange(numpy.datetime64("2000-01-01", "h"),
@@ -159,11 +167,15 @@ def test_no_monotonic():
                          numpy.timedelta64(1, "m"))
     numpy.random.shuffle(dates)
     partitioning = Date(("dates", ), "h")
+    # pylint: disable=protected-access
     with pytest.raises(ValueError):
         list(partitioning._split({"dates": dask.array.from_array(dates)}))
+    # pylint: enable=protected-access
 
 
-def test_values_must_be_datetime64():
+def test_values_must_be_datetime64(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test that the values must be datetime64."""
     dates = numpy.arange(numpy.datetime64("2000-01-01", "h"),
                          numpy.datetime64("2000-01-02", "h"),
@@ -171,4 +183,6 @@ def test_values_must_be_datetime64():
     partitioning = Date(("dates", ), "h")
     dates = dates.astype("int64")
     with pytest.raises(TypeError):
+        # pylint: disable=protected-access
         list(partitioning._split({"dates": dask.array.from_array(dates)}))
+    # pylint: enable=protected-access

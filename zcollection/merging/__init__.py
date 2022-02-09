@@ -21,7 +21,7 @@ __all__ = ["MergeCallable", "perform", "merge_time_series"]
 CHARACTERS = "abcdefghijklmnopqrstuvwxyz0123456789_"
 
 
-#: pylint: disable=too-few-public-methods
+#: pylint: disable=too-few-public-methods,duplicate-code
 class MergeCallable(Protocol):
     """Protocol to merge datasets stored in a partition.
 
@@ -36,7 +36,7 @@ class MergeCallable(Protocol):
         inserted_ds: dataset.Dataset,
         axis: str,
         partitioning_dim: str,
-    ) -> dataset.Dataset:
+    ) -> dataset.Dataset:  # pylint: disable=duplicate-code
         """Call the partition function.
 
         Args:
@@ -50,7 +50,7 @@ class MergeCallable(Protocol):
         """
         ...  # pragma: no cover
 
-    #: pylint: enable=too-few-public-methods
+    #: pylint: enable=too-few-public-methods,duplicate-code
 
 
 def _update_fs(

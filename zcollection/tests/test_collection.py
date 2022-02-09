@@ -15,7 +15,7 @@ import zarr
 
 from .. import collection, dataset, merging, meta, partitioning, storage
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_client
+from .cluster import dask_client, dask_cluster
 from .data import (
     DELTA,
     END_DATE,
@@ -31,7 +31,11 @@ from .fs import local_fs, s3, s3_base, s3_fs
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_collection_creation(dask_client, arg, request):
+def test_collection_creation(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
     """Test the creation of a collection"""
     tested_fs = request.getfixturevalue(arg)
     ds = next(create_test_dataset())
@@ -74,7 +78,11 @@ def test_collection_creation(dask_client, arg, request):
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_insert(dask_client, arg, request):
+def test_insert(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
     """Test the insertion of a dataset"""
     tested_fs = request.getfixturevalue(arg)
     datasets = list(create_test_dataset())
@@ -153,7 +161,12 @@ def test_insert(dask_client, arg, request):
 
 
 @pytest.mark.parametrize("arg,create_test_data", FILE_SYSTEM_DATASET)
-def test_update(dask_client, arg, create_test_data, request):
+def test_update(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    create_test_data,
+    request,
+):
     """Test the update of a dataset"""
     tested_fs = request.getfixturevalue(arg)
     ds = next(create_test_data())
@@ -179,7 +192,11 @@ def test_update(dask_client, arg, create_test_data, request):
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_drop_partitions(dask_client, arg, request):
+def test_drop_partitions(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
     """Test the dropping of a dataset"""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
@@ -203,7 +220,11 @@ def test_drop_partitions(dask_client, arg, request):
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_drop_variable(dask_client, arg, request):
+def test_drop_variable(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
     """Test the dropping of a variable"""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
@@ -227,7 +248,11 @@ def test_drop_variable(dask_client, arg, request):
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_add_variable(dask_client, arg, request):
+def test_add_variable(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
     """Test the adding of a variable"""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
@@ -279,7 +304,12 @@ def test_add_variable(dask_client, arg, request):
 
 
 @pytest.mark.parametrize("arg,create_test_data", FILE_SYSTEM_DATASET)
-def test_add_update(dask_client, arg, create_test_data, request):
+def test_add_update(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    create_test_data,
+    request,
+):
     """Test the adding and updating of a dataset"""
     tested_fs = request.getfixturevalue(arg)
     ds = next(create_test_data())
@@ -329,7 +359,11 @@ def test_add_update(dask_client, arg, create_test_data, request):
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_fillvalue(dask_client, arg, request):
+def test_fillvalue(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
     """Test the management of masked values."""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs, with_fillvalue=True)
@@ -351,7 +385,11 @@ def test_fillvalue(dask_client, arg, request):
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_degraded_tests(dask_client, arg, request):
+def test_degraded_tests(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
     """Test the degraded functionality."""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
@@ -365,7 +403,11 @@ def test_degraded_tests(dask_client, arg, request):
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_insert_with_missing_variable(dask_client, arg, request):
+def test_insert_with_missing_variable(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
     """Test of the insertion of a dataset in which a variable is missing.
 
     This happens, for example, when a variable is not acquired, but created by
@@ -396,14 +438,13 @@ def test_insert_with_missing_variable(dask_client, arg, request):
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_insert_failed(dask_client, arg, request):
+def test_insert_failed(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
     """Test the insertion of a dataset in which the insertion failed."""
     tested_fs = request.getfixturevalue(arg)
-    # import dask.distributed
-    # cluster = dask.distributed.LocalCluster(n_workers=1,
-    #                                         threads_per_worker=1,
-    #                                         processes=False)
-    # client = dask.distributed.Client(cluster)
     ds = next(create_test_dataset())
     zcollection = collection.Collection("time",
                                         ds.metadata(),
@@ -423,7 +464,11 @@ def test_insert_failed(dask_client, arg, request):
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_map_partition(dask_client, arg, request):
+def test_map_partition(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
     """Test the update of a dataset"""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
@@ -439,7 +484,11 @@ def test_map_partition(dask_client, arg, request):
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
-def test_indexer(dask_client, arg, request):
+def test_indexer(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
     """Test the update of a dataset"""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)

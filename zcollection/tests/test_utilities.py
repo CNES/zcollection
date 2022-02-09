@@ -12,7 +12,7 @@ import dask.distributed
 
 from .. import utilities
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_client
+from .cluster import dask_client, dask_cluster
 
 # pylint: disable=unused-import
 
@@ -77,13 +77,17 @@ def test_get_client_with_no_cluster():
         assert isinstance(client, dask.distributed.Client)
 
 
-def test_get_client_with_cluster(dask_client):
+def test_get_client_with_cluster(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the get_client function with a cluster."""
     with utilities.get_client() as client:
         assert isinstance(client, dask.distributed.Client)
 
 
-def test_dask_workers(dask_client):
+def test_dask_workers(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the dask_workers function."""
     assert utilities.dask_workers(dask_client, cores_only=True) == len(
         dask_client.ncores())  # type: ignore
@@ -91,7 +95,9 @@ def test_dask_workers(dask_client):
         item for item in dask_client.nthreads().values())  # type: ignore
 
 
-def test_calculation_stream(dask_client):
+def test_calculation_stream(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test the calculation_stream function."""
 
     def add_1_return_list(item):

@@ -6,7 +6,6 @@
 Test merging.
 =============
 """
-import fsspec
 import numpy
 import zarr
 
@@ -15,7 +14,7 @@ from .. import _update_fs, merge_time_series, perform
 from ... import sync
 from ...tests import data
 # pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_client
+from ...tests.cluster import dask_client, dask_cluster
 from ...tests.fs import local_fs
 
 
@@ -34,7 +33,10 @@ class ThrowError(sync.Sync):
         ...
 
 
-def test_update_fs(dask_client, local_fs):
+def test_update_fs(
+        dask_client,  # pylint: disable=redefined-outer-name
+        local_fs,  # pylint: disable=redefined-outer-name
+):
     """Test the _update_fs function."""
     generator = data.create_test_dataset()
     ds = next(generator)
@@ -61,21 +63,24 @@ def test_update_fs(dask_client, local_fs):
     assert not local_fs.exists(zattrs)
 
 
-def test_perform(dask_client):
+def test_perform(
+        local_fs,  # pylint: disable=redefined-outer-name
+        dask_client,  # pylint: disable=redefined-outer-name
+):
     """Test the perform function."""
     generator = data.create_test_dataset()
     ds = next(generator)
 
-    fs = fsspec.filesystem("memory")
-    path = fs.sep.join(("", "folder"))
+    path = str(local_fs.root.joinpath("folder"))
 
-    future = dask_client.submit(_update_fs, path, dask_client.scatter(ds), fs)
+    future = dask_client.submit(_update_fs, path, dask_client.scatter(ds),
+                                local_fs.fs)
     dask_client.gather(future)
 
     future = dask_client.submit(perform, dask_client.scatter(ds), path, "time",
-                                fs, "time", merge_time_series)
+                                local_fs.fs, "time", merge_time_series)
     dask_client.gather(future)
 
-    zgroup = zarr.open_consolidated(fs.get_mapper(path))
+    zgroup = zarr.open_consolidated(local_fs.get_mapper(path))
     assert numpy.all(zgroup["time"][...] == ds["time"].values)
     assert numpy.all(zgroup["var1"][...] == ds["var1"].values)

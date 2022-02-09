@@ -37,3 +37,8 @@ def pytest_addoption(parser):
         type=int,
         help="Number of core for each worker Dask. (default: the number of "
         "cores of the target platform).")
+    parser.addoption(
+        "--processes",
+        action="store_true",
+        default=False,
+        help="Whether to use processes or threads for Dask. (default: False)")

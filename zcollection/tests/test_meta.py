@@ -26,7 +26,7 @@ def test_attribute():
     assert str(att) == "Attribute('a', 23.4)"
     # pylint: disable=comparison-with-itself
     assert att == att
-    assert (att == "X") == False
+    assert (att == "X") is False
     assert att != meta.Attribute("a", "23.4")
     assert isinstance(meta.Attribute.from_config(att.get_config()),
                       meta.Attribute)
@@ -68,7 +68,7 @@ def test_variable():
     assert str(var) == "Variable('a')"
     # pylint: disable=comparison-with-itself
     assert var == var
-    assert (var == 2) == False
+    assert (var == 2) is False
     other = meta.Variable.from_config(var.get_config())
     assert var == other
     other.name = "x"
@@ -79,14 +79,14 @@ def test_variable():
 def test_dataset():
     """Test dataset creation"""
     root = pathlib.Path(__file__).parent
-    with root.joinpath("first_dataset.json").open() as stream:
+    with root.joinpath("first_dataset.json").open(encoding="utf-8") as stream:
         first = json.load(stream)
-    with root.joinpath("second_dataset.json").open() as stream:
+    with root.joinpath("second_dataset.json").open(encoding="utf-8") as stream:
         second = json.load(stream)
     ds = meta.Dataset.from_config(first)
     other = meta.Dataset.from_config(second)
     assert ds == other
-    assert (ds == 2) == False
+    assert (ds == 2) is False
     assert (ds != other) is False
     ds.dimensions = ds.dimensions + ("dummy", )
     assert ds != other
@@ -95,7 +95,7 @@ def test_dataset():
 def test_search_same_dimensions_as():
     """Test search_same_dimensions_as"""
     root = pathlib.Path(__file__).parent
-    with root.joinpath("first_dataset.json").open() as stream:
+    with root.joinpath("first_dataset.json").open(encoding="utf-8") as stream:
         first = json.load(stream)
     ds = meta.Dataset.from_config(first)
     other = ds.search_same_dimensions_as(ds.variables["simulated_error_karin"])
@@ -110,7 +110,7 @@ def test_search_same_dimensions_as():
 def test_pickle():
     """Test pickling"""
     root = pathlib.Path(__file__).parent
-    with root.joinpath("first_dataset.json").open() as stream:
+    with root.joinpath("first_dataset.json").open(encoding="utf-8") as stream:
         data = json.load(stream)
     ds = meta.Dataset.from_config(data)
     other = pickle.loads(pickle.dumps(ds))
@@ -120,7 +120,7 @@ def test_pickle():
 def test_missing_variables():
     """Test missing_variables"""
     root = pathlib.Path(__file__).parent
-    with root.joinpath("first_dataset.json").open() as stream:
+    with root.joinpath("first_dataset.json").open(encoding="utf-8") as stream:
         data = json.load(stream)
     ds = meta.Dataset.from_config(data)
     other = pickle.loads(pickle.dumps(ds))

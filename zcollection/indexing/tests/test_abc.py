@@ -2,7 +2,10 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-from typing import Dict, Iterator, List, Optional, Tuple, Union
+"""
+Test the base class for indexing.
+"""
+from typing import Iterator, List, Optional, Tuple, Union
 import pathlib
 
 import fsspec
@@ -14,7 +17,7 @@ from .. import abc
 from ... import collection, dataset, partitioning
 from ...partitioning.tests import data
 # pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_client
+from ...tests.cluster import dask_client, dask_cluster
 from ...tests.fs import local_fs
 # pylint: enable=unused-import
 from ...typing import NDArray
@@ -106,6 +109,7 @@ class HalfOrbitIndexer(abc.Indexer):
         cls,
         path: Union[pathlib.Path, str],
         ds: collection.Collection,
+        *,
         filesystem: Optional[fsspec.AbstractFileSystem] = None,
         **kwargs,
     ) -> "HalfOrbitIndexer":
@@ -127,6 +131,7 @@ class HalfOrbitIndexer(abc.Indexer):
     def update(
         self,
         ds: collection.Collection,
+        *,
         bag_partition_size: Optional[int] = None,
         bag_npartitions: Optional[int] = None,
         **kwargs,
@@ -147,7 +152,10 @@ class HalfOrbitIndexer(abc.Indexer):
                         **kwargs)
 
 
-def test_indexer(dask_client, local_fs):
+def test_indexer(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        local_fs,  # pylint: disable=redefined-outer-name
+):
     """Test the base class of the indexer.
     """
     ds = dataset.Dataset.from_xarray(data.create_test_sequence(5, 20, 10))
@@ -167,7 +175,7 @@ def test_indexer(dask_client, local_fs):
 
     # Index not yet created
     with pytest.raises(ValueError):
-        indexer.table
+        _ = indexer.table
 
     assert indexer.dtype() == [('start', 'int64'), ('stop', 'int64'),
                                ('cycle_number', 'uint16'),
