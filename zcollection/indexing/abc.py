@@ -326,7 +326,7 @@ class Indexer:
                 pyarrow.compute.invert(mask)))  # type:ignore
             # pylint: enable=no-member
 
-        if len(tables) != 0:
+        if len(tables) == 0:
             # No new data, nothing to do.
             return
 
