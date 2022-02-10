@@ -11,6 +11,7 @@ from .collection import (
     Collection,
     Indexer,
     PartitionCallable,
+    PartitionFilter,
     create_collection,
     open_collection,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "open_collection",
     "open_view",
     "PartitionCallable",
+    "PartitionFilter",
     "partitioning",
     "Variable",
     "version",
