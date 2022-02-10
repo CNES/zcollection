@@ -67,7 +67,9 @@ def test_date_expression(
         assert expr(variables)
 
 
-def test_bench_expression():
+def test_bench_expression(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Benchmark of expressions."""
     partitioning = Date(("dates", ), "D")
     ds = make_dataset()
