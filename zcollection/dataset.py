@@ -28,7 +28,7 @@ import numcodecs.abc
 import numpy
 import xarray
 
-from . import expression, meta
+from . import meta
 from .meta import Attribute
 from .typing import ArrayLike, NDArray, NDMaskedArray
 
@@ -199,13 +199,9 @@ def _asarray(
         fill_value: The fill value.
 
     Returns:
-        If the data provided is a masked array, the functions returns a tuple
-        containing:
-        - an array with masked data replaced by its fill value
-        - the fill value of the provided masked array
-        otherwise:
-        - the provided array
-        - the provided fill value
+        If the data provided is a masked array, the functions return the array
+        with masked data replaced by its fill value and the fill value of the
+        offered masked array. Otherwise, the provided array and fill value.
     """
     result = dask.array.asarray(arr)  # type: dask.array.Array
     _meta = result._meta  # pylint: disable=protected-access
@@ -457,50 +453,6 @@ class Variable:
             attrs["_FillValue"] = self.fill_value
         return xarray.Variable(self.dimensions, data, attrs, encoding)
 
-    def masked_values(self,
-                      value: float,
-                      *,
-                      rtol=1e-5,
-                      atol=1e-8,
-                      shrink: bool = True) -> "Variable":
-        """Create a new variable masked where approximately equal to the
-        value provided.
-
-        Args:
-            value: Masking value
-            rtol, atol: Tolerance parameters passed on to
-                :py:func:`numpy.isclose`
-
-        Return:
-            The variable masked where approximately equal to value.
-        """
-        data = dask.array.ma.masked_values(self._array,
-                                           value,
-                                           rtol=rtol,
-                                           atol=atol,
-                                           shrink=shrink)
-        return Variable(self.name, data, self.dimensions, self.attrs,
-                        self.compressor, None, self.filters)
-
-    def masked_where(self, condition: Any) -> "Variable":
-        """Create a new variable with the data masked according to the
-        provided mask.
-
-        Args:
-            condition: Masking condition.
-
-        Returns:
-            New variable.
-        """
-        condition = dask.array.asarray(condition)
-        if condition.shape != self.shape:
-            raise IndexError(
-                "Inconsistent shape between the condition and "
-                f"the input (got {self.shape} and {condition.shape})")
-        data = dask.array.ma.masked_where(condition, self._array)
-        return Variable(self.name, data, self.dimensions, self.attrs,
-                        self.compressor, None, self.filters)
-
     def __str__(self) -> str:
         return _variable_repr(self)
 
@@ -509,86 +461,6 @@ class Variable:
 
     def __hash__(self) -> int:
         return hash(self.name)
-
-    def __eq__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data == other.data
-        return self.data == other
-
-    def __ne__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data != other.data
-        return self.data != other
-
-    def __lt__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data < other.data
-        return self.data < other
-
-    def __le__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data <= other.data
-        return self.data <= other
-
-    def __gt__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data > other.data
-        return self.data > other
-
-    def __ge__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data >= other.data
-        return self.data >= other
-
-    def __add__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data + other.data
-        return self.data + other
-
-    def __sub__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data - other.data
-        return self.data - other
-
-    def __mul__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data * other.data
-        return self.data * other
-
-    def __truediv__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data / other.data
-        return self.data / other
-
-    def __floordiv__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data // other.data
-        return self.data // other
-
-    def __mod__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data % other.data
-        return self.data % other
-
-    def __pow__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data**other.data
-        return self.data**other
-
-    def __and__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data & other.data
-        return self.data & other
-
-    def __xor__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data ^ other.data
-        return self.data ^ other
-
-    def __or__(self, other: Any) -> dask.array.Array:
-        if isinstance(other, Variable):
-            return self.data | other.data
-        return self.data | other
 
     def __getitem__(self, key: Any) -> Any:
         return self.data[key]
@@ -863,44 +735,6 @@ class Dataset:
             for name, variable in self.variables.items()
         ]
         return Dataset(variables=variables, attrs=self.attrs)
-
-    def masked_where(self, condition: Union[str, NDArray]) -> "Dataset":
-        """Mask the dataset where the expression evaluates to True.
-
-        Args:
-            condition: Masking consition. If a string, it is compiled as a
-                dask expression and evaluated as a boolean array. If an array,
-                it is used directly.
-
-        Returns:
-            New dataset.
-
-        Example:
-            >>> ds = Dataset(
-            ...     variables=[
-            ...         Variable(
-            ...             name="a",
-            ...             data=np.array([1, 2, 3]),
-            ...             dimensions=("x",),
-            ...             attrs={"units": "m"}),
-            ...         Variable(
-            ...             name="b",
-            ...             data=np.array([4, 5, 6]),
-            ...             dimensions=("x",),
-            ...             attrs={"units": "m"})
-            ...     ],
-            ...     attrs={"units": "m"})
-            >>> ds.masked_where((ds["a"].data > 2) & (ds["b"].data > 5))
-            >>> ds.masked_where("(a > 2) & (b > 5)")
-        """
-        if isinstance(condition, str):
-            mask = expression.Expression(condition)(
-                {name: var.data
-                 for name, var in self.variables.items()})
-        else:
-            mask = condition
-        return Dataset((item.masked_where(mask)
-                        for item in self.variables.values()), self.attrs)
 
     def __str__(self) -> str:
         return _dataset_repr(self)
