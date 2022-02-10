@@ -590,6 +590,9 @@ class Variable:
             return self.data | other.data
         return self.data | other
 
+    def __getitem__(self, key: Any) -> Any:
+        return self.data[key]
+
 
 class Dataset:
     """Hold variables, dimensions, and attributes that together form a dataset.

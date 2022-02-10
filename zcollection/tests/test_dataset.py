@@ -312,6 +312,21 @@ def test_variable_binary_operators(
     assert numpy.all(result == (var.values | 3))
 
 
+def test_variable_getitem(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
+    var = create_test_variable()
+    values = var.values
+    result = var[0].compute()
+    assert numpy.all(result == values[0])
+    result = var[0:2].compute()
+    assert numpy.all(result == values[0:2])
+    result = var[0:2, 0].compute()
+    assert numpy.all(result == values[0:2, 0])
+    result = var[0:2, 0:2].compute()
+    assert numpy.all(result == values[0:2, 0:2])
+
+
 def test_dataset(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
