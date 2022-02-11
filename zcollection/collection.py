@@ -657,7 +657,8 @@ class Collection:
 
             # For each provided partition scheme, retrieves the corresponding
             # indexer.
-            args = ((item, indexers_map[item]) for item in selected_partitions)
+            args = ((item, indexers_map[item])
+                    for item in sorted(selected_partitions))
             bag = dask.bag.from_sequence(args,
                                          npartitions=utilities.dask_workers(
                                              client, cores_only=True))
