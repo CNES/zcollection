@@ -128,9 +128,9 @@ def write_zarr_variable(
     with dask.config.set(scheduler="synchronous"):
         data = data.rechunk(
             {
-                0: "auto",
+                0: -1,
                 1: -1
-            } if len(data.shape) == 2 else {0: "auto"},
+            } if len(data.shape) == 2 else {0: -1},
             block_size_limit=BLOCK_SIZE_LIMIT,
         )
 
