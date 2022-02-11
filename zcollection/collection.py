@@ -24,6 +24,7 @@ from typing import (
 )
 import dataclasses
 import io
+import itertools
 import json
 import logging
 import pathlib
@@ -197,6 +198,34 @@ def _insert(
             fs.rm(dirname, recursive=True)
             fs.invalidate_cache(dirname)
             raise
+
+
+def _load_and_apply_indexer(
+    args: Tuple[Tuple[Tuple[str, int], ...], List[slice]],
+    fs: fsspec.AbstractFileSystem,
+    partition_handler: partitioning.Partitioning,
+    partition_properties: PartitioningProperties,
+) -> List[dataset.Dataset]:
+    """Load a partition and apply its indexer.
+
+    Args:
+        partition_scheme: The partition scheme of the partition.
+        items: List of slices to apply to the partition.
+
+    Returns:
+        The list of loaded datasets.
+    """
+    partition_scheme, items = args
+    partition = fs.sep.join((partition_properties.dir,
+                             partition_handler.join(partition_scheme, fs.sep)))
+
+    ds = storage.open_zarr_group(partition, fs)
+    arrays = []
+    _ = {
+        arrays.append(ds.isel({partition_properties.dim: indexer}))
+        for indexer in items
+    }
+    return arrays
 
 
 class Collection:
@@ -598,51 +627,55 @@ class Collection:
             ...     filters=lambda keys: keys["year"] == 2019 and
             ...     keys["month"] == 3 and keys["day"] % 2 == 0)
         """
+        client = utilities.get_client()
         arrays = []
         if indexer is None:
+            selected_partitions = tuple(self.partitions(filters=filters))
+            if len(selected_partitions) == 0:
+                return None
+
             # No indexer, so the dataset is loaded directly for each
             # selected partition.
-            arrays += [
-                storage.open_zarr_group(partition, self.fs)
-                for partition in self.partitions(filters=filters)
-            ]
+            bag = dask.bag.from_sequence(self.partitions(filters=filters),
+                                         npartitions=utilities.dask_workers(
+                                             client, cores_only=True))
+            arrays = bag.map(storage.open_zarr_group, fs=self.fs).compute()
         else:
-            # Retrieves the selected partitions
-            selected_partitions = tuple(
-                self.partitioning.parse(item)
-                for item in self.partitions(filters=filters))
-
             # Build an indexer dictionary between the partition scheme and
             # indexer.
             indexers_map: Dict[Tuple[Tuple[str, int], ...], List[slice]] = {}
             _ = {
                 indexers_map.setdefault(partition_scheme, []).append(indexer)
                 for partition_scheme, indexer in indexer
-                if partition_scheme in selected_partitions
             }
-            del selected_partitions
+            # Filter the selected partitions
+            selected_partitions = set(indexers_map) & set(
+                (self.partitioning.parse(item)
+                 for item in self.partitions(filters=filters)))
+            if len(selected_partitions) == 0:
+                return None
 
             # For each provided partition scheme, retrieves the corresponding
             # indexer.
-            for partition_scheme, items in indexers_map.items():
-                partition = self.fs.sep.join(
-                    (self.partition_properties.dir,
-                     self.partitioning.join(partition_scheme, self.fs.sep)))
+            args = ((item, indexers_map[item]) for item in selected_partitions)
+            bag = dask.bag.from_sequence(args,
+                                         npartitions=utilities.dask_workers(
+                                             client, cores_only=True))
 
-                # Loads the current partition and applies the indexer.
-                ds = storage.open_zarr_group(partition, self.fs)
-                _ = {
-                    arrays.append(
-                        ds.isel({self.partition_properties.dim: indexer}))
-                    for indexer in items
-                }
+            # Finally, load the selected partitions and apply the indexer.
+            arrays = list(
+                itertools.chain.from_iterable(
+                    bag.map(
+                        _load_and_apply_indexer,
+                        fs=self.fs,
+                        partition_handler=self.partitioning,
+                        partition_properties=self.partition_properties,
+                    ).compute()))
 
+        array = arrays.pop(0)
         if arrays:
-            array = arrays.pop(0)
-            if arrays:
-                array = array.concat(arrays, self.partition_properties.dim)
-            return array
-        return None
+            array = array.concat(arrays, self.partition_properties.dim)
+        return array
 
     # pylint: disable=method-hidden
     def update(
