@@ -26,6 +26,7 @@ from ...tests.cluster import dask_client, dask_cluster
 def test_construction():
     """Test the sequence constructor."""
     assert isinstance(Sequence(("a", "b")), Sequence)
+    assert len(Sequence(("a", "b"))) == 2
     with pytest.raises(ValueError):
         Sequence(())
     with pytest.raises(ValueError):

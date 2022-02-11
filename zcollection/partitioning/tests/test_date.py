@@ -125,6 +125,7 @@ def test_construction():
     assert partitioning.variables == ("dates", )
     assert partitioning.dtype() == (("year", "uint16"), ("month", "uint8"),
                                     ("day", "uint8"))
+    assert len(partitioning) == 3
     assert partitioning.get_config() == {
         "id": "Date",
         "resolution": "D",
