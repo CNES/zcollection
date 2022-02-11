@@ -297,19 +297,25 @@ def test_listing_partition():
     end = numpy.datetime64("2000-02-01", "D")
     delta = numpy.timedelta64(1, "D")
 
+    root = str("/zcollection")
+    fs.mkdir(root)
+    fs.open(fs.sep.join((root, ".zcollection")), "w").close()
+
     expected = []
     for date in numpy.arange(start, end, delta):
         item = date.item()
-        root = fs.sep.join(("", f"year={item.year}", f"month={item.month:02d}",
-                            f"day={item.day:02d}"))
-        expected.append(root)
-        fs.mkdirs(root)
-        _ = {fs.mkdirs(fs.sep.join((root, item))) for item in variables}
+        partition = fs.sep.join(
+            (root, f"year={item.year}", f"month={item.month:02d}",
+             f"day={item.day:02d}"))
+        expected.append(partition)
+        fs.mkdirs(partition)
 
-        for item in [".zattrs", ".zgroup", ".zmetadata"]:
-            path = fs.sep.join((root, item))
-            with fs.open(path, "w"):
-                ...
+        _ = {fs.mkdirs(fs.sep.join((partition, item))) for item in variables}
+
+        _ = {
+            fs.open(fs.sep.join((partition, item)), "w").close()
+            for item in [".zattrs", ".zgroup", ".zmetadata"]
+        }
 
     partitioning = Date(("dates", ), "D")
-    assert expected == list(partitioning.list_partitions(fs, "/"))
+    assert expected == list(partitioning.list_partitions(fs, root))

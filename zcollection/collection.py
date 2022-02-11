@@ -478,19 +478,14 @@ class Collection:
 
         base_dir = self.partition_properties.dir
         sep = self.fs.sep
-        for root, dirs, files in utilities.fs_walk(self.fs,
-                                                   base_dir,
-                                                   sort=True):
-            if storage.ZGROUP in files:
-                # Filtering on partition names
-                partitions = root.replace(base_dir, "")
-                entry = partitions.split(sep)
 
-                if self._is_selected(entry, expr):
-                    yield self._relative_path(root) if relative else root
-                # The analysis of the tree structure is stopped at this level
-                # (i.e. the directories containing the zarr.Array are skipped).
-                dirs.clear()
+        for item in self.partitioning.list_partitions(self.fs, base_dir):
+            # Filtering on partition names
+            partitions = item.replace(base_dir, "")
+            entry = partitions.split(sep)
+
+            if self._is_selected(entry, expr):
+                yield self._relative_path(item) if relative else item
 
     # pylint: disable=method-hidden
     def drop_partitions(

@@ -133,6 +133,7 @@ def list_partitions(
     fs: fsspec.AbstractFileSystem,
     path: str,
     depth: int,
+    root: bool = True,
 ) -> Iterator[str]:
     """The number of variables used for partitioning.
 
@@ -143,6 +144,7 @@ def list_partitions(
         fs: file system object
         path: path to the directory
         depth: maximum depth of the directory tree.
+        root: if True, the path is the root of the tree.
 
     Returns:
         Iterator of (path, directories, files).
@@ -150,13 +152,20 @@ def list_partitions(
     if depth == -1:
         return
 
-    listing = sorted(fs.ls(path, detail=False))
-
     if depth == 0:
-        yield from listing
+        yield from sorted(fs.ls(path, detail=False))
+    elif root:
+        for info in fs.ls(path, detail=True):
+            pathname = info["name"].rstrip("/")
+            if info["type"] == "directory" and pathname != path:
+                # do not include "self" path
+                yield from list_partitions(fs,
+                                           pathname,
+                                           depth=depth - 1,
+                                           root=False)
     else:
-        for item in listing:
-            yield from list_partitions(fs, item, depth=depth - 1)
+        for item in sorted(fs.ls(path, detail=False)):
+            yield from list_partitions(fs, item, depth=depth - 1, root=False)
 
 
 class Partitioning(abc.ABC):
