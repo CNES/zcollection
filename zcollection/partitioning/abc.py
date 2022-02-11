@@ -23,6 +23,7 @@ import collections
 import re
 
 import dask.array
+import fsspec
 import numpy
 
 from .. import dataset
@@ -126,6 +127,36 @@ def concatenate_item(arr: NDArray, item: Any) -> NDArray:
         Concatenated array.
     """
     return numpy.concatenate([arr, numpy.array([item], dtype=arr.dtype)])
+
+
+def list_partitions(
+    fs: fsspec.AbstractFileSystem,
+    path: str,
+    depth: int,
+) -> Iterator[str]:
+    """The number of variables used for partitioning.
+
+    The function will go down the tree and return all the files present when the
+    requested depth is reached.
+
+    Args:
+        fs: file system object
+        path: path to the directory
+        depth: maximum depth of the directory tree.
+
+    Returns:
+        Iterator of (path, directories, files).
+    """
+    if depth == -1:
+        return
+
+    listing = sorted(fs.ls(path, detail=False))
+
+    if depth == 0:
+        yield from listing
+    else:
+        for item in listing:
+            yield from list_partitions(fs, item, depth=depth - 1)
 
 
 class Partitioning(abc.ABC):
@@ -330,3 +361,19 @@ class Partitioning(abc.ABC):
             The joined partitioning scheme.
         """
         return sep.join(f"{k}={v}" for k, v in partition_scheme)
+
+    def list_partitions(
+        self,
+        fs: fsspec.AbstractFileSystem,
+        path: str,
+    ) -> Iterator[str]:
+        """List the partitions
+
+        Args:
+            fs: The filesystem to be used.
+            path: The path to the directory containing the partitions.
+
+        Yields:
+            The partitions.
+        """
+        return list_partitions(fs, path, depth=len(self) - 1)
