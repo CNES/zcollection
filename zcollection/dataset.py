@@ -14,9 +14,9 @@ from typing import (
     Iterable,
     Iterator,
     Optional,
+    OrderedDict,
     Sequence,
     Tuple,
-    Type,
     Union,
 )
 import collections
@@ -512,8 +512,15 @@ class Dataset:
         """
         return self.variables[name]
 
-    def __reduce__(self) -> Tuple[Type[Dataset], Tuple[Any, ...]]:
-        return Dataset, (tuple(self.variables.values()), self.attrs)
+    def __getstate__(
+            self) -> Tuple[OrderedDict[str, Variable], Sequence[Attribute]]:
+        return self.variables, self.attrs
+
+    def __setstate__(
+        self,
+        state: Tuple[OrderedDict[str, Variable], Sequence[Attribute]],
+    ) -> None:
+        self.variables, self.attrs = state
 
     @property
     def nbytes(self) -> int:
