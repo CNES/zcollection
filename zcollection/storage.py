@@ -6,7 +6,7 @@
 I/O operations
 ==============
 """
-from typing import Any, Sequence, Tuple, Union
+from typing import Any, Iterable, Optional, Sequence, Tuple, Union
 import collections
 import json
 import logging
@@ -201,21 +201,31 @@ def open_zarr_array(array: zarr.Array, name: str) -> dataset.Variable:
                             array.compressor, array.fill_value, array.filters)
 
 
-def open_zarr_group(dirname, fs: fsspec.AbstractFileSystem) -> dataset.Dataset:
+def open_zarr_group(
+        dirname,
+        fs: fsspec.AbstractFileSystem,
+        selected_variables: Optional[Iterable[str]] = None) -> dataset.Dataset:
     """Open a Zarr group stored in a partition.
 
     Args:
         dirname: The name of the partition.
         fs: The file system that the partition is stored on.
+        selected_variables: The list of variables to retain from the Zarr
+            group. If None, all variables are selected.
 
     Returns:
         The zarr group stored in the partition.
     """
     _LOGGER.debug("Opening Zarr group %r", dirname)
-    store = zarr.open_consolidated(fs.get_mapper(dirname))
-    variables = []
-    for name, array in store.items():  # type: ignore
-        variables.append(open_zarr_array(array, name))
+    store: zarr.Group = zarr.open_consolidated(  # type: ignore
+        fs.get_mapper(dirname))
+    # Ignore unknown variables to retain.
+    selected_variables = set(selected_variables) & set(
+        store) if selected_variables is not None else set(store)
+    variables = [
+        open_zarr_array(store[name], name)  # type: ignore
+        for name in selected_variables
+    ]
 
     return dataset.Dataset(
         variables=variables,

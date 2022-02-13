@@ -159,6 +159,22 @@ def test_insert(
         assert isinstance(path, str)
         assert isinstance(item, zarr.Group)
 
+    zcollection = collection.open_collection(str(tested_fs.collection),
+                                             mode="r",
+                                             filesystem=tested_fs.fs)
+    ds = zcollection.load(selected_variables=["var1"])
+    assert ds is not None
+    assert "var1" in ds.variables
+    assert "var2" not in ds.variables
+
+    ds = zcollection.load(selected_variables=[])
+    assert ds is not None
+    assert len(ds.variables) == 0
+
+    ds = zcollection.load(selected_variables=["varX"])
+    assert ds is not None
+    assert len(ds.variables) == 0
+
 
 @pytest.mark.parametrize("arg,create_test_data", FILE_SYSTEM_DATASET)
 def test_update(

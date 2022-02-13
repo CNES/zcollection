@@ -205,12 +205,16 @@ def _load_and_apply_indexer(
     fs: fsspec.AbstractFileSystem,
     partition_handler: partitioning.Partitioning,
     partition_properties: PartitioningProperties,
+    selected_variables: Optional[Iterable[str]],
 ) -> List[dataset.Dataset]:
     """Load a partition and apply its indexer.
 
     Args:
-        partition_scheme: The partition scheme of the partition.
-        items: List of slices to apply to the partition.
+        args: Tuple containing the partition's name and its indexer.
+        fs: The file system that the partition is stored on.
+        partition_handler: The partitioning handler.
+        partition_properties: The partitioning properties.
+        selected_variable: The selected variables to load.
 
     Returns:
         The list of loaded datasets.
@@ -219,7 +223,7 @@ def _load_and_apply_indexer(
     partition = fs.sep.join((partition_properties.dir,
                              partition_handler.join(partition_scheme, fs.sep)))
 
-    ds = storage.open_zarr_group(partition, fs)
+    ds = storage.open_zarr_group(partition, fs, selected_variables)
     arrays = []
     _ = {
         arrays.append(ds.isel({partition_properties.dim: indexer}))
@@ -607,6 +611,7 @@ class Collection:
         *,
         filters: PartitionFilter = None,
         indexer: Optional[Indexer] = None,
+        selected_variables: Optional[Iterable[str]] = None,
     ) -> Optional[dataset.Dataset]:
         """Load the selected partitions.
 
@@ -615,9 +620,17 @@ class Collection:
                 To get more information on the predicate, see the
                 documentation of the :meth:`partitions` method.
             indexer: The indexer to apply.
+            selected_variables: A list of variables to retain from the
+                collection. If None, all variables are kept.
 
         Returns:
             The dataset containing the selected partitions.
+
+        .. warning::
+
+            If you select variables to load from the collection, do not insert
+            the returned dataset otherwise all skipped variables will be reset
+            with fill values.
 
         Example:
             >>> collection = ...
@@ -628,7 +641,7 @@ class Collection:
             ...     keys["month"] == 3 and keys["day"] % 2 == 0)
         """
         client = utilities.get_client()
-        arrays = []
+        arrays: List[dataset.Dataset] = []
         if indexer is None:
             selected_partitions = tuple(self.partitions(filters=filters))
             if len(selected_partitions) == 0:
@@ -639,7 +652,9 @@ class Collection:
             bag = dask.bag.from_sequence(self.partitions(filters=filters),
                                          npartitions=utilities.dask_workers(
                                              client, cores_only=True))
-            arrays = bag.map(storage.open_zarr_group, fs=self.fs).compute()
+            arrays = bag.map(storage.open_zarr_group,
+                             fs=self.fs,
+                             selected_variables=selected_variables).compute()
         else:
             # Build an indexer dictionary between the partition scheme and
             # indexer.
@@ -671,6 +686,7 @@ class Collection:
                         fs=self.fs,
                         partition_handler=self.partitioning,
                         partition_properties=self.partition_properties,
+                        selected_variables=selected_variables,
                     ).compute()))
 
         array = arrays.pop(0)

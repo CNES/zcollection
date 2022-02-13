@@ -92,6 +92,21 @@ def test_dataset():
     assert ds != other
 
 
+def test_select_variables():
+    root = pathlib.Path(__file__).parent
+    with root.joinpath("first_dataset.json").open(encoding="utf-8") as stream:
+        config = json.load(stream)
+    ds = meta.Dataset.from_config(config)
+    vars = ds.select_variables(("longitude", "latitude"))
+    assert tuple(vars) == ("longitude", "latitude")
+    vars = ds.select_variables(drop_variables=("longitude", "latitude"))
+    assert set(vars) & set(("longitude", "latitude")) == set()
+    vars = ds.select_variables(keep_variables=("longitude", "latitude",
+                                               "time"),
+                               drop_variables=("time", ))
+    assert tuple(vars) == ("longitude", "latitude")
+
+
 def test_search_same_dimensions_as():
     """Test search_same_dimensions_as"""
     root = pathlib.Path(__file__).parent

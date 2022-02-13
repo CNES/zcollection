@@ -8,7 +8,7 @@ Configuration metadata
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple
 import abc
 
 import numcodecs.abc
@@ -227,6 +227,29 @@ class Dataset:
 
         #: Attributes of the dataset.
         self.attrs = attrs or []
+
+    def select_variables(
+        self,
+        keep_variables: Optional[Iterable[str]] = None,
+        drop_variables: Optional[Iterable[str]] = None,
+    ) -> Set[str]:
+        """Select variables to keep or drop from the dataset.
+
+        Args:
+            keep_variables: A list of variables to retain from the Dataset.
+                If None, all variables are kept.
+            drop_variables: A list of variables to exclude from the Dataset.
+                If None, no variables are dropped.
+
+        Returns:
+            The selected variables.
+        """
+        result = set(self.variables)
+        if keep_variables is not None:
+            result &= set(keep_variables)
+        if drop_variables is not None:
+            result -= set(drop_variables)
+        return result
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Dataset):

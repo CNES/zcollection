@@ -6,7 +6,7 @@
 View on a reference collection.
 ===============================
 """
-from typing import ClassVar, Optional, Sequence, Tuple, Union
+from typing import ClassVar, Iterable, List, Optional, Sequence, Tuple, Union
 import dataclasses
 import json
 import logging
@@ -94,6 +94,7 @@ def _load_dataset(
     partition: str,
     base_dir: str,
     fs: fsspec.AbstractFileSystem,
+    selected_variables: Optional[Iterable[str]],
     view_ref: ViewReference,
     variables: Sequence[str],
 ) -> Optional[Tuple[dataset.Dataset, str]]:
@@ -104,11 +105,14 @@ def _load_dataset(
         partition: The partition to process.
         base_dir: Base directory of the view.
         fs: The file system used to access the variables in the view.
+        selected_variables: The list of variable to retain from the view
+            reference.
         view_ref: The properties of the reference collection.
-        variables: The variables defined in this view.
+        variables: The variables to retain from the view
     """
     ds = storage.open_zarr_group(
-        view_ref.fs.sep.join((view_ref.path, partition)), view_ref.fs)
+        view_ref.fs.sep.join((view_ref.path, partition)), view_ref.fs,
+        selected_variables)
     if ds is None:
         return None
 
@@ -330,6 +334,7 @@ class View:
         self,
         *,
         filters: collection.PartitionFilter = None,
+        selected_variables: Optional[Iterable[str]] = None,
     ) -> Optional[dataset.Dataset]:
         """Load the view.
 
@@ -338,6 +343,8 @@ class View:
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
                 <zcollection.collection.Collection.partitions>` method.
+            selected_variables: A list of variables to retain from the view.
+                If None, all variables are loaded.
 
         Returns:
             The dataset.
@@ -353,14 +360,16 @@ class View:
             tuple(self.view_ref.partitions(filters=filters, relative=True)),
             base_dir=self.base_dir,
             fs=self.fs,
+            selected_variables=self.view_ref.metadata.select_variables(
+                selected_variables),
             view_ref=ViewReference(self.view_ref.partition_properties.dir,
                                    self.view_ref.fs),
-            variables=self.metadata.variables)
+            variables=self.metadata.select_variables(selected_variables))
 
         # The load function returns the path to the partitions and the loaded
         # datasets. Only the loaded datasets are retrieved here and filter None
         # values corresponding to empty partitions.
-        arrays = list(
+        arrays: List[dataset.Dataset] = list(
             map(lambda item: item[0],
                 filter(lambda item: item is not None,
                        client.gather(futures))))  # type: ignore
@@ -378,6 +387,7 @@ class View:
         variable: str,
         *,
         filters: collection.PartitionFilter = None,
+        selected_variables: Optional[Iterable[str]] = None,
     ) -> None:
         """Update a variable stored int the view.
 
@@ -389,6 +399,9 @@ class View:
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
                 <zcollection.collection.Collection.partitions>` method.
+            selected_variables: A list of variables to retain from the view.
+                If None, all variables are loaded. Usefull to load only a
+                subset of the view.
 
         Raises:
             ValueError: If the variable does not exist or if the variable
@@ -412,13 +425,15 @@ class View:
             tuple(self.view_ref.partitions(filters=filters, relative=True)),
             base_dir=self.base_dir,
             fs=self.fs,
+            selected_variables=self.view_ref.metadata.select_variables(
+                keep_variables=selected_variables),
             view_ref=ViewReference(self.view_ref.partition_properties.dir,
                                    self.view_ref.fs),
-            variables=self.metadata.variables)
+            variables=self.metadata.select_variables(selected_variables))
 
         # We build the list of arguments to pass to the update routine. That is
         # the dataset and the path to the view partition.
-        arrays = list(
+        arrays: List[dataset.Dataset] = list(
             map(
                 lambda item:
                 (item[0], self.fs.sep.join((self.base_dir, item[1]))),
