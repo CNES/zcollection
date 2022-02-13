@@ -140,15 +140,18 @@ def _dataset_repr(ds: "Dataset") -> str:
     dims_str = _dimensions_repr(ds.dimensions)
     lines = [
         f"<{ds.__module__}.{ds.__class__.__name__}>",
-        f"  Dimensions: {dims_str!r}", "Data variables"
+        f"  Dimensions: {dims_str}", "Data variables:"
     ]
     # Variables
-    width = _calculate_column_width(ds.variables)
-    for name, variable in ds.variables.items():
-        dims_str = f"({', '.join(map(str, variable.dimensions))} "
-        name_str = f"    {name:<{width}s} {dims_str} {variable.dtype}"
-        lines.append(
-            _pretty_print(f"{name_str}: {_dask_repr(variable.array)}"))
+    if (len(ds.variables) == 0):
+        lines.append("    <empty>")
+    else:
+        width = _calculate_column_width(ds.variables)
+        for name, variable in ds.variables.items():
+            dims_str = f"({', '.join(map(str, variable.dimensions))} "
+            name_str = f"    {name:<{width}s} {dims_str} {variable.dtype}"
+            lines.append(
+                _pretty_print(f"{name_str}: {_dask_repr(variable.array)}"))
     # Attributes
     if len(ds.attrs):
         lines.append("  Attributes:")

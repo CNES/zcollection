@@ -416,3 +416,14 @@ def test_dataset_add_variable(
                         zarr.Blosc(), 255, (zarr.Delta("int64", "int64"), ))
     with pytest.raises(ValueError, match="has dimension"):
         ds.add_variable(var)
+
+
+def test_empty_dataset():
+    """Test empty dataset"""
+    ds = dataset.Dataset([], [])
+    assert ds.attrs == []
+    assert list(ds.variables) == []
+    assert (str(ds)) == """<zcollection.dataset.Dataset>
+  Dimensions: ()
+Data variables:
+    <empty>"""
