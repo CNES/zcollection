@@ -13,6 +13,9 @@ from typing import (
     Dict,
     Iterable,
     Iterator,
+    List,
+    Mapping,
+    MutableMapping,
     Optional,
     Sequence,
     Tuple,
@@ -23,6 +26,8 @@ import functools
 import operator
 
 import dask.array
+import dask.base
+import dask.threaded
 import numcodecs.abc
 import numpy
 import xarray
@@ -466,6 +471,56 @@ class Variable:
 
     def __getitem__(self, key: Any) -> Any:
         return self.data[key]
+
+    def __dask_graph__(self) -> Optional[Mapping]:
+        """Return the dask Graph"""
+        return self._array.__dask_graph__()
+
+    def __dask_keys__(self) -> List:
+        """Return the output keys for the Dask graph"""
+        return self._array.__dask_keys__()
+
+    def __dask_layers__(self) -> Tuple:
+        """Return the layers for the Dask graph"""
+        return self._array.__dask_layers__()
+
+    def __dask_tokenize__(self):
+        """Return the token for the Dask graph"""
+        return dask.base.normalize_token(
+            (type(self), self.name, self._array, self.dimensions, self.attrs,
+             self.fill_value))
+
+    @staticmethod
+    def __dask_optimize__(dsk: MutableMapping, keys: List,
+                          **kwargs) -> MutableMapping:
+        """Returns whether the Dask graph can be optimized
+
+        .. seealso::
+            :func:`dask.array.Array.__dask_optimize__`
+        """
+        return dask.array.Array.__dask_optimize__(dsk, keys, **kwargs)
+
+    #: The default scheduler get to use for this object.
+    __dask_scheduler__ = staticmethod(dask.threaded.get)
+
+    def _dask_finalize(self, results, array_func, *args, **kwargs):
+        data = array_func(results, *args, **kwargs)
+        return Variable(self.name, data, self.dimensions, self.attrs,
+                        self.compressor, self.fill_value, self.filters)
+
+    def __dask_postcompute__(self) -> Tuple:
+        """Return the finalizer and extra arguments to convert the computed
+        results into their in-memory representation.
+        """
+        array_func, array_args = self._array.__dask_postcompute__()
+        return self._dask_finalize, (array_func, ) + array_args
+
+    def __dask_postpersist__(self) -> Tuple:
+        """Return the rebuilder and extra arguments to rebuild an equivalent
+        Dask collection from a persisted or rebuilt graph.
+        """
+        array_func, array_args = self._array.__dask_postpersist__()
+        return self._dask_finalize, (array_func, ) + array_args
 
 
 class Dataset:
