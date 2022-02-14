@@ -9,6 +9,7 @@ Test of the collections
 import datetime
 import io
 
+import fsspec
 import numpy
 import pytest
 import zarr
@@ -519,3 +520,25 @@ def test_indexer(
 
     assert numpy.allclose(ds1.variables["var1"].values,
                           ds2.variables["var1"].values)
+
+
+def test_variables():
+    """Test the listing of the variables in a collection."""
+    fs = fsspec.filesystem("memory")
+    ds = next(create_test_dataset())
+    zcollection = collection.Collection(axis="time",
+                                        ds=ds.metadata(),
+                                        partition_handler=partitioning.Date(
+                                            ("time", ), "D"),
+                                        partition_base_dir="/",
+                                        filesystem=fs)
+    vars = zcollection.variables()
+    assert isinstance(vars, tuple)
+    assert len(vars) == 3
+    assert vars[0].name == "time"
+    assert vars[1].name == "var1"
+    assert vars[2].name == "var2"
+
+    vars = zcollection.variables(("time", ))
+    assert len(vars) == 1
+    assert vars[0].name == "time"

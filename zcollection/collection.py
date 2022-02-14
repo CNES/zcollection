@@ -36,6 +36,7 @@ import dask.bag
 import dask.distributed
 import dask.utils
 import fsspec
+import numpy
 import xarray
 import zarr
 import zarr.storage
@@ -829,6 +830,28 @@ class Collection:
                 self._relative_path(item) if relative else item,
                 zarr.open_consolidated(  # type: ignore
                     self.fs.get_mapper(item)))
+
+    def variables(
+        self,
+        selected_variables: Optional[Iterable[str]] = None
+    ) -> Tuple[dataset.Variable]:
+        """Return the variables of the collection.
+
+        Args:
+            selected_variables: The variables to return. If None, all the
+                variables are returned.
+
+        Returns:
+            The variables of the collection.
+        """
+        selected_variables = selected_variables or self.metadata.variables.keys(
+        )
+        return tuple(
+            dataset.Variable(
+                v.name, numpy.ndarray((0, ) * len(v.dimensions), v.dtype),
+                v.dimensions, v.attrs, v.compressor, v.fill_value, v.filters)
+            for k, v in self.metadata.variables.items()
+            if k in selected_variables)
 
 
 def create_collection(
