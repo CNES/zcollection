@@ -55,6 +55,7 @@ def execute_transaction(
     """
     if not futures:
         return None
+    awaitables = []
     with synchronizer:
         try:
             awaitables = client.compute(futures)
@@ -62,6 +63,7 @@ def execute_transaction(
         except:  # noqa: E722
             # Before throwing the exception, we wait until all future scheduled
             # ones finished.
+            dask.distributed.wait(awaitables)
             dask.distributed.wait(futures)
             raise
 
