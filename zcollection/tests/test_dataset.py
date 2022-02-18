@@ -75,6 +75,17 @@ def test_variable(
     assert isinstance(str(var), str)
     assert isinstance(repr(var), str)
 
+    def foo(a, b):
+        return a + b
+
+    assert numpy.all(
+        foo(var, var.values) == numpy.arange(10).reshape(5, 2) +
+        numpy.arange(10).reshape(5, 2))
+
+    assert numpy.all(
+        foo(var, var.data).compute() == numpy.arange(10).reshape(5, 2) +
+        numpy.arange(10).reshape(5, 2))
+
     var.data = numpy.ones((10, 4), dtype="int64")
     assert var.data.shape == (10, 4)
     assert isinstance(var.data, dask.array.Array)

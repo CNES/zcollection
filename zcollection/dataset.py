@@ -267,6 +267,12 @@ class Variable:
         return self._array.dtype
 
     @property
+    def ndim(self) -> int:
+        """Return the number of dimensions of the variable.
+        """
+        return len(self.dimensions)
+
+    @property
     def shape(self) -> Tuple[int, ...]:
         """Return the shape of the variable"""
         return self._array.shape
@@ -471,6 +477,9 @@ class Variable:
 
     def __getitem__(self, key: Any) -> Any:
         return self.data[key]
+
+    def __array__(self):
+        return self.values
 
     def __dask_graph__(self) -> Optional[Mapping]:
         """Return the dask Graph"""
