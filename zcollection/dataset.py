@@ -481,6 +481,18 @@ class Variable:
     def __array__(self):
         return self.values
 
+    def to_dask_array(self):
+        """Return the underlying dask array.
+
+        Returns:
+            The underlying dask array
+
+        .. seealso::
+
+            :func:`dask.array.core.asarray`
+        """
+        return self.data
+
     def __dask_graph__(self) -> Optional[Mapping]:
         """Return the dask Graph"""
         return self._array.__dask_graph__()
