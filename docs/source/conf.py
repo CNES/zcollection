@@ -49,6 +49,7 @@ extensions = [
 
 autosummary_generate = True
 
+autodoc_typehints = "description"
 autodoc_type_aliases = dict(
     ArrayLike="ArrayLike",
     DTypeLike="DTypeLike",
