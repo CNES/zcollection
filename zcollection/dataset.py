@@ -148,7 +148,7 @@ def _dataset_repr(ds: "Dataset") -> str:
         f"  Dimensions: {dims_str}", "Data variables:"
     ]
     # Variables
-    if (len(ds.variables) == 0):
+    if len(ds.variables) == 0:
         lines.append("    <empty>")
     else:
         width = _calculate_column_width(ds.variables)
@@ -559,7 +559,7 @@ class Dataset:
 
     def __init__(self,
                  variables: Iterable[Variable],
-                 attrs: Sequence[Attribute] = None) -> None:
+                 attrs: Optional[Sequence[Attribute]] = None) -> None:
         #: The list of global attributes on this dataset
         self.attrs = attrs or []
         #: Dataset contents as dict of :py:class:`Variable` objects.

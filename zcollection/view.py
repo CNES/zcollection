@@ -370,7 +370,8 @@ class View:
         # datasets. Only the loaded datasets are retrieved here and filter None
         # values corresponding to empty partitions.
         arrays: List[dataset.Dataset] = list(
-            map(lambda item: item[0],
+            map(
+                lambda item: item[0],  # type: ignore
                 filter(lambda item: item is not None,
                        client.gather(futures))))  # type: ignore
         if arrays:
@@ -435,8 +436,10 @@ class View:
         # the dataset and the path to the view partition.
         arrays: List[dataset.Dataset] = list(
             map(
-                lambda item:
-                (item[0], self.fs.sep.join((self.base_dir, item[1]))),
+                lambda item: (
+                    item[0],  # type: ignore
+                    self.fs.sep.join(
+                        (self.base_dir, item[1]))),  # type: ignore
                 filter(lambda item: item is not None,
                        client.gather(futures))))  # type: ignore
 

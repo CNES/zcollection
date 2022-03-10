@@ -123,7 +123,7 @@ class Variable:
             self,
             name: str,
             dtype: DTypeLike,
-            dimensions: Sequence[str] = None,
+            dimensions: Optional[Sequence[str]] = None,
             attrs: Optional[Sequence[Attribute]] = None,
             compressor: Optional[numcodecs.abc.Codec] = None,
             fill_value: Optional[Any] = None,
@@ -135,9 +135,9 @@ class Variable:
         #: Compression codec for the variable.
         self.compressor = compressor
         #: Dimensions of the variable.
-        self.dimensions = tuple(dimensions or [])
+        self.dimensions = tuple(dimensions or ())
         #: Data type of the variable.
-        self.dtype = numpy.dtype(dtype)  # type: ignore
+        self.dtype = numpy.dtype(dtype)
         #: Fill value for the variable.
         self.fill_value = fill_value
         #: Filter codecs for the variable.
@@ -165,15 +165,14 @@ class Variable:
         filters = tuple(item.get_config()  # type: ignore
                         for item in self.filters)
 
-        return dict(
-            attrs=sorted((item.get_config() for item in self.attrs)),
-            compressor=compressor,
-            dimensions=self.dimensions,
-            dtype=zarr.meta.encode_dtype(self.dtype),  # type: ignore
-            fill_value=zarr.meta.encode_fill_value(self.fill_value,
-                                                   self.dtype),  # type: ignore
-            filters=filters,
-            name=self.name)
+        return dict(attrs=sorted((item.get_config() for item in self.attrs)),
+                    compressor=compressor,
+                    dimensions=self.dimensions,
+                    dtype=zarr.meta.encode_dtype(self.dtype),
+                    fill_value=zarr.meta.encode_fill_value(
+                        self.fill_value, self.dtype),
+                    filters=filters,
+                    name=self.name)
 
     @staticmethod
     def from_config(data: Dict[str, Any]) -> "Variable":
@@ -218,7 +217,7 @@ class Dataset:
     def __init__(self,
                  dimensions: Sequence[str],
                  variables: Sequence[Variable],
-                 attrs: Sequence[Attribute] = None) -> None:
+                 attrs: Optional[Sequence[Attribute]] = None) -> None:
         #: Dimensions of the dataset.
         self.dimensions = tuple(dimensions)
 
