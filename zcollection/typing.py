@@ -3,8 +3,24 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Numpy typings
-=============
+Typing
+======
+
+.. py:data:: NDArray
+
+    A numpy tensor with any type.
+
+.. py:data:: NDMaskedArray
+
+    A numpy masked tensor with any type.
+
+.. py:data:: ArrayLike
+
+    Objects that can be converted to arrays
+
+.. py:data:: NDArrayLike
+
+    Anything that can be coerced into numpy.dtype.
 """
 from typing import TYPE_CHECKING, Any, Union
 import sys
@@ -26,8 +42,6 @@ else:
     NDArray = numpy.ndarray  # pragma: no cover
     NDMaskedArray = numpy.ma.MaskedArray  # pragma: no cover
 
-#: Anything that can be coerced into numpy.dtype.
 DTypeLike = numpy.typing.DTypeLike
 
-#: dask.array.Array, numpy.typing.ArrayLike
 ArrayLike = Union[dask.array.Array, numpy.typing.ArrayLike]
