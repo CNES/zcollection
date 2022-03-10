@@ -80,7 +80,7 @@ def _to_zarr(array: dask.array.Array, mapper: fsspec.FSMap, path: str,
     """
     chunks = [chunk[0] for chunk in array.chunks]
     target = zarr.create(shape=array.shape,
-                         chunks=chunks,
+                         chunks=chunks,  # type: ignore
                          dtype=array.dtype,
                          store=mapper,
                          path=path,
@@ -128,11 +128,8 @@ def write_zarr_variable(
     data = variable.array
 
     with dask.config.set(scheduler="synchronous"):
-        data = data.rechunk(
-            {
-                0: -1,
-                1: -1
-            } if len(data.shape) == 2 else {0: -1},
+        chunks = {ix: -1 for ix in range(variable.ndim)}
+        data = data.rechunk(chunks,  # type: ignore
             block_size_limit=BLOCK_SIZE_LIMIT,
         )
 
@@ -304,8 +301,8 @@ def add_zarr_array(
     zarr.create(shape,
                 chunks=True,
                 dtype=variable.dtype,
-                compressor=variable.compressor,
-                fill_value=variable.fill_value,
+                compressor=variable.compressor,  # type: ignore
+                fill_value=variable.fill_value,  # type: ignore
                 store=store,
                 filters=variable.filters)
     write_zattrs(dirname, variable, fs)
