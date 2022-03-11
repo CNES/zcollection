@@ -6,40 +6,40 @@
    :show-inheritance:
    {% block methods %}
 
+   {%- set attr = [] -%}
    {%- set meth = [] -%}
    {%- set private = [] -%}
    {%- set protected = [] -%}
    {%- set special = [] -%}
+   {%- set inherited_meth = [] -%}
+   {%- set skip = ['__abstractmethods__',
+                   '__annotations__',
+                   '__dict__',
+                   '__doc__',
+                   '__entries',
+                   '__hash__',
+                   '__init__',
+                   '__members__',
+                   '__module__',
+                   '__slots__',
+                   '__weakref__'] -%}
 
-   {%- for item in methods -%}
-      {%- if item != '__init__' -%}
-        {{ meth.append(item) or "" }}
+   {%- for item in methods if not item in skip -%}
+      {%- if item in inherited_members -%}
+         {{ inherited_meth.append(item) or "" }}
+      {%- else -%}
+         {{ meth.append(item) or "" }}
       {%- endif -%}
    {%- endfor -%}
 
-   {%- for item in members -%}
-      {%- if item not in inherited_members and
-            item not in attributes and
-            item not in meth and
-            item not in ['__annotations__',
-                         '__dict__',
-                         '__doc__',
-                         '__entries',
-                         '__hash__',
-                         '__init__',
-                         '__members__',
-                         '__module__',
-                         '__slots__',
-                         '__weakref__'] -%}
-         {%- if item.startswith('__') and item.endswith('__') -%}
-           {{ special.append(item) or "" }}
-         {%- elif item.startswith('__') -%}
-           {{ private.append(item) or "" }}
-         {%- elif item.startswith('_') -%}
-           {{ protected.append(item) or "" }}
-         {%- else -%}
-           {{ meth.append(item) or "" }}
-         {%- endif -%}
+   {%- for item in members
+         if not item in inherited_members and not item in skip -%}
+      {%- if item.startswith('__') and item.endswith('__') -%}
+         {{ special.append(item) or "" }}
+      {%- elif item.startswith('__') -%}
+         {{ private.append(item) or "" }}
+      {%- elif item.startswith('_') -%}
+         {{ protected.append(item) or "" }}
       {%- endif -%}
    {%- endfor %}
 
@@ -85,6 +85,16 @@
    .. autosummary::
       :toctree:
    {% for item in special %}
+      ~{{ name }}.{{ item }}
+   {%- endfor %}
+   {%- endif -%}
+
+   {%- if inherited_meth %}
+
+   .. rubric:: {{ _('Inherited Methods') }}
+   .. autosummary::
+      :toctree:
+   {% for item in inherited_meth %}
       ~{{ name }}.{{ item }}
    {%- endfor %}
    {%- endif -%}

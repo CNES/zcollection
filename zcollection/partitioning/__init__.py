@@ -5,6 +5,17 @@
 """
 Partitioning scheme.
 ====================
+
+Entry point of the implemented partitioning schemes.
+
+* :py:class:`Sequence <zcollection.partitioning.sequence.Sequence>`:
+  Partitioning a sequence of variables.
+* :py:class:`Date <zcollection.partitioning.date.Date>`: Partitioning a
+  sequence of dates.
+
+.. class:: Partitioning
+
+    Alias for :class:`zcollection.partitioning.abc.Partitioning`.
 """
 from .abc import Partitioning
 from .date import Date

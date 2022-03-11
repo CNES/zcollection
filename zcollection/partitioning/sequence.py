@@ -35,22 +35,26 @@ def _is_monotonic(arr: NDArray) -> bool:
 
 
 class Sequence(abc.Partitioning):
-    """Partitioning a sequence of variables
+    """Partitioning a sequence of variables.
+
+    A sequence is a combination of variables constituting unique monotonic keys.
+    For example, the orbit number (``cycle``) and the half-orbit number
+    (``pass``) of a satellite.
 
     Args:
-        variables:  List of variables to be used for partitioning
+        variables:  List of variables to be used for partitioning.
 
     Example:
         >>> partitioning = Sequence(["a", "b", "c"])
     """
-    #: The ID of the partitioning scheme
+    #: The ID of the partitioning scheme.
     ID: ClassVar[str] = "Sequence"
 
     @staticmethod
     def _split(
             variables: Dict[str, dask.array.Array]) -> Iterator[abc.Partition]:
         """Split the variables constituting the partitioning into partitioning
-        schemes"""
+        schemes."""
         matrix = dask.array.vstack(tuple(variables.values())).transpose()
         if matrix.dtype.kind != "i":
             raise TypeError("The variables must be integer")

@@ -100,7 +100,7 @@ def perform(
     """Performs the merge between a new dataset and an existing partition.
 
     Args:
-        ds: The dataset to merge.
+        ds_inserted: The dataset to merge.
         dirname: The name of the partition.
         axis: The axis to merge on.
         fs: The file system on which the partition is stored on.

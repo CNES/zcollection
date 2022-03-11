@@ -33,11 +33,11 @@ SEPARATORS = dict(year="-",
 
 class Date(abc.Partitioning):
     """
-    Date partitioning
+    Date partitioning.
 
     Args:
-        variables: Variable names used for the partitioning
-        resolution: Time resolution of the partitioning
+        variables: Variable names used for the partitioning.
+        resolution: Time resolution of the partitioning.
 
     Raises:
         ValueError: If the resolution is not in the list of supported
@@ -77,7 +77,7 @@ class Date(abc.Partitioning):
         self,
         selection: Tuple[Tuple[str, Any], ...],
     ) -> Tuple[str, ...]:
-        """Return the partitioning scheme for the given selection"""
+        """Return the partitioning scheme for the given selection."""
         _, datetime64 = selection[0]
         datetime = datetime64.astype("M8[s]").item()
         return tuple(UNITS[ix] + "=" +
@@ -88,7 +88,7 @@ class Date(abc.Partitioning):
         self,
         variables: Dict[str, dask.array.Array],
     ) -> Iterator[abc.Partition]:
-        """Return the partitioning scheme for the given variables"""
+        """Return the partitioning scheme for the given variables."""
         name, values = tuple(variables.items())[0]
 
         if not numpy.issubdtype(values.dtype, numpy.dtype("datetime64")):

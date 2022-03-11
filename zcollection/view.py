@@ -29,7 +29,9 @@ class ViewReference:
         path: Path to the collection.
         filesystem: The file system used to access the reference collection.
     """
+    #: Path to the collection.
     path: str
+    #: The file system used to access the reference collection.
     fs: fsspec.AbstractFileSystem = utilities.get_fs("file")
 
 
