@@ -79,13 +79,14 @@ def _to_zarr(array: dask.array.Array, mapper: fsspec.FSMap, path: str,
         **kwargs: Keyword arguments to pass to :func:`zarr.create`.
     """
     chunks = [chunk[0] for chunk in array.chunks]
-    target = zarr.create(shape=array.shape,
-                         chunks=chunks,  # type: ignore
-                         dtype=array.dtype,
-                         store=mapper,
-                         path=path,
-                         overwrite=True,
-                         **kwargs)
+    target = zarr.create(
+        shape=array.shape,
+        chunks=chunks,  # type: ignore
+        dtype=array.dtype,
+        store=mapper,
+        path=path,
+        overwrite=True,
+        **kwargs)
     array.store(target, lock=False, compute=True, return_stored=False)
 
 
@@ -129,7 +130,8 @@ def write_zarr_variable(
 
     with dask.config.set(scheduler="synchronous"):
         chunks = {ix: -1 for ix in range(variable.ndim)}
-        data = data.rechunk(chunks,  # type: ignore
+        data = data.rechunk(
+            chunks,  # type: ignore
             block_size_limit=BLOCK_SIZE_LIMIT,
         )
 
@@ -298,12 +300,13 @@ def add_zarr_array(
                   dirname)
     shape = zarr.open(fs.get_mapper(fs.sep.join((dirname, template)))).shape
     store = fs.get_mapper(fs.sep.join((dirname, variable.name)))
-    zarr.create(shape,
-                chunks=True,
-                dtype=variable.dtype,
-                compressor=variable.compressor,  # type: ignore
-                fill_value=variable.fill_value,  # type: ignore
-                store=store,
-                filters=variable.filters)
+    zarr.create(
+        shape,
+        chunks=True,
+        dtype=variable.dtype,
+        compressor=variable.compressor,  # type: ignore
+        fill_value=variable.fill_value,  # type: ignore
+        store=store,
+        filters=variable.filters)
     write_zattrs(dirname, variable, fs)
     zarr.consolidate_metadata(fs.get_mapper(dirname))

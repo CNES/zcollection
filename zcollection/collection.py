@@ -156,7 +156,7 @@ class PartitioningProperties:
 
 
 def _insert(
-    args: Tuple[Tuple[str, ...], Dict[str, slice]],
+    args: Iterable[Tuple[Tuple[str, ...], Dict[str, slice]]],
     axis: str,
     ds: dataset.Dataset,
     fs: fsspec.AbstractFileSystem,
@@ -173,20 +173,22 @@ def _insert(
         merge_callable: The merge callable.
         partitioning_properties: The partitioning properties.
     """
-    partition, indexer = args
-    dirname = fs.sep.join((partitioning_properties.dir, ) + partition)
+    for item in args:
+        partition, indexer = item
+        dirname = fs.sep.join((partitioning_properties.dir, ) + partition)
 
-    # If the consolidated zarr metadata does not exist, we consider the
-    # partition as empty.
-    if fs.exists(fs.sep.join((dirname, ".zmetadata"))):
-        # The current partition already exists, so we need to merge
-        # the dataset.
-        merging.perform(ds.isel(indexer), dirname, axis, fs,
-                        partitioning_properties.dim, merge_callable)
-    else:
+        # If the consolidated zarr metadata does not exist, we consider the
+        # partition as empty.
+        if fs.exists(fs.sep.join((dirname, ".zmetadata"))):
+            # The current partition already exists, so we need to merge
+            # the dataset.
+            merging.perform(ds.isel(indexer), dirname, axis, fs,
+                            partitioning_properties.dim, merge_callable)
+            continue
+
+        # The current partition does not exist, so we need to create
+        # it and insert the dataset.
         try:
-            # The current partition does not exist, so we need to create
-            # it and insert the dataset.
             zarr.storage.init_group(store=fs.get_mapper(dirname))
 
             # The synchronization is done by the caller.
@@ -433,8 +435,17 @@ class Collection:
                 already stored in partitions with the new partitioned data. If
                 None, the new partitioned data overwrites the existing
                 partitioned data.
-            parallel_tasks: The maximum number of partitions to be run in
-                parallel. By default, the number of tasks is not limited.
+            parallel_tasks: The maximum number of parallel tasks to use.
+                By default, the number of available cores of the dask cluster
+                is used.
+
+        .. warning::
+
+            Each worker will process a set of independent partitions. However,
+            be careful, two different partitions can use the same chunk,
+            therefore, the library that handles the storage of Dask arrays
+            (HDF5, NetCDF, Zarr, etc.) must be compatible with concurrent
+            access.
 
         Raises:
             ValueError: If the dataset mismatched the definition of the
@@ -454,15 +465,25 @@ class Collection:
 
         client = utilities.get_client()
 
-        utilities.calculation_stream(
-            _insert,
-            self.partitioning.split_dataset(ds, self.partition_properties.dim),
-            max_workers=parallel_tasks,
-            axis=self.axis,
-            ds=client.scatter(ds),
-            fs=self.fs,
-            merge_callable=merge_callable,
-            partitioning_properties=self.partition_properties)
+        # By default, we use the number of available cores of the dask cluster.
+        parallel_tasks = parallel_tasks or utilities.dask_workers(
+            client, cores_only=True)
+
+        # Split the arguments for each worker.
+        args = numpy.array_split(
+            tuple(
+                self.partitioning.split_dataset(
+                    ds, self.partition_properties.dim)), parallel_tasks)
+
+        # Each worker will process a set of independent partitions.
+        futures = client.map(_insert,
+                             args,
+                             axis=self.axis,
+                             ds=client.scatter(ds),
+                             fs=self.fs,
+                             merge_callable=merge_callable,
+                             partitioning_properties=self.partition_properties)
+        client.gather(futures)
 
     def _relative_path(self, path: str) -> str:
         """Return the relative path to the collection.

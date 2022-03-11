@@ -25,7 +25,7 @@ def dask_cluster(pytestconfig, tmpdir_factory, scope="session"):
         threads_per_worker = None
 
     try:
-        processes = int(pytestconfig.getoption("processes"))
+        processes = int(pytestconfig.getoption("processes")) == 1
     except TypeError:
         processes = False
 
