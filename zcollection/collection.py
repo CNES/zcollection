@@ -471,9 +471,10 @@ class Collection:
 
         # Split the arguments for each worker.
         args = numpy.array_split(
-            tuple(
+            numpy.array(list(
                 self.partitioning.split_dataset(
-                    ds, self.partition_properties.dim)), parallel_tasks)
+                    ds, self.partition_properties.dim)),
+                        dtype=object), parallel_tasks)
 
         # Each worker will process a set of independent partitions.
         futures = client.map(_insert,
