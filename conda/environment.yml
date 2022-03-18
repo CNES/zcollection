@@ -12,4 +12,4 @@ dependencies:
   - setuptools-scm
   - s3fs
   - xarray
-  - zarr
+  - zarr>=2.11.0

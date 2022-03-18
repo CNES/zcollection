@@ -86,6 +86,7 @@ def _to_zarr(array: dask.array.Array, mapper: fsspec.FSMap, path: str,
         store=mapper,
         path=path,
         overwrite=True,
+        write_empty_chunks=False,
         **kwargs)
     array.store(target, lock=False, compute=True, return_stored=False)
 
