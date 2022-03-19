@@ -155,7 +155,8 @@ def list_partitions(
     if depth == 0:
         yield from sorted(fs.ls(path, detail=False))
     elif root:
-        for info in fs.ls(path, detail=True):
+        for info in sorted(fs.ls(path, detail=True),
+                           key=lambda item: item["name"]):
             pathname = info["name"].rstrip("/")
             if info["type"] == "directory" and pathname != path:
                 # do not include "self" path
