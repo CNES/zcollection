@@ -53,8 +53,27 @@ from . import (
 )
 from .typing import ArrayLike
 
-#: Type of functions to handle partitions.
-PartitionCallback = Callable[[dataset.Dataset], ArrayLike]
+
+# pylint: disable=too-few-public-methods
+class PartitionCallback(Protocol):
+    """Type of functions to update a dataset stored in a partition.
+
+    Args:
+        ds: The updated partition dataset
+        *args: Additional arguments
+        **kwds: Additional keyword arguments
+    """
+
+    def __call__(self, ds: dataset.Dataset, *args: Any,
+                 **kwds: Any) -> ArrayLike:
+        ...
+
+    # pylint: enable=too-few-public-methods
+
+
+#: Function type to load and call a callback function of type
+#: :class:`PartitionCallback`.
+WrappedPartitionCallback = Callable[[str], None]
 
 #: Type of functions filtering the partitions.
 PartitionFilterCallback = Callable[[Dict[str, int]], bool]
@@ -115,8 +134,12 @@ class MapCallable(Protocol):
 
 
 def wrap_update_func(
-        func: PartitionCallback, fs: fsspec.AbstractFileSystem,
-        variable: str) -> Callable[[Tuple[dataset.Dataset, str]], None]:
+    func: PartitionCallback,
+    fs: fsspec.AbstractFileSystem,
+    variable: str,
+    *args,
+    **kwargs,
+) -> WrappedPartitionCallback:
     """
     Wrap an update function taking a partition's dataset as input and
     returning variable's values as a numpy array.
@@ -125,17 +148,17 @@ def wrap_update_func(
         func: Function to apply on each partition.
         fs: File system on which the Zarr dataset is stored.
         variable: Name of the variable to update.
+        *args: Positional arguments to pass to the function.
+        **kwargs: Keyword arguments to pass to the function.
 
     Returns:
         The wrapped function that takes a partition's dataset and a variable
         name as input and returns the variable's values as a numpy array.
     """
 
-    def wrap_function(args):
-        data, partition = args
-
+    def wrap_function(partition: str) -> None:
         # Applying function on partition's data
-        array = func(data)
+        array = func(storage.open_zarr_group(partition, fs), *args, **kwargs)
 
         storage.update_zarr_array(dirname=fs.sep.join((partition, variable)),
                                   array=array,
@@ -724,8 +747,10 @@ class Collection:
         self,
         func: PartitionCallback,
         variable: str,
-        *,
+        /,
+        *args,
         filters: Optional[str] = None,
+        **kwargs,
     ) -> None:
         # pylint: disable=method-hidden
         """Update the selected partitions.
@@ -733,7 +758,9 @@ class Collection:
         Args:
             func: The function to apply on each partition.
             variable: The variable to update.
+            *args: The positional arguments to pass to the function.
             filters: The expression used to filter the partitions to update.
+            **kwargs: The keyword arguments to pass to the function.
 
         Example:
             >>> import dask.array
@@ -744,14 +771,15 @@ class Collection:
             >>> collection.update(ones, "var2")
         """
         _LOGGER.info("Updating of the %r variable in the collection", variable)
-        arrays = []
         client = utilities.get_client()
-        for partition in self.partitions(filters=filters):
-            arrays.append((storage.open_zarr_group(partition,
-                                                   self.fs), partition))
 
-        local_func = wrap_update_func(func=func, fs=self.fs, variable=variable)
-        awaitables = client.map(local_func, arrays)
+        local_func = wrap_update_func(func=func,
+                                      fs=self.fs,
+                                      variable=variable,
+                                      *args,
+                                      **kwargs)
+        awaitables = client.map(local_func,
+                                tuple(self.partitions(filters=filters)))
         storage.execute_transaction(client, self.synchronizer, awaitables)
 
     def _bag_from_partitions(self) -> dask.bag.Bag:
