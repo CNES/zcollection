@@ -51,29 +51,10 @@ from . import (
     sync,
     utilities,
 )
-from .typing import ArrayLike
-
-
-# pylint: disable=too-few-public-methods
-class PartitionCallback(Protocol):
-    """Type of functions to update a dataset stored in a partition.
-
-    Args:
-        ds: The updated partition dataset
-        *args: Additional arguments
-        **kwds: Additional keyword arguments
-    """
-
-    def __call__(self, ds: dataset.Dataset, *args: Any,
-                 **kwds: Any) -> ArrayLike:
-        ...
-
-    # pylint: enable=too-few-public-methods
-
 
 #: Function type to load and call a callback function of type
-#: :class:`PartitionCallback`.
-WrappedPartitionCallback = Callable[[str], None]
+#: :class:`PartitionCallable`.
+WrappedPartitionCallable = Callable[[str], None]
 
 #: Type of functions filtering the partitions.
 PartitionFilterCallback = Callable[[Dict[str, int]], bool]
@@ -134,12 +115,12 @@ class MapCallable(Protocol):
 
 
 def wrap_update_func(
-    func: PartitionCallback,
+    func: PartitionCallable,
     fs: fsspec.AbstractFileSystem,
     variable: str,
     *args,
     **kwargs,
-) -> WrappedPartitionCallback:
+) -> WrappedPartitionCallable:
     """
     Wrap an update function taking a partition's dataset as input and
     returning variable's values as a numpy array.
@@ -745,7 +726,7 @@ class Collection:
     # pylint: disable=method-hidden
     def update(
         self,
-        func: PartitionCallback,
+        func: PartitionCallable,
         variable: str,
         /,
         *args,

@@ -386,11 +386,13 @@ class View:
 
     def update(
         self,
-        func: collection.PartitionCallback,
+        func: collection.PartitionCallable,
         variable: str,
-        *,
+        /,
+        *args,
         filters: collection.PartitionFilter = None,
         selected_variables: Optional[Iterable[str]] = None,
+        **kwargs,
     ) -> None:
         """Update a variable stored int the view.
 
@@ -405,6 +407,8 @@ class View:
             selected_variables: A list of variables to retain from the view.
                 If None, all variables are loaded. Usefull to load only a
                 subset of the view.
+            args: The positional arguments to pass to the function.
+            kwargs: The keyword arguments to pass to the function.
 
         Raises:
             ValueError: If the variable does not exist or if the variable
@@ -445,10 +449,20 @@ class View:
                 filter(lambda item: item is not None,
                        client.gather(futures))))  # type: ignore
 
-        local_func = collection.wrap_update_func(func=func,
-                                                 fs=self.fs,
-                                                 variable=variable)
-        futures = client.map(local_func, arrays)
+        def wrap_function(parameters):
+            """Wrap the function to be applied to the dataset."""
+            data, partition = parameters
+
+            # Applying function on partition's data
+            array = func(data, *args, **kwargs)
+
+            storage.update_zarr_array(
+                dirname=self.fs.sep.join((partition, variable)),
+                array=array,
+                fs=self.fs,
+            )
+
+        futures = client.map(wrap_function, arrays)
         storage.execute_transaction(client, self.synchronizer, futures)
 
 
