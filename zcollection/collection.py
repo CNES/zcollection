@@ -114,7 +114,18 @@ class MapCallable(Protocol):
     #: pylint: enable=too-few-public-methods
 
 
-def wrap_update_func(
+@dataclasses.dataclass(frozen=True)
+class PartitioningProperties:
+    """
+    Properties of a partition.
+    """
+    #: The base directory of the partition.
+    dir: str
+    #: The name of the partitioning dimension.
+    dim: str
+
+
+def _wrap_update_func(
     func: PartitionCallable,
     fs: fsspec.AbstractFileSystem,
     variable: str,
@@ -148,19 +159,8 @@ def wrap_update_func(
     return wrap_function
 
 
-@dataclasses.dataclass(frozen=True)
-class PartitioningProperties:
-    """
-    Properties of a partition.
-    """
-    #: The base directory of the partition.
-    dir: str
-    #: The name of the partitioning dimension.
-    dim: str
-
-
 def _insert(
-    args: Iterable[Tuple[Tuple[str, ...], Dict[str, slice]]],
+    args: Tuple[Tuple[str, ...], Dict[str, slice]],
     axis: str,
     ds: dataset.Dataset,
     fs: fsspec.AbstractFileSystem,
@@ -177,34 +177,32 @@ def _insert(
         merge_callable: The merge callable.
         partitioning_properties: The partitioning properties.
     """
-    for item in args:
-        partition, indexer = item
-        dirname = fs.sep.join((partitioning_properties.dir, ) + partition)
+    partition, indexer = args
+    dirname = fs.sep.join((partitioning_properties.dir, ) + partition)
 
-        # If the consolidated zarr metadata does not exist, we consider the
-        # partition as empty.
-        if fs.exists(fs.sep.join((dirname, ".zmetadata"))):
-            # The current partition already exists, so we need to merge
-            # the dataset.
-            merging.perform(ds.isel(indexer), dirname, axis, fs,
-                            partitioning_properties.dim, merge_callable)
-            continue
+    # If the consolidated zarr metadata does not exist, we consider the
+    # partition as empty.
+    if fs.exists(fs.sep.join((dirname, ".zmetadata"))):
+        # The current partition already exists, so we need to merge
+        # the dataset.
+        merging.perform(ds.isel(indexer), dirname, axis, fs,
+                        partitioning_properties.dim, merge_callable)
+        return
 
-        # The current partition does not exist, so we need to create
-        # it and insert the dataset.
-        try:
-            zarr.storage.init_group(store=fs.get_mapper(dirname))
+    # The current partition does not exist, so we need to create
+    # it and insert the dataset.
+    try:
+        zarr.storage.init_group(store=fs.get_mapper(dirname))
 
-            # The synchronization is done by the caller.
-            storage.write_zarr_group(ds.isel(indexer), dirname, fs,
-                                     sync.NoSync())
-        except:  # noqa: E722
-            # If the construction of the new dataset fails, the created
-            # partition is deleted, to guarantee the integrity of the
-            # collection.
-            fs.rm(dirname, recursive=True)
-            fs.invalidate_cache(dirname)
-            raise
+        # The synchronization is done by the caller.
+        storage.write_zarr_group(ds.isel(indexer), dirname, fs, sync.NoSync())
+    except:  # noqa: E722
+        # If the construction of the new dataset fails, the created
+        # partition is deleted, to guarantee the integrity of the
+        # collection.
+        fs.rm(dirname, recursive=True)
+        fs.invalidate_cache(dirname)
+        raise
 
 
 def _load_and_apply_indexer(
@@ -446,7 +444,7 @@ class Collection:
         .. warning::
 
             Each worker will process a set of independent partitions. However,
-            be careful, two different partitions can use the same chunk,
+            be careful, two different partitions can use the same file (chunk),
             therefore, the library that handles the storage of Dask arrays
             (HDF5, NetCDF, Zarr, etc.) must be compatible with concurrent
             access.
@@ -469,28 +467,15 @@ class Collection:
 
         client = utilities.get_client()
 
-        # By default, we use the number of available cores of the dask cluster.
-        parallel_tasks = parallel_tasks or utilities.dask_workers(
-            client, cores_only=True)
-
-        # Split the arguments for each worker.
-        args = numpy.array_split(
-            numpy.array(
-                list(
-                    self.partitioning.split_dataset(
-                        ds, self.partition_properties.dim)),
-                dtype=object,
-            ), parallel_tasks)
-
-        # Each worker will process a set of independent partitions.
-        futures = client.map(_insert,
-                             args,
-                             axis=self.axis,
-                             ds=client.scatter(ds),
-                             fs=self.fs,
-                             merge_callable=merge_callable,
-                             partitioning_properties=self.partition_properties)
-        client.gather(futures)
+        utilities.calculation_stream(
+            _insert,
+            self.partitioning.split_dataset(ds, self.partition_properties.dim),
+            max_workers=parallel_tasks,
+            axis=self.axis,
+            ds=client.scatter(ds),
+            fs=self.fs,
+            merge_callable=merge_callable,
+            partitioning_properties=self.partition_properties)
 
     def _relative_path(self, path: str) -> str:
         """Return the relative path to the collection.
@@ -754,11 +739,11 @@ class Collection:
         _LOGGER.info("Updating of the %r variable in the collection", variable)
         client = utilities.get_client()
 
-        local_func = wrap_update_func(func=func,
-                                      fs=self.fs,
-                                      variable=variable,
-                                      *args,
-                                      **kwargs)
+        local_func = _wrap_update_func(func=func,
+                                       fs=self.fs,
+                                       variable=variable,
+                                       *args,
+                                       **kwargs)
         awaitables = client.map(local_func,
                                 tuple(self.partitions(filters=filters)))
         storage.execute_transaction(client, self.synchronizer, awaitables)
