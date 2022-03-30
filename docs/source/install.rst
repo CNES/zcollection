@@ -40,6 +40,11 @@ branch before installing)::
 
     $ pip install .
 
+Installation via pip
+####################
+
+    $ pip install zcollection
+
 Testing
 -------
 
