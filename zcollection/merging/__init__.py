@@ -25,9 +25,9 @@ CHARACTERS = "abcdefghijklmnopqrstuvwxyz0123456789_"
 class MergeCallable(Protocol):
     """Protocol to merge datasets stored in a partition.
 
-    A merge callable is a function that accepts an existing dataset present in
-    a partition, a new dataset to merge, the partitioning dimension and the
-    axis to merge on. It returns the merged dataset.
+    A merge callable is a function that accepts an existing dataset
+    present in a partition, a new dataset to merge, the partitioning
+    dimension and the axis to merge on. It returns the merged dataset.
     """
 
     def __call__(

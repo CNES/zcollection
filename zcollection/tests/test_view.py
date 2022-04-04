@@ -24,7 +24,7 @@ def test_view(
     arg,
     request,
 ):
-    """Test the creation of a view"""
+    """Test the creation of a view."""
     # import dask.distributed
     # cluster = dask.distributed.LocalCluster(n_workers=1,
     #                                         threads_per_worker=1,

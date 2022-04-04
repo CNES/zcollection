@@ -105,7 +105,7 @@ class Attribute(Pair):
 
 
 class Variable:
-    """Handle the metadata of a dataset variable
+    """Handle the metadata of a dataset variable.
 
     Args:
         name: name of the variable
@@ -205,7 +205,7 @@ class Variable:
 
 
 class Dataset:
-    """Handle the metadata of a dataset
+    """Handle the metadata of a dataset.
 
     Args:
         dimensions: dimensions of the dataset
@@ -259,7 +259,7 @@ class Dataset:
         return not self.__eq__(other)
 
     def get_config(self) -> Dict[str, Any]:
-        """Get the dataset metadata
+        """Get the dataset metadata.
 
         Returns:
             Dataset configuration.
@@ -306,7 +306,7 @@ class Dataset:
         )
 
     def search_same_dimensions_as(self, variable: Variable) -> Variable:
-        """Searche for a variable in this dataset with the same dimensions as
+        """Search for a variable in this dataset with the same dimensions as
         the given variable.
 
         Args:

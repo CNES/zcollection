@@ -18,7 +18,7 @@ from .. import meta
 
 
 def test_attribute():
-    """Test attribute creation"""
+    """Test attribute creation."""
     att = meta.Attribute("a", 23.4)
     assert isinstance(att, meta.Attribute)
     assert att.name == "a"
@@ -40,7 +40,7 @@ def test_attribute():
 
 
 def test_dimension():
-    """Test dimension creation"""
+    """Test dimension creation."""
     dim = meta.Dimension("a", 12)
     assert isinstance(dim, meta.Dimension)
     assert dim.name == "a"
@@ -55,7 +55,7 @@ def test_dimension():
 
 
 def test_variable():
-    """Test variable creation"""
+    """Test variable creation."""
     var = meta.Variable("a",
                         numpy.dtype("int16"), ("a", ),
                         (meta.Attribute("x", 12), ),
@@ -77,7 +77,7 @@ def test_variable():
 
 
 def test_dataset():
-    """Test dataset creation"""
+    """Test dataset creation."""
     root = pathlib.Path(__file__).parent
     with root.joinpath("first_dataset.json").open(encoding="utf-8") as stream:
         first = json.load(stream)
@@ -108,7 +108,7 @@ def test_select_variables():
 
 
 def test_search_same_dimensions_as():
-    """Test search_same_dimensions_as"""
+    """Test search_same_dimensions_as."""
     root = pathlib.Path(__file__).parent
     with root.joinpath("first_dataset.json").open(encoding="utf-8") as stream:
         first = json.load(stream)
@@ -123,7 +123,7 @@ def test_search_same_dimensions_as():
 
 
 def test_pickle():
-    """Test pickling"""
+    """Test pickling."""
     root = pathlib.Path(__file__).parent
     with root.joinpath("first_dataset.json").open(encoding="utf-8") as stream:
         data = json.load(stream)
@@ -133,7 +133,7 @@ def test_pickle():
 
 
 def test_missing_variables():
-    """Test missing_variables"""
+    """Test missing_variables."""
     root = pathlib.Path(__file__).parent
     with root.joinpath("first_dataset.json").open(encoding="utf-8") as stream:
         data = json.load(stream)
@@ -155,7 +155,7 @@ def test_missing_variables():
 
 
 def test_add_variable():
-    """Test adding a variable"""
+    """Test adding a variable."""
     ds = meta.Dataset(("x", "y"), [], [])
     ds.add_variable(meta.Variable("a", numpy.float64, ("x", "y")))
 

@@ -73,8 +73,8 @@ _LOGGER = logging.getLogger(__name__)
 class PartitionCallable(Protocol):
     """Protocol for partition callables.
 
-    A partition callable is a function that accepts a dataset and returns a
-    result.
+    A partition callable is a function that accepts a dataset and
+    returns a result.
     """
 
     def __call__(self, ds: dataset.Dataset, *args, **kwargs) -> Any:
@@ -94,8 +94,8 @@ class PartitionCallable(Protocol):
 class MapCallable(Protocol):
     """Protocol for map callables.
 
-    A callable map is a function that accepts a data set, a list of arguments,
-    a dictionary of keyword arguments and returns a result.
+    A callable map is a function that accepts a data set, a list of
+    arguments, a dictionary of keyword arguments and returns a result.
     """
 
     def __call__(self, ds: dataset.Dataset, *args, **kwargs) -> Any:
@@ -116,9 +116,7 @@ class MapCallable(Protocol):
 
 @dataclasses.dataclass(frozen=True)
 class PartitioningProperties:
-    """
-    Properties of a partition.
-    """
+    """Properties of a partition."""
     #: The base directory of the partition.
     dir: str
     #: The name of the partitioning dimension.
@@ -132,8 +130,7 @@ def _wrap_update_func(
     *args,
     **kwargs,
 ) -> WrappedPartitionCallable:
-    """
-    Wrap an update function taking a partition's dataset as input and
+    """Wrap an update function taking a partition's dataset as input and
     returning variable's values as a numpy array.
 
     Args:
@@ -238,8 +235,7 @@ def _load_and_apply_indexer(
 
 
 class Collection:
-    """
-    This class manages a collection of files in Zarr format stored in a set
+    """This class manages a collection of files in Zarr format stored in a set
     of subdirectories. These subdirectories split the data, by cycles or dates
     for example, in order to optimize access and updates, deletion or addition
     of new data.
@@ -337,12 +333,11 @@ class Collection:
     @classmethod
     def _config(cls, partition_base_dir: str,
                 fs: fsspec.AbstractFileSystem) -> str:
-        """Return the configuration path"""
+        """Return the configuration path."""
         return fs.sep.join((partition_base_dir, cls.CONFIG))
 
     def _write_config(self, skip_if_exists: bool = False) -> None:
-        """Write the configuration file
-        """
+        """Write the configuration file."""
         base_dir = self.partition_properties.dir
         config = self._config(base_dir, self.fs)
         exists = self.fs.exists(config)

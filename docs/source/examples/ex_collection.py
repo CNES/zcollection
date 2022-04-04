@@ -21,8 +21,7 @@ import zcollection.tests.data
 #
 # Before we create our first collection, we will create a dataset to record.
 def create_dataset():
-    """Create a dataset to record
-    """
+    """Create a dataset to record."""
     generator = zcollection.tests.data.create_test_dataset_with_fillvalue()
     return next(generator)
 
@@ -80,7 +79,7 @@ collection.insert(ds)
 #
 #     When inserting it’s possible to specify the :ref:`merge strategy of a
 #     partition <merging_datasets>`. By default, the last inserted data
-#     overwrite the exising ones. Others strategy can be defined, for example,
+#     overwrite the existing ones. Others strategy can be defined, for example,
 #     to update existing data (overwrite the updated data, while keeping the
 #     existing ones). This last strategy allows updating incrementally an
 #     existing partition. ::
@@ -160,7 +159,7 @@ ds.variables["var2"].values
 # In this example, we will alter the variable ``var2`` by setting it to 1
 # anywhere the variable ``var1`` is defined.
 def ones(ds):
-    """Returns a variable with ones everywhere"""
+    """Returns a variable with ones everywhere."""
     return ds.variables["var1"].values * 0 + 1
 
 

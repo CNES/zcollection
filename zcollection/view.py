@@ -194,7 +194,7 @@ class View:
 
     @classmethod
     def _config(cls, base_dir: str, fs: fsspec.AbstractFileSystem) -> str:
-        """Returns the configuration path"""
+        """Returns the configuration path."""
         return fs.sep.join((base_dir, cls.CONFIG))
 
     def _write_config(self) -> None:
@@ -251,7 +251,7 @@ class View:
                     synchronizer=synchronizer)
 
     def add_variable(self, variable: meta.Variable) -> None:
-        """Add a variable to the view
+        """Add a variable to the view.
 
         Args:
             variable: The variable to add
@@ -405,7 +405,7 @@ class View:
                 documentation of the :meth:`Collection.partitions
                 <zcollection.collection.Collection.partitions>` method.
             selected_variables: A list of variables to retain from the view.
-                If None, all variables are loaded. Usefull to load only a
+                If None, all variables are loaded. Useful to load only a
                 subset of the view.
             args: The positional arguments to pass to the function.
             kwargs: The keyword arguments to pass to the function.

@@ -63,8 +63,8 @@ def split_half_orbit(
     cycle_number: numpy.ndarray,
     pass_number: numpy.ndarray,
 ) -> Iterator[Tuple[int, int]]:
-    """
-    Calculate the indexes of the start and stop of each half-orbit.
+    """Calculate the indexes of the start and stop of each half-orbit.
+
     Args:
         pass_number: Pass numbers.
     Returns:
@@ -92,8 +92,8 @@ def _half_orbit(
     *args,
     **kwargs,
 ) -> numpy.ndarray:
-    """
-    Return the indexes of the start and stop of each half-orbit.
+    """Return the indexes of the start and stop of each half-orbit.
+
     Args:
         ds: Datasets stored in a partition to be indexed.
     Returns:
@@ -119,8 +119,7 @@ def _half_orbit(
 # (:py:class:`zcollection.indexing.Indexer<zcollection.indexing.abc.Indexer>`)
 # implements the index update and the associated queries.
 class HalfOrbitIndexer(zcollection.indexing.Indexer):
-    """Index collection by half-orbit.
-    """
+    """Index collection by half-orbit."""
     #: Column name of the cycle number.
     CYCLE_NUMBER = "cycle_number"
 
@@ -130,6 +129,7 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
     @classmethod
     def dtype(cls, /, **kwargs) -> List[Tuple[str, str]]:
         """Return the columns of the index.
+
         Returns:
             A tuple of (name, type) pairs.
         """
@@ -147,6 +147,7 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
         **kwargs,
     ) -> "HalfOrbitIndexer":
         """Create a new index.
+
         Args:
             path: The path to the index.
             ds: The collection to be indexed.
@@ -166,8 +167,8 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
         bag_npartitions: Optional[int] = None,
         **kwargs,
     ) -> None:
-        """
-        Update the index.
+        """Update the index.
+
         Args:
             ds: New data stored in the collection to be indexed.
             bag_partition_size: The length of each bag partition.

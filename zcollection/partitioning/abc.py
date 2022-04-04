@@ -78,8 +78,7 @@ def _logical_or_reduce(
 
 
 def unique(arr: dask.array.Array) -> Tuple[NDArray, NDArray]:
-    """
-    Return unique elements and their indices.
+    """Return unique elements and their indices.
 
     Args:
         arr: Array of elements.
@@ -102,8 +101,7 @@ def unique(arr: dask.array.Array) -> Tuple[NDArray, NDArray]:
 
 
 def difference(arr: NDArray) -> NDArray:
-    """
-    Calculate the difference between each element in the array and the
+    """Calculate the difference between each element in the array and the
     previous element.
 
     Args:
@@ -116,8 +114,7 @@ def difference(arr: NDArray) -> NDArray:
 
 
 def concatenate_item(arr: NDArray, item: Any) -> NDArray:
-    """
-    Concatenate an array with a given item.
+    """Concatenate an array with a given item.
 
     Args:
         arr: Array to concatenate.
@@ -240,7 +237,7 @@ class Partitioning(abc.ABC):
 
     @staticmethod
     def _partition(selection: Tuple[Tuple[str, Any], ...]) -> Tuple[str, ...]:
-        """Format the partitioning scheme"""
+        """Format the partitioning scheme."""
         return tuple(f"{k}={v}" for k, v in selection)
 
     def index_dataset(self, ds: dataset.Dataset) -> Iterator[Partition]:
@@ -377,7 +374,7 @@ class Partitioning(abc.ABC):
         fs: fsspec.AbstractFileSystem,
         path: str,
     ) -> Iterator[str]:
-        """List the partitions
+        """List the partitions.
 
         Args:
             fs: The filesystem to be used.

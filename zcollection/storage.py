@@ -239,7 +239,7 @@ def update_zarr_array(
     array: ArrayLike,
     fs: fsspec.AbstractFileSystem,
 ) -> None:
-    """Update a Zarr array
+    """Update a Zarr array.
 
     Args:
         dirname: The storage directory of the Zarr array..

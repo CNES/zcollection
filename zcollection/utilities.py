@@ -15,7 +15,7 @@ import fsspec
 
 def dask_workers(client: dask.distributed.Client,
                  cores_only: bool = False) -> int:
-    """Return the number of dask workers available
+    """Return the number of dask workers available.
 
     Args:
         client: dask client
@@ -30,7 +30,7 @@ def dask_workers(client: dask.distributed.Client,
 
 
 def get_client() -> dask.distributed.Client:
-    """Return the default dask client
+    """Return the default dask client.
 
     Returns:
         default dask client
@@ -44,7 +44,7 @@ def get_client() -> dask.distributed.Client:
 def get_fs(
     filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None
 ) -> fsspec.AbstractFileSystem:
-    """Return the file system object from the input
+    """Return the file system object from the input.
 
     Args:
         filesystem: file system object or file system name
@@ -67,7 +67,7 @@ def fs_walk(
     path: str,
     sort: bool = False,
 ) -> Iterator[Tuple[str, List[str], List[str]]]:
-    """Return the list of files and directories in a directory
+    """Return the list of files and directories in a directory.
 
     Args:
         fs: file system object
@@ -149,6 +149,7 @@ def calculation_stream(func: Callable,
 
     def n_workers(max_workers: Optional[int]) -> int:
         """Limit the number of workers.
+
         Args:
             n_workers: The maximum number of workers allowed. If None, all
                 available workers are used.

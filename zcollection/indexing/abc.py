@@ -45,11 +45,11 @@ QueryDict = Dict[str, DType]
 class IndexingCallable(Protocol):
     """Protocol for indexing the partitions of a collection.
 
-    A partition callable is a function that accepts a dataset and returns a
-    numpy structured array to be converted to a DataFrame and stored in the
-    index. The function is called for each partition of the collection to
-    determine the first and last index of the partition that contains the
-    value to be indexed.
+    A partition callable is a function that accepts a dataset and
+    returns a numpy structured array to be converted to a DataFrame and
+    stored in the index. The function is called for each partition of
+    the collection to determine the first and last index of the
+    partition that contains the value to be indexed.
     """
 
     def __call__(
@@ -73,7 +73,7 @@ class IndexingCallable(Protocol):
 
 
 class Indexer:
-    """Abstract base class for indexing a collection
+    """Abstract base class for indexing a collection.
 
     This class defines the interface for indexing a collection.
 
@@ -134,8 +134,7 @@ class Indexer:
 
     @classmethod
     def pyarrow_type(cls, **kwargs) -> Dict[str, pyarrow.DataType]:
-        """
-        Return the PyArrow DataType for the index.
+        """Return the PyArrow DataType for the index.
 
         Args:
             **kwargs: Additional arguments to pass to the function.
@@ -173,9 +172,7 @@ class Indexer:
         self._type.update({item[0]: item[1] for item in partition_schema})
 
     def _sort_keys(self) -> List[Tuple[str, str]]:
-        """
-        Return the list of keys to sort the index by.
-        """
+        """Return the list of keys to sort the index by."""
         keys = self._partition_keys + (self.START, self.STOP)
         return [(key, "ascending") for key in keys]
 
@@ -265,8 +262,7 @@ class Indexer:
         bag_npartitions: Optional[int] = None,
         **kwargs,
     ) -> None:
-        """
-        Update the index.
+        """Update the index.
 
         Args:
             ds: The dataset containing the new data.
@@ -344,8 +340,7 @@ class Indexer:
         bag_partition_size: Optional[int] = None,
         bag_npartitions: Optional[int] = None,
     ) -> None:
-        """
-        Update the index.
+        """Update the index.
 
         Args:
             ds: The dataset containing the new data.
@@ -355,17 +350,14 @@ class Indexer:
         ...
 
     def _read(self) -> pyarrow.Table:
-        """
-        Read the index.
-        """
+        """Read the index."""
         if self._table is None:
             self._table = pyarrow.parquet.read_table(self._path,
                                                      filesystem=self._fs)
         return self._table
 
     def _table_2_indexer(self, table: pyarrow.Table) -> collection.Indexer:
-        """
-        Convert a table to an indexer.
+        """Convert a table to an indexer.
 
         Args:
             table: The table to convert.
@@ -410,8 +402,7 @@ class Indexer:
         *,
         logical_op: Optional[str] = None,
     ) -> collection.Indexer:
-        """
-        Query the index.
+        """Query the index.
 
         Args:
             columns: Dictionary of columns to query.
@@ -461,8 +452,7 @@ class Indexer:
 
     @property
     def table(self) -> pyarrow.Table:
-        """
-        The index table.
+        """The index table.
 
         Returns:
             The index table.

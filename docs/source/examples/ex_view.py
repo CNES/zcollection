@@ -22,8 +22,7 @@ import zcollection.tests.data
 # :ref:`collections <sphx_glr_auto_examples_ex_collection.py>`, we will create
 # the test environment and a collection.
 def create_dataset():
-    """Create a dataset to record
-    """
+    """Create a dataset to record."""
     generator = zcollection.tests.data.create_test_dataset_with_fillvalue()
     return next(generator)
 

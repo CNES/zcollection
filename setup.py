@@ -14,12 +14,12 @@ WORKING_DIRECTORY = pathlib.Path(__file__).parent.absolute()
 
 
 class SDist(setuptools.command.sdist.sdist):
-    """Custom sdist command that copies the pytest configuration file
-    into the package"""
+    """Custom sdist command that copies the pytest configuration file into the
+    package."""
     user_options = setuptools.command.sdist.sdist.user_options
 
     def run(self):
-        """A command's raison d'etre: carry out the action"""
+        """Carry out the action."""
         source = WORKING_DIRECTORY.joinpath("conftest.py")
         target = WORKING_DIRECTORY.joinpath("zcollection", "conftest.py")
         source.rename(target)

@@ -29,7 +29,7 @@ CREDENTIAL = "25219d58-f6c6-11eb-922c-770d49cd18e4"
 
 
 def have_minio():
-    """Check if minio is available"""
+    """Check if minio is available."""
     try:
         subprocess.check_output(["minio", "--version"])
         return True
@@ -42,7 +42,7 @@ have_minio()
 
 @pytest.fixture()
 def s3_base(tmpdir, pytestconfig):
-    """Launch minio server"""
+    """Launch minio server."""
     if pytestconfig.getoption("s3") is False:
         pytest.skip("S3 disabled")
     try:
@@ -87,7 +87,7 @@ def s3_base(tmpdir, pytestconfig):
 
 
 def make_bucket(name):
-    """Create a bucket"""
+    """Create a bucket."""
     session = botocore.session.get_session()
     client = session.create_client(
         "s3",
@@ -102,7 +102,7 @@ def make_bucket(name):
 # pylint: disable=redefined-outer-name, unused-argument # pytest fixture
 @pytest.fixture()
 def s3(s3_base):
-    """Create a S3 file system instance"""
+    """Create a S3 file system instance."""
     s3fs.core.S3FileSystem.clear_instance_cache()
     fs = s3fs.core.S3FileSystem(anon=False,
                                 key=CREDENTIAL,
@@ -114,15 +114,14 @@ def s3(s3_base):
 
 
 class S3Path(type(pathlib.Path())):
-    """Handle S3 path on multiple platforms
-    """
+    """Handle S3 path on multiple platforms."""
 
     def __str__(self) -> str:
         return super().__str__().replace("\\", "/")
 
 
 class S3:
-    """S3 filesystem"""
+    """S3 filesystem."""
     #: Bucket ID
     ID = 0
 

@@ -26,7 +26,7 @@ from ...tests.cluster import dask_client, dask_cluster
 def test_split_dataset(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
-    """Test the split_dataset method"""
+    """Test the split_dataset method."""
     start_date = numpy.datetime64("2000-01-06", "us")
     delta = numpy.timedelta64(1, "h")
 

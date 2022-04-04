@@ -2,9 +2,7 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Test the base class for indexing.
-"""
+"""Test the base class for indexing."""
 from typing import Iterator, List, Optional, Tuple, Union
 import pathlib
 
@@ -27,8 +25,7 @@ def split_half_orbit(
     cycle_number: numpy.ndarray,
     pass_number: numpy.ndarray,
 ) -> Iterator[Tuple[int, int]]:
-    """
-    Calculate the indexes of the start and stop of each half-orbit.
+    """Calculate the indexes of the start and stop of each half-orbit.
 
     Args:
         pass_number: Pass numbers.
@@ -58,8 +55,7 @@ def _half_orbit(
     *args,
     **kwargs,
 ) -> NDArray:
-    """
-    Return the indexes of the start and stop of each half-orbit.
+    """Return the indexes of the start and stop of each half-orbit.
 
     Args:
         ds: Datasets stored in a partition to be indexed.
@@ -84,8 +80,7 @@ def _half_orbit(
 
 
 class HalfOrbitIndexer(abc.Indexer):
-    """Index SWOT collection by half-orbit.
-    """
+    """Index SWOT collection by half-orbit."""
     #: Column name of the cycle number.
     CYCLE_NUMBER = "cycle_number"
 
@@ -136,8 +131,7 @@ class HalfOrbitIndexer(abc.Indexer):
         bag_npartitions: Optional[int] = None,
         **kwargs,
     ) -> None:
-        """
-        Update the index.
+        """Update the index.
 
         Args:
             ds: New data stored in the collection to be indexed.
@@ -156,8 +150,7 @@ def test_indexer(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
         local_fs,  # pylint: disable=redefined-outer-name
 ):
-    """Test the base class of the indexer.
-    """
+    """Test the base class of the indexer."""
     ds = dataset.Dataset.from_xarray(data.create_test_sequence(5, 20, 10))
 
     zcollection = collection.create_collection(

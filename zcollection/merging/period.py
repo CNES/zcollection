@@ -158,7 +158,7 @@ class PeriodRelation(enum.IntEnum):
         # pylint: enable=comparison-with-callable
 
     def is_before(self) -> bool:
-        """Return true if the relation is before"""
+        """Return true if the relation is before."""
         # pylint: disable=comparison-with-callable
         return self.value == PeriodRelation.BEFORE
         # pylint: enable=comparison-with-callable
@@ -171,15 +171,15 @@ class PeriodRelation(enum.IntEnum):
                               PeriodRelation.EXACT_MATCH)
 
     def is_before_overlapping(self) -> bool:
-        """Return true if one period is before but there is an overlap
-        between the two periods."""
+        """Return true if one period is before but there is an overlap between
+        the two periods."""
         return self.value in (PeriodRelation.END_INSIDE,
                               PeriodRelation.END_TOUCHING,
                               PeriodRelation.INSIDE_START_TOUCHING)
 
     def is_after_overlapping(self) -> bool:
-        """Return true if one period is after but there is an overlap
-        between the two periods."""
+        """Return true if one period is after but there is an overlap between
+        the two periods."""
         return self.value in (PeriodRelation.START_INSIDE,
                               PeriodRelation.START_TOUCHING,
                               PeriodRelation.INSIDE_END_TOUCHING)
@@ -243,16 +243,16 @@ class Period:
 
     @property
     def begin(self) -> numpy.datetime64:
-        """Return the first element in the period"""
+        """Return the first element in the period."""
         return self._begin
 
     @property
     def last(self) -> numpy.datetime64:
-        """Return the last item in the period"""
+        """Return the last item in the period."""
         return self._last
 
     def end(self) -> numpy.datetime64:
-        """Return one past the last element"""
+        """Return one past the last element."""
         return self._last + self._duration_unit
 
     def is_null(self) -> bool:
@@ -260,7 +260,7 @@ class Period:
         return self.end() <= self._begin  # type: ignore
 
     def length(self) -> numpy.timedelta64:
-        """Return the length of the period"""
+        """Return the length of the period."""
         if self._last < self._begin:
             # invalid period
             return self._last + self._duration_unit - self._begin
@@ -311,7 +311,6 @@ class Period:
 
         Args:
             duration: The amount to expand the period.
-
         """
         self._begin = self._begin - duration
         self._last = self._last + duration
@@ -320,8 +319,7 @@ class Period:
         self,
         other: Union[numpy.datetime64, "Period"],
     ) -> numpy.bool_:
-        """
-        Check if the given period is contains this period.
+        """Check if the given period is contains this period.
 
         Args:
             other: The other period to check.
@@ -373,7 +371,6 @@ class Period:
 
         Returns:
             True if point is after the period
-
         """
         if self.is_null():
             # null period isn't after
@@ -381,8 +378,8 @@ class Period:
         return point < self._begin  # type: ignore
 
     def is_before(self, point: numpy.datetime64) -> bool:
-        """True if all of the period is prior to the passed point or
-        end <= point.
+        """True if all of the period is prior to the passed point or end <=
+        point.
 
         In the example below points 4 and 5 return true.
 
@@ -428,8 +425,7 @@ class Period:
                     (other.last >= self._begin)))  # type:ignore
 
     def intersection(self, other: "Period") -> "Period":
-        """Return the period of intersection or null period if no
-        intersection.
+        """Return the period of intersection or null period if no intersection.
 
         Args:
             other: The other period to check.
@@ -447,7 +443,7 @@ class Period:
         return other
 
     def merge(self, other: "Period") -> "Period":
-        """Return the union of intersecting periods -- or null period
+        """Return the union of intersecting periods -- or null period.
 
         Args:
             other: The other period to merge.
@@ -499,8 +495,7 @@ class Period:
     # the relation between the two periods among 8 different cases.
     def _get_direct_relation(self,
                              other: "Period") -> Optional[PeriodRelation]:
-        """Get the direct relation between two periods.
-        """
+        """Get the direct relation between two periods."""
         if other.last < self._begin:
             return PeriodRelation.AFTER
 
@@ -526,7 +521,7 @@ class Period:
         # pylint: enable=too-many-return-statements
 
     def get_relation(self, other: "Period") -> PeriodRelation:
-        """Get the relationship between the two time periods
+        """Get the relationship between the two time periods.
 
         Args:
             other: Period to consider

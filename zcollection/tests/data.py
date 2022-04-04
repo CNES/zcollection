@@ -20,7 +20,7 @@ DELTA = numpy.timedelta64(72, "h")
 
 
 def create_test_dataset():
-    """Create a temporal dataset"""
+    """Create a temporal dataset."""
 
     dates = numpy.arange(START_DATE, END_DATE, DELTA)
     indices = numpy.arange(0, len(dates))
@@ -54,7 +54,7 @@ def create_test_dataset():
 
 
 def create_test_dataset_with_fillvalue():
-    """Create a dataset with a fixed scale offset filter and fill values"""
+    """Create a dataset with a fixed scale offset filter and fill values."""
 
     dates = numpy.arange(START_DATE, END_DATE, DELTA)
     measures = numpy.arange(0, len(dates), dtype=numpy.float64)
@@ -94,7 +94,7 @@ def create_test_dataset_with_fillvalue():
 
 
 def create_test_collection(tested_fs, with_fillvalue=False):
-    """Create a collection"""
+    """Create a collection."""
     ds = next(create_test_dataset_with_fillvalue(
     ) if with_fillvalue else create_test_dataset())
     zcollection = collection.Collection("time",

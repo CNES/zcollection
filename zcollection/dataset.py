@@ -166,7 +166,7 @@ def _dataset_repr(ds: "Dataset") -> str:
 
 
 def _variable_repr(var: "Variable") -> str:
-    """Get the string representation of a variable
+    """Get the string representation of a variable.
 
     Args:
         var: A variable.
@@ -222,7 +222,7 @@ def _asarray(
 
 
 class Variable:
-    """Variables hold multi-dimensional arrays of data
+    """Variables hold multi-dimensional arrays of data.
 
     Args:
         name: Name of the variable
@@ -263,32 +263,31 @@ class Variable:
 
     @property
     def dtype(self) -> numpy.dtype:
-        """Return the data type of the variable"""
+        """Return the data type of the variable."""
         return self._array.dtype
 
     @property
     def ndim(self) -> int:
-        """Return the number of dimensions of the variable.
-        """
+        """Return the number of dimensions of the variable."""
         return len(self.dimensions)
 
     @property
     def shape(self) -> Tuple[int, ...]:
-        """Return the shape of the variable"""
+        """Return the shape of the variable."""
         return self._array.shape
 
     @property
     def size(self: Any) -> int:
-        """Return the size of the variable"""
+        """Return the size of the variable."""
         return _prod(self.shape)
 
     @property
     def nbytes(self):
-        """Return the number of bytes used by the variable"""
+        """Return the number of bytes used by the variable."""
         return self.size * self.dtype.itemsize
 
     def metadata(self) -> meta.Variable:
-        """Get the variable metadata
+        """Get the variable metadata.
 
         Returns:
             Variable metadata
@@ -299,7 +298,7 @@ class Variable:
 
     def have_same_properties(self, other: "Variable") -> bool:
         """Return true if this instance and the other variable have the same
-        properties"""
+        properties."""
         return self.metadata() == other.metadata()
 
     @property
@@ -348,9 +347,9 @@ class Variable:
     def data(self, data: Any) -> None:
         """Defines the underlying dask array. If the data provided is a masked
         array, it's converted to an array, where the masked values are replaced
-        by its fill value, and its fill value becomes the new fill value of this
-        instance. Otherwise, the underlying array is defined as the new data
-        and the fill value is set to None.
+        by its fill value, and its fill value becomes the new fill value of
+        this instance. Otherwise, the underlying array is defined as the new
+        data and the fill value is set to None.
 
         Args:
             data: The new data to use
@@ -399,7 +398,7 @@ class Variable:
                         self.compressor, self.fill_value, self.filters)
 
     def dimension_index(self) -> Iterator[Tuple[str, int]]:
-        """Return an iterator over the variable dimensions and their index
+        """Return an iterator over the variable dimensions and their index.
 
         Returns:
             An iterator over the variable dimensions
@@ -443,7 +442,7 @@ class Variable:
             return self.duplicate(self._array)
 
     def to_xarray(self) -> xarray.Variable:
-        """Convert the variable to an xarray.Variable
+        """Convert the variable to an xarray.Variable.
 
         Returns:
             Variable as an xarray.Variable
@@ -494,19 +493,19 @@ class Variable:
         return self.data
 
     def __dask_graph__(self) -> Optional[Mapping]:
-        """Return the dask Graph"""
+        """Return the dask Graph."""
         return self._array.__dask_graph__()
 
     def __dask_keys__(self) -> List:
-        """Return the output keys for the Dask graph"""
+        """Return the output keys for the Dask graph."""
         return self._array.__dask_keys__()
 
     def __dask_layers__(self) -> Tuple:
-        """Return the layers for the Dask graph"""
+        """Return the layers for the Dask graph."""
         return self._array.__dask_layers__()
 
     def __dask_tokenize__(self):
-        """Return the token for the Dask graph"""
+        """Return the token for the Dask graph."""
         return dask.base.normalize_token(
             (type(self), self.name, self._array, self.dimensions, self.attrs,
              self.fill_value))
@@ -514,7 +513,7 @@ class Variable:
     @staticmethod
     def __dask_optimize__(dsk: MutableMapping, keys: List,
                           **kwargs) -> MutableMapping:
-        """Returns whether the Dask graph can be optimized
+        """Returns whether the Dask graph can be optimized.
 
         .. seealso::
             :func:`dask.array.Array.__dask_optimize__`
@@ -531,15 +530,13 @@ class Variable:
 
     def __dask_postcompute__(self) -> Tuple:
         """Return the finalizer and extra arguments to convert the computed
-        results into their in-memory representation.
-        """
+        results into their in-memory representation."""
         array_func, array_args = self._array.__dask_postcompute__()
         return self._dask_finalize, (array_func, ) + array_args
 
     def __dask_postpersist__(self) -> Tuple:
         """Return the rebuilder and extra arguments to rebuild an equivalent
-        Dask collection from a persisted or rebuilt graph.
-        """
+        Dask collection from a persisted or rebuilt graph."""
         array_func, array_args = self._array.__dask_postpersist__()
         return self._dask_finalize, (array_func, ) + array_args
 
@@ -662,7 +659,7 @@ class Dataset:
         # pylint: enable=expression-not-assigned
 
     def metadata(self) -> meta.Dataset:
-        """Get the dataset metadata
+        """Get the dataset metadata.
 
         Returns:
             Dataset metadata

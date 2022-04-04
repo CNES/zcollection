@@ -32,8 +32,7 @@ SEPARATORS = dict(year="-",
 
 
 class Date(abc.Partitioning):
-    """
-    Date partitioning.
+    """Date partitioning.
 
     Args:
         variables: Variable names used for the partitioning.
@@ -70,7 +69,7 @@ class Date(abc.Partitioning):
                          tuple(DATA_TYPES[ix] for ix in self._index))
 
     def _keys(self) -> Sequence[str]:
-        """Return the keys of the partitioning scheme"""
+        """Return the keys of the partitioning scheme."""
         return tuple(UNITS[ix] for ix in self._index)
 
     def _partition(

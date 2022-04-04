@@ -13,8 +13,7 @@ import dataclasses
 
 @dataclasses.dataclass
 class Expression:
-    """
-    Partitioning expressions
+    """Partitioning expressions.
 
     Args:
         expression: The expression to be evaluated

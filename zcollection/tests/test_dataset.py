@@ -22,7 +22,7 @@ from .cluster import dask_client, dask_cluster
 
 
 def test_maybe_truncate():
-    """Test the truncation of a string to a given length"""
+    """Test the truncation of a string to a given length."""
     data = list(range(1000))
     # pylint: disable=protected-access
     assert dataset._maybe_truncate(data, 10) == "[0, 1, ..."
@@ -31,7 +31,7 @@ def test_maybe_truncate():
 
 
 def create_test_variable(name="var1", fill_value=0):
-    """Create a test variable"""
+    """Create a test variable."""
     return dataset.Variable(name=name,
                             data=numpy.arange(10, dtype="int64").reshape(5, 2),
                             dimensions=("x", "y"),
@@ -43,7 +43,7 @@ def create_test_variable(name="var1", fill_value=0):
 
 
 def create_test_dataset():
-    """Create a test dataset"""
+    """Create a test dataset."""
     return dataset.Dataset(attrs=(dataset.Attribute(name="attr", value=1), ),
                            variables=(create_test_variable(),
                                       create_test_variable("var2")))
@@ -52,7 +52,7 @@ def create_test_dataset():
 def test_variable(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
-    """Test variable creation"""
+    """Test variable creation."""
     var = create_test_variable()
     assert var.name == "var1"
     assert var.dtype == numpy.dtype("int64")
@@ -143,7 +143,7 @@ def test_variable_concat(
 def test_variable_datetime64_to_xarray(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
-    """Test conversion to xarray"""
+    """Test conversion to xarray."""
     dates = numpy.arange(
         numpy.datetime64("2000-01-01", "ms"),
         numpy.datetime64("2000-02-01", "ms"),
@@ -166,7 +166,7 @@ def test_variable_datetime64_to_xarray(
 def test_variable_timedelta64_to_xarray(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
-    """Test conversion to xarray"""
+    """Test conversion to xarray."""
     delta = numpy.diff(
         numpy.arange(
             numpy.datetime64("2000-01-01", "ms"),
@@ -191,8 +191,7 @@ def test_variable_timedelta64_to_xarray(
 def test_variable_dimension_less(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
-    """Concatenate two dimensionless variables.
-    """
+    """Concatenate two dimensionless variables."""
     data = numpy.array([0, 1], dtype=numpy.int32)
     args = ("nv", data, ("nv", ), (dataset.Attribute("comment", "vertex"),
                                    dataset.Attribute("units", "1")))
@@ -227,7 +226,7 @@ def test_variable_getitem(
 def test_dataset(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
-    """Test dataset creation"""
+    """Test dataset creation."""
     ds = create_test_dataset()
     assert ds.dimensions == dict(x=5, y=2)
     assert ds.attrs == (dataset.Attribute(name="attr", value=1), )
@@ -253,7 +252,7 @@ def test_dataset(
 def test_dataset_dimensions_conflict(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
-    """Test dataset creation with dimensions conflict"""
+    """Test dataset creation with dimensions conflict."""
     with pytest.raises(ValueError):
         dataset.Dataset([
             dataset.Variable(name="var1",
@@ -279,7 +278,7 @@ def test_dataset_dimensions_conflict(
 def test_xarray(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
-    """Test xarray creation"""
+    """Test xarray creation."""
     ds = create_test_dataset()
     xr1 = ds.to_xarray()
     assert isinstance(xr1, xarray.Dataset)
@@ -291,7 +290,7 @@ def test_xarray(
 def test_dataset_isel(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
-    """Test dataset selection"""
+    """Test dataset selection."""
     ds = create_test_dataset()
     selected_ds = ds.isel(slices=dict(x=slice(0, 2)))
     assert selected_ds.dimensions == dict(x=2, y=2)
@@ -314,7 +313,7 @@ def test_dataset_isel(
 def test_dataset_delete(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
-    """Test dataset deletion"""
+    """Test dataset deletion."""
     ds = create_test_dataset()
 
     other = ds.delete([1], "y")
@@ -385,8 +384,7 @@ def test_dataset_pickle(
 def test_dataset_add_variable(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
-    """Test for adding a variable.
-    """
+    """Test for adding a variable."""
     ds = create_test_dataset()
     var = meta.Variable("var2", numpy.int64,
                         ("x", "y"), (dataset.Attribute("attr", 1), ),
@@ -430,7 +428,7 @@ def test_dataset_add_variable(
 
 
 def test_empty_dataset():
-    """Test empty dataset"""
+    """Test empty dataset."""
     ds = dataset.Dataset([], [])
     assert ds.attrs == []
     assert list(ds.variables) == []

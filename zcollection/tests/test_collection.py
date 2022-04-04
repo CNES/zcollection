@@ -37,7 +37,7 @@ def test_collection_creation(
     arg,
     request,
 ):
-    """Test the creation of a collection"""
+    """Test the creation of a collection."""
     tested_fs = request.getfixturevalue(arg)
     ds = next(create_test_dataset())
     zcollection = collection.Collection(
@@ -84,7 +84,7 @@ def test_insert(
     arg,
     request,
 ):
-    """Test the insertion of a dataset"""
+    """Test the insertion of a dataset."""
     tested_fs = request.getfixturevalue(arg)
     datasets = list(create_test_dataset())
     ds = datasets[0]
@@ -184,7 +184,7 @@ def test_update(
     create_test_data,
     request,
 ):
-    """Test the update of a dataset"""
+    """Test the update of a dataset."""
     tested_fs = request.getfixturevalue(arg)
     ds = next(create_test_data())
     zcollection = collection.Collection("time",
@@ -214,7 +214,7 @@ def test_drop_partitions(
     arg,
     request,
 ):
-    """Test the dropping of a dataset"""
+    """Test the dropping of a dataset."""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
 
@@ -242,7 +242,7 @@ def test_drop_variable(
     arg,
     request,
 ):
-    """Test the dropping of a variable"""
+    """Test the dropping of a variable."""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
 
@@ -270,7 +270,7 @@ def test_add_variable(
     arg,
     request,
 ):
-    """Test the adding of a variable"""
+    """Test the adding of a variable."""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
 
@@ -327,7 +327,7 @@ def test_add_update(
     create_test_data,
     request,
 ):
-    """Test the adding and updating of a dataset"""
+    """Test the adding and updating of a dataset."""
     tested_fs = request.getfixturevalue(arg)
     ds = next(create_test_data())
     zcollection = collection.Collection("time",
@@ -427,8 +427,9 @@ def test_insert_with_missing_variable(
 ):
     """Test of the insertion of a dataset in which a variable is missing.
 
-    This happens, for example, when a variable is not acquired, but created by
-    an algorithm."""
+    This happens, for example, when a variable is not acquired, but
+    created by an algorithm.
+    """
     tested_fs = request.getfixturevalue(arg)
     ds = next(create_test_dataset_with_fillvalue()).to_xarray()
     zcollection = collection.create_collection(
@@ -486,7 +487,7 @@ def test_map_partition(
     arg,
     request,
 ):
-    """Test the update of a dataset"""
+    """Test the update of a dataset."""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
 
@@ -506,7 +507,7 @@ def test_indexer(
     arg,
     request,
 ):
-    """Test the update of a dataset"""
+    """Test the update of a dataset."""
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
 

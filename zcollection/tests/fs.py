@@ -23,7 +23,7 @@ except ImportError as err:
 
 
 class Local:
-    """Local files system"""
+    """Local files system."""
 
     def __init__(self, tmpdir, protocol) -> None:
         self.fs = fsspec.filesystem(protocol)
@@ -37,7 +37,7 @@ class Local:
 
 @pytest.fixture
 def local_fs(tmpdir, pytestconfig):
-    """Local filesystem"""
+    """Local filesystem."""
     protocol = "memory" if pytestconfig.getoption("memory") else "file"
     instance = Local(tmpdir, protocol)
     yield instance
@@ -56,23 +56,23 @@ if S3_IMPORT_EXCEPTION is None:
 
     @pytest.fixture
     def s3_fs(s3):  # type: ignore (enabled only if S3 is available)
-        """S3 filesystem"""
+        """S3 filesystem."""
         return S3(s3)
 else:
 
     @pytest.fixture
     def s3():
-        """S3 filesystem"""
+        """S3 filesystem."""
         ...
 
     @pytest.fixture
     def s3_base():
-        """S3 filesystem"""
+        """S3 filesystem."""
         ...
 
     @pytest.fixture
     def s3_fs(pytestconfig):
-        """S3 filesystem"""
+        """S3 filesystem."""
         if pytestconfig.getoption("s3"):
             pytest.fail(f"Unable to test S3: {S3_IMPORT_EXCEPTION}")
         else:

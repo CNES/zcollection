@@ -15,7 +15,7 @@ CODEC_REGISTRY: Dict[str, abc.Partitioning] = {}
 
 
 def get_codecs(config: Dict) -> abc.Partitioning:
-    """Get the partitioning scheme for the given configuration
+    """Get the partitioning scheme for the given configuration.
 
     Args:
         config: A dictionary of the partitioning configuration parameters.
