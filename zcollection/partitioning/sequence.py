@@ -56,7 +56,7 @@ class Sequence(abc.Partitioning):
         """Split the variables constituting the partitioning into partitioning
         schemes."""
         matrix = dask.array.vstack(tuple(variables.values())).transpose()
-        if matrix.dtype.kind != "i":
+        if matrix.dtype.kind not in "iu":
             raise TypeError("The variables must be integer")
 
         index, indices = abc.unique(matrix)
