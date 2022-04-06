@@ -24,9 +24,15 @@ def dask_workers(client: dask.distributed.Client,
 
     Returns:
         number of dask workers
+
+    Raises:
+        ValueError: If no dask workers are available.
     """
-    return len(client.ncores()) if cores_only else sum(  # type: ignore
+    result = len(client.ncores()) if cores_only else sum(  # type: ignore
         item for item in client.nthreads().values())  # type: ignore
+    if result == 0:
+        raise RuntimeError("No dask workers available")
+    return result
 
 
 def get_client() -> dask.distributed.Client:
