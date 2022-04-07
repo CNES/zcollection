@@ -6,7 +6,17 @@
 Internal utilities
 ==================
 """
-from typing import Any, Callable, Iterator, List, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 import time
 
 import dask.distributed
@@ -194,3 +204,20 @@ def calculation_stream(func: Callable,
                 pass
     result += [item.result() for item in completed]
     return result
+
+
+def split_sequence(sequence: Sequence[Any],
+                   sections: int) -> Iterator[Sequence[Any]]:
+    """Split a sequence into sections.
+
+    Args:
+        sequence: The sequence to split.
+        sections: The number of sections to split the sequence into.
+
+    Returns:
+        The split sequence.
+    """
+    if sections <= 0:
+        raise ValueError("The number of sections must be greater than zero.")
+    return (sequence[ix:ix + sections]
+            for ix in range(0, len(sequence), sections))

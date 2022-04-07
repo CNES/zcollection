@@ -54,7 +54,7 @@ from . import (
 
 #: Function type to load and call a callback function of type
 #: :class:`PartitionCallable`.
-WrappedPartitionCallable = Callable[[str], None]
+WrappedPartitionCallable = Callable[[Iterable[str]], None]
 
 #: Type of functions filtering the partitions.
 PartitionFilterCallback = Callable[[Dict[str, int]], bool]
@@ -141,17 +141,21 @@ def _wrap_update_func(
         **kwargs: Keyword arguments to pass to the function.
 
     Returns:
-        The wrapped function that takes a partition's dataset and a variable
-        name as input and returns the variable's values as a numpy array.
+        The wrapped function that takes a set of dataset partitions and the
+        variable name as input and returns the variable's values as a numpy
+        array.
     """
 
-    def wrap_function(partition: str) -> None:
-        # Applying function on partition's data
-        array = func(storage.open_zarr_group(partition, fs), *args, **kwargs)
-
-        storage.update_zarr_array(dirname=fs.sep.join((partition, variable)),
-                                  array=array,
-                                  fs=fs)
+    def wrap_function(partitions: Iterable[str]) -> None:
+        # Applying function for each partition's data
+        for partition in partitions:
+            array = func(storage.open_zarr_group(partition, fs), *args,
+                         **kwargs)
+            storage.update_zarr_array(
+                dirname=fs.sep.join((partition, variable)),
+                array=array,
+                fs=fs,
+            )
 
     return wrap_function
 
@@ -710,7 +714,8 @@ class Collection:
         variable: str,
         /,
         *args,
-        filters: Optional[str] = None,
+        filters: Optional[PartitionFilter] = None,
+        batch_size: Optional[int] = None,
         **kwargs,
     ) -> None:
         # pylint: disable=method-hidden
@@ -721,6 +726,10 @@ class Collection:
             variable: The variable to update.
             *args: The positional arguments to pass to the function.
             filters: The expression used to filter the partitions to update.
+            batch_size: The number of partitions to update in a single batch.
+                By default 1, which is the same as to map the function to each
+                partition. Otherwise, the function is called on a batch of
+                partitions.
             **kwargs: The keyword arguments to pass to the function.
 
         Example:
@@ -739,8 +748,10 @@ class Collection:
                                        variable=variable,
                                        *args,
                                        **kwargs)
-        awaitables = client.map(local_func,
-                                tuple(self.partitions(filters=filters)))
+        batchs = utilities.split_sequence(
+            tuple(self.partitions(filters=filters)), batch_size or 1)
+        awaitables = client.map(local_func, tuple(batchs),
+                                key=func.__name__)  # type: ignore
         storage.execute_transaction(client, self.synchronizer, awaitables)
 
     def _bag_from_partitions(self) -> dask.bag.Bag:
@@ -792,7 +803,7 @@ class Collection:
 
         Raises:
             ValueError: if the variable is already part of the collection, it
-                doesn’t use the partitioning dimension or use a dimension that
+                doesn't use the partitioning dimension or use a dimension that
                 is not part of the dataset.
 
         Example:
