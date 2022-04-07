@@ -126,48 +126,88 @@ def test_calculation_stream(
 def test_split_sequence():
     """Test the split_sequence function."""
     assert list(utilities.split_sequence(list(range(10)), 2)) == [
+        [0, 1, 2, 3, 4],
+        [5, 6, 7, 8, 9],
+    ]
+    assert list(utilities.split_sequence(list(range(10)), 3)) == [
+        [0, 1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
+    ]
+    assert list(utilities.split_sequence(list(range(10)), 4)) == [
+        [0, 1, 2],
+        [3, 4, 5],
+        [6, 7],
+        [8, 9],
+    ]
+    assert list(utilities.split_sequence(list(range(10)), 5)) == [
         [0, 1],
         [2, 3],
         [4, 5],
         [6, 7],
         [8, 9],
     ]
-    assert list(utilities.split_sequence(list(range(10)), 3)) == [
-        [0, 1, 2],
-        [3, 4, 5],
-        [6, 7, 8],
+    assert list(utilities.split_sequence(list(range(10)), 6)) == [
+        [0, 1],
+        [2, 3],
+        [4, 5],
+        [6, 7],
+        [8],
         [9],
     ]
-    assert list(utilities.split_sequence(list(range(10)), 4)) == [
-        [0, 1, 2, 3],
-        [4, 5, 6, 7],
-        [8, 9],
-    ]
-    assert list(utilities.split_sequence(list(range(10)), 5)) == [
-        [0, 1, 2, 3, 4],
-        [5, 6, 7, 8, 9],
-    ]
-    assert list(utilities.split_sequence(list(range(10)), 6)) == [
-        [0, 1, 2, 3, 4, 5],
-        [6, 7, 8, 9],
-    ]
     assert list(utilities.split_sequence(list(range(10)), 7)) == [
-        [0, 1, 2, 3, 4, 5, 6],
-        [7, 8, 9],
+        [0, 1],
+        [2, 3],
+        [4, 5],
+        [6],
+        [7],
+        [8],
+        [9],
     ]
     assert list(utilities.split_sequence(list(range(10)), 8)) == [
-        [0, 1, 2, 3, 4, 5, 6, 7],
-        [8, 9],
+        [0, 1],
+        [2, 3],
+        [4],
+        [5],
+        [6],
+        [7],
+        [8],
+        [9],
     ]
     assert list(utilities.split_sequence(list(range(10)), 9)) == [
-        [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        [0, 1],
+        [2],
+        [3],
+        [4],
+        [5],
+        [6],
+        [7],
+        [8],
         [9],
     ]
     assert list(utilities.split_sequence(list(range(10)), 10)) == [
-        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        [0],
+        [1],
+        [2],
+        [3],
+        [4],
+        [5],
+        [6],
+        [7],
+        [8],
+        [9],
     ]
     assert list(utilities.split_sequence(list(range(10)), 11)) == [
-        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        [0],
+        [1],
+        [2],
+        [3],
+        [4],
+        [5],
+        [6],
+        [7],
+        [8],
+        [9],
     ]
     with pytest.raises(ValueError):
         list(utilities.split_sequence(list(range(10)), 0))

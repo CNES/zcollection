@@ -17,6 +17,7 @@ from typing import (
     Tuple,
     Union,
 )
+import itertools
 import time
 
 import dask.distributed
@@ -215,9 +216,14 @@ def split_sequence(sequence: Sequence[Any],
         sections: The number of sections to split the sequence into.
 
     Returns:
-        The split sequence.
+        Iterator of sequences.
     """
     if sections <= 0:
         raise ValueError("The number of sections must be greater than zero.")
-    return (sequence[ix:ix + sections]
-            for ix in range(0, len(sequence), sections))
+    length = len(sequence)
+    sections = min(sections, length)
+    size, extras = divmod(length, sections)
+    div = tuple(
+        itertools.accumulate(
+            ([0] + extras * [size + 1] + (sections - extras) * [size])))
+    yield from (sequence[item:div[ix + 1]] for ix, item in enumerate(div[:-1]))
