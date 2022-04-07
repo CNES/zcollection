@@ -749,7 +749,8 @@ class Collection:
                                        *args,
                                        **kwargs)
         batchs = utilities.split_sequence(
-            tuple(self.partitions(filters=filters)), batch_size or 1)
+            tuple(self.partitions(filters=filters)), batch_size
+            or utilities.dask_workers(client, cores_only=True))
         awaitables = client.map(local_func, tuple(batchs),
                                 key=func.__name__)  # type: ignore
         storage.execute_transaction(client, self.synchronizer, awaitables)

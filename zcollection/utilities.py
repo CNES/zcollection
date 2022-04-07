@@ -208,16 +208,18 @@ def calculation_stream(func: Callable,
 
 
 def split_sequence(sequence: Sequence[Any],
-                   sections: int) -> Iterator[Sequence[Any]]:
+                   sections: Optional[int] = None) -> Iterator[Sequence[Any]]:
     """Split a sequence into sections.
 
     Args:
         sequence: The sequence to split.
-        sections: The number of sections to split the sequence into.
+        sections: The number of sections to split the sequence into. Default
+            divides the sequence into n sections of one element.
 
     Returns:
         Iterator of sequences.
     """
+    sections = len(sequence) if sections is None else sections
     if sections <= 0:
         raise ValueError("The number of sections must be greater than zero.")
     length = len(sequence)
