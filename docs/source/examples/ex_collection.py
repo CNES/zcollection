@@ -77,7 +77,7 @@ collection.insert(ds)
 # %%
 # .. note::
 #
-#     When inserting it’s possible to specify the :ref:`merge strategy of a
+#     When inserting it's possible to specify the :ref:`merge strategy of a
 #     partition <merging_datasets>`. By default, the last inserted data
 #     overwrite the existing ones. Others strategy can be defined, for example,
 #     to update existing data (overwrite the updated data, while keeping the
