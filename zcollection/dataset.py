@@ -377,6 +377,17 @@ class Variable:
         """
         return self.data.compute()
 
+    def fill(self) -> "Variable":
+        """Fill the variable with the fill value. If the variable has no fill
+        value, this method does nothing.
+
+        Returns:
+            The variable.
+        """
+        if self.fill_value is not None:
+            self._array = dask.array.full_like(self._array, self.fill_value)
+        return self
+
     def duplicate(self, data: Any) -> "Variable":
         """Create a new variable from the properties of this instance and the
         data provided.

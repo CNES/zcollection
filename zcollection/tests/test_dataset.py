@@ -223,6 +223,16 @@ def test_variable_getitem(
     assert numpy.all(result == values[0:2, 0:2])
 
 
+def test_variable_fill(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
+    """Test filling of variables."""
+    var = create_test_variable()
+    assert not var.values.all() is numpy.ma.masked
+    var.fill()
+    assert var.values.all() is numpy.ma.masked
+
+
 def test_dataset(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
