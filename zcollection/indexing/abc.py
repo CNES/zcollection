@@ -8,16 +8,7 @@ Abstract base class for indexing.
 """
 from __future__ import annotations
 
-from typing import (
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Protocol,
-    Tuple,
-    Union,
-    get_args,
-)
+from typing import Dict, Iterable, List, Optional, Protocol, Tuple, Union
 import abc
 import functools
 import pathlib
@@ -427,7 +418,7 @@ class Indexer:
                 f'Invalid column names: {", ".join(columns.keys())}')
 
         # Transform the columns values into a list if they are not iterable.
-        values = dict((k, [v] if isinstance(v, get_args(Scalar)) else v)
+        values = dict((k, [v] if not isinstance(v, Iterable) else v)
                       for k, v in columns.items())
 
         table = self._read()
