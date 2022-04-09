@@ -249,8 +249,8 @@ class Indexer:
         self,
         ds: collection.Collection,
         func: IndexingCallable,
-        bag_partition_size: Optional[int] = None,
-        bag_npartitions: Optional[int] = None,
+        partition_size: Optional[int] = None,
+        npartitions: Optional[int] = None,
         **kwargs,
     ) -> None:
         """Update the index.
@@ -258,14 +258,14 @@ class Indexer:
         Args:
             ds: The dataset containing the new data.
             func: The function to use to calculate the index.
-            bag_partition_size: The length of each bag partition.
-            bag_npartitions: The number of desired bag partitions.
+            partition_size: The length of each bag partition.
+            npartitions: The number of desired bag partitions.
             **kwargs: Additional arguments to pass to the function.
         """
         tables: List[pyarrow.Table] = []
         bag = ds.map(func,
-                     bag_partition_size=bag_partition_size,
-                     bag_npartitions=bag_npartitions,
+                     partition_size=partition_size,
+                     npartitions=npartitions,
                      **kwargs)
         # List of new partitions indexed.
         partitions = []

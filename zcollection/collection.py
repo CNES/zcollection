@@ -426,7 +426,7 @@ class Collection:
         ds: Union[xarray.Dataset, dataset.Dataset],
         *,
         merge_callable: Optional[merging.MergeCallable] = None,
-        parallel_tasks: Optional[int] = None,
+        npartitions: Optional[int] = None,
     ) -> None:
         """Insert a dataset into the collection.
 
@@ -436,9 +436,9 @@ class Collection:
                 already stored in partitions with the new partitioned data. If
                 None, the new partitioned data overwrites the existing
                 partitioned data.
-            parallel_tasks: The maximum number of parallel tasks to use.
-                By default, the number of available cores of the dask cluster
-                is used.
+            npartitions: The maximum number of partitions to process in
+                parallel. By default, the number of available cores of the dask
+                cluster is used.
 
         .. warning::
 
@@ -469,7 +469,7 @@ class Collection:
         utilities.calculation_stream(
             _insert,
             self.partitioning.split_dataset(ds, self.partition_properties.dim),
-            max_workers=parallel_tasks,
+            max_workers=npartitions,
             axis=self.axis,
             ds=client.scatter(ds),
             fs=self.fs,
@@ -564,8 +564,8 @@ class Collection:
         func: MapCallable,
         *args,
         filters: PartitionFilter = None,
-        bag_partition_size: Optional[int] = None,
-        bag_npartitions: Optional[int] = None,
+        partition_size: Optional[int] = None,
+        npartitions: Optional[int] = None,
         **kwargs,
     ) -> dask.bag.Bag:
         """Map a function over the partitions of the collection.
@@ -576,8 +576,8 @@ class Collection:
             filters: The predicate used to filter the partitions to process.
                 To get more information on the predicate, see the
                 documentation of the :meth:`partitions` method.
-            bag_partition_size: The length of each bag partition.
-            bag_npartitions: The number of desired bag partitions.
+            partition_size: The length of each bag partition.
+            npartitions: The number of desired bag partitions.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
@@ -615,8 +615,8 @@ class Collection:
                 ds, *args, **kwargs)
 
         bag = dask.bag.from_sequence(self.partitions(filters=filters),
-                                     partition_size=bag_partition_size,
-                                     npartitions=bag_npartitions)
+                                     partition_size=partition_size,
+                                     npartitions=npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
 
     def load(
@@ -715,7 +715,7 @@ class Collection:
         /,
         *args,
         filters: Optional[PartitionFilter] = None,
-        batch_size: Optional[int] = None,
+        partition_size: Optional[int] = None,
         **kwargs,
     ) -> None:
         # pylint: disable=method-hidden
@@ -726,9 +726,9 @@ class Collection:
             variable: The variable to update.
             *args: The positional arguments to pass to the function.
             filters: The expression used to filter the partitions to update.
-            batch_size: The number of partitions to update in a single batch.
-                By default 1, which is the same as to map the function to each
-                partition. Otherwise, the function is called on a batch of
+            partition_size: The number of partitions to update in a single
+                batch. By default 1, which is the same as to map the function to
+                each partition. Otherwise, the function is called on a batch of
                 partitions.
             **kwargs: The keyword arguments to pass to the function.
 
@@ -749,19 +749,25 @@ class Collection:
                                        *args,
                                        **kwargs)
         batchs = utilities.split_sequence(
-            tuple(self.partitions(filters=filters)), batch_size
+            tuple(self.partitions(filters=filters)), partition_size
             or utilities.dask_workers(client, cores_only=True))
         awaitables = client.map(local_func, tuple(batchs),
                                 key=func.__name__)  # type: ignore
         storage.execute_transaction(client, self.synchronizer, awaitables)
 
-    def _bag_from_partitions(self) -> dask.bag.Bag:
+    def _bag_from_partitions(
+        self,
+        filters: Optional[PartitionFilter] = None,
+    ) -> dask.bag.Bag:
         """Return a dask bag from the partitions.
+
+        Args:
+            filters: The predicate used to filter the partitions to load.
 
         Returns:
             The dask bag.
         """
-        partitions = [*self.partitions()]
+        partitions = [*self.partitions(filters=filters)]
         return dask.bag.from_sequence(seq=partitions,
                                       npartitions=len(partitions))
 

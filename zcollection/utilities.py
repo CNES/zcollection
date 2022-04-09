@@ -17,6 +17,7 @@ from typing import (
     Tuple,
     Union,
 )
+import asyncio
 import itertools
 import time
 
@@ -124,22 +125,22 @@ def fs_walk(
         yield from fs_walk(fs, item, sort=sort)
 
 
-def _available_workers(client: dask.distributed.Client) -> Set[str]:
+async def _available_workers(client: dask.distributed.Client) -> Set[str]:
     """Get the list of available workers.
     Args:
-        client (dask.distributed.Client): Client connected to the Dask
-        cluster.
+        client: Client connected to the Dask cluster.
 
     Returns:
-        list: The list of available workers.
+        The list of available workers.
     """
     while True:
         info = client.scheduler_info()
+        tasks = await client.scheduler.processing(workers=None)  # type: ignore
         result = set(info["workers"]) - set(
-            k for k, v in client.processing().items() if v)  # type: ignore
+            k for k, v in tasks.items() if v)  # type: ignore
         if result:
             return result
-        time.sleep(0.1)
+        await asyncio.sleep(0.1)
 
 
 def calculation_stream(func: Callable,
@@ -158,8 +159,8 @@ def calculation_stream(func: Callable,
         kwargs: keyword arguments to be passed to the function.
 
     Returns:
-        list: The list of results (the order is not guaranteed to be the same
-            as the order of the input sequence).
+        The list of results (the order is not guaranteed to be the same
+        as the order of the input sequence).
     """
     client = get_client()
     completed = dask.distributed.as_completed()
@@ -184,7 +185,8 @@ def calculation_stream(func: Callable,
         while completed.count() < n_workers(max_workers):
             try:
                 if not workers:
-                    workers = _available_workers(client)
+                    workers: Set[str] = client.sync(_available_workers,
+                                                    client)  # type: ignore
                 completed.add(
                     client.submit(func,
                                   next(seq),
@@ -203,6 +205,7 @@ def calculation_stream(func: Callable,
                 result += client.gather(completed.next_batch())  # type: ignore
             except StopIteration:
                 pass
+
     result += [item.result() for item in completed]
     return result
 
