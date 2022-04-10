@@ -328,15 +328,15 @@ class Indexer:
         self,
         ds: collection.Collection,
         *,
-        bag_partition_size: Optional[int] = None,
-        bag_npartitions: Optional[int] = None,
+        partition_size: Optional[int] = None,
+        npartitions: Optional[int] = None,
     ) -> None:
         """Update the index.
 
         Args:
             ds: The dataset containing the new data.
-            bag_partition_size: The length of each bag partition.
-            bag_npartitions: The number of desired bag partitions.
+            partition_size: The length of each bag partition.
+            npartitions: The number of desired bag partitions.
         """
         ...
 

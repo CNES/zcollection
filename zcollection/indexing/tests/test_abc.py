@@ -127,23 +127,22 @@ class HalfOrbitIndexer(abc.Indexer):
         self,
         ds: collection.Collection,
         *,
-        bag_partition_size: Optional[int] = None,
-        bag_npartitions: Optional[int] = None,
+        partition_size: Optional[int] = None,
+        npartitions: Optional[int] = None,
         **kwargs,
     ) -> None:
         """Update the index.
 
         Args:
             ds: New data stored in the collection to be indexed.
-            bag_partition_size: The length of each bag partition.
-            bag_npartitions: The number of desired bag partitions.
+            partition_size: The length of each bag partition.
+            npartitions: The number of desired bag partitions.
             cycle_number: The name of the cycle number variable stored in the
                 collection. Defaults to "cycle_number".
             pass_number: The name of the pass number variable stored in the
                 collection. Defaults to "pass_number".
         """
-        super()._update(ds, _half_orbit, bag_partition_size, bag_npartitions,
-                        **kwargs)
+        super()._update(ds, _half_orbit, partition_size, npartitions, **kwargs)
 
 
 def test_indexer(
