@@ -127,6 +127,7 @@ def _wrap_update_func(
     func: PartitionCallable,
     fs: fsspec.AbstractFileSystem,
     variable: str,
+    selected_variables: Optional[Iterable[str]],
     *args,
     **kwargs,
 ) -> WrappedPartitionCallable:
@@ -137,6 +138,8 @@ def _wrap_update_func(
         func: Function to apply on each partition.
         fs: File system on which the Zarr dataset is stored.
         variable: Name of the variable to update.
+        selected_variables: Name of the variables to load from the dataset.
+            If None, all variables are loaded.
         *args: Positional arguments to pass to the function.
         **kwargs: Keyword arguments to pass to the function.
 
@@ -149,8 +152,9 @@ def _wrap_update_func(
     def wrap_function(partitions: Iterable[str]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
-            array = func(storage.open_zarr_group(partition, fs), *args,
-                         **kwargs)
+            array = func(
+                storage.open_zarr_group(partition, fs, selected_variables),
+                *args, **kwargs)
             storage.update_zarr_array(
                 dirname=fs.sep.join((partition, variable)),
                 array=array,
@@ -757,6 +761,7 @@ class Collection:
         *args,
         filters: Optional[PartitionFilter] = None,
         partition_size: Optional[int] = None,
+        selected_variables: Optional[Iterable[str]] = None,
         **kwargs,
     ) -> None:
         # pylint: disable=method-hidden
@@ -771,6 +776,8 @@ class Collection:
                 batch. By default 1, which is the same as to map the function to
                 each partition. Otherwise, the function is called on a batch of
                 partitions.
+            selected_variables: A list of variables to load from the collection.
+                If None, all variables are loaded.
             **kwargs: The keyword arguments to pass to the function.
 
         Example:
@@ -786,6 +793,7 @@ class Collection:
 
         local_func = _wrap_update_func(func=func,
                                        fs=self.fs,
+                                       selected_variables=selected_variables,
                                        variable=variable,
                                        *args,
                                        **kwargs)

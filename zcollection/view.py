@@ -480,6 +480,7 @@ class View:
         /,
         *args,
         filters: collection.PartitionFilter = None,
+        partition_size: Optional[int] = None,
         selected_variables: Optional[Iterable[str]] = None,
         **kwargs,
     ) -> None:
@@ -493,6 +494,10 @@ class View:
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
                 <zcollection.collection.Collection.partitions>` method.
+            partition_size: The number of partitions to update in a single
+                batch. By default 1, which is the same as to map the function to
+                each partition. Otherwise, the function is called on a batch of
+                partitions.
             selected_variables: A list of variables to retain from the view.
                 If None, all variables are loaded. Useful to load only a
                 subset of the view.
@@ -520,24 +525,28 @@ class View:
             _load_datasets_list(client, self.base_dir, self.fs, self.view_ref,
                                 self.metadata, filters, selected_variables))
 
-        def wrap_function(parameters: Tuple[dataset.Dataset, str],
+        def wrap_function(parameters: Iterable[Tuple[dataset.Dataset, str]],
                           base_dir: str):
             """Wrap the function to be applied to the dataset."""
-            ds, partition = parameters
+            for ds, partition in parameters:
+                # Applying function on partition's data
+                array = func(ds, *args, **kwargs)
 
-            # Applying function on partition's data
-            array = func(ds, *args, **kwargs)
+                storage.update_zarr_array(
+                    dirname=self.fs.sep.join((base_dir, partition, variable)),
+                    array=array,
+                    fs=self.fs,
+                )
 
-            storage.update_zarr_array(
-                dirname=self.fs.sep.join((base_dir, partition, variable)),
-                array=array,
-                fs=self.fs,
-            )
-
-        futures = client.map(wrap_function,
-                             datasets_list,
-                             base_dir=self.base_dir)
-        storage.execute_transaction(client, self.synchronizer, futures)
+        batchs = utilities.split_sequence(
+            datasets_list, partition_size
+            or utilities.dask_workers(client, cores_only=True))
+        awaitables = client.map(
+            wrap_function,
+            tuple(batchs),
+            key=func.__name__,  # type: ignore
+            base_dir=self.base_dir)
+        storage.execute_transaction(client, self.synchronizer, awaitables)
 
     def map(
         self,
