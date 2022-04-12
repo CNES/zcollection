@@ -17,7 +17,7 @@ from .collection import (
 )
 from .dataset import Attribute, Dataset, Variable
 from .version import __version__
-from .view import View, create_view, open_view
+from .view import View, ViewReference, create_view, open_view
 
 __all__ = [
     "__version__",
@@ -36,4 +36,5 @@ __all__ = [
     "Variable",
     "version",
     "View",
+    "ViewReference",
 ]
