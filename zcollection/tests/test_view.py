@@ -25,11 +25,6 @@ def test_view(
     request,
 ):
     """Test the creation of a view."""
-    # import dask.distributed
-    # cluster = dask.distributed.LocalCluster(n_workers=1,
-    #                                         threads_per_worker=1,
-    #                                         processes=False)
-    # client = dask.distributed.Client(cluster)
     tested_fs = request.getfixturevalue(arg)
 
     create_test_collection(tested_fs)
@@ -74,6 +69,17 @@ def test_view(
     ds = instance.load()
     assert ds is not None
     numpy.all(ds.variables["var3"].values == 5)
+
+    indexers = instance.map(
+        lambda x: slice(0, x.dimensions["num_lines"])  # type: ignore
+    ).compute()
+    ds1 = instance.load(indexer=indexers)
+    assert ds1 is not None
+    ds2 = instance.load()
+    assert ds2 is not None
+
+    assert numpy.allclose(ds1.variables["var1"].values,
+                          ds2.variables["var1"].values)
 
     instance.drop_variable("var3")
 

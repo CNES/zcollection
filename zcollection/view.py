@@ -6,12 +6,24 @@
 View on a reference collection.
 ===============================
 """
-from typing import ClassVar, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    ClassVar,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 import dataclasses
 import json
 import logging
 
 import dask.array
+import dask.bag
+import dask.distributed
 import fsspec
 import zarr
 
@@ -32,7 +44,7 @@ class ViewReference:
     #: Path to the collection.
     path: str
     #: The file system used to access the reference collection.
-    fs: fsspec.AbstractFileSystem = utilities.get_fs("file")
+    filesystem: fsspec.AbstractFileSystem = utilities.get_fs("file")
 
 
 def _create_zarr_array(args: Tuple[str, zarr.Group], base_dir: str,
@@ -92,29 +104,34 @@ def _drop_zarr_zarr(args: Tuple[str, zarr.Group],
     # pylint: enable=broad-except
 
 
-def _load_dataset(
-    partition: str,
+def _load_one_dataset(
+    args: Tuple[Tuple[Tuple[str, int], ...], List[slice]],
     base_dir: str,
     fs: fsspec.AbstractFileSystem,
     selected_variables: Optional[Iterable[str]],
-    view_ref: ViewReference,
+    view_ref: collection.Collection,
     variables: Sequence[str],
 ) -> Optional[Tuple[dataset.Dataset, str]]:
     """Load a dataset from a partition stored in the reference collection and
     merge it with the variables defined in this view.
 
     Args:
-        partition: The partition to process.
+        args: Tuple containing the partition's keys and its indexer.
         base_dir: Base directory of the view.
         fs: The file system used to access the variables in the view.
         selected_variables: The list of variable to retain from the view
             reference.
-        view_ref: The properties of the reference collection.
+        view_ref: The view reference.
         variables: The variables to retain from the view
+
+    Returns:
+        The dataset and the partition's path.
     """
+    partition_scheme, slices = args
+    partition = view_ref.partitioning.join(partition_scheme, fs.sep)
     ds = storage.open_zarr_group(
-        view_ref.fs.sep.join((view_ref.path, partition)), view_ref.fs,
-        selected_variables)
+        view_ref.fs.sep.join((view_ref.partition_properties.dir, partition)),
+        view_ref.fs, selected_variables)
     if ds is None:
         return None
 
@@ -128,6 +145,15 @@ def _load_dataset(
                     mode="r"),
                 variable) for variable in variables)
     }
+
+    # Apply indexing if needed.
+    if len(slices):
+        dim = view_ref.partition_properties.dim
+        ds_list: List[dataset.Dataset] = []
+        _ = {ds_list.append(ds.isel({dim: indexer})) for indexer in slices}
+        ds = ds_list.pop(0)
+        if ds_list:
+            ds = ds.concat(ds_list, dim)
     return ds, partition
 
 
@@ -144,6 +170,44 @@ def _assert_variable_handled(reference: meta.Dataset, view: meta.Dataset,
         raise ValueError(f"Variable {variable} is read-only")
     if variable not in view.variables:
         raise ValueError(f"Variable {variable} does not exist")
+
+
+def _load_datasets_list(
+    client: dask.distributed.Client,
+    base_dir: str,
+    fs: fsspec.AbstractFileSystem,
+    view_ref: collection.Collection,
+    metadata: meta.Dataset,
+    filters: collection.PartitionFilter,
+    selected_variables: Optional[Iterable[str]] = None,
+) -> Iterator[Tuple[dataset.Dataset, str]]:
+    """Load datasets from a list of partitions.
+
+    Args:
+        client: The client used to load the datasets.
+        base_dir: Base directory of the view.
+        fs: The file system used to access the variables in the view.
+        view_ref: The view reference.
+        metadata: The metadata of the dataset.
+        filters: The partition filters.
+        selected_variables: The list of variable to retain from the view
+
+    Returns:
+        The datasets and their paths.
+    """
+    arguments = tuple((view_ref.partitioning.parse(item), [])
+                      for item in view_ref.partitions(filters=filters))
+    futures = client.map(
+        _load_one_dataset,
+        arguments,
+        base_dir=base_dir,
+        fs=fs,
+        selected_variables=view_ref.metadata.select_variables(
+            keep_variables=selected_variables),
+        view_ref=client.scatter(view_ref),
+        variables=metadata.select_variables(selected_variables))
+
+    return filter(lambda item: item is not None, client.gather(futures))
 
 
 class View:
@@ -173,9 +237,8 @@ class View:
         #: The file system used to access the view (default local file system).
         self.fs = utilities.get_fs(filesystem)
         #: The reference collection of the view.
-        self.view_ref = collection.open_collection(view_ref.path,
-                                                   mode="r",
-                                                   filesystem=view_ref.fs)
+        self.view_ref = collection.open_collection(
+            view_ref.path, mode="r", filesystem=view_ref.filesystem)
         #: The metadata of the variables handled by the view.
         self.metadata = ds or meta.Dataset(
             self.view_ref.metadata.dimensions, variables=[], attrs=[])
@@ -249,6 +312,21 @@ class View:
                     ds=meta.Dataset.from_config(data["metadata"]),
                     filesystem=filesystem,
                     synchronizer=synchronizer)
+
+    def variables(
+        self,
+        selected_variables: Optional[Iterable[str]] = None
+    ) -> Tuple[dataset.Variable]:
+        """Return the variables of the view.
+
+        Args:
+            selected_variables: The variables to return. If None, all the
+                variables are returned.
+
+        Returns:
+            The variables of the view.
+        """
+        return collection.variables(self.metadata, selected_variables)
 
     def add_variable(self, variable: meta.Variable) -> None:
         """Add a variable to the view.
@@ -336,6 +414,7 @@ class View:
         self,
         *,
         filters: collection.PartitionFilter = None,
+        indexer: Optional[collection.Indexer] = None,
         selected_variables: Optional[Iterable[str]] = None,
     ) -> Optional[dataset.Dataset]:
         """Load the view.
@@ -345,6 +424,7 @@ class View:
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
                 <zcollection.collection.Collection.partitions>` method.
+            indexer: The indexer to apply.
             selected_variables: A list of variables to retain from the view.
                 If None, all variables are loaded.
 
@@ -356,16 +436,25 @@ class View:
             >>> view.load(filters="time == '2020-01-01'")
             >>> view.load(filters=lambda x: x["time"] == "2020-01-01")
         """
+        if indexer is not None:
+            arguments = tuple(
+                collection.build_indexer_args(self.view_ref, filters, indexer))
+            if len(arguments) == 0:
+                return None
+        else:
+            arguments = tuple(
+                (self.view_ref.partitioning.parse(item), [])
+                for item in self.view_ref.partitions(filters=filters))
+
         client = utilities.get_client()
         futures = client.map(
-            _load_dataset,
-            tuple(self.view_ref.partitions(filters=filters, relative=True)),
+            _load_one_dataset,
+            arguments,
             base_dir=self.base_dir,
             fs=self.fs,
             selected_variables=self.view_ref.metadata.select_variables(
                 selected_variables),
-            view_ref=ViewReference(self.view_ref.partition_properties.dir,
-                                   self.view_ref.fs),
+            view_ref=client.scatter(self.view_ref),
             variables=self.metadata.select_variables(selected_variables))
 
         # The load function returns the path to the partitions and the loaded
@@ -424,46 +513,96 @@ class View:
         _LOGGER.info("Updating variable %r", variable)
         _assert_variable_handled(self.view_ref.metadata, self.metadata,
                                  variable)
-        arrays = []
 
         client = utilities.get_client()
-        futures = client.map(
-            _load_dataset,
-            tuple(self.view_ref.partitions(filters=filters, relative=True)),
-            base_dir=self.base_dir,
-            fs=self.fs,
-            selected_variables=self.view_ref.metadata.select_variables(
-                keep_variables=selected_variables),
-            view_ref=ViewReference(self.view_ref.partition_properties.dir,
-                                   self.view_ref.fs),
-            variables=self.metadata.select_variables(selected_variables))
 
-        # We build the list of arguments to pass to the update routine. That is
-        # the dataset and the path to the view partition.
-        arrays: List[dataset.Dataset] = list(
-            map(
-                lambda item: (
-                    item[0],  # type: ignore
-                    self.fs.sep.join(
-                        (self.base_dir, item[1]))),  # type: ignore
-                filter(lambda item: item is not None,
-                       client.gather(futures))))  # type: ignore
+        datasets_list = tuple(
+            _load_datasets_list(client, self.base_dir, self.fs, self.view_ref,
+                                self.metadata, filters, selected_variables))
 
-        def wrap_function(parameters):
+        def wrap_function(parameters: Tuple[dataset.Dataset, str],
+                          base_dir: str):
             """Wrap the function to be applied to the dataset."""
-            data, partition = parameters
+            ds, partition = parameters
 
             # Applying function on partition's data
-            array = func(data, *args, **kwargs)
+            array = func(ds, *args, **kwargs)
 
             storage.update_zarr_array(
-                dirname=self.fs.sep.join((partition, variable)),
+                dirname=self.fs.sep.join((base_dir, partition, variable)),
                 array=array,
                 fs=self.fs,
             )
 
-        futures = client.map(wrap_function, arrays)
+        futures = client.map(wrap_function,
+                             datasets_list,
+                             base_dir=self.base_dir)
         storage.execute_transaction(client, self.synchronizer, futures)
+
+    def map(
+        self,
+        func: collection.MapCallable,
+        *args,
+        filters: collection.PartitionFilter = None,
+        partition_size: Optional[int] = None,
+        npartitions: Optional[int] = None,
+        **kwargs,
+    ) -> dask.bag.Bag:
+        """Map a function over the partitions of the view.
+
+        Args:
+            func: The function to apply to every partition of the view.
+            *args: The positional arguments to pass to the function.
+            filters: The predicate used to filter the partitions to process.
+                To get more information on the predicate, see the
+                documentation of the :meth:`zcollection.Collection.partitions`
+                method.
+            partition_size: The length of each bag partition.
+            npartitions: The number of desired bag partitions.
+            **kwargs: The keyword arguments to pass to the function.
+
+        Returns:
+            A bag containing the tuple of the partition scheme and the result
+            of the function.
+
+        Example:
+            >>> futures = view.map(
+            ...     lambda x: (x["var1"] + x["var2"]).values)
+            >>> for item in futures:
+            ...     print(item)
+            [1.0, 2.0, 3.0, 4.0]
+            [5.0, 6.0, 7.0, 8.0]
+        """
+
+        def _wrap(
+            arguments: Tuple[dataset.Dataset, str],
+            func: collection.PartitionCallable,
+            *args,
+            **kwargs,
+        ) -> Tuple[Tuple[Tuple[str, int], ...], Any]:
+            """Wraps the function to apply on the partition.
+
+            Args:
+                arguments: The partition scheme and the dataset.
+                func: The function to apply.
+                *args: The positional arguments to pass to the function.
+                **kwargs: The keyword arguments to pass to the function.
+
+            Returns:
+                The result of the function.
+            """
+            ds, partition = arguments
+            return self.view_ref.partitioning.parse(partition), func(
+                ds, *args, **kwargs)
+
+        client = utilities.get_client()
+        datasets_list = tuple(
+            _load_datasets_list(client, self.base_dir, self.fs, self.view_ref,
+                                self.metadata, filters))
+        bag = dask.bag.from_sequence(datasets_list,
+                                     partition_size=partition_size,
+                                     npartitions=npartitions)
+        return bag.map(_wrap, func, *args, **kwargs)
 
 
 def create_view(
