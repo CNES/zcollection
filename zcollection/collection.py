@@ -216,7 +216,7 @@ def _load_and_apply_indexer(
     """Load a partition and apply its indexer.
 
     Args:
-        args: Tuple containing the partition's name and its indexer.
+        args: Tuple containing the partition's keys and its indexer.
         fs: The file system that the partition is stored on.
         partition_handler: The partitioning handler.
         partition_properties: The partitioning properties.
@@ -236,6 +236,61 @@ def _load_and_apply_indexer(
         for indexer in items
     }
     return arrays
+
+
+def variables(
+    metadata: meta.Dataset,
+    selected_variables: Optional[Iterable[str]] = None
+) -> Tuple[dataset.Variable]:
+    """Return the variables defined in the dataset.
+
+    Args:
+        selected_variables: The variables to return. If None, all the
+            variables are returned.
+
+    Returns:
+        The variables defined in the dataset.
+    """
+    selected_variables = selected_variables or metadata.variables.keys()
+    return tuple(
+        dataset.Variable(
+            v.name, numpy.ndarray((0, ) * len(v.dimensions), v.dtype),
+            v.dimensions, v.attrs, v.compressor, v.fill_value, v.filters)
+        for k, v in metadata.variables.items() if k in selected_variables)
+
+
+def build_indexer_args(
+    collection: Collection,
+    filters: PartitionFilter,
+    indexer: Indexer,
+) -> Iterator[tuple[Tuple[Tuple[str, int], ...], List[slice]]]:
+    """Build the arguments for the indexer.
+
+    Args:
+        collection: The collection to index.
+        filters: The partition filters.
+        indexer: The indexer.
+
+    Returns:
+        An iterator containing the arguments for the indexer.
+    """
+    # Build an indexer dictionary between the partition scheme and
+    # indexer.
+    indexers_map: Dict[Tuple[Tuple[str, int], ...], List[slice]] = {}
+    _ = {
+        indexers_map.setdefault(partition_scheme, []).append(indexer)
+        for partition_scheme, indexer in indexer
+    }
+    # Filter the selected partitions
+    selected_partitions = set(indexers_map) & set(
+        (collection.partitioning.parse(item)
+         for item in collection.partitions(filters=filters)))
+    if len(selected_partitions) == 0:
+        raise StopIteration
+
+    # For each provided partition scheme, retrieves the corresponding
+    # indexer.
+    return ((item, indexers_map[item]) for item in sorted(selected_partitions))
 
 
 class Collection:
@@ -416,8 +471,7 @@ class Collection:
             Whether the partition is selected.
         """
         if expr is not None:
-            variables = dict(self.partitioning.parse("/".join(partition)))
-            return expr(variables)
+            return expr(dict(self.partitioning.parse("/".join(partition))))
         return True
 
     # pylint: disable=method-hidden
@@ -669,24 +723,11 @@ class Collection:
                              fs=self.fs,
                              selected_variables=selected_variables).compute()
         else:
-            # Build an indexer dictionary between the partition scheme and
-            # indexer.
-            indexers_map: Dict[Tuple[Tuple[str, int], ...], List[slice]] = {}
-            _ = {
-                indexers_map.setdefault(partition_scheme, []).append(indexer)
-                for partition_scheme, indexer in indexer
-            }
-            # Filter the selected partitions
-            selected_partitions = set(indexers_map) & set(
-                (self.partitioning.parse(item)
-                 for item in self.partitions(filters=filters)))
-            if len(selected_partitions) == 0:
+            # Build the indexer arguments.
+            args = tuple(build_indexer_args(self, filters, indexer))
+            if len(args) == 0:
                 return None
 
-            # For each provided partition scheme, retrieves the corresponding
-            # indexer.
-            args = ((item, indexers_map[item])
-                    for item in sorted(selected_partitions))
             bag = dask.bag.from_sequence(args,
                                          npartitions=utilities.dask_workers(
                                              client, cores_only=True))
@@ -875,14 +916,7 @@ class Collection:
         Returns:
             The variables of the collection.
         """
-        selected_variables = selected_variables or self.metadata.variables.keys(
-        )
-        return tuple(
-            dataset.Variable(
-                v.name, numpy.ndarray((0, ) * len(v.dimensions), v.dtype),
-                v.dimensions, v.attrs, v.compressor, v.fill_value, v.filters)
-            for k, v in self.metadata.variables.items()
-            if k in selected_variables)
+        return variables(self.metadata, selected_variables)
 
 
 def create_collection(
