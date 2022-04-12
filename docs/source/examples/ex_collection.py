@@ -169,6 +169,14 @@ assert ds is not None
 ds.variables["var2"].values
 
 # %%
+# Map a function over the collection
+# ----------------------------------
+# It's possible to map a function over the partitions of the view.
+for partition, array in collection.map(
+        lambda ds: ds["var1"].values + ds["var2"].values).compute():
+    print(f" * partition = {partition}: mean = {array.mean()}")
+
+# %%
 # Close the local cluster to avoid printing warning messages in the other
 # examples.
 client.close()

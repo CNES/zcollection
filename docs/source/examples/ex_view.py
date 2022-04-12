@@ -97,13 +97,6 @@ assert ds is not None
 var3 = ds["var3"].values
 var3
 
-# %%
-var2 = ds["var2"].values
-var2
-
-# %%
-var2 - var3
-
 # *Warning*: The variables of the reference collection cannot be edited.
 try:
     view.update(lambda ds: ds["var2"].values * 0, "var2")
@@ -111,12 +104,9 @@ except ValueError as exc:
     print(str(exc))
 
 # %%
-# Finally, a method allows you to
+# A method allows you to
 # :py:meth:`drop_variable<zcollection.view.View.drop_variable>` variables from
 # the view.
-view.load()
-
-# %%
 view.drop_variable("var3")
 view.load()
 
@@ -126,6 +116,14 @@ try:
     view.drop_variable("var2")
 except ValueError as exc:
     print(str(exc))
+
+# %%
+# Map a function over the view
+# ----------------------------
+# It's possible to map a function over the partitions of the view.
+for partition, array in view.map(
+        lambda ds: ds["var1"].values + ds["var2"].values).compute():
+    print(f" * partition = {partition}: mean = {array.mean()}")
 
 # %%
 # Close the local cluster to avoid printing warning messages in the other
