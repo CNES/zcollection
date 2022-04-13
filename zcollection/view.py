@@ -328,7 +328,10 @@ class View:
         """
         return collection.variables(self.metadata, selected_variables)
 
-    def add_variable(self, variable: meta.Variable) -> None:
+    def add_variable(
+        self,
+        variable: Union[meta.Variable, dataset.Variable],
+    ) -> None:
         """Add a variable to the view.
 
         Args:
@@ -346,6 +349,8 @@ class View:
             ...         zcollection.meta.Attribute("long_name", "temperature")),
             ...        fill_value=-9999.0))
         """
+        if isinstance(variable, dataset.Variable):
+            variable = variable.metadata()
         _LOGGER.info("Adding variable %r", variable.name)
         if (variable.name in self.view_ref.metadata.variables
                 or variable.name in self.metadata.variables):

@@ -851,7 +851,10 @@ class Collection:
         del self.metadata.variables[variable]
         self._write_config()
 
-    def add_variable(self, variable: meta.Variable) -> None:
+    def add_variable(
+        self,
+        variable: Union[meta.Variable, dataset.Variable],
+    ) -> None:
         """Add a variable to the collection.
 
         Args:
@@ -875,6 +878,8 @@ class Collection:
             ... )
             >>> collection.add_variable(new_variable)
         """
+        if isinstance(variable, dataset.Variable):
+            variable = variable.metadata()
         _LOGGER.info("Adding of the %r variable in the collection",
                      variable.name)
         if self.partition_properties.dim not in variable.dimensions:
