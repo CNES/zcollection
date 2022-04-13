@@ -283,7 +283,9 @@ class Dataset:
             raise ValueError(
                 f"The variable {variable.name!r} already exists in the "
                 "collection.")
-        if set(variable.dimensions) != set(self.dimensions):
+        dimensions = set(self.dimensions)
+        # Looking for unknown dimensions.
+        if (set(variable.dimensions) | dimensions) != dimensions:
             raise ValueError(
                 "The new variable must use the dataset dimensions.")
         self.variables[variable.name] = variable

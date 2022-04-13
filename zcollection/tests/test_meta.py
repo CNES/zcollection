@@ -162,5 +162,16 @@ def test_add_variable():
     with pytest.raises(ValueError):
         ds.add_variable(meta.Variable("a", numpy.float64, ("x", "y")))
 
+    ds.add_variable(meta.Variable("b", numpy.float64, ("x")))
+    ds.add_variable(meta.Variable("c", numpy.float64, ("y")))
+
     with pytest.raises(ValueError):
-        ds.add_variable(meta.Variable("b", numpy.float64, ("a", "y")))
+        ds.add_variable(meta.Variable("d", numpy.float64, ("a", "y")))
+
+    with pytest.raises(ValueError):
+        ds.add_variable(meta.Variable("e", numpy.float64, ("a", "b")))
+
+    with pytest.raises(ValueError):
+        ds.add_variable(meta.Variable("f", numpy.float64, ("a")))
+
+    ds.add_variable(meta.Variable("g", numpy.float64, ()))
