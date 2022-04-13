@@ -20,6 +20,7 @@ from typing import (
 import dataclasses
 import json
 import logging
+import pathlib
 
 import dask.array
 import dask.bag
@@ -78,24 +79,22 @@ def _create_zarr_array(args: Tuple[str, zarr.Group], base_dir: str,
     fs.invalidate_cache(dirname)
 
 
-def _drop_zarr_zarr(args: Tuple[str, zarr.Group],
-                    base_dir: str,
+def _drop_zarr_zarr(partition: str,
                     fs: fsspec.AbstractFileSystem,
                     variable: str,
                     ignore_errors: bool = False) -> None:
     """Drop a Zarr array.
 
     Args:
-        args: Tuple of (path, zarr.Group).
+        partition: The partition that contains the array to drop.
         base_dir: Base directory for the Zarr array.
         fs: The filesystem used to delete the Zarr array.
         variable: The name of the variable to drop.
         ignore_errors: If True, ignore errors when dropping the array.
     """
-    partition, _group = args
     try:
-        fs.rm(fs.sep.join((base_dir, partition, variable)), recursive=True)
-        fs.invalidate_cache(fs.sep.join((base_dir, partition)))
+        fs.rm(fs.sep.join((partition, variable)), recursive=True)
+        fs.invalidate_cache(partition)
     # pylint: disable=broad-except
     # We don't want to fail on errors.
     except Exception:
@@ -178,7 +177,7 @@ def _load_datasets_list(
     fs: fsspec.AbstractFileSystem,
     view_ref: collection.Collection,
     metadata: meta.Dataset,
-    filters: collection.PartitionFilter,
+    partitions: Iterable[str],
     selected_variables: Optional[Iterable[str]] = None,
 ) -> Iterator[Tuple[dataset.Dataset, str]]:
     """Load datasets from a list of partitions.
@@ -189,14 +188,14 @@ def _load_datasets_list(
         fs: The file system used to access the variables in the view.
         view_ref: The view reference.
         metadata: The metadata of the dataset.
-        filters: The partition filters.
+        partitions: The list of partitions to load.
         selected_variables: The list of variable to retain from the view
 
     Returns:
         The datasets and their paths.
     """
-    arguments = tuple((view_ref.partitioning.parse(item), [])
-                      for item in view_ref.partitions(filters=filters))
+    arguments = tuple(
+        (view_ref.partitioning.parse(item), []) for item in partitions)
     futures = client.map(
         _load_one_dataset,
         arguments,
@@ -313,6 +312,23 @@ class View:
                     filesystem=filesystem,
                     synchronizer=synchronizer)
 
+    def partitions(
+        self,
+        filters: collection.PartitionFilter = None,
+    ) -> Iterator[str]:
+        """Returns the list of partitions in the view.
+
+        Args:
+            filters: The partition filters.
+
+        Returns:
+            The list of partitions.
+        """
+        return filter(
+            self.fs.exists,
+            map(lambda item: self.fs.sep.join((self.base_dir, item)),
+                self.view_ref.partitions(filters=filters, relative=True)))
+
     def variables(
         self,
         selected_variables: Optional[Iterable[str]] = None
@@ -359,26 +375,36 @@ class View:
         self.metadata.add_variable(variable)
         template = self.view_ref.metadata.search_same_dimensions_as(variable)
 
+        existing_partitions = tuple(self.partitions())
+
+        # If the view already contains variables, you only need to modify the
+        # existing partitions.
+        if len(existing_partitions):
+            existing_partitions = set(
+                pathlib.Path(path).relative_to(self.base_dir).as_posix()
+                for path in existing_partitions)
+            args = filter(lambda item: item[0] in existing_partitions,
+                          self.view_ref.iterate_on_records(relative=True))
+        else:
+            args = self.view_ref.iterate_on_records(relative=True)
+
         try:
             storage.execute_transaction(
                 client, self.synchronizer,
-                client.map(
-                    _create_zarr_array,
-                    tuple(self.view_ref.iterate_on_records(relative=True)),
-                    base_dir=self.base_dir,
-                    fs=self.fs,
-                    template=template.name,
-                    variable=variable))
+                client.map(_create_zarr_array,
+                           tuple(args),
+                           base_dir=self.base_dir,
+                           fs=self.fs,
+                           template=template.name,
+                           variable=variable))
         except Exception:
             storage.execute_transaction(
                 client, self.synchronizer,
-                client.map(
-                    _drop_zarr_zarr,
-                    tuple(self.view_ref.iterate_on_records(relative=True)),
-                    base_dir=self.base_dir,
-                    fs=self.fs,
-                    variable=variable.name,
-                    ignore_errors=True))
+                client.map(_drop_zarr_zarr,
+                           tuple(self.partitions()),
+                           fs=self.fs,
+                           variable=variable.name,
+                           ignore_errors=True))
             raise
 
         self._write_config()
@@ -410,8 +436,7 @@ class View:
         storage.execute_transaction(
             client, self.synchronizer,
             client.map(_drop_zarr_zarr,
-                       tuple(self.view_ref.iterate_on_records(relative=True)),
-                       base_dir=self.base_dir,
+                       tuple(self.partitions()),
                        fs=self.fs,
                        variable=variable.name))
 
@@ -443,13 +468,15 @@ class View:
         """
         if indexer is not None:
             arguments = tuple(
-                collection.build_indexer_args(self.view_ref, filters, indexer))
+                collection.build_indexer_args(self.view_ref,
+                                              filters,
+                                              indexer,
+                                              partitions=self.partitions()))
             if len(arguments) == 0:
                 return None
         else:
-            arguments = tuple(
-                (self.view_ref.partitioning.parse(item), [])
-                for item in self.view_ref.partitions(filters=filters))
+            arguments = tuple((self.view_ref.partitioning.parse(item), [])
+                              for item in self.partitions(filters=filters))
 
         client = utilities.get_client()
         futures = client.map(
@@ -527,8 +554,9 @@ class View:
         client = utilities.get_client()
 
         datasets_list = tuple(
-            _load_datasets_list(client, self.base_dir, self.fs, self.view_ref,
-                                self.metadata, filters, selected_variables))
+            _load_datasets_list(client, self.base_dir, self.fs,
+                                self.view_ref, self.metadata,
+                                self.partitions(filters), selected_variables))
 
         def wrap_function(parameters: Iterable[Tuple[dataset.Dataset, str]],
                           base_dir: str):
@@ -612,7 +640,7 @@ class View:
         client = utilities.get_client()
         datasets_list = tuple(
             _load_datasets_list(client, self.base_dir, self.fs, self.view_ref,
-                                self.metadata, filters))
+                                self.metadata, self.partitions(filters)))
         bag = dask.bag.from_sequence(datasets_list,
                                      partition_size=partition_size,
                                      npartitions=npartitions)

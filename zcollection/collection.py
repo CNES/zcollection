@@ -267,6 +267,7 @@ def build_indexer_args(
     collection: Collection,
     filters: PartitionFilter,
     indexer: Indexer,
+    partitions: Optional[Iterable[str]] = None,
 ) -> Iterator[tuple[Tuple[Tuple[str, int], ...], List[slice]]]:
     """Build the arguments for the indexer.
 
@@ -274,6 +275,8 @@ def build_indexer_args(
         collection: The collection to index.
         filters: The partition filters.
         indexer: The indexer.
+        partitions: The partitions to index. If None, all the partitions
+            are indexed.
 
     Returns:
         An iterator containing the arguments for the indexer.
@@ -286,9 +289,9 @@ def build_indexer_args(
         for partition_scheme, indexer in indexer
     }
     # Filter the selected partitions
+    partitions = partitions or collection.partitions(filters=filters)
     selected_partitions = set(indexers_map) & set(
-        (collection.partitioning.parse(item)
-         for item in collection.partitions(filters=filters)))
+        (collection.partitioning.parse(item) for item in partitions))
     if len(selected_partitions) == 0:
         raise StopIteration
 

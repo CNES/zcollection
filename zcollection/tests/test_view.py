@@ -6,6 +6,8 @@
 Test of views
 =============
 """
+import shutil
+
 import numpy
 import pytest
 
@@ -34,6 +36,11 @@ def test_view(
                                 filesystem=tested_fs.fs)
     assert isinstance(instance, view.View)
     assert isinstance(str(instance), str)
+
+    # No variable recorded, so no data can be loaded
+    ds = instance.load()
+    assert ds is None
+
     var = meta.Variable(
         name="var2",
         dtype=numpy.float64,
@@ -51,6 +58,38 @@ def test_view(
         instance.add_variable(var)
 
     instance = view.open_view(str(tested_fs.view), filesystem=tested_fs.fs)
+    ds = instance.load()
+    assert ds is not None
+    assert set(ds["time"].values.astype("datetime64[D]")) == {
+        numpy.datetime64("2000-01-01"),
+        numpy.datetime64("2000-01-04"),
+        numpy.datetime64("2000-01-07"),
+        numpy.datetime64("2000-01-10"),
+        numpy.datetime64("2000-01-13"),
+        numpy.datetime64("2000-01-16"),
+    }
+
+    # Test view loading that is no longer synchronized with the reference
+    # collection.
+    shutil.rmtree(tested_fs.view.joinpath("year=2000", "month=01", "day=13"))
+
+    assert len(tuple(instance.partitions())) == 5
+    assert len(tuple(instance.view_ref.partitions())) == 6
+
+    ds = instance.load()
+    assert ds is not None
+    assert set(ds["time"].values.astype("datetime64[D]")) == {
+        numpy.datetime64("2000-01-01"),
+        numpy.datetime64("2000-01-04"),
+        numpy.datetime64("2000-01-07"),
+        numpy.datetime64("2000-01-10"),
+        numpy.datetime64("2000-01-16"),
+    }
+
+    # Create a variable with the unsynchronized view
+    var.name = "var4"
+    instance.add_variable(var)
+
     ds = instance.load()
     assert ds is not None
 
