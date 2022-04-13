@@ -6,8 +6,6 @@
 Test of views
 =============
 """
-import shutil
-
 import numpy
 import pytest
 
@@ -71,7 +69,9 @@ def test_view(
 
     # Test view loading that is no longer synchronized with the reference
     # collection.
-    shutil.rmtree(tested_fs.view.joinpath("year=2000", "month=01", "day=13"))
+    tested_fs.fs.rm(str(
+        tested_fs.view.joinpath("year=2000", "month=01", "day=13")),
+                    recursive=True)
 
     assert len(tuple(instance.partitions())) == 5
     assert len(tuple(instance.view_ref.partitions())) == 6
