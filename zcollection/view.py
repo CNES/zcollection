@@ -634,14 +634,20 @@ def create_view(
         filesystem: The file system used to access the view.
         synchronizer: The synchronizer used to synchronize the view.
 
-    Returns:
-        The created view.
-
     Example:
         >>> view_ref = ViewReference(
         ...     partition_base_dir="/data/mycollection")
         >>> view = create_view("/home/user/myview", view_ref)
+
+    Returns:
+        The created view.
+
+    Raises:
+        ValueError: If the path already exists.
     """
+    filesystem = utilities.get_fs(filesystem)
+    if filesystem.exists(path):
+        raise ValueError(f"path {path!r} already exists.")
     return View(path,
                 view_ref,
                 ds=None,

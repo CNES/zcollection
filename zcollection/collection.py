@@ -963,7 +963,14 @@ def create_collection(
 
     Returns:
         The collection.
+
+    Raises:
+        ValueError: If the base directory already exists.
     """
+    filesystem = utilities.get_fs(kwargs.get("filesystem", None))
+    if filesystem.exists(partition_base_dir):
+        raise ValueError(
+            f"The directory {partition_base_dir!r} already exists.")
     if isinstance(ds, xarray.Dataset):
         ds = dataset.Dataset.from_xarray(ds)
     return Collection(axis,
