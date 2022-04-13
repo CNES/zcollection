@@ -276,9 +276,13 @@ class Dataset:
             variable: variable to add.
 
         Raises:
+            TypeError: if the variable is not a Variable.
             ValueError: if the variable already exists or if the variable
                 dimensions don't match the dataset dimensions.
         """
+        if not isinstance(variable, Variable):
+            raise TypeError(
+                f"variable must be a Variable, not {type(variable)}")
         if variable.name in self.variables:
             raise ValueError(
                 f"The variable {variable.name!r} already exists in the "
