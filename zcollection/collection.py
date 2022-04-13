@@ -970,7 +970,7 @@ def create_collection(
     Raises:
         ValueError: If the base directory already exists.
     """
-    filesystem = utilities.get_fs(kwargs.get("filesystem", None))
+    filesystem = utilities.get_fs(kwargs.pop("filesystem", None))
     if filesystem.exists(partition_base_dir):
         raise ValueError(
             f"The directory {partition_base_dir!r} already exists.")
@@ -981,6 +981,7 @@ def create_collection(
                       partition_handler,
                       partition_base_dir,
                       mode="w",
+                      filesystem=filesystem,
                       **kwargs)
 
 

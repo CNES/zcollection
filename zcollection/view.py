@@ -379,7 +379,7 @@ class View:
 
         # If the view already contains variables, you only need to modify the
         # existing partitions.
-        if len(existing_partitions):
+        if existing_partitions:
             existing_partitions = set(
                 pathlib.Path(path).relative_to(self.base_dir).as_posix()
                 for path in existing_partitions)

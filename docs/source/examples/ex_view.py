@@ -27,15 +27,16 @@ def create_dataset():
     return next(generator)
 
 
-ds = create_dataset()
-fs = fsspec.filesystem('memory')
 cluster = dask.distributed.LocalCluster(processes=False)
 client = dask.distributed.Client(cluster)
+
+ds = create_dataset()
+fs = fsspec.filesystem('memory')
 collection = zcollection.create_collection("time",
                                            ds,
                                            zcollection.partitioning.Date(
                                                ("time", ), resolution="M"),
-                                           "/my_collection",
+                                           "/view_reference",
                                            filesystem=fs)
 collection.insert(ds, merge_callable=zcollection.merging.merge_time_series)
 
@@ -48,7 +49,7 @@ collection.insert(ds, merge_callable=zcollection.merging.merge_time_series)
 # not allowed to modify.
 view = zcollection.create_view("/my_view",
                                zcollection.view.ViewReference(
-                                   "/my_collection", fs),
+                                   "/view_reference", fs),
                                filesystem=fs)
 
 # %%
