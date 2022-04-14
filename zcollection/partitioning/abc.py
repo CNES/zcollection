@@ -152,15 +152,15 @@ def list_partitions(
     if depth == 0:
         yield from sorted(fs.ls(path, detail=False))
     elif root:
-        for info in sorted(fs.ls(path, detail=True),
-                           key=lambda item: item["name"]):
-            pathname = info["name"].rstrip("/")
-            if info["type"] == "directory" and pathname != path:
-                # do not include "self" path
-                yield from list_partitions(fs,
-                                           pathname,
-                                           depth=depth - 1,
-                                           root=False)
+        folders = map(
+            lambda info: info["name"].rstrip("/"),
+            filter(lambda info: info["type"] == "directory",
+                   fs.ls(path, detail=True)))
+        for pathname in sorted(folders):
+            yield from list_partitions(fs,
+                                       pathname,
+                                       depth=depth - 1,
+                                       root=False)
     else:
         for item in sorted(fs.ls(path, detail=False)):
             yield from list_partitions(fs, item, depth=depth - 1, root=False)

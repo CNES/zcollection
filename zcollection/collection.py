@@ -616,9 +616,13 @@ class Collection:
         storage.execute_transaction(
             client, self.synchronizer,
             client.map(self.fs.rm, folders, recursive=True))
-        for item in folders:
-            _LOGGER.info("Dropped partition: %s", item)
-            self.fs.invalidate_cache(item)
+
+        def invalidate_cache(path):
+            """Invalidate the cache."""
+            _LOGGER.info("Dropped partition: %s", path)
+            self.fs.invalidate_cache(path)
+
+        tuple(map(invalidate_cache, folders))
 
     def map(
         self,
@@ -882,7 +886,7 @@ class Collection:
             >>> collection.add_variable(new_variable)
         """
         if isinstance(variable, dataset.Variable):
-            variable = variable.metadata()
+            variable = variable.metadata()  # type: ignore
         _LOGGER.info("Adding of the %r variable in the collection",
                      variable.name)
         if self.partition_properties.dim not in variable.dimensions:
