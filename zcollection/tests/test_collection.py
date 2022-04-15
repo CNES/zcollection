@@ -543,3 +543,25 @@ def test_variables():
     vars = zcollection.variables(("time", ))
     assert len(vars) == 1
     assert vars[0].name == "time"
+
+
+@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
+def test_map_overlap(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
+    """Test the map overlap method."""
+    tested_fs = request.getfixturevalue(arg)
+    zcollection = create_test_collection(tested_fs)
+
+    result = zcollection.map_overlap(lambda x: x.variables["var1"].values * 2,
+                                     depth=3)  # type: ignore
+
+    for partition, indices, data in result.compute():
+        folder = zcollection.fs.sep.join(
+            (zcollection.partition_properties.dir,
+             zcollection.partitioning.join(partition, zcollection.fs.sep)))
+        ds = storage.open_zarr_group(folder, zcollection.fs)
+        assert numpy.allclose(data[indices, :] * 2,
+                              ds.variables["var1"].values * 2)
