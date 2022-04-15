@@ -25,17 +25,19 @@ from ...tests.cluster import dask_client, dask_cluster
 
 def test_construction():
     """Test the sequence constructor."""
-    assert isinstance(Sequence(("a", "b")), Sequence)
-    assert len(Sequence(("a", "b"))) == 2
+    assert isinstance(Sequence(("a", "b"), (0, 5)), Sequence)
+    assert len(Sequence(("a", "b"), (0, 5))) == 2
     with pytest.raises(ValueError):
-        Sequence(())
+        Sequence(("a", "b"), (0, ))
     with pytest.raises(ValueError):
-        Sequence(("a", "b"), dtype=("c", "d"))
+        Sequence((), ())
     with pytest.raises(ValueError):
-        Sequence(("a", "b"), dtype=("float32", "int32"))
+        Sequence(("a", "b"), (0, 5), dtype=("c", "d"))
+    with pytest.raises(ValueError):
+        Sequence(("a", "b"), (0, 5), dtype=("float32", "int32"))
     with pytest.raises(TypeError):
-        Sequence(("a", "b"), dtype=("int32"))
-    partitioning = Sequence(("a", "b"))
+        Sequence(("a", "b"), (0, 5), dtype=("int32"))
+    partitioning = Sequence(("a", "b"), (0, 5))
     partition_keys = partitioning.parse("a=1/b=2")
     assert partitioning.encode(partition_keys) == (1, 2)
     with pytest.raises(ValueError):
@@ -54,7 +56,8 @@ def test_split_dataset(
     """Test the split_dataset method."""
     repeatability = 5
     xr_ds = data.create_test_sequence(repeatability, 20, 10)
-    partitioning = Sequence(("cycle_number", "pass_number"))
+    partitioning = Sequence(("cycle_number", "pass_number"),
+                            (0, repeatability))
 
     cycle_number = 1
     pass_number = 1
@@ -103,7 +106,7 @@ def test_split_dataset(
 
 def test_config():
     """Test the configuration of the Sequence class."""
-    partitioning = Sequence(("cycle_number", "pass_number"))
+    partitioning = Sequence(("cycle_number", "pass_number"), (0, 5))
     config = partitioning.get_config()
     partitioning = get_codecs(config)
     assert isinstance(partitioning, Sequence)
@@ -111,7 +114,7 @@ def test_config():
 
 def test_pickle():
     """Test the pickling of the Date class."""
-    partitioning = Sequence(("cycle_number", "pass_number"))
+    partitioning = Sequence(("cycle_number", "pass_number"), (0, 5))
     other = pickle.loads(pickle.dumps(partitioning))
     assert isinstance(other, Sequence)
     assert other.variables == ("cycle_number", "pass_number")
@@ -133,11 +136,11 @@ def test_multiple_sequence(
                 (arrays["_b"], numpy.full((5, ), _b, dtype="i8")))
             arrays["_c"] = numpy.concatenate(
                 (arrays["_c"], numpy.arange(5, dtype="i8")))
-    partitioning = Sequence(("_a", "_b", "_c"))
+    partitioning = Sequence(("_a", "_b", "_c"), (0, 5, 5))
     variables: Dict[str, dask.array.Array] = dict(
-        _a=dask.array.from_array(arrays["_a"], chunks=(10, )),
-        _b=dask.array.from_array(arrays["_b"], chunks=(10, )),
-        _c=dask.array.from_array(arrays["_c"], chunks=(10, )))
+        _a=dask.array.from_array(arrays["_a"], chunks=(10, )),  # type: ignore
+        _b=dask.array.from_array(arrays["_b"], chunks=(10, )),  # type: ignore
+        _c=dask.array.from_array(arrays["_c"], chunks=(10, )))  # type: ignore
     _a = 0
     _b = 0
     _c = 0
@@ -153,14 +156,15 @@ def test_multiple_sequence(
         assert item[1] == slice(ix, ix + 1)
 
     numpy.random.shuffle(arrays["_c"])
-    variables["_c"] = dask.array.from_array(arrays["_c"], chunks=(10, ))
+    variables["_c"] = dask.array.from_array(arrays["_c"],
+                                            chunks=(10, ))  # type: ignore
 
     with pytest.raises(ValueError):
         list(partitioning._split(variables))
 
     del variables["_c"]
     del variables["_b"]
-    partitioning = Sequence(("_a", "_b", "_c"))
+    partitioning = Sequence(("_a", "_b", "_c"), (0, 5, 5))
 
     _a = 0
     for ix, item in enumerate(partitioning._split(variables)):
@@ -175,8 +179,110 @@ def test_values_must_be_integer(
 ):
     """Test that the values must be integer."""
     values = numpy.arange(0, 100, dtype="f8")
-    partitioning = Sequence(("values", ))
+    partitioning = Sequence(("values", ), (0, ))
     # pylint: disable=protected-access
     with pytest.raises(TypeError):
         list(partitioning._split({"values": dask.array.from_array(values)}))
     # pylint: enable=protected-access
+
+
+def test_previous():
+    """Test the previous method."""
+    partitioning = Sequence(("_a", "_b", "_c"), (0, 5, 5))
+
+    assert partitioning.previous(
+        (("_a", 0), ("_b", 0), ("_c", 0))) == (("_a", -1), ("_b", 4), ("_c",
+                                                                       4))
+    assert partitioning.previous(
+        (("_a", -1), ("_b", 4), ("_c", 4))) == (("_a", -1), ("_b", 4), ("_c",
+                                                                        3))
+    assert partitioning.previous(
+        (("_a", -1), ("_b", 4), ("_c", 3))) == (("_a", -1), ("_b", 4), ("_c",
+                                                                        2))
+    assert partitioning.previous(
+        (("_a", -1), ("_b", 4), ("_c", 2))) == (("_a", -1), ("_b", 4), ("_c",
+                                                                        1))
+    assert partitioning.previous(
+        (("_a", -1), ("_b", 4), ("_c", 1))) == (("_a", -1), ("_b", 4), ("_c",
+                                                                        0))
+    assert partitioning.previous(
+        (("_a", -1), ("_b", 4), ("_c", 0))) == (("_a", -1), ("_b", 3), ("_c",
+                                                                        4))
+    assert partitioning.previous(
+        (("_a", -1), ("_b", 3), ("_c", 4))) == (("_a", -1), ("_b", 3), ("_c",
+                                                                        3))
+    assert partitioning.previous(
+        (("_a", -1), ("_b", 3), ("_c", 3))) == (("_a", -1), ("_b", 3), ("_c",
+                                                                        2))
+    assert partitioning.previous(
+        (("_a", -1), ("_b", 3), ("_c", 2))) == (("_a", -1), ("_b", 3), ("_c",
+                                                                        1))
+    assert partitioning.previous(
+        (("_a", -1), ("_b", 3), ("_c", 1))) == (("_a", -1), ("_b", 3), ("_c",
+                                                                        0))
+    assert partitioning.previous(
+        (("_a", -1), ("_b", 3), ("_c", 0))) == (("_a", -1), ("_b", 2), ("_c",
+                                                                        4))
+
+
+def test_next():
+    """Test the next method."""
+    partitioning = Sequence(("_a", "_b", "_c"), (0, 5, 5))
+
+    assert partitioning.next((("_a", 0), ("_b", 4), ("_c", 4))) == (
+        ("_a", 1),
+        ("_b", 0),
+        ("_c", 0),
+    )
+
+    assert partitioning.next((("_a", 0), ("_b", 0), ("_c", 0))) == (
+        ("_a", 0),
+        ("_b", 0),
+        ("_c", 1),
+    )
+    assert partitioning.next((("_a", 0), ("_b", 0), ("_c", 1))) == (
+        ("_a", 0),
+        ("_b", 0),
+        ("_c", 2),
+    )
+    assert partitioning.next((("_a", 0), ("_b", 0), ("_c", 2))) == (
+        ("_a", 0),
+        ("_b", 0),
+        ("_c", 3),
+    )
+    assert partitioning.next((("_a", 0), ("_b", 0), ("_c", 3))) == (
+        ("_a", 0),
+        ("_b", 0),
+        ("_c", 4),
+    )
+    assert partitioning.next((("_a", 0), ("_b", 0), ("_c", 4))) == (
+        ("_a", 0),
+        ("_b", 1),
+        ("_c", 0),
+    )
+
+    assert partitioning.next((("_a", 0), ("_b", 1), ("_c", 0))) == (
+        ("_a", 0),
+        ("_b", 1),
+        ("_c", 1),
+    )
+    assert partitioning.next((("_a", 0), ("_b", 1), ("_c", 1))) == (
+        ("_a", 0),
+        ("_b", 1),
+        ("_c", 2),
+    )
+    assert partitioning.next((("_a", 0), ("_b", 1), ("_c", 2))) == (
+        ("_a", 0),
+        ("_b", 1),
+        ("_c", 3),
+    )
+    assert partitioning.next((("_a", 0), ("_b", 1), ("_c", 3))) == (
+        ("_a", 0),
+        ("_b", 1),
+        ("_c", 4),
+    )
+    assert partitioning.next((("_a", 0), ("_b", 1), ("_c", 4))) == (
+        ("_a", 0),
+        ("_b", 2),
+        ("_c", 0),
+    )

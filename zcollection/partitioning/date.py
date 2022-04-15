@@ -107,6 +107,35 @@ class Date(abc.Partitioning):
         return ((((name, date), ), slice(start, indices[ix + 1], None))
                 for date, (ix, start) in zip(index, enumerate(indices[:-1])))
 
+    def _stringify(
+        self,
+        partition: Tuple[Tuple[str, int], ...],
+    ) -> str:
+        """Return a string representation of the partitioning scheme."""
+        string = "".join(f"{value:02d}" + SEPARATORS[item]
+                         for item, value in partition)
+        if string[-1] in SEPARATORS.values():
+            string = string[:-1]
+        return string
+
+    def _previous(
+        self, partition_scheme: Tuple[Tuple[str, int], ...]
+    ) -> Tuple[Tuple[str, int], ...]:
+        """Return the previous partitioning scheme."""
+        datetime64 = numpy.datetime64(
+            self._stringify(partition_scheme)) - numpy.timedelta64(
+                1, self.resolution)
+        return self.decode((datetime64, ))
+
+    def _next(
+        self, partition_scheme: Tuple[Tuple[str, int], ...]
+    ) -> Tuple[Tuple[str, int], ...]:
+        """Return the next partitioning scheme."""
+        datetime64 = numpy.datetime64(
+            self._stringify(partition_scheme)) + numpy.timedelta64(
+                1, self.resolution)
+        return self.decode((datetime64, ))
+
     @staticmethod
     def join(partition_scheme: Tuple[Tuple[str, int], ...], sep: str) -> str:
         """Join a partitioning scheme.
@@ -146,11 +175,7 @@ class Date(abc.Partitioning):
             >>> partitioning.encode(fields)
             (numpy.datetime64('2020-01-01'),)
         """
-        string = "".join(f"{value:02d}" + SEPARATORS[item]
-                         for item, value in partition)
-        if string[-1] in SEPARATORS.values():
-            string = string[:-1]
-        return tuple((numpy.datetime64(string), ))
+        return tuple((numpy.datetime64(self._stringify(partition)), ))
 
     def decode(
         self,

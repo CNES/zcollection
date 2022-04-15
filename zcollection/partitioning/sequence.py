@@ -6,7 +6,8 @@
 Partitioning a sequence of variables
 ====================================
 """
-from typing import ClassVar, Dict, Iterator, Tuple
+from typing import ClassVar, Dict, Iterator, Optional, Sequence, Tuple
+import sys
 
 import dask.array
 import numpy
@@ -42,13 +43,33 @@ class Sequence(abc.Partitioning):
     (``pass``) of a satellite.
 
     Args:
-        variables:  List of variables to be used for partitioning.
+        variables: The sequence of variables constituting the partitioning.
+        periodicity: The periodicity of each variable. The first value is
+            ignored and is always set to ``0``.
+        dtype: The data type of the partitioning.
+
+    Raises:
+        ValueError: If the periodicity is not valid.
 
     Example:
-        >>> partitioning = Sequence(["a", "b", "c"])
+        >>> partitioning = Sequence(["a", "b", "c"], (None, 10, 10))
     """
+    __slots__ = ("periodicity", )
+
     #: The ID of the partitioning scheme.
     ID: ClassVar[str] = "Sequence"
+
+    def __init__(self,
+                 variables: Sequence[str],
+                 periodicity: Sequence[int],
+                 dtype: Optional[Sequence[str]] = None) -> None:
+        if len(periodicity) != len(variables):
+            raise ValueError("The number of variables and periodicity must "
+                             "be the same.")
+        if not all((item > 0) for item in periodicity[1:]):  # type: ignore
+            raise ValueError("The periodicity must be positive")
+        self.periodicity = (0, ) + tuple(periodicity[1:])
+        super().__init__(variables, dtype)
 
     @staticmethod
     def _split(
@@ -74,6 +95,33 @@ class Sequence(abc.Partitioning):
         return ((concat(fields,
                         tuple(item)), slice(start, indices[ix + 1], None))
                 for item, (ix, start) in zip(index, enumerate(indices[:-1])))
+
+    def _previous(
+        self, partition_scheme: Tuple[Tuple[str, int], ...]
+    ) -> Tuple[Tuple[str, int], ...]:
+        """Return the previous partitioning scheme."""
+        values = list(value for _, value in partition_scheme)
+        for ix in range(len(values) - 1, -1, -1):
+            values[ix] -= 1
+            if values[ix] >= 0:
+                break
+            values[ix] = self.periodicity[ix] - 1
+        return tuple((variable, value)
+                     for variable, value in zip(self.variables, values))
+
+    def _next(
+        self, partition_scheme: Tuple[Tuple[str, int], ...]
+    ) -> Tuple[Tuple[str, int], ...]:
+        """Return the next partitioning scheme."""
+        periodicity = (sys.maxsize, ) + self.periodicity[1:]
+        values = list(value for _, value in partition_scheme)
+        for ix in range(len(values) - 1, -1, -1):
+            values[ix] += 1
+            if values[ix] < periodicity[ix]:
+                break
+            values[ix] = 0
+        return tuple((variable, value)
+                     for variable, value in zip(self.variables, values))
 
     def encode(
         self,

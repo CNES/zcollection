@@ -240,6 +240,36 @@ class Partitioning(abc.ABC):
         """Format the partitioning scheme."""
         return tuple(f"{k}={v}" for k, v in selection)
 
+    @abc.abstractmethod
+    def _previous(
+        self, partition_scheme: Tuple[Tuple[str, int], ...]
+    ) -> Tuple[Tuple[str, int], ...]:
+        """Return the previous partitioning scheme.
+
+        Args:
+            partition_scheme: The partitioning scheme to be used to calculate
+                the previous partitioning scheme.
+
+        Returns:
+            The previous partitioning scheme.
+        """
+        ...  # pragma: no cover
+
+    @abc.abstractmethod
+    def _next(
+        self, partition_scheme: Tuple[Tuple[str, int], ...]
+    ) -> Tuple[Tuple[str, int], ...]:
+        """Return the next partitioning scheme.
+
+        Args:
+            partition_scheme: The partitioning scheme to be used to calculate
+                the next partitioning scheme.
+
+        Returns:
+            The next partitioning scheme.
+        """
+        ...  # pragma: no cover
+
     def index_dataset(self, ds: dataset.Dataset) -> Iterator[Partition]:
         """Yield the indexing scheme for the given dataset.
 
@@ -328,6 +358,32 @@ class Partitioning(abc.ABC):
         groups = match.groups()
         return tuple((groups[ix], int(groups[ix + 1]))
                      for ix in range(0, len(groups), 2))
+
+    def previous(
+        self, partition_scheme: Tuple[Tuple[str, int], ...]
+    ) -> Tuple[Tuple[str, int], ...]:
+        """Return the previous partitioning scheme.
+
+        Args:
+            partition_scheme: The partitioning scheme to be used to calculate
+
+        Returns:
+            The previous partitioning scheme.
+        """
+        return self._previous(partition_scheme)
+
+    def next(
+        self, partition_scheme: Tuple[Tuple[str, int], ...]
+    ) -> Tuple[Tuple[str, int], ...]:
+        """Return the next partitioning scheme.
+
+        Args:
+            partition_scheme: The partitioning scheme to be used to calculate
+
+        Returns:
+            The next partitioning scheme.
+        """
+        return self._next(partition_scheme)
 
     @abc.abstractmethod
     def encode(
