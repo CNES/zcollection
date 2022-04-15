@@ -6,7 +6,14 @@
 Partitioning a sequence of variables
 ====================================
 """
-from typing import ClassVar, Dict, Iterator, Optional, Sequence, Tuple
+from typing import (
+    ClassVar,
+    Dict,
+    Iterator,
+    Optional,
+    Sequence as _Sequence,
+    Tuple,
+)
 import sys
 
 import dask.array
@@ -60,9 +67,9 @@ class Sequence(abc.Partitioning):
     ID: ClassVar[str] = "Sequence"
 
     def __init__(self,
-                 variables: Sequence[str],
-                 periodicity: Sequence[int],
-                 dtype: Optional[Sequence[str]] = None) -> None:
+                 variables: _Sequence[str],
+                 periodicity: _Sequence[int],
+                 dtype: Optional[_Sequence[str]] = None) -> None:
         if len(periodicity) != len(variables):
             raise ValueError("The number of variables and periodicity must "
                              "be the same.")
@@ -96,7 +103,7 @@ class Sequence(abc.Partitioning):
                         tuple(item)), slice(start, indices[ix + 1], None))
                 for item, (ix, start) in zip(index, enumerate(indices[:-1])))
 
-    def _previous(
+    def _before(
         self, partition_scheme: Tuple[Tuple[str, int], ...]
     ) -> Tuple[Tuple[str, int], ...]:
         """Return the previous partitioning scheme."""
@@ -109,7 +116,7 @@ class Sequence(abc.Partitioning):
         return tuple((variable, value)
                      for variable, value in zip(self.variables, values))
 
-    def _next(
+    def _after(
         self, partition_scheme: Tuple[Tuple[str, int], ...]
     ) -> Tuple[Tuple[str, int], ...]:
         """Return the next partitioning scheme."""

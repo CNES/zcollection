@@ -241,7 +241,7 @@ class Partitioning(abc.ABC):
         return tuple(f"{k}={v}" for k, v in selection)
 
     @abc.abstractmethod
-    def _previous(
+    def _before(
         self, partition_scheme: Tuple[Tuple[str, int], ...]
     ) -> Tuple[Tuple[str, int], ...]:
         """Return the previous partitioning scheme.
@@ -256,7 +256,7 @@ class Partitioning(abc.ABC):
         ...  # pragma: no cover
 
     @abc.abstractmethod
-    def _next(
+    def _after(
         self, partition_scheme: Tuple[Tuple[str, int], ...]
     ) -> Tuple[Tuple[str, int], ...]:
         """Return the next partitioning scheme.
@@ -359,7 +359,7 @@ class Partitioning(abc.ABC):
         return tuple((groups[ix], int(groups[ix + 1]))
                      for ix in range(0, len(groups), 2))
 
-    def previous(
+    def before(
         self, partition_scheme: Tuple[Tuple[str, int], ...]
     ) -> Tuple[Tuple[str, int], ...]:
         """Return the previous partitioning scheme.
@@ -370,9 +370,9 @@ class Partitioning(abc.ABC):
         Returns:
             The previous partitioning scheme.
         """
-        return self._previous(partition_scheme)
+        return self._before(partition_scheme)
 
-    def next(
+    def after(
         self, partition_scheme: Tuple[Tuple[str, int], ...]
     ) -> Tuple[Tuple[str, int], ...]:
         """Return the next partitioning scheme.
@@ -383,7 +383,7 @@ class Partitioning(abc.ABC):
         Returns:
             The next partitioning scheme.
         """
-        return self._next(partition_scheme)
+        return self._after(partition_scheme)
 
     @abc.abstractmethod
     def encode(

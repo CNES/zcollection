@@ -190,16 +190,16 @@ def test_values_must_be_datetime64(
     # pylint: enable=protected-access
 
 
-def test_previous():
+def test_before():
     """Test the previous method."""
     partitioning = Date(("dates", ), "D")
-    assert partitioning.previous((("year", 2000), )) == (
+    assert partitioning.before((("year", 2000), )) == (
         ("year", 1999),
         ("month", 12),
         ("day", 31),
     )
 
-    assert partitioning.previous((
+    assert partitioning.before((
         ("year", 2000),
         ("month", 1),
         ("day", 1),
@@ -209,7 +209,7 @@ def test_previous():
         ("day", 31),
     )
 
-    assert partitioning.previous((
+    assert partitioning.before((
         ("year", 2000),
         ("month", 1),
         ("day", 1),
@@ -221,23 +221,23 @@ def test_previous():
     )
 
     with pytest.raises(ValueError):
-        partitioning.previous((
+        partitioning.before((
             ("year", 2000),
             ("month", 13),
             ("day", 1),
         ))
 
 
-def test_next():
-    """Test the next method."""
+def test_after():
+    """Test the after method."""
     partitioning = Date(("dates", ), "D")
-    assert partitioning.next((("year", 2000), )) == (
+    assert partitioning.after((("year", 2000), )) == (
         ("year", 2000),
         ("month", 1),
         ("day", 2),
     )
 
-    assert partitioning.next((
+    assert partitioning.after((
         ("year", 2000),
         ("month", 12),
         ("day", 31),
@@ -247,7 +247,7 @@ def test_next():
         ("day", 1),
     )
 
-    assert partitioning.next((
+    assert partitioning.after((
         ("year", 2000),
         ("month", 1),
         ("day", 1),
@@ -259,7 +259,7 @@ def test_next():
     )
 
     with pytest.raises(ValueError):
-        partitioning.next((
+        partitioning.after((
             ("year", 2000),
             ("month", 1),
             ("day", 32),

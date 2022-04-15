@@ -186,102 +186,102 @@ def test_values_must_be_integer(
     # pylint: enable=protected-access
 
 
-def test_previous():
-    """Test the previous method."""
+def test_before():
+    """Test the before method."""
     partitioning = Sequence(("_a", "_b", "_c"), (0, 5, 5))
 
-    assert partitioning.previous(
+    assert partitioning.before(
         (("_a", 0), ("_b", 0), ("_c", 0))) == (("_a", -1), ("_b", 4), ("_c",
                                                                        4))
-    assert partitioning.previous(
+    assert partitioning.before(
         (("_a", -1), ("_b", 4), ("_c", 4))) == (("_a", -1), ("_b", 4), ("_c",
                                                                         3))
-    assert partitioning.previous(
+    assert partitioning.before(
         (("_a", -1), ("_b", 4), ("_c", 3))) == (("_a", -1), ("_b", 4), ("_c",
                                                                         2))
-    assert partitioning.previous(
+    assert partitioning.before(
         (("_a", -1), ("_b", 4), ("_c", 2))) == (("_a", -1), ("_b", 4), ("_c",
                                                                         1))
-    assert partitioning.previous(
+    assert partitioning.before(
         (("_a", -1), ("_b", 4), ("_c", 1))) == (("_a", -1), ("_b", 4), ("_c",
                                                                         0))
-    assert partitioning.previous(
+    assert partitioning.before(
         (("_a", -1), ("_b", 4), ("_c", 0))) == (("_a", -1), ("_b", 3), ("_c",
                                                                         4))
-    assert partitioning.previous(
+    assert partitioning.before(
         (("_a", -1), ("_b", 3), ("_c", 4))) == (("_a", -1), ("_b", 3), ("_c",
                                                                         3))
-    assert partitioning.previous(
+    assert partitioning.before(
         (("_a", -1), ("_b", 3), ("_c", 3))) == (("_a", -1), ("_b", 3), ("_c",
                                                                         2))
-    assert partitioning.previous(
+    assert partitioning.before(
         (("_a", -1), ("_b", 3), ("_c", 2))) == (("_a", -1), ("_b", 3), ("_c",
                                                                         1))
-    assert partitioning.previous(
+    assert partitioning.before(
         (("_a", -1), ("_b", 3), ("_c", 1))) == (("_a", -1), ("_b", 3), ("_c",
                                                                         0))
-    assert partitioning.previous(
+    assert partitioning.before(
         (("_a", -1), ("_b", 3), ("_c", 0))) == (("_a", -1), ("_b", 2), ("_c",
                                                                         4))
 
 
-def test_next():
-    """Test the next method."""
+def test_after():
+    """Test the after method."""
     partitioning = Sequence(("_a", "_b", "_c"), (0, 5, 5))
 
-    assert partitioning.next((("_a", 0), ("_b", 4), ("_c", 4))) == (
+    assert partitioning.after((("_a", 0), ("_b", 4), ("_c", 4))) == (
         ("_a", 1),
         ("_b", 0),
         ("_c", 0),
     )
 
-    assert partitioning.next((("_a", 0), ("_b", 0), ("_c", 0))) == (
+    assert partitioning.after((("_a", 0), ("_b", 0), ("_c", 0))) == (
         ("_a", 0),
         ("_b", 0),
         ("_c", 1),
     )
-    assert partitioning.next((("_a", 0), ("_b", 0), ("_c", 1))) == (
+    assert partitioning.after((("_a", 0), ("_b", 0), ("_c", 1))) == (
         ("_a", 0),
         ("_b", 0),
         ("_c", 2),
     )
-    assert partitioning.next((("_a", 0), ("_b", 0), ("_c", 2))) == (
+    assert partitioning.after((("_a", 0), ("_b", 0), ("_c", 2))) == (
         ("_a", 0),
         ("_b", 0),
         ("_c", 3),
     )
-    assert partitioning.next((("_a", 0), ("_b", 0), ("_c", 3))) == (
+    assert partitioning.after((("_a", 0), ("_b", 0), ("_c", 3))) == (
         ("_a", 0),
         ("_b", 0),
         ("_c", 4),
     )
-    assert partitioning.next((("_a", 0), ("_b", 0), ("_c", 4))) == (
+    assert partitioning.after((("_a", 0), ("_b", 0), ("_c", 4))) == (
         ("_a", 0),
         ("_b", 1),
         ("_c", 0),
     )
 
-    assert partitioning.next((("_a", 0), ("_b", 1), ("_c", 0))) == (
+    assert partitioning.after((("_a", 0), ("_b", 1), ("_c", 0))) == (
         ("_a", 0),
         ("_b", 1),
         ("_c", 1),
     )
-    assert partitioning.next((("_a", 0), ("_b", 1), ("_c", 1))) == (
+    assert partitioning.after((("_a", 0), ("_b", 1), ("_c", 1))) == (
         ("_a", 0),
         ("_b", 1),
         ("_c", 2),
     )
-    assert partitioning.next((("_a", 0), ("_b", 1), ("_c", 2))) == (
+    assert partitioning.after((("_a", 0), ("_b", 1), ("_c", 2))) == (
         ("_a", 0),
         ("_b", 1),
         ("_c", 3),
     )
-    assert partitioning.next((("_a", 0), ("_b", 1), ("_c", 3))) == (
+    assert partitioning.after((("_a", 0), ("_b", 1), ("_c", 3))) == (
         ("_a", 0),
         ("_b", 1),
         ("_c", 4),
     )
-    assert partitioning.next((("_a", 0), ("_b", 1), ("_c", 4))) == (
+    assert partitioning.after((("_a", 0), ("_b", 1), ("_c", 4))) == (
         ("_a", 0),
         ("_b", 2),
         ("_c", 0),

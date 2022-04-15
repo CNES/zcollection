@@ -107,10 +107,8 @@ class Date(abc.Partitioning):
         return ((((name, date), ), slice(start, indices[ix + 1], None))
                 for date, (ix, start) in zip(index, enumerate(indices[:-1])))
 
-    def _stringify(
-        self,
-        partition: Tuple[Tuple[str, int], ...],
-    ) -> str:
+    @staticmethod
+    def _stringify(partition: Tuple[Tuple[str, int], ...]) -> str:
         """Return a string representation of the partitioning scheme."""
         string = "".join(f"{value:02d}" + SEPARATORS[item]
                          for item, value in partition)
@@ -118,7 +116,7 @@ class Date(abc.Partitioning):
             string = string[:-1]
         return string
 
-    def _previous(
+    def _before(
         self, partition_scheme: Tuple[Tuple[str, int], ...]
     ) -> Tuple[Tuple[str, int], ...]:
         """Return the previous partitioning scheme."""
@@ -127,7 +125,7 @@ class Date(abc.Partitioning):
                 1, self.resolution)
         return self.decode((datetime64, ))
 
-    def _next(
+    def _after(
         self, partition_scheme: Tuple[Tuple[str, int], ...]
     ) -> Tuple[Tuple[str, int], ...]:
         """Return the next partitioning scheme."""
