@@ -402,11 +402,11 @@ class Variable:
             ValueError: If the shape of the data does not match the shape of
                 the stored data.
         """
-        data = dask.array.asarray(data)
-        if len(data.shape) != len(self.dimensions):
+        result = Variable(self.name, data, self.dimensions, self.attrs,
+                          self.compressor, self.fill_value, self.filters)
+        if len(result.shape) != len(self.dimensions):
             raise ValueError("data shape does not match variable dimensions")
-        return Variable(self.name, data, self.dimensions, self.attrs,
-                        self.compressor, self.fill_value, self.filters)
+        return result
 
     def dimension_index(self) -> Iterator[Tuple[str, int]]:
         """Return an iterator over the variable dimensions and their index.
@@ -414,8 +414,7 @@ class Variable:
         Returns:
             An iterator over the variable dimensions
         """
-        for ix, item in enumerate(self.dimensions):
-            yield item, ix
+        yield from ((item, ix) for ix, item in enumerate(self.dimensions))
 
     def concat(self, other: Union["Variable", Sequence["Variable"]],
                dim: str) -> "Variable":
@@ -746,10 +745,10 @@ class Dataset:
         if dims_invalid:
             raise ValueError(
                 f"Slices contain invalid dimension name(s): {dims_invalid}")
+        default = slice(None)
         variables = [
             var.duplicate(var.array[tuple(
-                slices[dim] if dim in slices else slice(None)
-                for dim in var.dimensions)])
+                slices.get(dim, default) for dim in var.dimensions)])
             for var in self.variables.values()
         ]
         return Dataset(variables=variables, attrs=self.attrs)
