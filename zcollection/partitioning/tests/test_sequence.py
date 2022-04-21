@@ -25,19 +25,19 @@ from ...tests.cluster import dask_client, dask_cluster
 
 def test_construction():
     """Test the sequence constructor."""
-    assert isinstance(Sequence(("a", "b"), (0, 5)), Sequence)
-    assert len(Sequence(("a", "b"), (0, 5))) == 2
+    assert isinstance(Sequence(("a", "b")), Sequence)
+    assert len(Sequence(("a", "b"))) == 2
     with pytest.raises(ValueError):
         Sequence(("a", "b"), (0, ))
     with pytest.raises(ValueError):
         Sequence((), ())
     with pytest.raises(ValueError):
-        Sequence(("a", "b"), (0, 5), dtype=("c", "d"))
+        Sequence(("a", "b"), dtype=("c", "d"))
     with pytest.raises(ValueError):
-        Sequence(("a", "b"), (0, 5), dtype=("float32", "int32"))
+        Sequence(("a", "b"), dtype=("float32", "int32"))
     with pytest.raises(TypeError):
-        Sequence(("a", "b"), (0, 5), dtype=("int32"))
-    partitioning = Sequence(("a", "b"), (0, 5))
+        Sequence(("a", "b"), dtype=("int32"))
+    partitioning = Sequence(("a", "b"))
     partition_keys = partitioning.parse("a=1/b=2")
     assert partitioning.encode(partition_keys) == (1, 2)
     with pytest.raises(ValueError):
@@ -106,7 +106,7 @@ def test_split_dataset(
 
 def test_config():
     """Test the configuration of the Sequence class."""
-    partitioning = Sequence(("cycle_number", "pass_number"), (0, 5))
+    partitioning = Sequence(("cycle_number", "pass_number"))
     config = partitioning.get_config()
     partitioning = get_codecs(config)
     assert isinstance(partitioning, Sequence)
@@ -114,7 +114,7 @@ def test_config():
 
 def test_pickle():
     """Test the pickling of the Date class."""
-    partitioning = Sequence(("cycle_number", "pass_number"), (0, 5))
+    partitioning = Sequence(("cycle_number", "pass_number"))
     other = pickle.loads(pickle.dumps(partitioning))
     assert isinstance(other, Sequence)
     assert other.variables == ("cycle_number", "pass_number")
@@ -136,7 +136,7 @@ def test_multiple_sequence(
                 (arrays["_b"], numpy.full((5, ), _b, dtype="i8")))
             arrays["_c"] = numpy.concatenate(
                 (arrays["_c"], numpy.arange(5, dtype="i8")))
-    partitioning = Sequence(("_a", "_b", "_c"), (0, 5, 5))
+    partitioning = Sequence(("_a", "_b", "_c"))
     variables: Dict[str, dask.array.Array] = dict(
         _a=dask.array.from_array(arrays["_a"], chunks=(10, )),  # type: ignore
         _b=dask.array.from_array(arrays["_b"], chunks=(10, )),  # type: ignore
@@ -164,7 +164,7 @@ def test_multiple_sequence(
 
     del variables["_c"]
     del variables["_b"]
-    partitioning = Sequence(("_a", "_b", "_c"), (0, 5, 5))
+    partitioning = Sequence(("_a", "_b", "_c"))
 
     _a = 0
     for ix, item in enumerate(partitioning._split(variables)):
@@ -223,6 +223,9 @@ def test_before():
     assert partitioning.before(
         (("_a", -1), ("_b", 3), ("_c", 0))) == (("_a", -1), ("_b", 2), ("_c",
                                                                         4))
+    partitioning = Sequence(("_a", "_b", "_c"))
+    with pytest.raises(RuntimeError):
+        partitioning.before((("_a", 0), ("_b", 0), ("_c", 0)))
 
 
 def test_after():
@@ -286,3 +289,7 @@ def test_after():
         ("_b", 2),
         ("_c", 0),
     )
+
+    partitioning = Sequence(("_a", "_b", "_c"))
+    with pytest.raises(RuntimeError):
+        partitioning.after((("_a", 0), ("_b", 0), ("_c", 0)))
