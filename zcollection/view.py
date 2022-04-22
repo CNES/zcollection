@@ -646,6 +646,104 @@ class View:
                                      npartitions=npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
 
+    def map_overlap(
+        self,
+        func: collection.MapCallable,
+        depth: int,
+        *args,
+        filters: collection.PartitionFilter = None,
+        partition_size: Optional[int] = None,
+        npartitions: Optional[int] = None,
+        **kwargs,
+    ) -> dask.bag.Bag:
+        """Map a function over the partitions of the view with some overlap.
+
+        Args:
+            func: The function to apply to every partition of the view.
+            depth: The depth of the overlap between the partitions.
+            *args: The positional arguments to pass to the function.
+            filters: The predicate used to filter the partitions to process.
+                To get more information on the predicate, see the
+                documentation of the :meth:`zcollection.Collection.partitions`
+                method.
+            partition_size: The length of each bag partition.
+            npartitions: The number of desired bag partitions.
+            **kwargs: The keyword arguments to pass to the function.
+
+        Returns:
+            A bag containing the tuple of the partition scheme and the result
+            of the function.
+
+        Example:
+            >>> futures = view.map_overlap(
+            ...     lambda x: (x["var1"] + x["var2"]).values,
+            ...     depth=1)
+            >>> for item in futures:
+            ...     print(item)
+            [1.0, 2.0, 3.0, 4.0]
+        """
+
+        def _wrap(
+            arguments: Tuple[dataset.Dataset, str],
+            func: collection.PartitionCallable,
+            datasets_list: Tuple[Tuple[dataset.Dataset, str]],
+            depth: int,
+            *args,
+            **kwargs,
+        ) -> Tuple[Tuple[Tuple[str, int], ...], slice, Any]:
+            """Wraps the function to apply on the partition.
+
+            Args:
+                arguments: The partition scheme and the dataset.
+                func: The function to apply.
+                datasets: The datasets to apply the function on.
+                depth: The depth of the overlap between the partitions.
+                *args: The positional arguments to pass to the function.
+                **kwargs: The keyword arguments to pass to the function.
+
+            Returns:
+                The result of the function.
+            """
+            _, partition = arguments
+            where = next(ix for ix, item in enumerate(datasets_list)
+                         if item[1] == partition)
+
+            # Search for the overlapping partitions
+            selected_datasets = [
+                datasets_list[ix]
+                for ix in range(where - depth, where + depth + 1)
+                if 0 <= ix < len(datasets_list)
+            ]
+
+            # Compute the slice of the given partition.
+            start = 0
+            for ds, current_partition in datasets_list:
+                size = ds[self.view_ref.axis].size
+                indices = slice(start, start + size, None)
+                if partition == current_partition:
+                    break
+                start += size
+
+            # Build the dataset for the selected partitions.
+            groups = [ds for ds, _ in selected_datasets]
+            ds = groups.pop(0)
+            ds.concat(groups, self.view_ref.partition_properties.dim)
+
+            # Finally, apply the function.
+            return (
+                self.view_ref.partitioning.parse(partition),
+                indices,  # type: ignore
+                func(ds, *args, **kwargs))
+
+        client = utilities.get_client()
+        datasets_list = tuple(
+            _load_datasets_list(client, self.base_dir, self.fs, self.view_ref,
+                                self.metadata, self.partitions(filters)))
+        bag = dask.bag.from_sequence(datasets_list,
+                                     partition_size=partition_size,
+                                     npartitions=npartitions)
+        return bag.map(_wrap, func, datasets_list, depth, *args, **kwargs)
+
 
 def create_view(
     path: str,

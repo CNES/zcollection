@@ -766,10 +766,11 @@ class Collection:
             # Compute the slice of the given partition.
             start = 0
             for ix, ds in enumerate(groups):
-                indices = slice(start, start + ds[self.axis].size, None)
+                size = ds[self.axis].size
+                indices = slice(start, start + size, None)
                 if partition == partitions[ix]:
                     break
-                start += ds[self.axis].size
+                start += size
 
             # Build the dataset for the selected partitions.
             ds = groups.pop(0)
