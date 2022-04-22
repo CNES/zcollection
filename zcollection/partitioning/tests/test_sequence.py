@@ -28,7 +28,7 @@ def test_construction():
     assert isinstance(Sequence(("a", "b")), Sequence)
     assert len(Sequence(("a", "b"))) == 2
     with pytest.raises(ValueError):
-        Sequence(("a", "b"), (0, ))
+        Sequence(("a", "b"), (0, ))  # type: ignore
     with pytest.raises(ValueError):
         Sequence((), ())
     with pytest.raises(ValueError):
@@ -56,8 +56,7 @@ def test_split_dataset(
     """Test the split_dataset method."""
     repeatability = 5
     xr_ds = data.create_test_sequence(repeatability, 20, 10)
-    partitioning = Sequence(("cycle_number", "pass_number"),
-                            (0, repeatability))
+    partitioning = Sequence(("cycle_number", "pass_number"))
 
     cycle_number = 1
     pass_number = 1
@@ -179,117 +178,8 @@ def test_values_must_be_integer(
 ):
     """Test that the values must be integer."""
     values = numpy.arange(0, 100, dtype="f8")
-    partitioning = Sequence(("values", ), (0, ))
+    partitioning = Sequence(("values", ))
     # pylint: disable=protected-access
     with pytest.raises(TypeError):
         list(partitioning._split({"values": dask.array.from_array(values)}))
     # pylint: enable=protected-access
-
-
-def test_before():
-    """Test the before method."""
-    partitioning = Sequence(("_a", "_b", "_c"), (0, 5, 5))
-
-    assert partitioning.before(
-        (("_a", 0), ("_b", 0), ("_c", 0))) == (("_a", -1), ("_b", 4), ("_c",
-                                                                       4))
-    assert partitioning.before(
-        (("_a", -1), ("_b", 4), ("_c", 4))) == (("_a", -1), ("_b", 4), ("_c",
-                                                                        3))
-    assert partitioning.before(
-        (("_a", -1), ("_b", 4), ("_c", 3))) == (("_a", -1), ("_b", 4), ("_c",
-                                                                        2))
-    assert partitioning.before(
-        (("_a", -1), ("_b", 4), ("_c", 2))) == (("_a", -1), ("_b", 4), ("_c",
-                                                                        1))
-    assert partitioning.before(
-        (("_a", -1), ("_b", 4), ("_c", 1))) == (("_a", -1), ("_b", 4), ("_c",
-                                                                        0))
-    assert partitioning.before(
-        (("_a", -1), ("_b", 4), ("_c", 0))) == (("_a", -1), ("_b", 3), ("_c",
-                                                                        4))
-    assert partitioning.before(
-        (("_a", -1), ("_b", 3), ("_c", 4))) == (("_a", -1), ("_b", 3), ("_c",
-                                                                        3))
-    assert partitioning.before(
-        (("_a", -1), ("_b", 3), ("_c", 3))) == (("_a", -1), ("_b", 3), ("_c",
-                                                                        2))
-    assert partitioning.before(
-        (("_a", -1), ("_b", 3), ("_c", 2))) == (("_a", -1), ("_b", 3), ("_c",
-                                                                        1))
-    assert partitioning.before(
-        (("_a", -1), ("_b", 3), ("_c", 1))) == (("_a", -1), ("_b", 3), ("_c",
-                                                                        0))
-    assert partitioning.before(
-        (("_a", -1), ("_b", 3), ("_c", 0))) == (("_a", -1), ("_b", 2), ("_c",
-                                                                        4))
-    partitioning = Sequence(("_a", "_b", "_c"))
-    with pytest.raises(RuntimeError):
-        partitioning.before((("_a", 0), ("_b", 0), ("_c", 0)))
-
-
-def test_after():
-    """Test the after method."""
-    partitioning = Sequence(("_a", "_b", "_c"), (0, 5, 5))
-
-    assert partitioning.after((("_a", 0), ("_b", 4), ("_c", 4))) == (
-        ("_a", 1),
-        ("_b", 0),
-        ("_c", 0),
-    )
-
-    assert partitioning.after((("_a", 0), ("_b", 0), ("_c", 0))) == (
-        ("_a", 0),
-        ("_b", 0),
-        ("_c", 1),
-    )
-    assert partitioning.after((("_a", 0), ("_b", 0), ("_c", 1))) == (
-        ("_a", 0),
-        ("_b", 0),
-        ("_c", 2),
-    )
-    assert partitioning.after((("_a", 0), ("_b", 0), ("_c", 2))) == (
-        ("_a", 0),
-        ("_b", 0),
-        ("_c", 3),
-    )
-    assert partitioning.after((("_a", 0), ("_b", 0), ("_c", 3))) == (
-        ("_a", 0),
-        ("_b", 0),
-        ("_c", 4),
-    )
-    assert partitioning.after((("_a", 0), ("_b", 0), ("_c", 4))) == (
-        ("_a", 0),
-        ("_b", 1),
-        ("_c", 0),
-    )
-
-    assert partitioning.after((("_a", 0), ("_b", 1), ("_c", 0))) == (
-        ("_a", 0),
-        ("_b", 1),
-        ("_c", 1),
-    )
-    assert partitioning.after((("_a", 0), ("_b", 1), ("_c", 1))) == (
-        ("_a", 0),
-        ("_b", 1),
-        ("_c", 2),
-    )
-    assert partitioning.after((("_a", 0), ("_b", 1), ("_c", 2))) == (
-        ("_a", 0),
-        ("_b", 1),
-        ("_c", 3),
-    )
-    assert partitioning.after((("_a", 0), ("_b", 1), ("_c", 3))) == (
-        ("_a", 0),
-        ("_b", 1),
-        ("_c", 4),
-    )
-    assert partitioning.after((("_a", 0), ("_b", 1), ("_c", 4))) == (
-        ("_a", 0),
-        ("_b", 2),
-        ("_c", 0),
-    )
-
-    partitioning = Sequence(("_a", "_b", "_c"))
-    with pytest.raises(RuntimeError):
-        partitioning.after((("_a", 0), ("_b", 0), ("_c", 0)))

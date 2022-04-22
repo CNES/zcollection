@@ -726,17 +726,10 @@ class Collection:
             [5.0, 6.0, 7.0, 8.0]
         """
 
-        def _shift(partition: str, method: Callable) -> str:
-            """Shift the partition."""
-            partition_scheme = self.partitioning.parse(partition)
-            return self.fs.sep.join(
-                (self.partition_properties.dir,
-                 self.partitioning.join(method(partition_scheme),
-                                        self.fs.sep)))
-
         def _wrap(
             partition: str,
             func: PartitionCallable,
+            partitions: Tuple[str, ...],
             depth: int,
             *args,
             **kwargs,
@@ -755,23 +748,19 @@ class Collection:
             Returns:
                 The result of the function.
             """
-
-            partitions = [partition]
+            where = partitions.index(partition)
 
             # Search for the overlapping partitions
-            for ix in range(depth):
-                partitions.insert(
-                    0, _shift(partitions[0], self.partitioning.before))
-                partitions.append(
-                    _shift(partitions[-1], self.partitioning.after))
-
-            # Delete the non-existent partitions.
-            partitions = tuple(filter(self.fs.exists, partitions))
+            selected_partitions = [
+                partitions[ix]
+                for ix in range(where - depth, where + depth + 1)
+                if 0 <= ix < len(partitions)
+            ]
 
             # Load the datasets for each selected partition.
             groups = [
                 storage.open_zarr_group(partition, self.fs)
-                for partition in partitions
+                for partition in selected_partitions
             ]
 
             # Compute the slice of the given partition.
@@ -792,10 +781,11 @@ class Collection:
                 indices,  # type: ignore
                 func(ds, *args, **kwargs))
 
-        bag = dask.bag.from_sequence(self.partitions(filters=filters),
+        partitions = tuple(self.partitions(filters=filters))
+        bag = dask.bag.from_sequence(partitions,
                                      partition_size=partition_size,
                                      npartitions=npartition)
-        return bag.map(_wrap, func, depth, *args, **kwargs)
+        return bag.map(_wrap, func, partitions, depth, *args, **kwargs)
 
     def load(
         self,

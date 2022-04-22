@@ -116,24 +116,6 @@ class Date(abc.Partitioning):
             string = string[:-1]
         return string
 
-    def _before(
-        self, partition_scheme: Tuple[Tuple[str, int], ...]
-    ) -> Tuple[Tuple[str, int], ...]:
-        """Return the previous partitioning scheme."""
-        datetime64 = numpy.datetime64(
-            self._stringify(partition_scheme)) - numpy.timedelta64(
-                1, self.resolution)
-        return self.decode((datetime64, ))
-
-    def _after(
-        self, partition_scheme: Tuple[Tuple[str, int], ...]
-    ) -> Tuple[Tuple[str, int], ...]:
-        """Return the next partitioning scheme."""
-        datetime64 = numpy.datetime64(
-            self._stringify(partition_scheme)) + numpy.timedelta64(
-                1, self.resolution)
-        return self.decode((datetime64, ))
-
     @staticmethod
     def join(partition_scheme: Tuple[Tuple[str, int], ...], sep: str) -> str:
         """Join a partitioning scheme.

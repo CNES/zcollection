@@ -6,15 +6,7 @@
 Partitioning a sequence of variables
 ====================================
 """
-from typing import (
-    ClassVar,
-    Dict,
-    Iterator,
-    Optional,
-    Sequence as _Sequence,
-    Tuple,
-)
-import sys
+from typing import ClassVar, Dict, Iterator, Tuple
 
 import dask.array
 import numpy
@@ -51,11 +43,6 @@ class Sequence(abc.Partitioning):
 
     Args:
         variables: The sequence of variables constituting the partitioning.
-        periodicity: The periodicity of each variable. The first value is
-            ignored and always takes the value ``0``. The default value is
-            None, which means that the periodicity is unknown
-            (partitioning operates, but searching for next/previous partitions
-            is not possible).
         dtype: The data type of the partitioning.
 
     Raises:
@@ -64,26 +51,8 @@ class Sequence(abc.Partitioning):
     Example:
         >>> partitioning = Sequence(["a", "b", "c"], (None, 10, 10))
     """
-    __slots__ = ("periodicity", )
-
     #: The ID of the partitioning scheme.
     ID: ClassVar[str] = "Sequence"
-
-    def __init__(self,
-                 variables: _Sequence[str],
-                 periodicity: Optional[_Sequence[int]] = None,
-                 dtype: Optional[_Sequence[str]] = None) -> None:
-        if periodicity is not None:
-            if len(periodicity) != len(variables):
-                raise ValueError(
-                    "The number of variables and periodicity must "
-                    "be the same.")
-            if not all((item > 0) for item in periodicity[1:]):  # type: ignore
-                raise ValueError("The periodicity must be positive")
-            periodicity = (0, ) + tuple(periodicity[1:])
-        self.periodicity: Optional[Tuple[int, ...]] = periodicity
-
-        super().__init__(variables, dtype)
 
     @staticmethod
     def _split(
@@ -109,37 +78,6 @@ class Sequence(abc.Partitioning):
         return ((concat(fields,
                         tuple(item)), slice(start, indices[ix + 1], None))
                 for item, (ix, start) in zip(index, enumerate(indices[:-1])))
-
-    def _before(
-        self, partition_scheme: Tuple[Tuple[str, int], ...]
-    ) -> Tuple[Tuple[str, int], ...]:
-        """Return the previous partitioning scheme."""
-        if self.periodicity is None:
-            raise RuntimeError("Sequence periodicity is unknown.")
-        values = list(value for _, value in partition_scheme)
-        for ix in range(len(values) - 1, -1, -1):
-            values[ix] -= 1
-            if values[ix] >= 0:
-                break
-            values[ix] = self.periodicity[ix] - 1
-        return tuple((variable, value)
-                     for variable, value in zip(self.variables, values))
-
-    def _after(
-        self, partition_scheme: Tuple[Tuple[str, int], ...]
-    ) -> Tuple[Tuple[str, int], ...]:
-        """Return the next partitioning scheme."""
-        if self.periodicity is None:
-            raise RuntimeError("Sequence periodicity is unknown.")
-        periodicity = (sys.maxsize, ) + self.periodicity[1:]
-        values = list(value for _, value in partition_scheme)
-        for ix in range(len(values) - 1, -1, -1):
-            values[ix] += 1
-            if values[ix] < periodicity[ix]:
-                break
-            values[ix] = 0
-        return tuple((variable, value)
-                     for variable, value in zip(self.variables, values))
 
     def encode(
         self,
