@@ -134,6 +134,21 @@ def _load_one_dataset(
     if ds is None:
         return None
 
+    # A specific case where the selected variables don't allow us to determine
+    # the shape of the dataset stored in the current partition. In this case, we
+    # look for the first variable allowing us to determine the shape of the data
+    # set.
+    if len(view_ref.metadata.dimensions) != len(ds.dimensions):
+        for item in view_ref.metadata.variables.values():
+            if len(item.dimensions) == len(view_ref.metadata.dimensions):
+                store = zarr.open(
+                    view_ref.fs.sep.join((view_ref.partition_properties.dir,
+                                          partition, item.name)),
+                    mode="r",
+                )
+                ds.dimensions = dict(zip(item.dimensions, store.shape))
+                break
+
     _ = {
         ds.add_variable(item.metadata(), item.array)
         for item in (
