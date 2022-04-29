@@ -292,8 +292,6 @@ def build_indexer_args(
     partitions = partitions or collection.partitions(filters=filters)
     selected_partitions = set(indexers_map) & set(
         (collection.partitioning.parse(item) for item in partitions))
-    if len(selected_partitions) == 0:
-        raise StopIteration
 
     # For each provided partition scheme, retrieves the corresponding
     # indexer.
