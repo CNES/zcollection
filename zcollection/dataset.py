@@ -408,6 +408,18 @@ class Variable:
             raise ValueError("data shape does not match variable dimensions")
         return result
 
+    def rename(self, name: str) -> "Variable":
+        """Rename the variable.
+
+        Args:
+            name: New variable name.
+
+        Returns:
+            The variable.
+        """
+        return Variable(name, self._array, self.dimensions, self.attrs,
+                        self.compressor, self.fill_value, self.filters)
+
     def dimension_index(self) -> Iterator[Tuple[str, int]]:
         """Return an iterator over the variable dimensions and their index.
 
@@ -655,6 +667,20 @@ class Dataset:
             variable.fill_value,
             variable.filters,
         )
+
+    def rename(self, names: Mapping[str, str]) -> None:
+        """Rename variables in the dataset.
+
+        Args:
+            names: A mapping from old names to new names
+
+        Raises:
+            ValueError: If the new names conflict with existing names
+        """
+        for old, new in names.items():
+            if new in self.variables:
+                raise ValueError(f"{new} already exists in the dataset")
+            self.variables[new] = self.variables.pop(old).rename(new)
 
     def drops_vars(self, names: Union[str, Sequence[str]]) -> None:
         """Drop variables from the dataset.

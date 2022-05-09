@@ -233,6 +233,25 @@ def test_variable_fill(
     assert var.values.all() is numpy.ma.masked
 
 
+def test_variable_masked_array(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
+    """Test masked array."""
+    var = create_test_variable()
+    var2 = var.rename("var2")
+    assert var2._array is var._array
+    assert var2.name == "var2"
+    assert var2.dimensions == var.dimensions
+    assert var2.attrs == var.attrs
+    assert var2.compressor == var.compressor
+    assert var2.filters == var.filters
+    assert var2.fill_value == var.fill_value
+    assert var2.dtype == var.dtype
+    assert var2.shape == var.shape
+    assert var2.size == var.size
+    assert var2.ndim == var.ndim
+
+
 def test_dataset(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
@@ -446,3 +465,16 @@ def test_empty_dataset():
   Dimensions: ()
 Data variables:
     <empty>"""
+
+
+def test_dataset_rename():
+    """Test renaming of datasets."""
+    ds = create_test_dataset()
+    ds.rename(dict(var1="var3", var2="var4"))
+    assert ds.variables["var3"].name == "var3"
+    assert ds.variables["var4"].name == "var4"
+    assert "var1" not in ds.variables
+    assert "var2" not in ds.variables
+
+    with pytest.raises(ValueError):
+        ds.rename(dict(var3="var4"))
