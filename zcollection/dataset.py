@@ -388,6 +388,25 @@ class Variable:
             self._array = dask.array.full_like(self._array, self.fill_value)
         return self
 
+    def _duplicate(self, data: dask.array.Array) -> "Variable":
+        """Duplicate the variable with a new data.
+
+        Args:
+            data: The new data to use
+
+        Returns:
+            The duplicated variable
+        """
+        result = Variable.__new__(Variable)
+        result._array = data
+        result.attrs = self.attrs
+        result.compressor = self.compressor
+        result.dimensions = self.dimensions
+        result.fill_value = self.fill_value
+        result.filters = self.filters
+        result.name = self.name
+        return result
+
     def duplicate(self, data: Any) -> "Variable":
         """Create a new variable from the properties of this instance and the
         data provided.
@@ -417,8 +436,9 @@ class Variable:
         Returns:
             The variable.
         """
-        return Variable(name, self._array, self.dimensions, self.attrs,
-                        self.compressor, self.fill_value, self.filters)
+        result = self._duplicate(self._array)
+        result.name = name
+        return result
 
     def dimension_index(self) -> Iterator[Tuple[str, int]]:
         """Return an iterator over the variable dimensions and their index.
@@ -450,7 +470,7 @@ class Variable:
             raise ValueError("other must be a non-empty sequence")
         try:
             axis = self.dimensions.index(dim)
-            result = self.duplicate(self._array)
+            result = self._duplicate(self._array)
             # pylint: disable=protected-access
             # _array is a protected member of this class
             result._array = dask.array.concatenate(
@@ -461,7 +481,7 @@ class Variable:
             # If the concatenation dimension is not within the dimensions of the
             # variable, then the original variable is returned (i.e.
             # concatenation is not necessary).
-            return self.duplicate(self._array)
+            return self._duplicate(self._array)
 
     def to_xarray(self) -> xarray.Variable:
         """Convert the variable to an xarray.Variable.
@@ -773,7 +793,7 @@ class Dataset:
                 f"Slices contain invalid dimension name(s): {dims_invalid}")
         default = slice(None)
         variables = [
-            var.duplicate(var.array[tuple(
+            var._duplicate(var._array[tuple(
                 slices.get(dim, default) for dim in var.dimensions)])
             for var in self.variables.values()
         ]
@@ -793,7 +813,7 @@ class Dataset:
             New dataset.
         """
         variables = [
-            var.duplicate(
+            var._duplicate(
                 dask.array.delete(var.array, indexer,
                                   var.dimensions.index(axis)))
             for var in self.variables.values()
