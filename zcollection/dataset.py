@@ -31,6 +31,7 @@ import dask.threaded
 import numcodecs.abc
 import numpy
 import xarray
+import zarr
 
 from . import meta
 from .meta import Attribute
@@ -233,8 +234,8 @@ class Variable:
         fill_value: Value to use for uninitialized values
         filters: Filters to apply before writing data to disk
     """
-    __slots__ = ("_array", "name", "dimensions", "attrs", "compressor",
-                 "fill_value", "filters")
+    __slots__ = ("array", "attrs", "compressor", "dimensions", "fill_value",
+                 "filters", "name")
 
     def __init__(
             self,
@@ -249,7 +250,7 @@ class Variable:
         #: Variable name
         self.name = name
         #: Variable data as a dask array.
-        self._array = array
+        self.array = array
         #: Variable dimensions
         self.dimensions = dimensions
         #: Variable attributes
@@ -264,7 +265,7 @@ class Variable:
     @property
     def dtype(self) -> numpy.dtype:
         """Return the data type of the variable."""
-        return self._array.dtype
+        return self.array.dtype
 
     @property
     def ndim(self) -> int:
@@ -274,7 +275,7 @@ class Variable:
     @property
     def shape(self) -> Tuple[int, ...]:
         """Return the shape of the variable."""
-        return self._array.shape
+        return self.array.shape
 
     @property
     def size(self: Any) -> int:
@@ -301,19 +302,6 @@ class Variable:
         properties."""
         return self.metadata() == other.metadata()
 
-    @property
-    def array(self) -> dask.array.Array:
-        """Return the dask array underlying the variable.
-
-        Returns:
-            The dask array
-
-        .. seealso::
-
-            :meth:`Variable.data`
-        """
-        return self._array
-
     def persist(self, **kwargs) -> "Variable":
         """Persist the variable data into memory.
 
@@ -324,7 +312,7 @@ class Variable:
         Returns:
             The variable
         """
-        self._array = self._array.persist(**kwargs)
+        self.array = self.array.persist(**kwargs)
         return self
 
     @property
@@ -340,8 +328,8 @@ class Variable:
 
             :meth:`Variable.array`
         """
-        return (self._array if self.fill_value is None else
-                dask.array.ma.masked_equal(self._array, self.fill_value))
+        return (self.array if self.fill_value is None else
+                dask.array.ma.masked_equal(self.array, self.fill_value))
 
     @data.setter
     def data(self, data: Any) -> None:
@@ -361,7 +349,7 @@ class Variable:
         data, fill_value = _asarray(data, self.fill_value)
         if len(data.shape) != len(self.dimensions):
             raise ValueError("data shape does not match variable dimensions")
-        self._array, self.fill_value = data, fill_value
+        self.array, self.fill_value = data, fill_value
 
     @property
     def values(self) -> Union[NDArray, NDMaskedArray]:
@@ -385,27 +373,59 @@ class Variable:
             The variable.
         """
         if self.fill_value is not None:
-            self._array = dask.array.full_like(self._array, self.fill_value)
+            self.array = dask.array.full_like(self.array, self.fill_value)
         return self
 
-    def _duplicate(self, data: dask.array.Array) -> "Variable":
-        """Duplicate the variable with a new data.
+    @staticmethod
+    def _new(
+        name: str,
+        data: dask.array.Array,
+        dimensions: Sequence[str],
+        attrs: Sequence[Attribute],
+        compressor: Optional[numcodecs.abc.Codec],
+        fill_value: Optional[Any],
+        filters: Optional[Sequence[numcodecs.abc.Codec]],
+    ) -> "Variable":
+        """Create a new variable.
 
         Args:
-            data: The new data to use
+            name: Name of the variable
+            data: Variable data
+            dimensions: Variable dimensions
+            attrs: Variable attributes
+            compressor: Compression codec
+            fill_value: Value to use for uninitialized values
+            filters: Filters to apply before writing data to disk
+        """
+        self = Variable.__new__(Variable)
+        self.array = data
+        self.attrs = attrs
+        self.compressor = compressor
+        self.dimensions = dimensions
+        self.fill_value = fill_value
+        self.filters = filters
+        self.name = name
+        return self
+
+    @classmethod
+    def from_zarr(cls, array: zarr.Array, name: str,
+                  dimension: str) -> "Variable":
+        """Create a new variable from a zarr array.
+
+        Args:
+            array: The zarr array
+            name: Name of the variable
+            dimension: Name of the attribute that defines the dimensions of the
+                variable
 
         Returns:
-            The duplicated variable
+            The variable
         """
-        result = Variable.__new__(Variable)
-        result._array = data
-        result.attrs = self.attrs
-        result.compressor = self.compressor
-        result.dimensions = self.dimensions
-        result.fill_value = self.fill_value
-        result.filters = self.filters
-        result.name = self.name
-        return result
+        attrs = tuple(
+            Attribute(k, v) for k, v in array.attrs.items() if k != dimension)
+        return cls._new(name, dask.array.from_zarr(array),
+                        array.attrs[dimension], attrs, array.compressor,
+                        array.fill_value, array.filters)
 
     def duplicate(self, data: Any) -> "Variable":
         """Create a new variable from the properties of this instance and the
@@ -436,9 +456,8 @@ class Variable:
         Returns:
             The variable.
         """
-        result = self._duplicate(self._array)
-        result.name = name
-        return result
+        return self._new(name, self.array, self.dimensions, self.attrs,
+                         self.compressor, self.fill_value, self.filters)
 
     def dimension_index(self) -> Iterator[Tuple[str, int]]:
         """Return an iterator over the variable dimensions and their index.
@@ -470,18 +489,15 @@ class Variable:
             raise ValueError("other must be a non-empty sequence")
         try:
             axis = self.dimensions.index(dim)
-            result = self._duplicate(self._array)
-            # pylint: disable=protected-access
-            # _array is a protected member of this class
-            result._array = dask.array.concatenate(
-                [self._array, *[item._array for item in other]], axis=axis)
-            # pylint: enable=protected-access
+            result = _duplicate(self, self.array)
+            result.array = dask.array.concatenate(
+                [self.array, *[item.array for item in other]], axis=axis)
             return result
         except ValueError:
             # If the concatenation dimension is not within the dimensions of the
             # variable, then the original variable is returned (i.e.
             # concatenation is not necessary).
-            return self._duplicate(self._array)
+            return _duplicate(self, self.array)
 
     def to_xarray(self) -> xarray.Variable:
         """Convert the variable to an xarray.Variable.
@@ -494,7 +510,7 @@ class Variable:
             encoding["filters"] = self.filters
         if self.compressor:
             encoding["compressor"] = self.compressor
-        data = self._array
+        data = self.array
         if self.dtype.kind == "M":
             # xarray need a datetime64[ns] dtype
             data = data.astype("datetime64[ns]")
@@ -536,20 +552,20 @@ class Variable:
 
     def __dask_graph__(self) -> Optional[Mapping]:
         """Return the dask Graph."""
-        return self._array.__dask_graph__()
+        return self.array.__dask_graph__()
 
     def __dask_keys__(self) -> List:
         """Return the output keys for the Dask graph."""
-        return self._array.__dask_keys__()
+        return self.array.__dask_keys__()
 
     def __dask_layers__(self) -> Tuple:
         """Return the layers for the Dask graph."""
-        return self._array.__dask_layers__()
+        return self.array.__dask_layers__()
 
     def __dask_tokenize__(self):
         """Return the token for the Dask graph."""
         return dask.base.normalize_token(
-            (type(self), self.name, self._array, self.dimensions, self.attrs,
+            (type(self), self.name, self.array, self.dimensions, self.attrs,
              self.fill_value))
 
     @staticmethod
@@ -573,14 +589,32 @@ class Variable:
     def __dask_postcompute__(self) -> Tuple:
         """Return the finalizer and extra arguments to convert the computed
         results into their in-memory representation."""
-        array_func, array_args = self._array.__dask_postcompute__()
+        array_func, array_args = self.array.__dask_postcompute__()
         return self._dask_finalize, (array_func, ) + array_args
 
     def __dask_postpersist__(self) -> Tuple:
         """Return the rebuilder and extra arguments to rebuild an equivalent
         Dask collection from a persisted or rebuilt graph."""
-        array_func, array_args = self._array.__dask_postpersist__()
+        array_func, array_args = self.array.__dask_postpersist__()
         return self._dask_finalize, (array_func, ) + array_args
+
+
+def _duplicate(variable: Variable, data: dask.array.Array) -> "Variable":
+    """Duplicate the variable with a new data.
+
+    Args:
+        variable: Variable to duplicate.
+        data: The new data to use
+
+    Returns:
+        The duplicated variable
+    """
+    # pylint: disable=protected-access
+    # _new is a protected member of this class
+    return variable._new(variable.name, data, variable.dimensions,
+                         variable.attrs, variable.compressor,
+                         variable.fill_value, variable.filters)
+    # pylint: enable=protected-access
 
 
 class Dataset:
@@ -793,8 +827,9 @@ class Dataset:
                 f"Slices contain invalid dimension name(s): {dims_invalid}")
         default = slice(None)
         variables = [
-            var._duplicate(var._array[tuple(
-                slices.get(dim, default) for dim in var.dimensions)])
+            _duplicate(
+                var, var.array[tuple(
+                    slices.get(dim, default) for dim in var.dimensions)])
             for var in self.variables.values()
         ]
         return Dataset(variables=variables, attrs=self.attrs)
@@ -813,7 +848,8 @@ class Dataset:
             New dataset.
         """
         variables = [
-            var._duplicate(
+            _duplicate(
+                var,
                 dask.array.delete(var.array, indexer,
                                   var.dimensions.index(axis)))
             for var in self.variables.values()

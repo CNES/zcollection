@@ -195,12 +195,7 @@ def open_zarr_array(array: zarr.Array, name: str) -> dataset.Variable:
     Returns:
         The variable.
     """
-    attrs = tuple(
-        dataset.Attribute(k, v) for k, v in array.attrs.items()
-        if k != DIMENSIONS)
-    data = dask.array.from_zarr(array)
-    return dataset.Variable(name, data, array.attrs[DIMENSIONS], attrs,
-                            array.compressor, array.fill_value, array.filters)
+    return dataset.Variable.from_zarr(array, name, DIMENSIONS)
 
 
 def open_zarr_group(
@@ -231,7 +226,7 @@ def open_zarr_group(
 
     return dataset.Dataset(
         variables=variables,
-        attrs=tuple(dataset.Attribute(k, v) for k, v in store.attrs.items()))
+        attrs=tuple(dataset.Attribute(*item) for item in store.attrs.items()))
 
 
 def update_zarr_array(
