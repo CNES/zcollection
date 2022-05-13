@@ -69,6 +69,16 @@ def test_view(
         numpy.datetime64("2000-01-16"),
     }
 
+    # Loading a variable existing only in the view.
+    ds = instance.load(selected_variables=("var3", ))
+    assert ds is not None
+    assert tuple(ds.variables) == ("var3", )
+
+    # Loading a non existing variable.
+    ds = instance.load(selected_variables=("var55", ))
+    assert ds is not None
+    assert len(ds.variables) == 0
+
     # Test view loading that is no longer synchronized with the reference
     # collection.
     tested_fs.fs.rm(str(

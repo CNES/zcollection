@@ -28,7 +28,8 @@ import dask.distributed
 import fsspec
 import zarr
 
-from . import collection, convenience, dataset, meta, storage, sync, utilities
+from . import collection, dataset, meta, storage, sync, utilities
+from .convenience import collection as convenience
 
 #: Module logger.
 _LOGGER = logging.getLogger(__name__)
@@ -134,20 +135,19 @@ def _load_one_dataset(
     if ds is None:
         return None
 
-    # A specific case where the selected variables don't allow us to determine
-    # the shape of the dataset stored in the current partition. In this case, we
-    # look for the first variable allowing us to determine the shape of the data
-    # set.
-    if len(view_ref.metadata.dimensions) != len(ds.dimensions):
-        for item in view_ref.metadata.variables.values():
-            if len(item.dimensions) == len(view_ref.metadata.dimensions):
-                store = zarr.open(
-                    view_ref.fs.sep.join((view_ref.partition_properties.dir,
-                                          partition, item.name)),
-                    mode="r",
-                )
-                ds.dimensions = dict(zip(item.dimensions, store.shape))
-                break
+    # If the user has not selected any variables in the reference view. In this
+    # case, the dataset is built from all the variables selected in the view.
+    if len(ds.dimensions) == 0:
+        return dataset.Dataset(
+            [
+                storage.open_zarr_array(
+                    zarr.open(  # type: ignore
+                        fs.get_mapper(
+                            fs.sep.join((base_dir, partition, variable))),
+                        mode="r"),
+                    variable) for variable in variables
+            ],
+            ds.attrs), partition
 
     _ = {
         ds.add_variable(item.metadata(), item.array)
