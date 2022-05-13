@@ -14,7 +14,15 @@ import numpy
 import pytest
 import zarr
 
-from .. import collection, dataset, merging, meta, partitioning, storage
+from .. import (
+    collection,
+    convenience,
+    dataset,
+    merging,
+    meta,
+    partitioning,
+    storage,
+)
 # pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster
 from .data import (
@@ -78,6 +86,7 @@ def test_collection_creation(
                               filesystem=tested_fs.fs)
 
 
+# pylint: disable=too-many-statements
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
 def test_insert(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
@@ -160,9 +169,9 @@ def test_insert(
         assert isinstance(path, str)
         assert isinstance(item, zarr.Group)
 
-    zcollection = collection.open_collection(str(tested_fs.collection),
-                                             mode="r",
-                                             filesystem=tested_fs.fs)
+    zcollection = convenience.open_collection(str(tested_fs.collection),
+                                              mode="r",
+                                              filesystem=tested_fs.fs)
     ds = zcollection.load(selected_variables=["var1"])
     assert ds is not None
     assert "var1" in ds.variables
@@ -175,6 +184,8 @@ def test_insert(
     ds = zcollection.load(selected_variables=["varX"])
     assert ds is not None
     assert len(ds.variables) == 0
+
+    # pylint: enable=too-many-statements
 
 
 @pytest.mark.parametrize("arg,create_test_data", FILE_SYSTEM_DATASET)
@@ -197,11 +208,11 @@ def test_update(
     data = zcollection.load()
     assert data is not None
 
-    def update(ds_x):
+    def update(ds: dataset.Dataset):
         """Update function used for this test."""
-        return ds_x.variables["var1"].values * -1 + 3
+        return ds.variables["var1"].values * -1 + 3
 
-    zcollection.update(update, "var2")
+    zcollection.update(update, "var2")  # type: ignore
 
     assert numpy.allclose(data.variables["var2"].values,
                           data.variables["var1"].values * -1 + 3,
@@ -229,9 +240,9 @@ def test_drop_partitions(
         item.split(zcollection.fs.sep)[-2] for item in partitions
     ]
 
-    zcollection = collection.open_collection(str(tested_fs.collection),
-                                             mode="r",
-                                             filesystem=tested_fs.fs)
+    zcollection = convenience.open_collection(str(tested_fs.collection),
+                                              mode="r",
+                                              filesystem=tested_fs.fs)
     with pytest.raises(io.UnsupportedOperation):
         zcollection.drop_partitions()
 
@@ -257,9 +268,9 @@ def test_drop_variable(
     assert ds is not None
     assert "var1" not in ds.variables
 
-    zcollection = collection.open_collection(str(tested_fs.collection),
-                                             mode="r",
-                                             filesystem=tested_fs.fs)
+    zcollection = convenience.open_collection(str(tested_fs.collection),
+                                              mode="r",
+                                              filesystem=tested_fs.fs)
     with pytest.raises(io.UnsupportedOperation):
         zcollection.drop_partitions()
 
@@ -356,16 +367,16 @@ def test_add_update(
     data = zcollection.load()
     assert data is not None
 
-    def update_1(ds_x):
+    def update_1(ds):
         """Update function used for this test."""
-        return ds_x.variables["var1"].data * 201.5
+        return ds.variables["var1"].data * 201.5
 
-    def update_2(ds_x):
+    def update_2(ds):
         """Update function used for this test."""
-        return ds_x.variables["var1"].data // 5
+        return ds.variables["var1"].data // 5
 
-    zcollection.update(update_1, new1.name)
-    zcollection.update(update_2, new2.name)
+    zcollection.update(update_1, new1.name)  # type: ignore
+    zcollection.update(update_2, new2.name)  # type: ignore
 
     assert numpy.allclose(data.variables[new1.name].values,
                           data.variables["var1"].values * 201.5,
@@ -432,7 +443,7 @@ def test_insert_with_missing_variable(
     """
     tested_fs = request.getfixturevalue(arg)
     ds = next(create_test_dataset_with_fillvalue()).to_xarray()
-    zcollection = collection.create_collection(
+    zcollection = convenience.create_collection(
         axis="time",
         ds=ds,
         partition_handler=partitioning.Date(("time", ), "M"),
@@ -533,16 +544,16 @@ def test_variables():
                                             ("time", ), "D"),
                                         partition_base_dir="/",
                                         filesystem=fs)
-    vars = zcollection.variables()
-    assert isinstance(vars, tuple)
-    assert len(vars) == 3
-    assert vars[0].name == "time"
-    assert vars[1].name == "var1"
-    assert vars[2].name == "var2"
+    variables = zcollection.variables()
+    assert isinstance(variables, tuple)
+    assert len(variables) == 3
+    assert variables[0].name == "time"
+    assert variables[1].name == "var1"
+    assert variables[2].name == "var2"
 
-    vars = zcollection.variables(("time", ))
-    assert len(vars) == 1
-    assert vars[0].name == "time"
+    variables = zcollection.variables(("time", ))
+    assert len(variables) == 1
+    assert variables[0].name == "time"
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
@@ -555,8 +566,9 @@ def test_map_overlap(
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
 
-    result = zcollection.map_overlap(lambda x: x.variables["var1"].values * 2,
-                                     depth=3)  # type: ignore
+    result = zcollection.map_overlap(
+        lambda x: x.variables["var1"].values * 2,  # type: ignore
+        depth=3)  # type: ignore
 
     for partition, indices, data in result.compute():
         folder = zcollection.fs.sep.join(

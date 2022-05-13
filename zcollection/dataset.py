@@ -911,3 +911,18 @@ class Dataset:
 
     def __repr__(self) -> str:
         return _dataset_repr(self)
+
+
+def get_variable_metadata(
+        variable: Union[Variable, meta.Variable]) -> meta.Variable:
+    """Get the variable metadata.
+
+    Args:
+        variable: Variable to get the metadata for.
+
+    Returns:
+        Variable metadata.
+    """
+    if isinstance(variable, Variable):
+        return variable.metadata()
+    return variable

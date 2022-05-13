@@ -233,7 +233,6 @@ class Partitioning(abc.ABC):
                 scheme and the associated indexer to divide the dataset on each
                 partition found..
         """
-        ...  # pragma: no cover
 
     @staticmethod
     def _partition(selection: Tuple[Tuple[str, Any], ...]) -> Tuple[str, ...]:
@@ -342,7 +341,6 @@ class Partitioning(abc.ABC):
         Returns:
             The encoded partitioning scheme.
         """
-        ...
 
     @abc.abstractmethod
     def decode(self, values: Tuple[Any, ...]) -> Tuple[Tuple[str, int], ...]:
@@ -354,7 +352,6 @@ class Partitioning(abc.ABC):
         Returns:
             The decoded partitioning scheme.
         """
-        ...
 
     @staticmethod
     def join(partition_scheme: Tuple[Tuple[str, int], ...], sep: str) -> str:

@@ -239,7 +239,7 @@ def test_variable_masked_array(
     """Test masked array."""
     var = create_test_variable()
     var2 = var.rename("var2")
-    assert var2._array is var._array
+    assert var2.array is var.array
     assert var2.name == "var2"
     assert var2.dimensions == var.dimensions
     assert var2.attrs == var.attrs

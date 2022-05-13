@@ -88,7 +88,6 @@ class PartitionCallable(Protocol):
         Returns:
             Result of the partition function.
         """
-        ...  # pragma: no cover
 
 
 class MapCallable(Protocol):
@@ -109,7 +108,6 @@ class MapCallable(Protocol):
         Returns:
             Result of the map function.
         """
-        ...  # pragma: no cover
 
     #: pylint: enable=too-few-public-methods
 
@@ -626,6 +624,8 @@ class Collection:
 
         tuple(map(invalidate_cache, folders))
 
+    # pylint: disable=duplicate-code
+    # false positive, no code duplication
     def map(
         self,
         func: MapCallable,
@@ -685,6 +685,7 @@ class Collection:
                                      partition_size=partition_size,
                                      npartitions=npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
+        # pylint: enable=duplicate-code
 
     def map_overlap(
         self,
@@ -987,8 +988,7 @@ class Collection:
             ... )
             >>> collection.add_variable(new_variable)
         """
-        if isinstance(variable, dataset.Variable):
-            variable = variable.metadata()  # type: ignore
+        variable = dataset.get_variable_metadata(variable)
         _LOGGER.info("Adding of the %r variable in the collection",
                      variable.name)
         if self.partition_properties.dim not in variable.dimensions:
@@ -1039,77 +1039,3 @@ class Collection:
             The variables of the collection.
         """
         return variables(self.metadata, selected_variables)
-
-
-def create_collection(
-    axis: str,
-    ds: Union[xarray.Dataset, dataset.Dataset],
-    partition_handler: partitioning.Partitioning,
-    partition_base_dir: str,
-    **kwargs,
-) -> Collection:
-    """Create a collection.
-
-    Args:
-        axis: The axis to use for the collection.
-        ds: The dataset to use.
-        partition_handler: The partitioning handler to use.
-        partition_base_dir: The base directory to use for the partitions.
-        **kwargs: Additional parameters are passed through to the constructor
-            of the class :py:class:`Collection`.
-
-    Example:
-        >>> import xarray as xr
-        >>> import zcollection
-        >>> data = xr.Dataset({
-        ...     "a": xr.DataArray([1, 2, 3]),
-        ...     "b": xr.DataArray([4, 5, 6])
-        ... })
-        >>> collection = zcollection.create_collection(
-        ...     "a", data,
-        ...     zcollection.partitioning.Sequence(("a", )),
-        ...     "/tmp/my_collection")
-
-    Returns:
-        The collection.
-
-    Raises:
-        ValueError: If the base directory already exists.
-    """
-    filesystem = utilities.get_fs(kwargs.pop("filesystem", None))
-    if filesystem.exists(partition_base_dir):
-        raise ValueError(
-            f"The directory {partition_base_dir!r} already exists.")
-    if isinstance(ds, xarray.Dataset):
-        ds = dataset.Dataset.from_xarray(ds)
-    return Collection(axis,
-                      ds.metadata(),
-                      partition_handler,
-                      partition_base_dir,
-                      mode="w",
-                      filesystem=filesystem,
-                      **kwargs)
-
-
-# pylint: disable=redefined-builtin
-def open_collection(path: str,
-                    *,
-                    mode: Optional[str] = None,
-                    **kwargs) -> Collection:
-    """Open a collection.
-
-    Args:
-        path: The path to the collection.
-        mode: The mode to open the collection.
-        **kwargs: Additional parameters are passed through the method
-            :py:meth:`zcollection.collection.Collection.from_config`.
-    Returns:
-        The collection.
-
-    Example:
-        >>> import zcollection
-        >>> collection = zcollection.open_collection(
-        ...     "/tmp/mycollection", mode="r")
-    """
-    return Collection.from_config(path, mode=mode, **kwargs)
-    # pylint: enable=redefined-builtin

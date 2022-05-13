@@ -62,7 +62,6 @@ class Pair(abc.ABC):
     @abc.abstractmethod
     def from_config(data: Tuple[str, Any]) -> "Pair":
         """Create a new Pair from the given key/value pair configuration."""
-        ...  # pragma: no cover
 
 
 class Dimension(Pair):

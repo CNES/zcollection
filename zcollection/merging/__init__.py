@@ -48,7 +48,11 @@ class MergeCallable(Protocol):
         Returns:
             The merged dataset.
         """
+        # pylint: disable=unnecessary-ellipsis
+        # Ellipsis is necessary to make the function signature match the
+        # protocol.
         ...  # pragma: no cover
+        # pylint: enable=unnecessary-ellipsis
 
     #: pylint: enable=too-few-public-methods,duplicate-code
 

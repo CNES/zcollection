@@ -9,7 +9,7 @@ Test of views
 import numpy
 import pytest
 
-from .. import meta, view
+from .. import convenience, meta, view
 # pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster
 from .data import create_test_collection
@@ -28,10 +28,11 @@ def test_view(
     tested_fs = request.getfixturevalue(arg)
 
     create_test_collection(tested_fs)
-    instance = view.create_view(str(tested_fs.view),
-                                view.ViewReference(str(tested_fs.collection),
-                                                   tested_fs.fs),
-                                filesystem=tested_fs.fs)
+    instance = convenience.create_view(str(tested_fs.view),
+                                       view.ViewReference(
+                                           str(tested_fs.collection),
+                                           tested_fs.fs),
+                                       filesystem=tested_fs.fs)
     assert isinstance(instance, view.View)
     assert isinstance(str(instance), str)
 
@@ -55,7 +56,8 @@ def test_view(
     with pytest.raises(ValueError):
         instance.add_variable(var)
 
-    instance = view.open_view(str(tested_fs.view), filesystem=tested_fs.fs)
+    instance = convenience.open_view(str(tested_fs.view),
+                                     filesystem=tested_fs.fs)
     ds = instance.load()
     assert ds is not None
     assert set(ds["time"].values.astype("datetime64[D]")) == {
@@ -93,17 +95,17 @@ def test_view(
     ds = instance.load()
     assert ds is not None
 
-    def update(ds_x):
+    def update(ds):
         """Update function used for this test."""
-        return ds_x.variables["var1"].values * 0 + 5
+        return ds.variables["var1"].values * 0 + 5
 
-    instance.update(update, "var3")
-
-    with pytest.raises(ValueError):
-        instance.update(update, "varX")
+    instance.update(update, "var3")  # type: ignore
 
     with pytest.raises(ValueError):
-        instance.update(update, "var2")
+        instance.update(update, "varX")  # type: ignore
+
+    with pytest.raises(ValueError):
+        instance.update(update, "var2")  # type: ignore
 
     ds = instance.load()
     assert ds is not None
@@ -123,4 +125,5 @@ def test_view(
     instance.drop_variable("var3")
 
     with pytest.raises(ValueError):
-        view.open_view(str(tested_fs.collection), filesystem=tested_fs.fs)
+        convenience.open_view(str(tested_fs.collection),
+                              filesystem=tested_fs.fs)

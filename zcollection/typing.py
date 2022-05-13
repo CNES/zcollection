@@ -36,8 +36,11 @@ if TYPE_CHECKING and packaging.version.Version(
         numpy.__version__) > packaging.version.Version(
             "1.20") and sys.version_info > (3, 8):
     NDArray = numpy.typing.NDArray  # pragma: no cover
+    # pylint: disable=protected-access
+    # ScalarType is needed to define NDMaskedArray.
     NDMaskedArray = numpy.ma.MaskedArray[Any, numpy.dtype[
         numpy.typing._generic_alias.ScalarType]]  # pragma: no cover
+    # pylint: enable=protected-access
 else:
     NDArray = numpy.ndarray  # pragma: no cover
     NDMaskedArray = numpy.ma.MaskedArray  # pragma: no cover

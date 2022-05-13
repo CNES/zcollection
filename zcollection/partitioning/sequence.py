@@ -54,6 +54,8 @@ class Sequence(abc.Partitioning):
     #: The ID of the partitioning scheme.
     ID: ClassVar[str] = "Sequence"
 
+    # pylint: disable=arguments-differ
+    # False positive: `self` is used in the signature.
     @staticmethod
     def _split(
             variables: Dict[str, dask.array.Array]) -> Iterator[abc.Partition]:
@@ -78,6 +80,7 @@ class Sequence(abc.Partitioning):
         return ((concat(fields,
                         tuple(item)), slice(start, indices[ix + 1], None))
                 for item, (ix, start) in zip(index, enumerate(indices[:-1])))
+        # pylint: enable=arguments-differ
 
     def encode(
         self,

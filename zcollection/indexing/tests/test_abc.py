@@ -12,7 +12,7 @@ import pyarrow
 import pytest
 
 from .. import abc
-from ... import collection, dataset, partitioning
+from ... import collection, convenience, dataset, partitioning
 from ...partitioning.tests import data
 # pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster
@@ -152,7 +152,7 @@ def test_indexer(
     """Test the base class of the indexer."""
     ds = dataset.Dataset.from_xarray(data.create_test_sequence(5, 20, 10))
 
-    zcollection = collection.create_collection(
+    zcollection = convenience.create_collection(
         "time",
         ds,
         partitioning.Date(("time", ), "M"),

@@ -60,7 +60,11 @@ class IndexingCallable(Protocol):
             A numpy structured array to be converted to a DataFrame and stored
             in the index.
         """
+        # pylint: disable=unnecessary-ellipsis
+        # Ellipsis is necessary to make the function signature match the
+        # protocol.
         ...  # pragma: no cover
+        # pylint: enable=unnecessary-ellipsis
 
 
 class Indexer:
@@ -214,7 +218,6 @@ class Indexer:
         Returns:
             The created index.
         """
-        ...  # pragma: no cover
 
     @classmethod
     def open(
@@ -338,7 +341,6 @@ class Indexer:
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
         """
-        ...
 
     def _read(self) -> pyarrow.Table:
         """Read the index."""

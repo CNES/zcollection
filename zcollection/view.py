@@ -28,7 +28,7 @@ import dask.distributed
 import fsspec
 import zarr
 
-from . import collection, dataset, meta, storage, sync, utilities
+from . import collection, convenience, dataset, meta, storage, sync, utilities
 
 #: Module logger.
 _LOGGER = logging.getLogger(__name__)
@@ -251,7 +251,7 @@ class View:
         #: The file system used to access the view (default local file system).
         self.fs = utilities.get_fs(filesystem)
         #: The reference collection of the view.
-        self.view_ref = collection.open_collection(
+        self.view_ref = convenience.open_collection(
             view_ref.path, mode="r", filesystem=view_ref.filesystem)
         #: The metadata of the variables handled by the view.
         self.metadata = ds or meta.Dataset(
@@ -380,9 +380,11 @@ class View:
             ...         zcollection.meta.Attribute("long_name", "temperature")),
             ...        fill_value=-9999.0))
         """
-        if isinstance(variable, dataset.Variable):
-            variable = variable.metadata()
-        _LOGGER.info("Adding variable %r", variable.name)
+        # pylint: disable=duplicate-code
+        # false positive, no code duplication
+
+        variable = dataset.get_variable_metadata(variable)
+        _LOGGER.info("Adding variable %r in the view", variable.name)
         if (variable.name in self.view_ref.metadata.variables
                 or variable.name in self.metadata.variables):
             raise ValueError(f"Variable {variable.name} already exists")
@@ -423,6 +425,7 @@ class View:
             raise
 
         self._write_config()
+        # pylint: enable=duplicate-code
 
     def drop_variable(
         self,
@@ -596,6 +599,8 @@ class View:
             base_dir=self.base_dir)
         storage.execute_transaction(client, self.synchronizer, awaitables)
 
+    # pylint: disable=duplicate-code
+    # false positive, no code duplication
     def map(
         self,
         func: collection.MapCallable,
@@ -660,6 +665,7 @@ class View:
                                      partition_size=partition_size,
                                      npartitions=npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
+        # pylint: enable=duplicate-code
 
     def map_overlap(
         self,
@@ -719,6 +725,9 @@ class View:
             Returns:
                 The result of the function.
             """
+            # pylint: disable=too-many-locals
+            # The local function is not taken into account for counting
+            # locals.
             _, partition = arguments
             where = next(ix for ix, item in enumerate(datasets_list)
                          if item[1] == partition)
@@ -749,6 +758,7 @@ class View:
                 self.view_ref.partitioning.parse(partition),
                 indices,  # type: ignore
                 func(ds, *args, **kwargs))
+            # pylint: enable=too-many-locals
 
         client = utilities.get_client()
         datasets_list = tuple(
@@ -758,63 +768,3 @@ class View:
                                      partition_size=partition_size,
                                      npartitions=npartitions)
         return bag.map(_wrap, func, datasets_list, depth, *args, **kwargs)
-
-
-def create_view(
-    path: str,
-    view_ref: ViewReference,
-    *,
-    filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
-    synchronizer: Optional[sync.Sync] = None,
-) -> View:
-    """Create a new view.
-
-    Args:
-        path: View storage directory.
-        view_ref: Access properties for the reference view.
-        filesystem: The file system used to access the view.
-        synchronizer: The synchronizer used to synchronize the view.
-
-    Example:
-        >>> view_ref = ViewReference(
-        ...     partition_base_dir="/data/mycollection")
-        >>> view = create_view("/home/user/myview", view_ref)
-
-    Returns:
-        The created view.
-
-    Raises:
-        ValueError: If the path already exists.
-    """
-    filesystem = utilities.get_fs(filesystem)
-    if filesystem.exists(path):
-        raise ValueError(f"path {path!r} already exists.")
-    return View(path,
-                view_ref,
-                ds=None,
-                filesystem=filesystem,
-                synchronizer=synchronizer)
-
-
-def open_view(
-    path: str,
-    *,
-    filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
-    synchronizer: Optional[sync.Sync] = None,
-) -> View:
-    """Open an existing view.
-
-    Args:
-        path: View storage directory.
-        filesystem: The file system used to access the view.
-        synchronizer: The synchronizer used to synchronize the view.
-
-    Returns:
-        The opened view.
-
-    Example:
-        >>> view = open_view("/home/user/myview")
-    """
-    return View.from_config(path,
-                            filesystem=filesystem,
-                            synchronizer=synchronizer)

@@ -72,6 +72,8 @@ class Date(abc.Partitioning):
         """Return the keys of the partitioning scheme."""
         return tuple(UNITS[ix] for ix in self._index)
 
+    # pylint: disable=arguments-differ
+    # False positive: the base method is static.
     def _partition(
         self,
         selection: Tuple[Tuple[str, Any], ...],
@@ -82,6 +84,7 @@ class Date(abc.Partitioning):
         return tuple(UNITS[ix] + "=" +
                      f"{getattr(datetime, self._attrs[ix]):02d}"
                      for ix in self._index)
+        # pylint: enable=arguments-differ
 
     def _split(
         self,
