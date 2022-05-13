@@ -63,12 +63,12 @@ def _create_zarr_array(args: Tuple[str, zarr.Group], base_dir: str,
         variable: The properties of the variable to create.
     """
     partition, group = args
-    data = dask.array.from_zarr(group[template])
+    data: dask.array.Array = dask.array.from_zarr(group[template])
 
     dirname = fs.sep.join((base_dir, partition))
     mapper = fs.get_mapper(fs.sep.join((dirname, variable.name)))
     zarr.full(data.shape,
-              chunks=True,
+              chunks=data.chunksize,
               dtype=variable.dtype,
               compressor=variable.compressor,
               fill_value=variable.fill_value,
