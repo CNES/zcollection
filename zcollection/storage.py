@@ -14,6 +14,7 @@ import logging
 import dask
 import dask.array
 import dask.distributed
+import dask.local
 import fsspec
 import numpy
 import zarr
@@ -88,7 +89,11 @@ def _to_zarr(array: dask.array.Array, mapper: fsspec.FSMap, path: str,
         overwrite=True,
         write_empty_chunks=False,
         **kwargs)
-    array.store(target, lock=False, compute=True, return_stored=False)
+    array.store(target,
+                lock=False,
+                compute=True,
+                scheduler=dask.local.get_sync,
+                return_stored=False)
 
 
 def write_zattrs(
@@ -129,20 +134,19 @@ def write_zarr_variable(
     kwargs = dict(filters=variable.filters)
     data = variable.array
 
-    with dask.config.set(scheduler="synchronous"):
-        chunks = {ix: -1 for ix in range(variable.ndim)}
-        data = data.rechunk(
-            chunks,  # type: ignore
-            block_size_limit=BLOCK_SIZE_LIMIT,
-        )
+    chunks = {ix: -1 for ix in range(variable.ndim)}
+    data = data.rechunk(
+        chunks,  # type: ignore
+        block_size_limit=BLOCK_SIZE_LIMIT,
+    )
 
-        _to_zarr(array=data,
-                 mapper=fs.get_mapper(dirname),
-                 path=name,
-                 compressor=variable.compressor,
-                 fill_value=variable.fill_value,
-                 **kwargs)
-        write_zattrs(dirname, variable, fs)
+    _to_zarr(array=data,
+             mapper=fs.get_mapper(dirname),
+             path=name,
+             compressor=variable.compressor,
+             fill_value=variable.fill_value,
+             **kwargs)
+    write_zattrs(dirname, variable, fs)
 
 
 def write_zarr_group(

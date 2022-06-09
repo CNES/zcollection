@@ -6,7 +6,6 @@
 Merging a time series
 =====================
 """
-import dask
 import numpy
 
 from . import period
@@ -103,7 +102,4 @@ def merge_time_series(
     after = existing_ds.isel(
         {partitioning_dim: slice(index[0], index[-1] + 1, None)})
 
-    with dask.config.set(scheduler="synchronous"):
-        res = before.concat((inserted_ds, after), partitioning_dim)
-
-    return res
+    return before.concat((inserted_ds, after), partitioning_dim)
