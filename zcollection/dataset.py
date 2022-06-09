@@ -365,6 +365,20 @@ class Variable:
         """
         return self.data.compute()
 
+    def compute(self, **kwargs) -> Union[NDArray, NDMaskedArray]:
+        """Return the variable data as a numpy array.
+
+        .. note::
+
+            If the variable has a fill value, the result is a masked array where
+            masked values are equal to the fill value.
+
+        Args:
+            **kwargs: Keyword arguments passed to
+            :func:`dask.array.Array.compute`.
+        """
+        return self.data.compute(**kwargs)
+
     def fill(self) -> "Variable":
         """Fill the variable with the fill value. If the variable has no fill
         value, this method does nothing.
@@ -747,6 +761,22 @@ class Dataset:
         # pylint: disable=expression-not-assigned
         {self.variables.pop(name) for name in names}
         # pylint: enable=expression-not-assigned
+
+    def select_vars(self, names: Union[str, Sequence[str]]) -> "Dataset":
+        """Return a new dataset containing only the selected variables.
+
+        Args:
+            names: Variable names to select.
+
+        Returns:
+            A new dataset containing only the selected variables.
+        """
+        if isinstance(names, str) or not isinstance(names, Iterable):
+            names = [names]
+        return Dataset(
+            [self.variables[name] for name in names],
+            self.attrs,
+        )
 
     def metadata(self) -> meta.Dataset:
         """Get the dataset metadata.

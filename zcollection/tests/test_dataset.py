@@ -433,6 +433,9 @@ def test_dataset_add_variable(
         ds.variables["var2"].values,
         numpy.ma.masked_equal(numpy.full((5, 2), 255, "int64"), 255))
 
+    other = ds.select_vars(["var1"])
+    assert list(other.variables) == ["var1"]
+
     data = numpy.ones((5, 2), "int64")
     ds.drops_vars("var2")
     assert "var2" not in ds.variables
