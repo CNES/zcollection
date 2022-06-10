@@ -34,7 +34,7 @@ from .data import (
     create_test_dataset,
     create_test_dataset_with_fillvalue,
 )
-from .fs import S3, local_fs, s3, s3_base, s3_fs
+from .fs import local_fs, s3, s3_base, s3_fs
 
 # pylint: disable=unused-import
 
@@ -466,7 +466,10 @@ def test_insert_with_missing_variable(
             ds.variables["var1"].fill_value))
 
 
-@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
+# For the moment, this test does not work with S3: minio creates a
+# directory for the file "time"; therefore zarr cannot detect an invalid
+# array.
+@pytest.mark.parametrize("arg", ["local_fs"])  # , "s3_fs"])
 def test_insert_failed(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
@@ -486,14 +489,10 @@ def test_insert_failed(
     zcollection.fs.makedirs(one_directory, exist_ok=False)
     zcollection.fs.touch(zcollection.fs.sep.join((one_directory, "time")))
 
-    if not isinstance(tested_fs, S3):
-        # For the moment, this test does not work with S3: minio creates a
-        # directory for the file "time"; therefore zarr cannot detect an invalid
-        # array.
-        with pytest.raises(OSError):
-            zcollection.insert(ds)
-
+    with pytest.raises(OSError):
         zcollection.insert(ds)
+
+    zcollection.insert(ds)
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
