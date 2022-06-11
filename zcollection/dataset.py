@@ -25,7 +25,11 @@ import collections
 import functools
 import operator
 
-import dask.array
+import dask.array.core
+import dask.array.creation
+import dask.array.ma
+import dask.array.routines
+import dask.array.wrap
 import dask.base
 import dask.threaded
 import numcodecs.abc
@@ -105,7 +109,7 @@ def _pretty_print(obj: Any, num_characters: int = 120) -> str:
     return result + " " * max(num_characters - len(result), 0)
 
 
-def _dask_repr(array: dask.array.Array) -> str:
+def _dask_repr(array: dask.array.core.Array) -> str:
     """Get the string representation of a dask array.
 
     Args:
@@ -199,7 +203,7 @@ def _variable_repr(var: "Variable") -> str:
 def _asarray(
     arr: ArrayLike,
     fill_value: Optional[Any] = None,
-) -> Tuple[dask.array.Array, Any]:
+) -> Tuple[dask.array.core.Array, Any]:
     """Convert an array-like object to a dask array.
 
     Args:
@@ -211,7 +215,7 @@ def _asarray(
         with masked data replaced by its fill value and the fill value of the
         offered masked array. Otherwise, the provided array and fill value.
     """
-    result = dask.array.asarray(arr)  # type: dask.array.Array
+    result = dask.array.core.asarray(arr)  # type: dask.array.core.Array
     _meta = result._meta  # pylint: disable=protected-access
     if isinstance(_meta, numpy.ma.MaskedArray):
         if fill_value is not None and fill_value != _meta.fill_value:
@@ -316,7 +320,7 @@ class Variable:
         return self
 
     @property
-    def data(self) -> dask.array.Array:
+    def data(self) -> dask.array.core.Array:
         """Return the underlying dask array where values equal to the fill
         value are masked. If no fill value is set, the returned array is the
         same as the underlying array.
@@ -328,8 +332,9 @@ class Variable:
 
             :meth:`Variable.array`
         """
-        return (self.array if self.fill_value is None else
-                dask.array.ma.masked_equal(self.array, self.fill_value))
+        if self.fill_value is None:
+            return self.array
+        return dask.array.ma.masked_equal(self.array, self.fill_value)
 
     @data.setter
     def data(self, data: Any) -> None:
@@ -363,7 +368,7 @@ class Variable:
         Returns:
             The variable data
         """
-        return self.data.compute()
+        return self.compute()
 
     def compute(self, **kwargs) -> Union[NDArray, NDMaskedArray]:
         """Return the variable data as a numpy array.
@@ -377,7 +382,10 @@ class Variable:
             **kwargs: Keyword arguments passed to
             :func:`dask.array.Array.compute`.
         """
-        return self.data.compute(**kwargs)
+        if self.fill_value is None:
+            return self.array.compute(**kwargs)
+        return numpy.ma.masked_equal(self.array.compute(**kwargs),
+                                     self.fill_value)
 
     def fill(self) -> "Variable":
         """Fill the variable with the fill value. If the variable has no fill
@@ -387,13 +395,14 @@ class Variable:
             The variable.
         """
         if self.fill_value is not None:
-            self.array = dask.array.full_like(self.array, self.fill_value)
+            self.array = dask.array.creation.full_like(self.array,
+                                                       self.fill_value)
         return self
 
     @staticmethod
     def _new(
         name: str,
-        data: dask.array.Array,
+        data: dask.array.core.Array,
         dimensions: Sequence[str],
         attrs: Sequence[Attribute],
         compressor: Optional[numcodecs.abc.Codec],
@@ -422,8 +431,8 @@ class Variable:
         return self
 
     @classmethod
-    def from_zarr(cls, array: zarr.Array, name: str,
-                  dimension: str) -> "Variable":
+    def from_zarr(cls, array: zarr.Array, name: str, dimension: str,
+                  **kwargs) -> "Variable":
         """Create a new variable from a zarr array.
 
         Args:
@@ -431,15 +440,21 @@ class Variable:
             name: Name of the variable
             dimension: Name of the attribute that defines the dimensions of the
                 variable
+            **kwargs: Keyword arguments passed to
+                :func:`dask.array.from_array`
 
         Returns:
             The variable
         """
         attrs = tuple(
             Attribute(k, v) for k, v in array.attrs.items() if k != dimension)
-        return cls._new(name, dask.array.from_zarr(array),
-                        array.attrs[dimension], attrs, array.compressor,
-                        array.fill_value, array.filters)
+        data = dask.array.core.from_array(
+            array,
+            array.chunks,
+            name=f"{name}-{dask.base.tokenize(array, array.chunks)}",
+            **kwargs)
+        return cls._new(name, data, array.attrs[dimension], attrs,
+                        array.compressor, array.fill_value, array.filters)
 
     def duplicate(self, data: Any) -> "Variable":
         """Create a new variable from the properties of this instance and the
@@ -503,10 +518,10 @@ class Variable:
             raise ValueError("other must be a non-empty sequence")
         try:
             axis = self.dimensions.index(dim)
-            result = _duplicate(self, self.array)
-            result.array = dask.array.concatenate(
-                [self.array, *[item.array for item in other]], axis=axis)
-            return result
+            return _duplicate(
+                self,
+                dask.array.core.concatenate(
+                    [self.array, *[item.array for item in other]], axis=axis))
         except ValueError:
             # If the concatenation dimension is not within the dimensions of the
             # variable, then the original variable is returned (i.e.
@@ -590,7 +605,7 @@ class Variable:
         .. seealso::
             :func:`dask.array.Array.__dask_optimize__`
         """
-        return dask.array.Array.__dask_optimize__(dsk, keys, **kwargs)
+        return dask.array.core.Array.__dask_optimize__(dsk, keys, **kwargs)
 
     #: The default scheduler get to use for this object.
     __dask_scheduler__ = staticmethod(dask.threaded.get)
@@ -613,7 +628,7 @@ class Variable:
         return self._dask_finalize, (array_func, ) + array_args
 
 
-def _duplicate(variable: Variable, data: dask.array.Array) -> "Variable":
+def _duplicate(variable: Variable, data: dask.array.core.Array) -> "Variable":
     """Duplicate the variable with a new data.
 
     Args:
@@ -715,9 +730,9 @@ class Dataset:
 
         if data is None:
             shape = tuple(self.dimensions[dim] for dim in variable.dimensions)
-            data = dask.array.full(shape,
-                                   variable.fill_value,
-                                   dtype=variable.dtype)
+            data = dask.array.wrap.full(shape,
+                                        variable.fill_value,
+                                        dtype=variable.dtype)
         else:
             for dim, size in zip(variable.dimensions,
                                  data.shape):  # type: ignore
@@ -880,20 +895,25 @@ class Dataset:
         variables = [
             _duplicate(
                 var,
-                dask.array.delete(var.array, indexer,
-                                  var.dimensions.index(axis)))
+                dask.array.routines.delete(var.array, indexer,
+                                           var.dimensions.index(axis)))
             for var in self.variables.values()
         ]
         return Dataset(variables=variables, attrs=self.attrs)
 
-    def compute(self) -> "Dataset":
+    def compute(self, **kwargs) -> "Dataset":
         """Compute the dataset variables.
+
+        Args:
+            **kwargs: Additional parameters are passed through to
+                :py:func:`dask.array.compute`.
 
         Returns:
             New dataset.
         """
         variables = [
-            var.duplicate(var.values) for var in self.variables.values()
+            var.duplicate(var.compute(**kwargs))
+            for var in self.variables.values()
         ]
         return Dataset(variables=variables, attrs=self.attrs)
 
