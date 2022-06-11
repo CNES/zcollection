@@ -8,7 +8,7 @@ Partitioning by date
 """
 from typing import Any, ClassVar, Dict, Iterator, Sequence, Tuple
 
-import dask.array
+import dask.array.core
 import numpy
 
 from . import abc
@@ -88,7 +88,7 @@ class Date(abc.Partitioning):
 
     def _split(
         self,
-        variables: Dict[str, dask.array.Array],
+        variables: Dict[str, dask.array.core.Array],
     ) -> Iterator[abc.Partition]:
         """Return the partitioning scheme for the given variables."""
         name, values = tuple(variables.items())[0]

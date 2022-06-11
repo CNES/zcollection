@@ -23,14 +23,15 @@ import collections
 import re
 
 import dask.array
+import dask.array.core
+import dask.array.creation
+import dask.array.reductions
+import dask.array.wrap
 import fsspec
 import numpy
 
 from .. import dataset
 from ..typing import NDArray
-
-#: Object that can be used as a numpy array
-Array = Union[dask.array.Array, NDArray]
 
 #: Object that represents a partitioning scheme
 Partition = Tuple[Tuple[Tuple[str, Any], ...], slice]
@@ -41,9 +42,9 @@ DATA_TYPES = ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32",
 
 
 def _logical_or_reduce(
-    arr: dask.array.Array,
+    arr: dask.array.core.Array,
     axis: Optional[Union[int, Tuple[int, ...]]] = None,
-) -> dask.array.Array:
+) -> dask.array.core.Array:
     """Implementation of `numpy.logical_or` reduction with dask.
 
     Args:
@@ -68,7 +69,7 @@ def _logical_or_reduce(
 
     #: pylint: enable=unused-argument
 
-    return dask.array.reduction(
+    return dask.array.reductions.reduction(
         arr[1:] != arr[:-1],  # type: ignore
         chunk=chunk,
         aggregate=aggregate,
@@ -77,7 +78,7 @@ def _logical_or_reduce(
         dtype=numpy.bool_)
 
 
-def unique(arr: dask.array.Array) -> Tuple[NDArray, NDArray]:
+def unique(arr: dask.array.core.Array) -> Tuple[NDArray, NDArray]:
     """Return unique elements and their indices.
 
     Args:
@@ -89,13 +90,13 @@ def unique(arr: dask.array.Array) -> Tuple[NDArray, NDArray]:
     size = arr.shape[0]
     chunks = arr.chunks[0]
     #: pylint: disable=not-callable
-    mask = dask.array.empty((size, ), dtype=numpy.bool_, chunks=chunks)
+    mask = dask.array.wrap.empty((size, ), dtype=numpy.bool_, chunks=chunks)
     #: pylint: enable=not-callable
     mask[0] = True
     mask[1:] = (_logical_or_reduce(arr, axis=1)
                 if arr.ndim > 1 else arr[1:] != arr[:-1])
     dtype = numpy.uint32 if size < 2**32 else numpy.uint64
-    indices = dask.array.arange(size, dtype=dtype, chunks=chunks)
+    indices = dask.array.creation.arange(size, dtype=dtype, chunks=chunks)
     mask = mask.persist()
     return arr[mask].compute(), indices[mask].compute()
 
@@ -219,7 +220,7 @@ class Partitioning(abc.ABC):
     @abc.abstractmethod
     def _split(
         self,
-        variables: Dict[str, dask.array.Array],
+        variables: Dict[str, dask.array.core.Array],
     ) -> Iterator[Partition]:
         """Split the variables constituting the partitioning into partitioning
         schemes.

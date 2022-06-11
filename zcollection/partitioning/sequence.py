@@ -8,7 +8,8 @@ Partitioning a sequence of variables
 """
 from typing import ClassVar, Dict, Iterator, Tuple
 
-import dask.array
+import dask.array.core
+import dask.array.routines
 import numpy
 
 from . import abc
@@ -58,10 +59,12 @@ class Sequence(abc.Partitioning):
     # False positive: `self` is used in the signature.
     @staticmethod
     def _split(
-            variables: Dict[str, dask.array.Array]) -> Iterator[abc.Partition]:
+        variables: Dict[str,
+                        dask.array.core.Array]) -> Iterator[abc.Partition]:
         """Split the variables constituting the partitioning into partitioning
         schemes."""
-        matrix = dask.array.vstack(tuple(variables.values())).transpose()
+        matrix = dask.array.routines.vstack(tuple(
+            variables.values())).transpose()
         if matrix.dtype.kind not in "iu":
             raise TypeError("The variables must be integer")
 

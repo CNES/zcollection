@@ -11,8 +11,7 @@ import collections
 import json
 import logging
 
-import dask
-import dask.array
+import dask.array.core
 import dask.distributed
 import dask.local
 import fsspec
@@ -69,7 +68,7 @@ def execute_transaction(
             raise
 
 
-def _to_zarr(array: dask.array.Array, mapper: fsspec.FSMap, path: str,
+def _to_zarr(array: dask.array.core.Array, mapper: fsspec.FSMap, path: str,
              **kwargs) -> None:
     """Write a Dask array to a Zarr dataset.
 
@@ -248,7 +247,7 @@ def update_zarr_array(
     _LOGGER.debug("Updating Zarr array %r", dirname)
     store = zarr.open_array(fs.get_mapper(dirname), mode="a")
 
-    if isinstance(array, dask.array.Array):
+    if isinstance(array, dask.array.core.Array):
         array = array.compute()
 
     if isinstance(array,

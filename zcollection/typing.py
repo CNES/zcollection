@@ -25,7 +25,7 @@ Typing
 from typing import TYPE_CHECKING, Any, Union
 import sys
 
-import dask.array
+import dask.array.core
 import numpy
 import numpy.typing
 import packaging.version
@@ -47,4 +47,4 @@ else:
 
 DTypeLike = numpy.typing.DTypeLike
 
-ArrayLike = Union[dask.array.Array, numpy.typing.ArrayLike]
+ArrayLike = Union[dask.array.core.Array, numpy.typing.ArrayLike]
