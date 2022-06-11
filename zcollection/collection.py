@@ -30,9 +30,7 @@ import logging
 import pathlib
 import types
 
-import dask
-import dask.array
-import dask.bag
+import dask.bag.core
 import dask.distributed
 import dask.utils
 import fsspec
@@ -238,6 +236,38 @@ def _load_and_apply_indexer(
         for indexer in items
     }
     return arrays
+
+
+def _load_indexed(
+    args: Tuple[Any, Sequence[Tuple[Tuple[Tuple[str, int], ...], slice]]],
+    fs: fsspec.AbstractFileSystem,
+    partition_handler: partitioning.Partitioning,
+    partition_properties: PartitioningProperties,
+    selected_variables: Optional[Iterable[str]],
+) -> Tuple[Any, dataset.Dataset]:
+    """Load an indexed element in a dataset.
+
+    Args:
+        args: Tuple containing the key and its indexer.
+        fs: The file system that the partition is stored on.
+        partition_handler: The partitioning handler.
+        partition_properties: The partitioning properties.
+        selected_variable: The selected variables to load.
+
+    Returns:
+        A tuple containing the key and the loaded dataset.
+    """
+    arrays = []
+    for partition_scheme, section in args[1]:
+        partition = fs.sep.join(
+            (partition_properties.dir,
+             partition_handler.join(partition_scheme, fs.sep)))
+        ds = storage.open_zarr_group(partition, fs, selected_variables)
+        arrays.append(ds.isel({partition_properties.dim: section}))
+    array = arrays.pop(0)
+    if arrays:
+        array = array.concat(arrays, partition_properties.dim)
+    return (args[0], array)
 
 
 def variables(
@@ -634,7 +664,7 @@ class Collection:
         partition_size: Optional[int] = None,
         npartitions: Optional[int] = None,
         **kwargs,
-    ) -> dask.bag.Bag:
+    ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the collection.
 
         Args:
@@ -681,9 +711,9 @@ class Collection:
             return self.partitioning.parse(partition), func(
                 ds, *args, **kwargs)
 
-        bag = dask.bag.from_sequence(self.partitions(filters=filters),
-                                     partition_size=partition_size,
-                                     npartitions=npartitions)
+        bag = dask.bag.core.from_sequence(self.partitions(filters=filters),
+                                          partition_size=partition_size,
+                                          npartitions=npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
         # pylint: enable=duplicate-code
 
@@ -696,7 +726,7 @@ class Collection:
         partition_size: Optional[int] = None,
         npartition: Optional[int] = None,
         **kwargs,
-    ) -> dask.bag.Bag:
+    ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the collection with some
         overlap.
 
@@ -782,9 +812,9 @@ class Collection:
                 func(ds, *args, **kwargs))
 
         partitions = tuple(self.partitions(filters=filters))
-        bag = dask.bag.from_sequence(partitions,
-                                     partition_size=partition_size,
-                                     npartitions=npartition)
+        bag = dask.bag.core.from_sequence(partitions,
+                                          partition_size=partition_size,
+                                          npartitions=npartition)
         return bag.map(_wrap, func, partitions, depth, *args, **kwargs)
 
     def load(
@@ -830,9 +860,9 @@ class Collection:
 
             # No indexer, so the dataset is loaded directly for each
             # selected partition.
-            bag = dask.bag.from_sequence(self.partitions(filters=filters),
-                                         npartitions=utilities.dask_workers(
-                                             client, cores_only=True))
+            bag = dask.bag.core.from_sequence(
+                self.partitions(filters=filters),
+                npartitions=utilities.dask_workers(client, cores_only=True))
             arrays = bag.map(storage.open_zarr_group,
                              fs=self.fs,
                              selected_variables=selected_variables).compute()
@@ -842,9 +872,9 @@ class Collection:
             if len(args) == 0:
                 return None
 
-            bag = dask.bag.from_sequence(args,
-                                         npartitions=utilities.dask_workers(
-                                             client, cores_only=True))
+            bag = dask.bag.core.from_sequence(
+                args,
+                npartitions=utilities.dask_workers(client, cores_only=True))
 
             # Finally, load the selected partitions and apply the indexer.
             arrays = list(
@@ -861,6 +891,37 @@ class Collection:
         if arrays:
             array = array.concat(arrays, self.partition_properties.dim)
         return array
+
+    def load_indexed(
+        self,
+        indexer: Dict[Any, Indexer],
+        *,
+        selected_variables: Optional[Iterable[str]] = None,
+    ) -> Dict[Any, dataset.Dataset]:
+        """Load each indexed element of the collection in a dictionary. The
+        dictionary keys are the indexer keys.
+
+        Args:
+            indexer: The indexer to apply.
+            selected_variables: A list of variables to retain from the
+                collection. If None, all variables are kept.
+
+        Returns:
+            A dictionary containing the indexed elements of the collection.
+        """
+        client = utilities.get_client()
+
+        bag = dask.bag.core.from_sequence(indexer.items(),
+                                          npartitions=utilities.dask_workers(
+                                              client, cores_only=True))
+        return dict(
+            bag.map(
+                _load_indexed,
+                fs=self.fs,
+                partition_handler=self.partitioning,
+                partition_properties=self.partition_properties,
+                selected_variables=selected_variables,
+            ).compute())
 
     # pylint: disable=method-hidden
     def update(
@@ -917,7 +978,7 @@ class Collection:
     def _bag_from_partitions(
         self,
         filters: Optional[PartitionFilter] = None,
-    ) -> dask.bag.Bag:
+    ) -> dask.bag.core.Bag:
         """Return a dask bag from the partitions.
 
         Args:
@@ -927,8 +988,8 @@ class Collection:
             The dask bag.
         """
         partitions = [*self.partitions(filters=filters)]
-        return dask.bag.from_sequence(seq=partitions,
-                                      npartitions=len(partitions))
+        return dask.bag.core.from_sequence(seq=partitions,
+                                           npartitions=len(partitions))
 
     def drop_variable(
         self,
