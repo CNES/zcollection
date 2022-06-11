@@ -23,7 +23,7 @@ import logging
 import pathlib
 
 import dask.array.core
-import dask.bag
+import dask.bag.core
 import dask.distributed
 import fsspec
 import zarr
@@ -610,7 +610,7 @@ class View:
         partition_size: Optional[int] = None,
         npartitions: Optional[int] = None,
         **kwargs,
-    ) -> dask.bag.Bag:
+    ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the view.
 
         Args:
@@ -662,9 +662,9 @@ class View:
         datasets_list = tuple(
             _load_datasets_list(client, self.base_dir, self.fs, self.view_ref,
                                 self.metadata, self.partitions(filters)))
-        bag = dask.bag.from_sequence(datasets_list,
-                                     partition_size=partition_size,
-                                     npartitions=npartitions)
+        bag = dask.bag.core.from_sequence(datasets_list,
+                                          partition_size=partition_size,
+                                          npartitions=npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
         # pylint: enable=duplicate-code
 
@@ -677,7 +677,7 @@ class View:
         partition_size: Optional[int] = None,
         npartitions: Optional[int] = None,
         **kwargs,
-    ) -> dask.bag.Bag:
+    ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the view with some overlap.
 
         Args:
@@ -765,7 +765,7 @@ class View:
         datasets_list = tuple(
             _load_datasets_list(client, self.base_dir, self.fs, self.view_ref,
                                 self.metadata, self.partitions(filters)))
-        bag = dask.bag.from_sequence(datasets_list,
-                                     partition_size=partition_size,
-                                     npartitions=npartitions)
+        bag = dask.bag.core.from_sequence(datasets_list,
+                                          partition_size=partition_size,
+                                          npartitions=npartitions)
         return bag.map(_wrap, func, datasets_list, depth, *args, **kwargs)
