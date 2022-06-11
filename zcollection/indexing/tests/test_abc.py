@@ -219,5 +219,14 @@ def test_indexer(
     assert set(selection.variables['cycle_number'].values) == {2, 4}
     assert set(selection.variables['pass_number'].values) == {1, 5}
 
+    indices = tuple(
+        indexer.query(dict(cycle_number=[2, 4]), only_partition_keys=False))
+    assert tuple(item[0] for item in indices[0][0]) == (
+        'cycle_number',
+        'pass_number',
+        'year',
+        'month',
+    )
+
     indexer = abc.Indexer("", filesystem=fsspec.filesystem("memory"))
     assert indexer.query(dict(cycle_number=[2, 4])) == tuple()

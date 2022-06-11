@@ -349,17 +349,25 @@ class Indexer:
                                                      filesystem=self._fs)
         return self._table
 
-    def _table_2_indexer(self, table: pyarrow.Table) -> collection.Indexer:
+    def _table_2_indexer(self, table: pyarrow.Table,
+                         only_partition_keys: bool) -> collection.Indexer:
         """Convert a table to an indexer.
 
         Args:
             table: The table to convert.
+            only_partition_keys: If True, only the partition keys are kept.
 
         Returns:
             The indexer.
         """
+        # Columns to keep. START and STOP are always dropped, as they're
+        # exported within the slice.
+        column_names = (self._partition_keys if only_partition_keys else tuple(
+            filter(lambda item: item not in [self.START, self.STOP],
+                   self.table.column_names)))
+
         # Convert columns of partitioning to numpy arrays.
-        data = {name: table[name].to_numpy() for name in self._partition_keys}
+        data = {name: table[name].to_numpy() for name in column_names}
 
         # Convert columns of the slice definition to numpy arrays.
         start = table[self.START].to_numpy()
@@ -384,9 +392,10 @@ class Indexer:
 
         return (
             tuple(  # type:ignore
-                (tuple((name, data[name][ix0])
-                       for name in self._partition_keys),
-                 slice(start[ix0], stop[ix1 - 1])), )
+                (tuple(
+                    (name, data[name][ix0])
+                    for name in column_names), slice(start[ix0],
+                                                     stop[ix1 - 1])), )
             for ix0, ix1 in tuple(zip(chunks[:-1], chunks[1:])))
 
     def query(
@@ -394,6 +403,7 @@ class Indexer:
         columns: QueryDict,
         *,
         logical_op: Optional[str] = None,
+        only_partition_keys: bool = True,
     ) -> collection.Indexer:
         """Query the index.
 
@@ -401,6 +411,7 @@ class Indexer:
             columns: Dictionary of columns to query.
             logical_op: The logical operator to use. Can be "and", "and_not",
                 "invert", "or", "xor". Defaults to "and".
+            only_partition_keys: If True, only the partition keys are kept.
 
         Returns:
             Indexer.
@@ -441,7 +452,7 @@ class Indexer:
         table = pyarrow.compute.take(
             table,
             pyarrow.compute.sort_indices(table, sort_keys=self._sort_keys()))
-        return self._table_2_indexer(table)
+        return self._table_2_indexer(table, only_partition_keys)
 
     @property
     def table(self) -> pyarrow.Table:
