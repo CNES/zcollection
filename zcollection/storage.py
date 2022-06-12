@@ -56,16 +56,16 @@ def execute_transaction(
     if not futures:
         return None
     awaitables = []
-    with synchronizer:
-        try:
+    try:
+        with synchronizer:
             awaitables = client.compute(futures)
             return client.gather(awaitables)
-        except:  # noqa: E722
-            # Before throwing the exception, we wait until all future scheduled
-            # ones finished.
-            dask.distributed.wait(awaitables)
-            dask.distributed.wait(futures)
-            raise
+    except:  # noqa: E722
+        # Before throwing the exception, we wait until all future scheduled
+        # ones finished.
+        dask.distributed.wait(awaitables)
+        dask.distributed.wait(futures)
+        raise
 
 
 def _to_zarr(array: dask.array.core.Array, mapper: fsspec.FSMap, path: str,
