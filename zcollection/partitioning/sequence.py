@@ -75,10 +75,13 @@ class Sequence(abc.Partitioning):
         indices = abc.concatenate_item(indices, matrix.shape[0])
 
         fields = tuple(variables.keys())
+        # pylint: disable=unnecessary-lambda-assignment
+        # We want to reference a lambda function, not assign it to a variable.
         if len(fields) == 1:
             concat = lambda fields, keys: (fields + keys, )
         else:
             concat = lambda fields, keys: tuple(zip(fields, keys))
+        # pylint: enable=unnecessary-lambda-assignment
 
         return ((concat(fields,
                         tuple(item)), slice(start, indices[ix + 1], None))
