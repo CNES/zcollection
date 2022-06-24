@@ -879,6 +879,25 @@ class Dataset:
         ds = ds.set_coords(coord_names.intersection(data_vars))
         return ds
 
+    def to_dict(self,
+                variables: Optional[Sequence[str]] = None,
+                **kwargs) -> Dict[str, Union[NDArray, NDMaskedArray]]:
+        """Convert the dataset to a dictionary, between the variable names and
+        their data.
+
+        Args:
+            **kwargs: Additional parameters are passed through the function
+                :py:func:`dask.compute`.
+
+        Returns:
+            Dictionary of variables.
+        """
+        variables = variables or tuple(self.variables.keys())
+        arrays = tuple((key, value.array)
+                       for key, value in self.variables.items()
+                       if key in variables)
+        return dict(dask.base.compute(*arrays, **kwargs))
+
     def isel(self, slices: Dict[str, Any]) -> "Dataset":
         """Return a new dataset with each array indexed along the specified
         slices.

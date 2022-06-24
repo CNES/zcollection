@@ -262,6 +262,7 @@ def test_dataset(
     assert isinstance(str(ds), str)
     assert isinstance(repr(ds), str)
     assert ds.nbytes == 5 * 2 * 8 * 2
+
     var1 = create_test_variable()
     assert numpy.all(ds.variables["var1"].values == var1.values)
     assert ds.variables["var1"].have_same_properties(var1)
@@ -269,13 +270,25 @@ def test_dataset(
     assert var1.metadata() == ds["var1"].metadata()
     with pytest.raises(KeyError):
         var1 = ds["varX"]
+
     var2 = create_test_variable("var2")
     assert numpy.all(ds.variables["var2"].values == var2.values)
     assert id(ds["var2"]) == id(ds.variables["var2"])
     assert ds.variables["var2"].have_same_properties(var2)
     assert isinstance(ds.metadata(), meta.Dataset)
+
     other = ds.compute()
     assert isinstance(other, dataset.Dataset)
+
+    ds_dict = ds.to_dict()
+    assert isinstance(ds_dict, dict)
+    assert isinstance(ds_dict["var1"], numpy.ndarray)
+    assert isinstance(ds_dict["var2"], numpy.ndarray)
+
+    ds_dict = ds.to_dict(variables=["var1"])
+    assert isinstance(ds_dict, dict)
+    assert isinstance(ds_dict["var1"], numpy.ndarray)
+    assert "var2" not in ds_dict
 
 
 def test_dataset_dimensions_conflict(
