@@ -117,7 +117,7 @@ collection.load(
 # %%
 # Note that the :py:meth:`load<zcollection.collection.Collection.load>`
 # function may return None if no partition has been selected.
-collection.load(filters="year == 2002 and month == 2") is None
+assert collection.load(filters="year == 2002 and month == 2") is None
 
 # %%
 # Editing variables
