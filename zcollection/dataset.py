@@ -24,6 +24,7 @@ from typing import (
 import collections
 import functools
 import operator
+import uuid
 
 import dask.array.core
 import dask.array.creation
@@ -316,7 +317,7 @@ class Variable:
         Returns:
             The variable
         """
-        self.array = self.array.persist(**kwargs)
+        self.array = dask.base.persist(self.array, **kwargs)
         return self
 
     @property
@@ -382,10 +383,9 @@ class Variable:
             **kwargs: Keyword arguments passed to
             :func:`dask.array.Array.compute`.
         """
-        if self.fill_value is None:
-            return self.array.compute(**kwargs)
-        return numpy.ma.masked_equal(self.array.compute(**kwargs),
-                                     self.fill_value)
+        (values, ) = dask.base.compute(self.array, traverse=False, **kwargs)
+        return values if self.fill_value is None else numpy.ma.masked_equal(
+            values, self.fill_value)
 
     def fill(self) -> "Variable":
         """Fill the variable with the fill value. If the variable has no fill
@@ -430,6 +430,20 @@ class Variable:
         self.name = name
         return self
 
+    def isel(self, key: Tuple[slice, ...]) -> "Variable":
+        """Return a new variable with data selected along the given dimension
+        indices.
+
+        Args:
+            key: Dimension indices to select
+
+        Returns:
+            The new variable
+        """
+        return self._new(self.name, self.array.__getitem__(key),
+                         self.dimensions, self.attrs, self.compressor,
+                         self.fill_value, self.filters)
+
     @classmethod
     def from_zarr(cls, array: zarr.Array, name: str, dimension: str,
                   **kwargs) -> "Variable":
@@ -451,8 +465,9 @@ class Variable:
         data = dask.array.core.from_array(
             array,
             array.chunks,
-            name=f"{name}-{dask.base.tokenize(array, array.chunks)}",
-            **kwargs)
+            name=f"{name}-{uuid.uuid1()}",
+            **kwargs,
+        )
         return cls._new(name, data, array.attrs[dimension], attrs,
                         array.compressor, array.fill_value, array.filters)
 
@@ -518,15 +533,23 @@ class Variable:
             raise ValueError("other must be a non-empty sequence")
         try:
             axis = self.dimensions.index(dim)
-            return _duplicate(
-                self,
+            return self._new(
+                self.name,
                 dask.array.core.concatenate(
-                    [self.array, *[item.array for item in other]], axis=axis))
+                    [self.array, *[item.array for item in other]], axis=axis),
+                self.dimensions,
+                self.attrs,
+                self.compressor,
+                self.fill_value,
+                self.filters,
+            )
         except ValueError:
             # If the concatenation dimension is not within the dimensions of the
             # variable, then the original variable is returned (i.e.
             # concatenation is not necessary).
-            return _duplicate(self, self.array)
+            return self._new(self.name, self.array, self.dimensions,
+                             self.attrs, self.compressor, self.fill_value,
+                             self.filters)
 
     def to_xarray(self) -> xarray.Variable:
         """Convert the variable to an xarray.Variable.
@@ -872,9 +895,7 @@ class Dataset:
                 f"Slices contain invalid dimension name(s): {dims_invalid}")
         default = slice(None)
         variables = [
-            _duplicate(
-                var, var.array[tuple(
-                    slices.get(dim, default) for dim in var.dimensions)])
+            var.isel(tuple(slices.get(dim, default) for dim in var.dimensions))
             for var in self.variables.values()
         ]
         return Dataset(variables=variables, attrs=self.attrs)
@@ -911,9 +932,12 @@ class Dataset:
         Returns:
             New dataset.
         """
+        arrays = tuple(item.array for item in self.variables.values())
+        arrays = dask.base.compute(*arrays, **kwargs)
+
         variables = [
-            var.duplicate(var.compute(**kwargs))
-            for var in self.variables.values()
+            _duplicate(self.variables[k], array)
+            for k, array in zip(self.variables, arrays)
         ]
         return Dataset(variables=variables, attrs=self.attrs)
 
@@ -927,8 +951,9 @@ class Dataset:
         Returns:
             The dataset with the variables persisted into memory.
         """
-        for variable in self.variables.values():
-            variable.persist(**kwargs)
+        arrays = dask.base.persist(*self.variables.values(), **kwargs)
+        for name, data in zip(self.variables, arrays):
+            self.variables[name].data = data
         return self
 
     def concat(self, other: Union["Dataset", Iterable["Dataset"]],

@@ -240,7 +240,10 @@ class Partitioning(abc.ABC):
         """Format the partitioning scheme."""
         return tuple(f"{k}={v}" for k, v in selection)
 
-    def index_dataset(self, ds: dataset.Dataset) -> Iterator[Partition]:
+    def index_dataset(
+        self,
+        ds: dataset.Dataset,
+    ) -> Iterator[Partition]:
         """Yield the indexing scheme for the given dataset.
 
         Args:
@@ -257,9 +260,9 @@ class Partitioning(abc.ABC):
             (name, ds.variables[name].array) for name in self.variables)
         # If the dask array is too chunked, the calculation is excessively
         # long.
-        for item, array in variables.items():
-            variables[item] = array.rechunk().persist()
-        return self._split(variables)
+        return self._split(
+            {name: arr.rechunk().persist()
+             for name, arr in variables.items()})
 
     def split_dataset(
         self,

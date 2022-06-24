@@ -9,7 +9,7 @@ Test partitioning by date.
 from typing import Iterator
 import pickle
 
-import dask.array
+import dask.array.core
 import fsspec
 import numpy
 import pytest
@@ -171,7 +171,7 @@ def test_no_monotonic(
     partitioning = Date(("dates", ), "h")
     # pylint: disable=protected-access
     with pytest.raises(ValueError):
-        list(partitioning._split({"dates": dask.array.from_array(dates)}))
+        list(partitioning._split({"dates": dask.array.core.from_array(dates)}))
     # pylint: enable=protected-access
 
 
@@ -186,7 +186,7 @@ def test_values_must_be_datetime64(
     dates = dates.astype("int64")
     with pytest.raises(TypeError):
         # pylint: disable=protected-access
-        list(partitioning._split({"dates": dask.array.from_array(dates)}))
+        list(partitioning._split({"dates": dask.array.core.from_array(dates)}))
     # pylint: enable=protected-access
 
 
