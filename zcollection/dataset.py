@@ -893,7 +893,7 @@ class Dataset:
             Dictionary of variables.
         """
         variables = variables or tuple(self.variables.keys())
-        arrays = tuple((key, value.array)
+        arrays = tuple((key, value.data)
                        for key, value in self.variables.items()
                        if key in variables)
         return dict(dask.base.compute(*arrays, **kwargs))
