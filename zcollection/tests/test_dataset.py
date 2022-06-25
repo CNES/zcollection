@@ -8,7 +8,8 @@ Testing datasets
 """
 import pickle
 
-import dask.array
+import dask.array.core
+import dask.array.ma
 import numpy
 import pytest
 import xarray
@@ -88,7 +89,7 @@ def test_variable(
 
     var.data = numpy.ones((10, 4), dtype="int64")
     assert var.data.shape == (10, 4)
-    assert isinstance(var.data, dask.array.Array)
+    assert isinstance(var.data, dask.array.core.Array)
     assert numpy.all(var.values == 1)
 
     with pytest.raises(ValueError):
@@ -494,3 +495,49 @@ def test_dataset_rename():
 
     with pytest.raises(ValueError):
         ds.rename(dict(var3="var4"))
+
+
+def test_dataset_not_equal():
+    """Test if two values are different."""
+    assert dataset._not_equal(1, 2) is True
+    assert dataset._not_equal(1, 1) is False
+    assert dataset._not_equal(1, "1") is True
+    assert dataset._not_equal(1, numpy.nan) is True
+    assert dataset._not_equal(numpy.nan, numpy.nan) is False
+    assert dataset._not_equal(numpy.nan, 1) is True
+    assert dataset._not_equal(numpy.datetime64("NaT"),
+                              numpy.datetime64("NaT")) is False
+    assert dataset._not_equal(numpy.datetime64("NaT"), 1) is True
+
+
+def test_dataset_as_asarray():
+    """Test converting array like to a dask array."""
+    arr = numpy.arange(10)
+    da, fill_value = dataset._asarray(arr)
+    assert isinstance(da, dask.array.core.Array)
+    assert fill_value is None
+
+    arr = numpy.ma.masked_equal(arr, 5)
+    da, fill_value = dataset._asarray(arr)
+    assert isinstance(da, dask.array.core.Array)
+    assert fill_value == 5
+
+    da, fill_value = dataset._asarray(dask.array.ma.masked_equal(arr, 5))
+    assert isinstance(da, dask.array.core.Array)
+    assert fill_value == 5
+
+    with pytest.raises(ValueError):
+        dataset._asarray(numpy.ma.masked_equal(arr, 5), fill_value=6)
+
+    with pytest.raises(ValueError):
+        dataset._asarray(numpy.ma.masked_equal(
+            numpy.arange(numpy.datetime64(0, "Y"),
+                         numpy.datetime64(10, "Y"),
+                         dtype="M8[Y]"), numpy.datetime64(5, "Y")),
+                         fill_value=numpy.datetime64("NaT"))
+
+    da = dataset._asarray(numpy.ma.masked_equal(
+        numpy.arange(numpy.datetime64(0, "Y"),
+                     numpy.datetime64(10, "Y"),
+                     dtype="M8[Y]"), numpy.datetime64("NaT")),
+                          fill_value=numpy.datetime64("NaT"))

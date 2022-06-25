@@ -201,6 +201,34 @@ def _variable_repr(var: "Variable") -> str:
     return "\n".join(lines)
 
 
+def _not_equal(first: Any, second: Any) -> bool:
+    """Check if two objects are not equal.
+
+    Args:
+        first: The first object.
+        second: The second object.
+
+    Returns:
+        True if the two objects are different, False otherwise.
+    """
+
+    def _is_not_a_number(number: Any) -> bool:
+        """Check if a number is NaN or NaT."""
+        # pylint: disable=comparison-with-itself
+        return not number == number and number != number
+        # pylint: enable=comparison-with-itself
+
+    if type(first) != type(second):
+        return True
+    if _is_not_a_number(first) and _is_not_a_number(second):
+        return False
+    if first is None and second is None:
+        return False
+    if first == second:
+        return False
+    return True
+
+
 def _asarray(
     arr: ArrayLike,
     fill_value: Optional[Any] = None,
@@ -219,7 +247,7 @@ def _asarray(
     result = dask.array.core.asarray(arr)  # type: dask.array.core.Array
     _meta = result._meta  # pylint: disable=protected-access
     if isinstance(_meta, numpy.ma.MaskedArray):
-        if fill_value is not None and fill_value != _meta.fill_value:
+        if fill_value is not None and _not_equal(fill_value, _meta.fill_value):
             raise ValueError(
                 f"The fill value {fill_value!r} does not match the fill value "
                 f"{_meta.fill_value!r} of the array.")
