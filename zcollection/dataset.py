@@ -971,8 +971,8 @@ class Dataset:
             The dataset with the variables persisted into memory.
         """
         arrays = dask.base.persist(*self.variables.values(), **kwargs)
-        for name, data in zip(self.variables, arrays):
-            self.variables[name].data = data
+        for name, array in zip(self.variables, arrays):
+            self.variables[name].array = array
         return self
 
     def concat(self, other: Union["Dataset", Iterable["Dataset"]],
