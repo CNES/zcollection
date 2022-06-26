@@ -9,6 +9,7 @@ Internal utilities
 from typing import (
     Any,
     Callable,
+    Iterable,
     Iterator,
     List,
     Optional,
@@ -18,7 +19,9 @@ from typing import (
     Union,
 )
 import asyncio
+import functools
 import itertools
+import operator
 
 import dask.distributed
 import fsspec
@@ -231,3 +234,15 @@ def split_sequence(sequence: Sequence[Any],
         itertools.accumulate(
             ([0] + extras * [size + 1] + (sections - extras) * [size])))
     yield from (sequence[item:div[ix + 1]] for ix, item in enumerate(div[:-1]))
+
+
+def prod(iterable: Iterable) -> int:
+    """Get the product of an iterable.
+
+    Args:
+        iterable: An iterable.
+
+    Returns:
+        The product of the iterable.
+    """
+    return functools.reduce(operator.mul, iterable, 1)

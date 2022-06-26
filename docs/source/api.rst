@@ -44,6 +44,7 @@ Collection
   zcollection.sync
   zcollection.typing
   zcollection.utilities
+  zcollection.variable
   zcollection.view
 
 Indexing

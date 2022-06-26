@@ -19,7 +19,6 @@ import numpy
 import zarr
 
 from . import dataset, meta, sync
-#
 from .typing import ArrayLike
 
 #: Block size limit used with dask arrays. (128 MiB)
@@ -88,11 +87,12 @@ def _to_zarr(array: dask.array.core.Array, mapper: fsspec.FSMap, path: str,
         overwrite=True,
         write_empty_chunks=False,
         **kwargs)
-    array.store(target,
-                lock=False,
-                compute=True,
-                scheduler=dask.local.get_sync,
-                return_stored=False)
+    dask.array.core.store(array,
+                          target,
+                          lock=False,
+                          compute=True,
+                          scheduler=dask.local.get_sync,
+                          return_stored=False)
 
 
 def write_zattrs(
