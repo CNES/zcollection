@@ -205,7 +205,7 @@ def calculation_stream(func: Callable,
             except StopIteration:
                 pass
 
-    result += [item.result() for item in completed]
+    result += [item.result() for item in completed]  # type: ignore
     return result
 
 
