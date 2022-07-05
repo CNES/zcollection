@@ -138,33 +138,33 @@ def _load_one_dataset(
     # If the user has not selected any variables in the reference view. In this
     # case, the dataset is built from all the variables selected in the view.
     if len(ds.dimensions) == 0:
-        return dataset.Dataset(
-            [
-                storage.open_zarr_array(
-                    zarr.open(  # type: ignore
-                        fs.get_mapper(
-                            fs.sep.join((base_dir, partition, variable))),
-                        mode="r"),
-                    variable) for variable in variables
-            ],
-            ds.attrs), partition
+        return dataset.Dataset([
+            storage.open_zarr_array(
+                zarr.open(
+                    fs.get_mapper(fs.sep.join(
+                        (base_dir, partition, variable))),
+                    mode="r",
+                ), variable) for variable in variables
+        ], ds.attrs), partition
 
     _ = {
-        ds.add_variable(item.metadata(), item.array)
-        for item in (
-            storage.open_zarr_array(
-                zarr.open(  # type: ignore
-                    fs.get_mapper(fs.sep.join((base_dir, partition,
-                                               variable))),
-                    mode="r"),
-                variable) for variable in variables)
+        ds.add_variable(item.metadata(), item.array)  # type: ignore[arg-type]
+        for item in (storage.open_zarr_array(
+            zarr.open(
+                fs.get_mapper(fs.sep.join((base_dir, partition, variable))),
+                mode="r",
+            ), variable) for variable in variables)
     }
 
     # Apply indexing if needed.
     if len(slices):
         dim = view_ref.partition_properties.dim
         ds_list: List[dataset.Dataset] = []
-        _ = {ds_list.append(ds.isel({dim: indexer})) for indexer in slices}
+        _ = {
+            ds_list.append(  # type: ignore[func-returns-value]
+                ds.isel({dim: indexer}))
+            for indexer in slices
+        }
         ds = ds_list.pop(0)
         if ds_list:
             ds = ds.concat(ds_list, dim)
@@ -209,7 +209,7 @@ def _load_datasets_list(
     Returns:
         The datasets and their paths.
     """
-    arguments = tuple(
+    arguments: Tuple[Tuple[Tuple[Tuple[str, int], ...], List], ...] = tuple(
         (view_ref.partitioning.parse(item), []) for item in partitions)
     futures = client.map(
         _load_one_dataset,
@@ -222,7 +222,7 @@ def _load_datasets_list(
         variables=metadata.select_variables(selected_variables))
 
     return filter(lambda item: item is not None,
-                  client.gather(futures))  # type: ignore
+                  client.gather(futures))  # type: ignore[arg-type]
 
 
 class View:
@@ -280,13 +280,13 @@ class View:
         config = self._config(self.base_dir, self.fs)
         fs = json.loads(self.view_ref.fs.to_json())
         with self.fs.open(config, mode="w") as stream:
-            json.dump(
-                dict(base_dir=self.base_dir,
-                     metadata=self.metadata.get_config(),
-                     view_ref=dict(path=self.view_ref.partition_properties.dir,
-                                   fs=fs)),
-                stream,  # type: ignore
-                indent=4)
+            json.dump(dict(base_dir=self.base_dir,
+                           metadata=self.metadata.get_config(),
+                           view_ref=dict(
+                               path=self.view_ref.partition_properties.dir,
+                               fs=fs)),
+                      stream,
+                      indent=4)
         self.fs.invalidate_cache(config)
 
     @classmethod
@@ -348,7 +348,7 @@ class View:
     def variables(
         self,
         selected_variables: Optional[Iterable[str]] = None
-    ) -> Tuple[dataset.Variable]:
+    ) -> Tuple[dataset.Variable, ...]:
         """Return the variables of the view.
 
         Args:
@@ -393,7 +393,7 @@ class View:
         self.metadata.add_variable(variable)
         template = self.view_ref.metadata.search_same_dimensions_as(variable)
 
-        existing_partitions = tuple(self.partitions())
+        existing_partitions: Iterable[str] = tuple(self.partitions())
 
         # If the view already contains variables, you only need to modify the
         # existing partitions.
@@ -401,8 +401,8 @@ class View:
             existing_partitions = set(
                 pathlib.Path(path).relative_to(self.base_dir).as_posix()
                 for path in existing_partitions)
-            args = filter(lambda item: item[0] in existing_partitions,
-                          self.view_ref.iterate_on_records(relative=True))
+            args: Any = filter(lambda item: item[0] in existing_partitions,
+                               self.view_ref.iterate_on_records(relative=True))
         else:
             args = self.view_ref.iterate_on_records(relative=True)
 
@@ -513,9 +513,9 @@ class View:
         # values corresponding to empty partitions.
         arrays: List[dataset.Dataset] = list(
             map(
-                lambda item: item[0],  # type: ignore
+                lambda item: item[0],  # type: ignore[arg-type]
                 filter(lambda item: item is not None,
-                       client.gather(futures))))  # type: ignore
+                       client.gather(futures))))  # type: ignore[arg-type]
         if arrays:
             array = arrays.pop(0)
             if arrays:
@@ -593,11 +593,10 @@ class View:
         batchs = utilities.split_sequence(
             datasets_list, partition_size
             or utilities.dask_workers(client, cores_only=True))
-        awaitables = client.map(
-            wrap_function,
-            tuple(batchs),
-            key=func.__name__,  # type: ignore
-            base_dir=self.base_dir)
+        awaitables = client.map(wrap_function,
+                                tuple(batchs),
+                                key=func.__name__,
+                                base_dir=self.base_dir)
         storage.execute_transaction(client, self.synchronizer, awaitables)
 
     # pylint: disable=duplicate-code
@@ -742,6 +741,7 @@ class View:
 
             # Compute the slice of the given partition.
             start = 0
+            indices = slice(0, 0, None)
             for ds, current_partition in datasets_list:
                 size = ds[self.view_ref.axis].size
                 indices = slice(start, start + size, None)
@@ -755,10 +755,8 @@ class View:
             ds.concat(groups, self.view_ref.partition_properties.dim)
 
             # Finally, apply the function.
-            return (
-                self.view_ref.partitioning.parse(partition),
-                indices,  # type: ignore
-                func(ds, *args, **kwargs))
+            return (self.view_ref.partitioning.parse(partition), indices,
+                    func(ds, *args, **kwargs))
             # pylint: enable=too-many-locals
 
         client = utilities.get_client()

@@ -8,7 +8,7 @@ Abstract base class for indexing.
 """
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional, Protocol, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Protocol, Tuple, Union
 import abc
 import functools
 import pathlib
@@ -378,8 +378,9 @@ class Indexer:
         # start = [817, 823, ..., 2320, 17333, ..., 19337]
         # stop  = [832, 874, ..., 2396, 17420, ..., 19389]
         # chunks = [0, 70, 134]
-        chunks = [[0],
-                  numpy.where(start[1:] - stop[:-1] > 0)[0] + 1, [len(table)]]
+        chunks: Any = [[0],
+                       numpy.where(start[1:] - stop[:-1] > 0)[0] + 1,
+                       [len(table)]]
 
         # Adds the chunks corresponding to the partitioning keys
         chunks += [
@@ -437,14 +438,12 @@ class Indexer:
         table = self._read()
 
         # pylint: disable=no-member
-        mask = functools.reduce(
-            function,
-            [
-                pyarrow.compute.is_in(  # type: ignore
-                    table[name],
-                    value_set=pyarrow.array(value, type=self._type[name]))
-                for name, value in values.items()
-            ])
+        mask = functools.reduce(function, [
+            pyarrow.compute.is_in(table[name],
+                                  value_set=pyarrow.array(
+                                      value, type=self._type[name]))
+            for name, value in values.items()
+        ])
         # pylint: disable=no-member
         table = table.filter(mask)
 

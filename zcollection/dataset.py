@@ -169,7 +169,7 @@ class Dataset:
     def add_variable(self,
                      variable: meta.Variable,
                      /,
-                     data: Optional[ArrayLike] = None):
+                     data: Optional[ArrayLike[Any]] = None):
         """Add a variable to the dataset.
 
         Args:
@@ -193,8 +193,7 @@ class Dataset:
                                         variable.fill_value,
                                         dtype=variable.dtype)
         else:
-            for dim, size in zip(variable.dimensions,
-                                 data.shape):  # type: ignore
+            for dim, size in zip(variable.dimensions, data.shape):
                 if size != self.dimensions[dim]:
                     raise ValueError(
                         f"Conflicting sizes for dimension {dim!r}: "
@@ -202,7 +201,7 @@ class Dataset:
                         f"{size} defined in dataset.")
         self.variables[variable.name] = Variable(
             variable.name,
-            data,  # type: ignore
+            data,  # type: ignore[arg-type]
             variable.dimensions,
             variable.attrs,
             variable.compressor,
@@ -276,11 +275,11 @@ class Dataset:
         """
         variables = [
             Variable(
-                name,  # type: ignore
+                name,  # type: ignore[arg-type]
                 array.data,
                 tuple(array.dims),
                 tuple(
-                    Attribute(*attr)  # type: ignore
+                    Attribute(*attr)  # type: ignore[arg-type]
                     for attr in array.attrs.items()),
                 array.encoding.get("compressor", None),
                 array.encoding.get("_FillValue", None),
@@ -291,7 +290,7 @@ class Dataset:
         return Dataset(
             variables=variables,
             attrs=tuple(
-                Attribute(*item)  # type: ignore
+                Attribute(*item)  # type: ignore[arg-type]
                 for item in ds.attrs.items()))
 
     def to_xarray(self, **kwargs) -> xarray.Dataset:
@@ -406,9 +405,14 @@ class Dataset:
         Returns:
             The dataset with the variables persisted into memory.
         """
-        arrays = dask.base.persist(*self.variables.values(), **kwargs)
+        arrays = dask.base.persist(
+            *tuple(item.data for item in self.variables.values()), **kwargs)
         for name, array in zip(self.variables, arrays):
             self.variables[name].array = array
+            # If the variable holds a fill value, the computed array will
+            # be a masked array, so the fill value attribute is no longer
+            # needed (need to round around a bug in dask#9238)
+            self.variables[name].fill_value = None
         return self
 
     def concat(self, other: Union["Dataset", Iterable["Dataset"]],

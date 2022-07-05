@@ -172,7 +172,7 @@ def _not_equal(first: Any, second: Any) -> bool:
 
 
 def _asarray(
-    arr: ArrayLike,
+    arr: ArrayLike[Any],
     fill_value: Optional[Any] = None,
 ) -> Tuple[dask.array.core.Array, Any]:
     """Convert an array-like object to a dask array.
@@ -215,7 +215,7 @@ class Variable:
     def __init__(
             self,
             name: str,
-            data: ArrayLike,
+            data: ArrayLike[Any],
             dimensions: Sequence[str],
             attrs: Optional[Sequence[Attribute]] = None,
             compressor: Optional[numcodecs.abc.Codec] = None,
@@ -225,7 +225,7 @@ class Variable:
         #: Variable name
         self.name = name
         #: Variable data as a dask array.
-        self.array = array
+        self.array: dask.array.core.Array = array
         #: Variable dimensions
         self.dimensions = dimensions
         #: Variable attributes
@@ -287,7 +287,7 @@ class Variable:
         Returns:
             The variable
         """
-        self.array = dask.base.persist(self.array, **kwargs)
+        self.array = dask.base.persist(self.data, **kwargs)
         return self
 
     @property
@@ -303,8 +303,14 @@ class Variable:
 
             :meth:`Variable.array`
         """
-        if self.fill_value is None:
+        # If the fill value is None, or if the dask array already holds a
+        # masked array, return the underlying array.
+        # pylint: disable=protected-access
+        # No other way to check if the dask array is a masked array.
+        if (self.fill_value is None
+                or isinstance(self.array._meta, numpy.ma.MaskedArray)):
             return self.array
+        # pylint: enable=protected-access
         return dask.array.ma.masked_equal(self.array, self.fill_value)
 
     @data.setter

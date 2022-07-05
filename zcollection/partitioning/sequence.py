@@ -6,7 +6,7 @@
 Partitioning a sequence of variables
 ====================================
 """
-from typing import ClassVar, Dict, Iterator, Tuple
+from typing import Any, ClassVar, Dict, Iterator, Tuple
 
 import dask.array.core
 import dask.array.routines
@@ -78,7 +78,7 @@ class Sequence(abc.Partitioning):
         # pylint: disable=unnecessary-lambda-assignment
         # We want to reference a lambda function, not assign it to a variable.
         if len(fields) == 1:
-            concat = lambda fields, keys: (fields + keys, )
+            concat: Any = lambda fields, keys: (fields + keys, )
         else:
             concat = lambda fields, keys: tuple(zip(fields, keys))
         # pylint: enable=unnecessary-lambda-assignment

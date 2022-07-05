@@ -80,7 +80,7 @@ def _to_zarr(array: dask.array.core.Array, mapper: fsspec.FSMap, path: str,
     chunks = [chunk[0] for chunk in array.chunks]
     target = zarr.create(
         shape=array.shape,
-        chunks=chunks,  # type: ignore
+        chunks=chunks,  # type: ignore[arg-type]
         dtype=array.dtype,
         store=mapper,
         path=path,
@@ -112,7 +112,7 @@ def write_zattrs(
     attrs[DIMENSIONS] = variable.dimensions
     path = fs.sep.join((dirname, variable.name, ZATTRS))
     with fs.open(path, mode="w") as stream:
-        json.dump(attrs, stream, indent=2)  # type: ignore
+        json.dump(attrs, stream, indent=2)
 
 
 def write_zarr_variable(
@@ -135,7 +135,7 @@ def write_zarr_variable(
 
     chunks = {ix: -1 for ix in range(variable.ndim)}
     data = data.rechunk(
-        chunks,  # type: ignore
+        chunks,  # type: ignore[arg-type]
         block_size_limit=BLOCK_SIZE_LIMIT,
     )
 
@@ -174,14 +174,11 @@ def write_zarr_group(
     path = fs.sep.join((dirname, ZATTRS))
     attrs = collections.OrderedDict(item.get_config() for item in ds.attrs)
     with fs.open(path, mode="w") as stream:
-        json.dump(
-            attrs,
-            stream,  # type: ignore
-            indent=2)
+        json.dump(attrs, stream, indent=2)
 
     path = fs.sep.join((dirname, ZGROUP))
     with fs.open(path, mode="w") as stream:
-        json.dump({"zarr_format": 2}, stream, indent=2)  # type: ignore
+        json.dump({"zarr_format": 2}, stream, indent=2)
 
     zarr.consolidate_metadata(fs.get_mapper(dirname))
     # Invalidate any cached directory information.
@@ -217,13 +214,12 @@ def open_zarr_group(
         The zarr group stored in the partition.
     """
     _LOGGER.debug("Opening Zarr group %r", dirname)
-    store: zarr.Group = zarr.open_consolidated(  # type: ignore
-        fs.get_mapper(dirname))
+    store: zarr.Group = zarr.open_consolidated(fs.get_mapper(dirname))
     # Ignore unknown variables to retain.
     selected_variables = set(selected_variables) & set(
         store) if selected_variables is not None else set(store)
     variables = [
-        open_zarr_array(store[name], name)  # type: ignore
+        open_zarr_array(store[name], name)  # type: ignore[arg-type]
         for name in selected_variables
     ]
 
@@ -252,7 +248,7 @@ def update_zarr_array(
 
     if isinstance(array,
                   numpy.ma.MaskedArray) and store.fill_value is not None:
-        array = array.filled(store.fill_value)  # type: ignore
+        array = array.filled(store.fill_value)
 
     store[:] = array
 
@@ -303,8 +299,8 @@ def add_zarr_array(
         shape,
         chunks=True,
         dtype=variable.dtype,
-        compressor=variable.compressor,  # type: ignore
-        fill_value=variable.fill_value,  # type: ignore
+        compressor=variable.compressor,  # type: ignore[arg-type]
+        fill_value=variable.fill_value,  # type: ignore[arg-type]
         store=store,
         filters=variable.filters)
     write_zattrs(dirname, variable, fs)

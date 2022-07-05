@@ -74,7 +74,7 @@ class Date(abc.Partitioning):
 
     # pylint: disable=arguments-differ
     # False positive: the base method is static.
-    def _partition(
+    def _partition(  # type: ignore[override]
         self,
         selection: Tuple[Tuple[str, Any], ...],
     ) -> Tuple[str, ...]:
@@ -141,7 +141,7 @@ class Date(abc.Partitioning):
     def encode(
         self,
         partition: Tuple[Tuple[str, int], ...],
-    ) -> Tuple[numpy.datetime64]:
+    ) -> Tuple[Any, ...]:
         """Encode a partitioning scheme.
 
         Args:
@@ -162,7 +162,7 @@ class Date(abc.Partitioning):
 
     def decode(
         self,
-        values: Tuple[numpy.datetime64],
+        values: Tuple[Any, ...],
     ) -> Tuple[Tuple[str, int], ...]:
         """Decode a partitioning scheme.
 

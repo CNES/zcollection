@@ -12,7 +12,7 @@ import re
 
 import numpy
 
-from ..typing import DTypeLike
+from ..typing import DType
 
 # Parse the unit of numpy.timedelta64.
 PATTERN = re.compile(r"(?:datetime|timedelta)64\[(\w+)\]").search
@@ -23,15 +23,15 @@ RESOLUTION = [
 ]
 
 
-def _time64_unit(dtype: DTypeLike) -> str:
+def _time64_unit(dtype: DType[Any]) -> str:
     """Get the unit of time."""
-    match = PATTERN(dtype.name)  # type: ignore
+    match = PATTERN(dtype.name)
     if match is None:
         raise ValueError(f"dtype is not a time duration: {dtype}")
     return match.group(1)
 
 
-def _min_time64_unit(*args: DTypeLike) -> str:
+def _min_time64_unit(*args: DType[Any]) -> str:
     """Get the minimum unit of time."""
     index = min(RESOLUTION.index(_time64_unit(item)) for item in args)
     return RESOLUTION[index]
@@ -257,7 +257,7 @@ class Period:
 
     def is_null(self) -> bool:
         """True if period is ill formed (length is zero or less)"""
-        return self.end() <= self._begin  # type: ignore
+        return bool(self.end() <= self._begin)  # numpy.bool_ -> bool
 
     def length(self) -> numpy.timedelta64:
         """Return the length of the period."""
@@ -279,7 +279,7 @@ class Period:
     def __lt__(self, rhs: Any) -> bool:
         if not isinstance(rhs, Period):
             return NotImplemented
-        return self._last < rhs._begin  # type: ignore
+        return bool(self._last < rhs._begin)  # numpy.bool_ -> bool
 
     def shift(self, duration: numpy.timedelta64) -> None:
         """Shift the start and end by the specified amount.
@@ -375,7 +375,7 @@ class Period:
         if self.is_null():
             # null period isn't after
             return False
-        return point < self._begin  # type: ignore
+        return bool(point < self._begin)  # numpy.bool_ -> bool
 
     def is_before(self, point: numpy.datetime64) -> bool:
         """True if all of the period is prior to the passed point or end <=
@@ -398,7 +398,7 @@ class Period:
         if self.is_null():
             # null period isn't before anything
             return False
-        return self._last < point  # type: ignore
+        return bool(self._last < point)  # numpy.bool_ -> bool
 
     def intersects(self, other: "Period") -> bool:
         """True if the periods overlap in any way.

@@ -55,7 +55,7 @@ def local_fs(tmpdir, pytestconfig):
 if S3_IMPORT_EXCEPTION is None:
 
     @pytest.fixture
-    def s3_fs(s3):  # type: ignore (enabled only if S3 is available)
+    def s3_fs(s3):  # type: ignore[arg-type]
         """S3 filesystem."""
         return S3(s3)
 else:

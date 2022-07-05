@@ -42,8 +42,10 @@ def dask_workers(client: dask.distributed.Client,
     Raises:
         ValueError: If no dask workers are available.
     """
-    result = len(client.ncores()) if cores_only else sum(  # type: ignore
-        item for item in client.nthreads().values())  # type: ignore
+    result = len(
+        client.ncores()) if cores_only else sum(  # type: ignore[arg-type]
+            item
+            for item in client.nthreads().values())  # type: ignore[arg-type]
     if result == 0:
         raise RuntimeError("No dask workers available")
     return result
@@ -137,9 +139,10 @@ async def _available_workers(client: dask.distributed.Client) -> Set[str]:
     """
     while True:
         info = client.scheduler_info()
-        tasks = await client.scheduler.processing(workers=None)  # type: ignore
+        assert client.scheduler is not None
+        tasks = await client.scheduler.processing(workers=None)
         result = set(info["workers"]) - set(
-            k for k, v in tasks.items() if v)  # type: ignore
+            k for k, v in tasks.items() if v)  # type: ignore[arg-type]
         if result:
             return result
         await asyncio.sleep(0.1)
@@ -178,8 +181,9 @@ def calculation_stream(func: Callable,
         """
         return max_workers or len(client.scheduler_info()["workers"])
 
+    workers: Set[str] = set()
+
     result = []
-    workers = set()
     iterate = True
 
     while iterate:
@@ -187,8 +191,8 @@ def calculation_stream(func: Callable,
         while completed.count() < n_workers(max_workers):
             try:
                 if not workers:
-                    workers: Set[str] = client.sync(_available_workers,
-                                                    client)  # type: ignore
+                    workers = client.sync(  # type: ignore[arg-type]
+                        _available_workers, client)
                 completed.add(
                     client.submit(func,
                                   next(seq),
@@ -204,11 +208,12 @@ def calculation_stream(func: Callable,
         # able to continue.
         if iterate:
             try:
-                result += client.gather(completed.next_batch())  # type: ignore
+                result += client.gather(
+                    completed.next_batch())  # type: ignore[arg-type]
             except StopIteration:
                 pass
 
-    result += [item.result() for item in completed]  # type: ignore
+    result += [item.result() for item in completed]  # type: ignore[arg-type]
     return result
 
 

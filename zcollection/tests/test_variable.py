@@ -62,7 +62,9 @@ def test_variable_not_equal():
     assert variable._not_equal(numpy.datetime64("NaT"), 1) is True
 
 
-def test_variable_as_asarray():
+def test_variable_as_asarray(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test converting array like to a dask array."""
     arr = numpy.arange(10)
     da, fill_value = variable._asarray(arr)

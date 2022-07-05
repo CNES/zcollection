@@ -161,8 +161,7 @@ class Variable:
         compressor = self.compressor
         compressor = compressor.get_config(
         ) if compressor is not None else None
-        filters = tuple(item.get_config()  # type: ignore
-                        for item in self.filters)
+        filters = tuple(item.get_config() for item in self.filters)
 
         return dict(attrs=sorted((item.get_config() for item in self.attrs)),
                     compressor=compressor,
@@ -184,13 +183,14 @@ class Variable:
             new variable.
         """
 
-        def get_codec(codec):
+        def get_codec(codec) -> Optional[numcodecs.abc.Codec]:
             """Get the codec from its configuration."""
             return zarr.codecs.get_codec(codec) if codec is not None else None
 
         dtype = zarr.meta.decode_dtype(data["dtype"])
-        filters: Sequence[numcodecs.abc.Codec] = tuple(  # type: ignore
-            get_codec(item) for item in data["filters"])
+        filters: Sequence[numcodecs.abc.Codec] = tuple(
+            zarr.codecs.get_codec(item) for item in data["filters"]
+            if item is not None)
 
         return Variable(
             data["name"],

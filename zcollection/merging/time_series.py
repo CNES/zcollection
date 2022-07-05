@@ -45,14 +45,12 @@ def merge_time_series(
     """
     existing_axis = existing_ds.variables[axis].values
     inserted_axis = inserted_ds.variables[axis].values
-    existing_period = period.Period(
-        existing_axis.min(),  # type: ignore
-        existing_axis.max(),  # type: ignore
-        within=True)
-    inserted_period = period.Period(
-        inserted_axis.min(),  # type: ignore
-        inserted_axis.max(),  # type: ignore
-        within=True)
+    existing_period = period.Period(existing_axis.min(),
+                                    existing_axis.max(),
+                                    within=True)
+    inserted_period = period.Period(inserted_axis.min(),
+                                    inserted_axis.max(),
+                                    within=True)
 
     relation = inserted_period.get_relation(existing_period)
 
@@ -75,6 +73,7 @@ def merge_time_series(
     if relation.is_before_overlapping():
         # pylint: disable=comparison-with-callable
         indices = numpy.where(
+            # comparison between ndarray and datetime64
             existing_axis > intersection.end())[0]  # type: ignore
         # pylint: enable=comparison-with-callable
         return inserted_ds.concat(
@@ -85,6 +84,7 @@ def merge_time_series(
     if relation.is_after_overlapping():
         # pylint: disable=comparison-with-callable
         indices = numpy.where(
+            # comparison between ndarray and datetime64
             existing_axis < intersection.begin)[0]  # type: ignore
         # pylint: enable=comparison-with-callable
         return existing_ds.isel({
@@ -92,11 +92,13 @@ def merge_time_series(
         }).concat(inserted_ds, partitioning_dim)
 
     assert relation.is_inside()
+    # comparison between ndarray and datetime64
     index = numpy.where(existing_axis < intersection.begin)[0]  # type: ignore
     before = existing_ds.isel(
         {partitioning_dim: slice(0, index[-1] + 1, None)})
 
     # pylint: disable=comparison-with-callable
+    # comparison between ndarray and datetime64
     index = numpy.where(existing_axis > intersection.end())[0]  # type: ignore
     # pylint: enable=comparison-with-callable
     after = existing_ds.isel(

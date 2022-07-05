@@ -5,46 +5,41 @@
 """
 Typing
 ======
-
-.. py:data:: NDArray
-
-    A numpy tensor with any type.
-
-.. py:data:: NDMaskedArray
-
-    A numpy masked tensor with any type.
-
-.. py:data:: ArrayLike
-
-    Objects that can be converted to arrays
-
-.. py:data:: NDArrayLike
-
-    Anything that can be coerced into numpy.dtype.
 """
-from typing import TYPE_CHECKING, Any, Union
-import sys
+from typing import Any, Protocol, Tuple, TypeVar
 
-import dask.array.core
 import numpy
 import numpy.typing
-import packaging.version
 
-#: An array object represents a multidimensional, homogeneous array of
-#: fixed-size items.
-if TYPE_CHECKING and packaging.version.Version(
-        numpy.__version__) > packaging.version.Version(
-            "1.20") and sys.version_info > (3, 8):
-    NDArray = numpy.typing.NDArray  # pragma: no cover
-    # pylint: disable=protected-access
-    # ScalarType is needed to define NDMaskedArray.
-    NDMaskedArray = numpy.ma.MaskedArray[Any, numpy.dtype[
-        numpy.typing._generic_alias.ScalarType]]  # pragma: no cover
-    # pylint: enable=protected-access
-else:
-    NDArray = numpy.ndarray  # pragma: no cover
-    NDMaskedArray = numpy.ma.MaskedArray  # pragma: no cover
+# pylint: disable=invalid-name
+_DType_co = TypeVar("_DType_co", covariant=True, bound="numpy.dtype[Any]")
+_ScalarType_co = TypeVar("_ScalarType_co", bound=numpy.generic, covariant=True)
+# pylint: enable=invalid-name
 
-DTypeLike = numpy.typing.DTypeLike
+#: A numpy tensor with any type.
+NDArray = numpy.typing.NDArray  # pragma: no cover
 
-ArrayLike = Union[dask.array.core.Array, numpy.typing.ArrayLike]
+#: A numpy masked tensor with any type.
+NDMaskedArray = numpy.ma.MaskedArray[
+    Any, numpy.dtype[_ScalarType_co]]  # pragma: no cover
+
+#: Anything that can be coerced into numpy.dtype.
+DTypeLike = numpy.typing.DTypeLike  # pragma: no cover
+
+#: numpy.dtype.
+DType = numpy.dtype[_ScalarType_co]  # pragma: no cover
+
+
+class ArrayLike(Protocol[_DType_co]):
+    """Protocol for array-like objects."""
+
+    def __array__(self) -> numpy.ndarray[Any, _DType_co]:
+        ...
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        """The shape of the array."""
+        # pylint: disable=unnecessary-ellipsis
+        # Make checker happy.
+        ...
+        # pylint: enable=unnecessary-ellipsis

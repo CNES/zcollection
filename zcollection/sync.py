@@ -13,14 +13,12 @@ class Sync(abc.ABC):  # pragma: no cover
     """Interface of the classes handling the synchronization of concurrent
     accesses."""
 
-    @classmethod
     @abc.abstractmethod
-    def __enter__(cls) -> bool:
+    def __enter__(self) -> bool:
         ...
 
-    @classmethod
     @abc.abstractmethod
-    def __exit__(cls, exc_type, exc_value, traceback) -> None:
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
         ...
 
 

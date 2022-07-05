@@ -75,6 +75,14 @@ class PartitionCallable(Protocol):
     returns a result.
     """
 
+    @property
+    def __name__(self) -> str:
+        """Name of the callable."""
+        # pylint: disable=unnecessary-ellipsis
+        # Make checker happy.
+        ...
+        # pylint: enable=unnecessary-ellipsis
+
     def __call__(self, ds: dataset.Dataset, *args, **kwargs) -> Any:
         """Call the partition function.
 
@@ -232,7 +240,8 @@ def _load_and_apply_indexer(
     ds = storage.open_zarr_group(partition, fs, selected_variables)
     arrays = []
     _ = {
-        arrays.append(ds.isel({partition_properties.dim: indexer}))
+        arrays.append(  # type: ignore[func-returns-value]
+            ds.isel({partition_properties.dim: indexer}))
         for indexer in items
     }
     return arrays
@@ -273,7 +282,7 @@ def _load_indexed(
 def variables(
     metadata: meta.Dataset,
     selected_variables: Optional[Iterable[str]] = None
-) -> Tuple[dataset.Variable]:
+) -> Tuple[dataset.Variable, ...]:
     """Return the variables defined in the dataset.
 
     Args:
@@ -313,7 +322,8 @@ def build_indexer_args(
     # indexer.
     indexers_map: Dict[Tuple[Tuple[str, int], ...], List[slice]] = {}
     _ = {
-        indexers_map.setdefault(partition_scheme, []).append(indexer)
+        indexers_map.setdefault(  # type: ignore[func-returns-value]
+            partition_scheme, []).append(indexer)
         for partition_scheme, indexer in indexer
     }
     # Filter the selected partitions
@@ -447,7 +457,7 @@ class Collection:
                       partitioning=self.partitioning.get_config())
 
         with self.fs.open(config, mode="w") as stream:
-            json.dump(params, stream, indent=4)  # type: ignore
+            json.dump(params, stream, indent=4)
 
     def is_readonly(self) -> bool:
         """Return True if the collection is read-only."""
@@ -607,7 +617,7 @@ class Collection:
             ('year=2019/month=01/day=01', 'year=2019/month=01/day=02/', ...)
         """
         if isinstance(filters, str):
-            expr = expression.Expression(filters)
+            expr: Any = expression.Expression(filters)
         elif callable(filters):
             expr = filters
         else:
@@ -794,6 +804,7 @@ class Collection:
 
             # Compute the slice of the given partition.
             start = 0
+            indices = slice(0, 0, None)
             for ix, ds in enumerate(groups):
                 size = ds[self.axis].size
                 indices = slice(start, start + size, None)
@@ -806,10 +817,8 @@ class Collection:
             ds.concat(groups, self.partition_properties.dim)
 
             # Finally, apply the function.
-            return (
-                self.partitioning.parse(partition),
-                indices,  # type: ignore
-                func(ds, *args, **kwargs))
+            return (self.partitioning.parse(partition), indices,
+                    func(ds, *args, **kwargs))
 
         partitions = tuple(self.partitions(filters=filters))
         bag = dask.bag.core.from_sequence(partitions,
@@ -962,17 +971,12 @@ class Collection:
         _LOGGER.info("Updating of the %r variable in the collection", variable)
         client = utilities.get_client()
 
-        local_func = _wrap_update_func(func=func,
-                                       fs=self.fs,
-                                       selected_variables=selected_variables,
-                                       variable=variable,
-                                       *args,
-                                       **kwargs)
+        local_func = _wrap_update_func(func, self.fs, variable,
+                                       selected_variables, *args, **kwargs)
         batchs = utilities.split_sequence(
             tuple(self.partitions(filters=filters)), partition_size
             or utilities.dask_workers(client, cores_only=True))
-        awaitables = client.map(local_func, tuple(batchs),
-                                key=func.__name__)  # type: ignore
+        awaitables = client.map(local_func, tuple(batchs), key=func.__name__)
         storage.execute_transaction(client, self.synchronizer, awaitables)
 
     def _bag_from_partitions(
@@ -1081,15 +1085,13 @@ class Collection:
             The iterator over the partitions and the zarr groups.
         """
         for item in self.partitions():
-            yield (
-                self._relative_path(item) if relative else item,
-                zarr.open_consolidated(  # type: ignore
-                    self.fs.get_mapper(item)))
+            yield (self._relative_path(item) if relative else item,
+                   zarr.open_consolidated(self.fs.get_mapper(item)))
 
     def variables(
         self,
         selected_variables: Optional[Iterable[str]] = None
-    ) -> Tuple[dataset.Variable]:
+    ) -> Tuple[dataset.Variable, ...]:
         """Return the variables of the collection.
 
         Args:

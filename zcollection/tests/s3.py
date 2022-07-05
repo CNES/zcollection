@@ -113,7 +113,7 @@ def s3(s3_base):
     # pylint: enable=redefined-outer-name, unused-argument
 
 
-class S3Path(type(pathlib.Path())):
+class S3Path(type(pathlib.Path())):  # type: ignore[misc]
     """Handle S3 path on multiple platforms."""
 
     def __str__(self) -> str:
