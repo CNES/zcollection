@@ -6,7 +6,13 @@
 Typing
 ======
 """
-from typing import Any, Protocol, Tuple, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, Tuple, TypeVar
+from types import GenericAlias
+
+try:
+    from typing_extensions import TypeAlias
+except ImportError:
+    from typing import TypeAlias  # type: ignore[attr-defined,no-redef]
 
 import numpy
 import numpy.typing
@@ -16,24 +22,26 @@ _DType_co = TypeVar("_DType_co", covariant=True, bound="numpy.dtype[Any]")
 _ScalarType_co = TypeVar("_ScalarType_co", bound=numpy.generic, covariant=True)
 # pylint: enable=invalid-name
 
-#: A numpy tensor with any type.
-NDArray = numpy.typing.NDArray  # pragma: no cover
+if TYPE_CHECKING:
+    #: numpy.dtype.
+    DType = numpy.dtype[_ScalarType_co]
+    #: A numpy masked tensor with any type.
+    NDMaskedArray = numpy.ma.MaskedArray[Any, DType]  # pragma: no cover
+else:
+    DType = GenericAlias(numpy.dtype, (_ScalarType_co, ))
+    NDMaskedArray = GenericAlias(numpy.ma.MaskedArray, (Any, DType))
 
-#: A numpy masked tensor with any type.
-NDMaskedArray = numpy.ma.MaskedArray[
-    Any, numpy.dtype[_ScalarType_co]]  # pragma: no cover
+#: A numpy tensor with any type.
+NDArray: TypeAlias = numpy.typing.NDArray  # pragma: no cover
 
 #: Anything that can be coerced into numpy.dtype.
-DTypeLike = numpy.typing.DTypeLike  # pragma: no cover
-
-#: numpy.dtype.
-DType = numpy.dtype[_ScalarType_co]  # pragma: no cover
+DTypeLike: TypeAlias = numpy.typing.DTypeLike  # pragma: no cover
 
 
 class ArrayLike(Protocol[_DType_co]):
     """Protocol for array-like objects."""
 
-    def __array__(self) -> numpy.ndarray[Any, _DType_co]:
+    def __array__(self) -> NDArray:
         ...
 
     @property
