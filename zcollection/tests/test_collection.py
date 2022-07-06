@@ -536,11 +536,6 @@ def test_indexer(
     assert numpy.allclose(ds1.variables["var1"].values,
                           ds2.variables["var1"].values)
 
-    ds1 = zcollection.load_indexed(
-        dict((ix, (item, )) for ix, item in enumerate(indexers)))
-    for ix, _ in enumerate(indexers):
-        assert numpy.all(ds1[ix].variables["var1"].values == ix)
-
 
 def test_variables():
     """Test the listing of the variables in a collection."""

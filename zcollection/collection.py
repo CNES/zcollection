@@ -247,38 +247,6 @@ def _load_and_apply_indexer(
     return arrays
 
 
-def _load_indexed(
-    args: Tuple[Any, Sequence[Tuple[Tuple[Tuple[str, int], ...], slice]]],
-    fs: fsspec.AbstractFileSystem,
-    partition_handler: partitioning.Partitioning,
-    partition_properties: PartitioningProperties,
-    selected_variables: Optional[Iterable[str]],
-) -> Tuple[Any, dataset.Dataset]:
-    """Load an indexed element in a dataset.
-
-    Args:
-        args: Tuple containing the key and its indexer.
-        fs: The file system that the partition is stored on.
-        partition_handler: The partitioning handler.
-        partition_properties: The partitioning properties.
-        selected_variable: The selected variables to load.
-
-    Returns:
-        A tuple containing the key and the loaded dataset.
-    """
-    arrays = []
-    for partition_scheme, section in args[1]:
-        partition = fs.sep.join(
-            (partition_properties.dir,
-             partition_handler.join(partition_scheme, fs.sep)))
-        ds = storage.open_zarr_group(partition, fs, selected_variables)
-        arrays.append(ds.isel({partition_properties.dim: section}))
-    array = arrays.pop(0)
-    if arrays:
-        array = array.concat(arrays, partition_properties.dim)
-    return (args[0], array)
-
-
 def variables(
     metadata: meta.Dataset,
     selected_variables: Optional[Iterable[str]] = None
@@ -900,37 +868,6 @@ class Collection:
         if arrays:
             array = array.concat(arrays, self.partition_properties.dim)
         return array
-
-    def load_indexed(
-        self,
-        indexer: Dict[Any, Indexer],
-        *,
-        selected_variables: Optional[Iterable[str]] = None,
-    ) -> Dict[Any, dataset.Dataset]:
-        """Load each indexed element of the collection in a dictionary. The
-        dictionary keys are the indexer keys.
-
-        Args:
-            indexer: The indexer to apply.
-            selected_variables: A list of variables to retain from the
-                collection. If None, all variables are kept.
-
-        Returns:
-            A dictionary containing the indexed elements of the collection.
-        """
-        client = utilities.get_client()
-
-        bag = dask.bag.core.from_sequence(indexer.items(),
-                                          npartitions=utilities.dask_workers(
-                                              client, cores_only=True))
-        return dict(
-            bag.map(
-                _load_indexed,
-                fs=self.fs,
-                partition_handler=self.partitioning,
-                partition_properties=self.partition_properties,
-                selected_variables=selected_variables,
-            ).compute())
 
     # pylint: disable=method-hidden
     def update(
