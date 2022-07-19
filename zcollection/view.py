@@ -608,6 +608,7 @@ class View:
         filters: collection.PartitionFilter = None,
         partition_size: Optional[int] = None,
         npartitions: Optional[int] = None,
+        selected_variables: Optional[Iterable[str]] = None,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the view.
@@ -621,6 +622,9 @@ class View:
                 method.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
+            selected_variables: A list of variables to retain from the view.
+                If None, all variables are loaded. Useful to load only a
+                subset of the view.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
@@ -659,8 +663,9 @@ class View:
 
         client = utilities.get_client()
         datasets_list = tuple(
-            _load_datasets_list(client, self.base_dir, self.fs, self.view_ref,
-                                self.metadata, self.partitions(filters)))
+            _load_datasets_list(client, self.base_dir, self.fs,
+                                self.view_ref, self.metadata,
+                                self.partitions(filters), selected_variables))
         bag = dask.bag.core.from_sequence(datasets_list,
                                           partition_size=partition_size,
                                           npartitions=npartitions)
@@ -675,6 +680,7 @@ class View:
         filters: collection.PartitionFilter = None,
         partition_size: Optional[int] = None,
         npartitions: Optional[int] = None,
+        selected_variables: Optional[Iterable[str]] = None,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the view with some overlap.
@@ -689,6 +695,9 @@ class View:
                 method.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
+            selected_variables: A list of variables to retain from the view.
+                If None, all variables are loaded. Useful to load only a
+                subset of the view.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
@@ -761,8 +770,9 @@ class View:
 
         client = utilities.get_client()
         datasets_list = tuple(
-            _load_datasets_list(client, self.base_dir, self.fs, self.view_ref,
-                                self.metadata, self.partitions(filters)))
+            _load_datasets_list(client, self.base_dir, self.fs,
+                                self.view_ref, self.metadata,
+                                self.partitions(filters), selected_variables))
         bag = dask.bag.core.from_sequence(datasets_list,
                                           partition_size=partition_size,
                                           npartitions=npartitions)

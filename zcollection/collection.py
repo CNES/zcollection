@@ -641,6 +641,7 @@ class Collection:
         filters: PartitionFilter = None,
         partition_size: Optional[int] = None,
         npartitions: Optional[int] = None,
+        selected_variables: Optional[Sequence[str]] = None,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the collection.
@@ -653,6 +654,8 @@ class Collection:
                 documentation of the :meth:`partitions` method.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
+            selected_variables: A list of variables to retain from the
+                collection. If None, all variables are kept.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
@@ -671,6 +674,7 @@ class Collection:
         def _wrap(
             partition: str,
             func: PartitionCallable,
+            selected_variables: Optional[Sequence[str]],
             *args,
             **kwargs,
         ) -> Tuple[Tuple[Tuple[str, int], ...], Any]:
@@ -679,20 +683,23 @@ class Collection:
             Args:
                 func: The function to apply.
                 partition: The partition to apply the function on.
+                selected_variables: The list of variables to retain from the
+                    partition.
                 *args: The positional arguments to pass to the function.
                 **kwargs: The keyword arguments to pass to the function.
 
             Returns:
                 The result of the function.
             """
-            ds = storage.open_zarr_group(partition, self.fs)
+            ds = storage.open_zarr_group(partition, self.fs,
+                                         selected_variables)
             return self.partitioning.parse(partition), func(
                 ds, *args, **kwargs)
 
         bag = dask.bag.core.from_sequence(self.partitions(filters=filters),
                                           partition_size=partition_size,
                                           npartitions=npartitions)
-        return bag.map(_wrap, func, *args, **kwargs)
+        return bag.map(_wrap, func, selected_variables, *args, **kwargs)
         # pylint: enable=duplicate-code
 
     def map_overlap(
@@ -703,6 +710,7 @@ class Collection:
         filters: PartitionFilter = None,
         partition_size: Optional[int] = None,
         npartition: Optional[int] = None,
+        selected_variables: Optional[Sequence[str]] = None,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the collection with some
@@ -717,6 +725,8 @@ class Collection:
                 documentation of the :meth:`partitions` method.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
+            selected_variables: A list of variables to retain from the
+                collection. If None, all variables are kept.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
@@ -737,6 +747,7 @@ class Collection:
             partition: str,
             func: PartitionCallable,
             partitions: Tuple[str, ...],
+            selected_variables: Optional[Sequence[str]],
             depth: int,
             *args,
             **kwargs,
@@ -746,9 +757,10 @@ class Collection:
             Args:
                 partition: The partition to apply the function on.
                 func: The function to apply.
+                partitions: The partitions to apply the function on.
+                selected_variables: The list of variables to retain from the
+                    partition.
                 depth: The depth of the overlap between the partitions.
-                base_dir: The base directory of the collection.
-                partitioning: The partitioning scheme of the collection.
                 *args: The positional arguments to pass to the function.
                 **kwargs: The keyword arguments to pass to the function.
 
@@ -766,7 +778,7 @@ class Collection:
 
             # Load the datasets for each selected partition.
             groups = [
-                storage.open_zarr_group(partition, self.fs)
+                storage.open_zarr_group(partition, self.fs, selected_variables)
                 for partition in selected_partitions
             ]
 
@@ -792,7 +804,8 @@ class Collection:
         bag = dask.bag.core.from_sequence(partitions,
                                           partition_size=partition_size,
                                           npartitions=npartition)
-        return bag.map(_wrap, func, partitions, depth, *args, **kwargs)
+        return bag.map(_wrap, func, partitions, selected_variables, depth,
+                       *args, **kwargs)
 
     def load(
         self,
