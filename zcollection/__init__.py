@@ -7,7 +7,13 @@ Handle a collection of Zarr groups.
 ===================================
 """
 from . import merging, partitioning
-from .collection import Collection, Indexer, PartitionCallable, PartitionFilter
+from .collection import (
+    Collection,
+    Indexer,
+    PartitionCallable,
+    PartitionFilter,
+    UpdateCallable,
+)
 from .convenience import (
     create_collection,
     create_view,
@@ -32,6 +38,7 @@ __all__ = [
     "PartitionCallable",
     "PartitionFilter",
     "partitioning",
+    "UpdateCallable",
     "Variable",
     "version",
     "View",
