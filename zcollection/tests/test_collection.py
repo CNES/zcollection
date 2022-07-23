@@ -210,13 +210,21 @@ def test_update(
 
     def update(ds: dataset.Dataset):
         """Update function used for this test."""
-        return ds.variables["var1"].values * -1 + 3
+        return dict(var2=ds.variables["var1"].values * -1 + 3)
 
-    zcollection.update(update, "var2")  # type: ignore
+    zcollection.update(update)  # type: ignore
 
     assert numpy.allclose(data.variables["var2"].values,
                           data.variables["var1"].values * -1 + 3,
                           rtol=0)
+
+    def invalid_var_name(ds: dataset.Dataset):
+        """Update function used to test if the user wants to update a non-
+        existent variable name."""
+        return dict(var99=ds.variables["var1"].values * -1 + 3)
+
+    with pytest.raises(ValueError):
+        zcollection.update(invalid_var_name)  # type: ignore
 
 
 @pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
@@ -367,13 +375,13 @@ def test_add_update(
     data = zcollection.load()
     assert data is not None
 
-    def update_1(ds):
+    def update_1(ds, varname):
         """Update function used for this test."""
-        return ds.variables["var1"].data * 201.5
+        return {varname: ds.variables["var1"].data * 201.5}
 
-    def update_2(ds):
+    def update_2(ds, varname):
         """Update function used for this test."""
-        return ds.variables["var1"].data // 5
+        return {varname: ds.variables["var1"].data // 5}
 
     zcollection.update(update_1, new1.name)  # type: ignore
     zcollection.update(update_2, new2.name)  # type: ignore

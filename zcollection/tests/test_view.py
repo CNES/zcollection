@@ -105,9 +105,9 @@ def test_view(
     ds = instance.load()
     assert ds is not None
 
-    def update(ds):
+    def update(ds, varname):
         """Update function used for this test."""
-        return ds.variables["var1"].values * 0 + 5
+        return {varname: ds.variables["var1"].values * 0 + 5}
 
     instance.update(update, "var3")  # type: ignore
 

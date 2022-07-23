@@ -90,7 +90,7 @@ ds.variables["var3"].values
 # %%
 # The same principle used by the collection allows to
 # :py:meth:`update<zcollection.view.View.update>` the variables.
-view.update(lambda ds: ds["var1"].values * 0 + 1, "var3")
+view.update(lambda ds: dict(var3=ds["var1"].values * 0 + 1))
 
 # %%
 ds = view.load()
@@ -100,7 +100,7 @@ var3
 
 # *Warning*: The variables of the reference collection cannot be edited.
 try:
-    view.update(lambda ds: ds["var2"].values * 0, "var2")
+    view.update(lambda ds: dict(var2=ds["var2"].values * 0))
 except ValueError as exc:
     print(str(exc))
 

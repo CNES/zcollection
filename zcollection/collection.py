@@ -49,6 +49,7 @@ from . import (
     sync,
     utilities,
 )
+from .typing import ArrayLike
 
 #: Function type to load and call a callback function of type
 #: :class:`PartitionCallable`.
@@ -118,6 +119,39 @@ class MapCallable(Protocol):
     #: pylint: enable=too-few-public-methods
 
 
+class UpdateCallable(Protocol):
+    """Protocol for update callables.
+
+    A callable update is a function that accepts a data set and returns
+    a dictionary of arrays to update.
+    """
+
+    @property
+    def __name__(self) -> str:
+        """Name of the callable."""
+        # pylint: disable=unnecessary-ellipsis
+        # Make checker happy.
+        ...
+        # pylint: enable=unnecessary-ellipsis
+
+    def __call__(self, ds: dataset.Dataset, *args,
+                 **kwargs) -> Dict[str, ArrayLike]:
+        """Call the update function.
+
+        Args:
+            ds: Dataset to update.
+            *args: Positional arguments.
+            **kwargs: Keyword arguments.
+
+        Returns:
+            Dictionary of arrays to update.
+        """
+        # pylint: disable=unnecessary-ellipsis
+        # Mandatory to make Pylance happy.
+        ...
+        # pylint: enable=unnecessary-ellipsis
+
+
 @dataclasses.dataclass(frozen=True)
 class PartitioningProperties:
     """Properties of a partition."""
@@ -128,9 +162,8 @@ class PartitioningProperties:
 
 
 def _wrap_update_func(
-    func: PartitionCallable,
+    func: UpdateCallable,
     fs: fsspec.AbstractFileSystem,
-    variable: str,
     selected_variables: Optional[Iterable[str]],
     *args,
     **kwargs,
@@ -139,7 +172,7 @@ def _wrap_update_func(
     returning variable's values as a numpy array.
 
     Args:
-        func: Function to apply on each partition.
+        func: Function to apply to update each partition.
         fs: File system on which the Zarr dataset is stored.
         variable: Name of the variable to update.
         selected_variables: Name of the variables to load from the dataset.
@@ -156,14 +189,15 @@ def _wrap_update_func(
     def wrap_function(partitions: Iterable[str]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
-            array = func(
+            dictionary = func(
                 storage.open_zarr_group(partition, fs, selected_variables),
                 *args, **kwargs)
-            storage.update_zarr_array(
-                dirname=fs.sep.join((partition, variable)),
-                array=array,
-                fs=fs,
-            )
+            tuple(
+                storage.update_zarr_array(  # type: ignore[func-returns-value]
+                    dirname=fs.sep.join((partition, varname)),
+                    array=array,
+                    fs=fs,
+                ) for varname, array in dictionary.items())
 
     return wrap_function
 
@@ -885,8 +919,7 @@ class Collection:
     # pylint: disable=method-hidden
     def update(
         self,
-        func: PartitionCallable,
-        variable: str,
+        func: UpdateCallable,
         /,
         *args,
         filters: Optional[PartitionFilter] = None,
@@ -899,7 +932,6 @@ class Collection:
 
         Args:
             func: The function to apply on each partition.
-            variable: The variable to update.
             *args: The positional arguments to pass to the function.
             filters: The expression used to filter the partitions to update.
             partition_size: The number of partitions to update in a single
@@ -914,15 +946,28 @@ class Collection:
             >>> import dask.array
             >>> import zcollection
             >>> def ones(ds):
-            ...     return ds.variables["var1"].values * 0 + 1
+            ...     return dict(var2=ds.variables["var1"].values * 0 + 1)
             >>> collection = zcollection.Collection("my_collection", mode="w")
-            >>> collection.update(ones, "var2")
+            >>> collection.update(ones)
         """
-        _LOGGER.info("Updating of the %r variable in the collection", variable)
-        client = utilities.get_client()
+        try:
+            one_partition = next(self.partitions(filters=filters))
+        except StopIteration:
+            return
+        func_result = func(
+            storage.open_zarr_group(one_partition, self.fs,
+                                    selected_variables), *args, **kwargs)
+        unknown_variables = set(func_result) - set(
+            self.metadata.variables.keys())
+        if len(unknown_variables):
+            raise ValueError(f"Unknown variables: {unknown_variables}")
 
-        local_func = _wrap_update_func(func, self.fs, variable,
-                                       selected_variables, *args, **kwargs)
+        local_func = _wrap_update_func(func, self.fs, selected_variables,
+                                       *args, **kwargs)
+
+        _LOGGER.info("Updating of the (%s) variable in the collection",
+                     ", ".join(repr(item) for item in func_result))
+        client = utilities.get_client()
         batchs = utilities.split_sequence(
             tuple(self.partitions(filters=filters)), partition_size
             or utilities.dask_workers(client, cores_only=True))

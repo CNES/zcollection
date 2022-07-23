@@ -12,7 +12,10 @@ from types import GenericAlias
 try:
     from typing_extensions import TypeAlias
 except ImportError:
+    # pylint: disable=ungrouped-imports
+    # TypeAlias is defined in typing starting from 3.10
     from typing import TypeAlias  # type: ignore[attr-defined,no-redef]
+    # pylint: enable=ungrouped-imports
 
 import numpy
 import numpy.typing

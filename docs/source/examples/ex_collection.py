@@ -160,10 +160,10 @@ ds.variables["var2"].values
 # anywhere the variable ``var1`` is defined.
 def ones(ds):
     """Returns a variable with ones everywhere."""
-    return ds.variables["var1"].values * 0 + 1
+    return dict(var2=ds.variables["var1"].values * 0 + 1)
 
 
-collection.update(ones, "var2")
+collection.update(ones)
 ds = collection.load()
 assert ds is not None
 ds.variables["var2"].values

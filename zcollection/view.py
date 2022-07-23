@@ -526,8 +526,7 @@ class View:
 
     def update(
         self,
-        func: collection.PartitionCallable,
-        variable: str,
+        func: collection.UpdateCallable,
         /,
         *args,
         filters: collection.PartitionFilter = None,
@@ -539,8 +538,7 @@ class View:
 
         Args:
             func: The function to apply to calculate the new values for the
-                target variable.
-            variable: The name of the variable to update.
+                target variables.
             filters: The predicate used to filter the partitions to drop.
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
@@ -562,14 +560,12 @@ class View:
         Example:
             >>> def temp_celsius_to_kelvin(
             ...     dataset: zcollection.dataset.Dataset,
-            ... ) -> numpy.ndarray:
-            ...     return dataset["temperature"].values + 273,15
-            >>> view.update(update_temperature, "temperature_kelvin")
+            ... ) -> Dict[str, numpy.ndarray]:
+            ...     return dict(
+            ...         temperature_kelvin=dataset["temperature"].values + 273,
+            ...         15)
+            >>> view.update(update_temperature)
         """
-        _LOGGER.info("Updating variable %r", variable)
-        _assert_variable_handled(self.view_ref.metadata, self.metadata,
-                                 variable)
-
         client = utilities.get_client()
 
         datasets_list = tuple(
@@ -577,18 +573,29 @@ class View:
                                 self.view_ref, self.metadata,
                                 self.partitions(filters), selected_variables))
 
+        func_result = func(datasets_list[0][0], *args, **kwargs)
+        tuple(
+            map(
+                lambda varname: _assert_variable_handled(
+                    self.view_ref.metadata, self.metadata, varname),
+                func_result))
+        _LOGGER.info("Updating variable %s",
+                     ", ".join(repr(item) for item in func_result))
+
         def wrap_function(parameters: Iterable[Tuple[dataset.Dataset, str]],
-                          base_dir: str):
+                          base_dir: str) -> None:
             """Wrap the function to be applied to the dataset."""
             for ds, partition in parameters:
                 # Applying function on partition's data
-                array = func(ds, *args, **kwargs)
-
-                storage.update_zarr_array(
-                    dirname=self.fs.sep.join((base_dir, partition, variable)),
-                    array=array,
-                    fs=self.fs,
-                )
+                dictionary = func(ds, *args, **kwargs)
+                tuple(
+                    storage.
+                    update_zarr_array(  # type: ignore[func-returns-value]
+                        dirname=self.fs.sep.join((base_dir, partition,
+                                                  varname)),
+                        array=array,
+                        fs=self.fs,
+                    ) for varname, array in dictionary.items())
 
         batchs = utilities.split_sequence(
             datasets_list, partition_size
