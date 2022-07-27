@@ -66,8 +66,13 @@ view = zcollection.create_view("/my_view",
 pprint.pprint(fs.listdir("/my_view"))
 
 # %%
-# But you can load the data of the view using the following command:
-view.load()
+# It's not yet possible to read data from the view, as it does not yet have any
+# data. To minimize the risk of mismatches with the reference view, the data
+# present in the view drives the range of data that can be read.
+try:
+    view.load()
+except ValueError as err:
+    print(err)
 
 # %%
 # Such a state of the view is not very interesting. But it is possible to
