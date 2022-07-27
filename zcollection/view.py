@@ -225,6 +225,16 @@ def _load_datasets_list(
                   client.gather(futures))  # type: ignore[arg-type]
 
 
+def _assert_have_variables(meta: meta.Dataset) -> None:
+    """Assert that the current view has variables.
+
+    Args:
+        meta: The metadata of the dataset.
+    """
+    if not len(meta.variables):
+        raise ValueError("The view has no variables")
+
+
 class View:
     """View on a reference collection.
 
@@ -485,6 +495,7 @@ class View:
             >>> view.load(filters="time == '2020-01-01'")
             >>> view.load(filters=lambda x: x["time"] == "2020-01-01")
         """
+        _assert_have_variables(self.metadata)
         if indexer is not None:
             arguments = tuple(
                 collection.build_indexer_args(self.view_ref,
@@ -566,6 +577,7 @@ class View:
             ...         15)
             >>> view.update(update_temperature)
         """
+        _assert_have_variables(self.metadata)
         client = utilities.get_client()
 
         datasets_list = tuple(
@@ -667,6 +679,8 @@ class View:
             ds, partition = arguments
             return self.view_ref.partitioning.parse(partition), func(
                 ds, *args, **kwargs)
+
+        _assert_have_variables(self.metadata)
 
         client = utilities.get_client()
         datasets_list = tuple(
@@ -774,6 +788,8 @@ class View:
             return (self.view_ref.partitioning.parse(partition), indices,
                     func(ds, *args, **kwargs))
             # pylint: enable=too-many-locals
+
+        _assert_have_variables(self.metadata)
 
         client = utilities.get_client()
         datasets_list = tuple(

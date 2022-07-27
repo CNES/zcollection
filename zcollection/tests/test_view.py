@@ -37,8 +37,8 @@ def test_view(
     assert isinstance(str(instance), str)
 
     # No variable recorded, so no data can be loaded
-    ds = instance.load()
-    assert ds is None
+    with pytest.raises(ValueError):
+        instance.load()
 
     var = meta.Variable(
         name="var2",
