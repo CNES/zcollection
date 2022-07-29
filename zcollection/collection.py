@@ -396,7 +396,8 @@ class Collection:
         self.partitioning = partition_handler
         #: The partitioning properties (base directory and dimension).
         self.partition_properties = PartitioningProperties(
-            partition_base_dir.rstrip(self.fs.sep),
+            utilities.normalize_path(self.fs,
+                                     partition_base_dir.rstrip(self.fs.sep)),
             ds.variables[axis].dimensions[0],
         )
         #: The access mode of the collection.

@@ -9,6 +9,7 @@ Testing utilities
 import pathlib
 
 import dask.distributed
+import fsspec
 import pytest
 
 from .. import utilities
@@ -223,3 +224,19 @@ def test_split_sequence():
     ]
     with pytest.raises(ValueError):
         list(utilities.split_sequence(list(range(10)), 0))
+
+
+def test_normalize_path():
+    """Test the normalize_path function."""
+    fs = fsspec.filesystem("file")
+    assert utilities.normalize_path(fs, "/") == "/"
+    assert utilities.normalize_path(fs, "./foo") == str(
+        pathlib.Path(".").resolve() / "foo")
+
+    fs = fsspec.filesystem("memory")
+    assert utilities.normalize_path(fs, "/") == "/"
+    assert utilities.normalize_path(fs, "./foo") == "/foo"
+
+    fs = fsspec.filesystem("s3")
+    assert utilities.normalize_path(fs, "/") == "/"
+    assert utilities.normalize_path(fs, "./foo") == "./foo"

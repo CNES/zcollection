@@ -257,10 +257,10 @@ class View:
         filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
         synchronizer: Optional[sync.Sync] = None,
     ) -> None:
-        #: Path to the directory where the view is stored.
-        self.base_dir = base_dir
         #: The file system used to access the view (default local file system).
         self.fs = utilities.get_fs(filesystem)
+        #: Path to the directory where the view is stored.
+        self.base_dir = utilities.normalize_path(self.fs, base_dir)
         #: The reference collection of the view.
         self.view_ref = convenience.open_collection(
             view_ref.path, mode="r", filesystem=view_ref.filesystem)

@@ -22,6 +22,7 @@ import asyncio
 import functools
 import itertools
 import operator
+import os
 
 import dask.distributed
 import fsspec
@@ -127,6 +128,24 @@ def fs_walk(
 
     for item in sort_sequence(dirs):
         yield from fs_walk(fs, item, sort=sort)
+
+
+def normalize_path(fs: fsspec.AbstractFileSystem, path: str) -> str:
+    """Normalize the path.
+
+    Args:
+        fs: file system object
+        path: path to test
+
+    Returns:
+        Normalized path.
+    """
+    path = fs._strip_protocol(path)
+    if path == "":
+        path = fs.sep
+    if fs.protocol in ("file", "memory"):
+        return os.path.normpath(path)
+    return path
 
 
 async def _available_workers(client: dask.distributed.Client) -> Set[str]:
