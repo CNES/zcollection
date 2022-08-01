@@ -447,11 +447,12 @@ class Collection:
         config = self._config(base_dir, self.fs)
         exists = self.fs.exists(config)
 
-        message = ("Creating the collection: %s"
-                   if exists else "Updating collection's configuration: %s")
-        _LOGGER.info(message, config)
         if skip_if_exists and exists:
             return
+
+        message = ("Updating collection's configuration: %s"
+                   if exists else "Creating the collection: %s")
+        _LOGGER.info(message, config)
 
         self.fs.makedirs(base_dir, exist_ok=True)
 
