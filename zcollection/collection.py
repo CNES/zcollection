@@ -871,7 +871,7 @@ class Collection:
         Example:
             >>> collection = ...
             >>> collection.load(
-            ...     filters="year=2019 and month=3 and day % 2 == 0")
+            ...     filters="year == 2019 and month == 3 and day % 2 == 0")
             >>> collection.load(
             ...     filters=lambda keys: keys["year"] == 2019 and
             ...     keys["month"] == 3 and keys["day"] % 2 == 0)
