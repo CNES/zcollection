@@ -7,6 +7,7 @@ Testing utilities
 =================
 """
 import pathlib
+import platform
 
 import dask.distributed
 import fsspec
@@ -229,13 +230,21 @@ def test_split_sequence():
 def test_normalize_path():
     """Test the normalize_path function."""
     fs = fsspec.filesystem("file")
-    assert utilities.normalize_path(fs, "/") == "/"
+    root = str(pathlib.Path("/").resolve())
+    if platform.system() == "Windows":
+        # fsspec returns only the drive letter for the root path.
+        root = root.replace("\\", "")
+        sep = "\\"
+    else:
+        sep = "/"
+
+    assert utilities.normalize_path(fs, "/") == root
     assert utilities.normalize_path(fs, "./foo") == str(
         pathlib.Path(".").resolve() / "foo")
 
     fs = fsspec.filesystem("memory")
-    assert utilities.normalize_path(fs, "/") == "/"
-    assert utilities.normalize_path(fs, "./foo") == "/foo"
+    assert utilities.normalize_path(fs, "/") == sep
+    assert utilities.normalize_path(fs, "./foo") == f"{sep}foo"
 
     fs = fsspec.filesystem("s3")
     assert utilities.normalize_path(fs, "/") == "/"
