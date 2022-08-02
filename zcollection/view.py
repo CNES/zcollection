@@ -225,13 +225,13 @@ def _load_datasets_list(
                   client.gather(futures))  # type: ignore[arg-type]
 
 
-def _assert_have_variables(meta: meta.Dataset) -> None:
+def _assert_have_variables(metadata: meta.Dataset) -> None:
     """Assert that the current view has variables.
 
     Args:
-        meta: The metadata of the dataset.
+        metadata: The metadata of the dataset.
     """
-    if not len(meta.variables):
+    if not metadata.variables:
         raise ValueError("The view has no variables")
 
 

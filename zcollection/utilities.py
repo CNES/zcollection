@@ -140,7 +140,10 @@ def normalize_path(fs: fsspec.AbstractFileSystem, path: str) -> str:
     Returns:
         Normalized path.
     """
+    # pylint: disable=protected-access
+    # There is no public method to perform this operation.
     path = fs._strip_protocol(path)
+    # pylint: enable=protected-access
     if path == "":
         path = fs.sep
     if fs.protocol in ("file", "memory"):
