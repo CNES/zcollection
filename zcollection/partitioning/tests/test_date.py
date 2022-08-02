@@ -10,6 +10,7 @@ from typing import Iterator
 import pickle
 
 import dask.array.core
+import dask.local
 import fsspec
 import numpy
 import pytest
@@ -102,8 +103,9 @@ def test_split_dataset(
             expected_selection = dates[
                 (dates >= parsed_date)  # type: ignore
                 & (dates < parsed_date + timedelta)]  # type: ignore
-            assert numpy.all(
-                subset.variables["dates"].array == expected_selection)
+            computed_selection = subset.variables["dates"].compute(
+                scheduler=dask.local.get_sync)
+            assert numpy.all(computed_selection == expected_selection)
 
             expected = (
                 ("year", item.year),
