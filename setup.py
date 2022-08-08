@@ -20,8 +20,8 @@ class SDist(setuptools.command.sdist.sdist):
 
     def run(self):
         """Carry out the action."""
-        source = WORKING_DIRECTORY.joinpath("conftest.py")
-        target = WORKING_DIRECTORY.joinpath("zcollection", "conftest.py")
+        source = WORKING_DIRECTORY.joinpath('conftest.py')
+        target = WORKING_DIRECTORY.joinpath('zcollection', 'conftest.py')
         source.rename(target)
         try:
             super().run()
@@ -29,4 +29,4 @@ class SDist(setuptools.command.sdist.sdist):
             target.rename(source)
 
 
-setuptools.setup(cmdclass={"sdist": SDist})
+setuptools.setup(cmdclass={'sdist': SDist})

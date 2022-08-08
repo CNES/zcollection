@@ -15,7 +15,6 @@ from typing import (
     Dict,
     Iterable,
     Iterator,
-    List,
     Optional,
     Protocol,
     Sequence,
@@ -135,7 +134,7 @@ class UpdateCallable(Protocol):
         # pylint: enable=unnecessary-ellipsis
 
     def __call__(self, ds: dataset.Dataset, *args,
-                 **kwargs) -> Dict[str, ArrayLike]:
+                 **kwargs) -> dict[str, ArrayLike]:
         """Call the update function.
 
         Args:
@@ -164,7 +163,7 @@ class PartitioningProperties:
 def _wrap_update_func(
     func: UpdateCallable,
     fs: fsspec.AbstractFileSystem,
-    selected_variables: Optional[Iterable[str]],
+    selected_variables: Iterable[str] | None,
     *args,
     **kwargs,
 ) -> WrappedPartitionCallable:
@@ -203,11 +202,11 @@ def _wrap_update_func(
 
 
 def _insert(
-    args: Tuple[Tuple[str, ...], Dict[str, slice]],
+    args: tuple[tuple[str, ...], dict[str, slice]],
     axis: str,
     ds: dataset.Dataset,
     fs: fsspec.AbstractFileSystem,
-    merge_callable: Optional[merging.MergeCallable],
+    merge_callable: merging.MergeCallable | None,
     partitioning_properties: PartitioningProperties,
 ) -> None:
     """Insert or update a partition in the collection.
@@ -225,7 +224,7 @@ def _insert(
 
     # If the consolidated zarr metadata does not exist, we consider the
     # partition as empty.
-    if fs.exists(fs.sep.join((dirname, ".zmetadata"))):
+    if fs.exists(fs.sep.join((dirname, '.zmetadata'))):
         # The current partition already exists, so we need to merge
         # the dataset.
         merging.perform(ds.isel(indexer), dirname, axis, fs,
@@ -249,12 +248,12 @@ def _insert(
 
 
 def _load_and_apply_indexer(
-    args: Tuple[Tuple[Tuple[str, int], ...], List[slice]],
+    args: tuple[tuple[tuple[str, int], ...], list[slice]],
     fs: fsspec.AbstractFileSystem,
     partition_handler: partitioning.Partitioning,
     partition_properties: PartitioningProperties,
-    selected_variables: Optional[Iterable[str]],
-) -> List[dataset.Dataset]:
+    selected_variables: Iterable[str] | None,
+) -> list[dataset.Dataset]:
     """Load a partition and apply its indexer.
 
     Args:
@@ -283,8 +282,8 @@ def _load_and_apply_indexer(
 
 def variables(
     metadata: meta.Dataset,
-    selected_variables: Optional[Iterable[str]] = None
-) -> Tuple[dataset.Variable, ...]:
+    selected_variables: Iterable[str] | None = None
+) -> tuple[dataset.Variable, ...]:
     """Return the variables defined in the dataset.
 
     Args:
@@ -306,8 +305,8 @@ def build_indexer_args(
     collection: Collection,
     filters: PartitionFilter,
     indexer: Indexer,
-    partitions: Optional[Iterable[str]] = None,
-) -> Iterator[tuple[Tuple[Tuple[str, int], ...], List[slice]]]:
+    partitions: Iterable[str] | None = None,
+) -> Iterator[tuple[tuple[tuple[str, int], ...], list[slice]]]:
     """Build the arguments for the indexer.
 
     Args:
@@ -322,7 +321,7 @@ def build_indexer_args(
     """
     # Build an indexer dictionary between the partition scheme and
     # indexer.
-    indexers_map: Dict[Tuple[Tuple[str, int], ...], List[slice]] = {}
+    indexers_map: dict[tuple[tuple[str, int], ...], list[slice]] = {}
     _ = {
         indexers_map.setdefault(  # type: ignore[func-returns-value]
             partition_scheme, []).append(indexer)
@@ -330,8 +329,10 @@ def build_indexer_args(
     }
     # Filter the selected partitions
     partitions = partitions or collection.partitions(filters=filters)
-    selected_partitions = set(indexers_map) & set(
-        (collection.partitioning.parse(item) for item in partitions))
+    selected_partitions = set(indexers_map) & {
+        collection.partitioning.parse(item)
+        for item in partitions
+    }
 
     # For each provided partition scheme, retrieves the corresponding
     # indexer.
@@ -359,7 +360,7 @@ class Collection:
             is not supported.
     """
     #: Configuration filename of the collection.
-    CONFIG: ClassVar[str] = ".zcollection"
+    CONFIG: ClassVar[str] = '.zcollection'
 
     def __init__(
         self,
@@ -368,23 +369,23 @@ class Collection:
         partition_handler: partitioning.Partitioning,
         partition_base_dir: str,
         *,
-        mode: Optional[str] = None,
-        filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
-        synchronizer: Optional[sync.Sync] = None,
+        mode: str | None = None,
+        filesystem: fsspec.AbstractFileSystem | str | None = None,
+        synchronizer: sync.Sync | None = None,
     ) -> None:
         if axis not in ds.variables:
             raise ValueError(
-                f"The variable {axis!r} is not defined in the dataset.")
+                f'The variable {axis!r} is not defined in the dataset.')
 
         for varname in partition_handler.variables:
             if varname not in ds.variables:
                 raise ValueError(
-                    f"The partitioning key {varname!r} is not defined in "
-                    "the dataset.")
+                    f'The partitioning key {varname!r} is not defined in '
+                    'the dataset.')
 
-        mode = mode or "w"
-        if mode not in ("r", "w"):
-            raise ValueError(f"The mode {mode!r} is not supported.")
+        mode = mode or 'w'
+        if mode not in ('r', 'w'):
+            raise ValueError(f'The mode {mode!r} is not supported.')
 
         #: The axis of the collection.
         self.axis = axis
@@ -407,33 +408,33 @@ class Collection:
 
         self._write_config(skip_if_exists=True)
 
-        if mode == "r":
+        if mode == 'r':
             # pylint: disable=method-hidden
             # These methods are overloaded when the collection is opened in
             # readonly.
             for item in [
-                    "add_variable",
-                    "drop_partitions",
-                    "drop_variable",
-                    "insert",
-                    "update",
+                    'add_variable',
+                    'drop_partitions',
+                    'drop_variable',
+                    'insert',
+                    'update',
             ]:
-                assert hasattr(self, item), f"{item} is not a known method."
+                assert hasattr(self, item), f'{item} is not a known method.'
                 setattr(
                     self, item,
                     types.MethodType(Collection._unsupported_operation, self))
             # pylint: enable=method-hidden
 
     def __str__(self) -> str:
-        return (f"{self.__class__.__name__}"
-                f"<filesystem={self.fs.__class__.__name__!r}, "
-                f"partition_base_dir={self.partition_properties.dir!r}, "
-                f"mode={self.mode!r}>")
+        return (f'{self.__class__.__name__}'
+                f'<filesystem={self.fs.__class__.__name__!r}, '
+                f'partition_base_dir={self.partition_properties.dir!r}, '
+                f'mode={self.mode!r}>')
 
     @staticmethod
     def _unsupported_operation(*args, **kwargs):
         """Raise an exception if the operation is not supported."""
-        raise io.UnsupportedOperation("not writable")
+        raise io.UnsupportedOperation('not writable')
 
     @classmethod
     def _config(cls, partition_base_dir: str,
@@ -451,7 +452,7 @@ class Collection:
             return
 
         message = ("Updating collection's configuration: %s"
-                   if exists else "Creating the collection: %s")
+                   if exists else 'Creating the collection: %s')
         _LOGGER.info(message, config)
 
         self.fs.makedirs(base_dir, exist_ok=True)
@@ -460,22 +461,22 @@ class Collection:
                       dataset=self.metadata.get_config(),
                       partitioning=self.partitioning.get_config())
 
-        with self.fs.open(config, mode="w") as stream:
+        with self.fs.open(config, mode='w') as stream:
             json.dump(params, stream, indent=4)
 
     def is_readonly(self) -> bool:
         """Return True if the collection is read-only."""
-        return self.mode == "r"
+        return self.mode == 'r'
 
     @classmethod
     def from_config(
         cls,
         path: str,
         *,
-        mode: Optional[str] = None,
-        filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
-        synchronizer: Optional[sync.Sync] = None,
-    ) -> "Collection":
+        mode: str | None = None,
+        filesystem: fsspec.AbstractFileSystem | str | None = None,
+        synchronizer: sync.Sync | None = None,
+    ) -> Collection:
         """Open a Collection described by a configuration file.
 
         Args:
@@ -490,19 +491,19 @@ class Collection:
         Raises:
             ValueError: If the provided directory does not contain a collection.
         """
-        _LOGGER.info("Opening collection: %r", path)
+        _LOGGER.info('Opening collection: %r', path)
         fs = utilities.get_fs(filesystem)
         config = cls._config(path, fs)
         if not fs.exists(config):
-            raise ValueError(f"zarr collection not found at path {path!r}")
+            raise ValueError(f'zarr collection not found at path {path!r}')
         with fs.open(config) as stream:
             data = json.load(stream)
         return Collection(
-            data["axis"],
-            meta.Dataset.from_config(data["dataset"]),
-            partitioning.get_codecs(data["partitioning"]),
+            data['axis'],
+            meta.Dataset.from_config(data['dataset']),
+            partitioning.get_codecs(data['partitioning']),
             path,
-            mode=mode or "r",
+            mode=mode or 'r',
             filesystem=fs,
             synchronizer=synchronizer,
         )
@@ -510,7 +511,7 @@ class Collection:
     def _is_selected(
         self,
         partition: Sequence[str],
-        expr: Optional[Callable[[Dict[str, int]], bool]],
+        expr: Callable[[dict[str, int]], bool] | None,
     ) -> bool:
         """Return whether the partition is selected.
 
@@ -522,16 +523,16 @@ class Collection:
             Whether the partition is selected.
         """
         if expr is not None:
-            return expr(dict(self.partitioning.parse("/".join(partition))))
+            return expr(dict(self.partitioning.parse('/'.join(partition))))
         return True
 
     # pylint: disable=method-hidden
     def insert(
         self,
-        ds: Union[xarray.Dataset, dataset.Dataset],
+        ds: xarray.Dataset | dataset.Dataset,
         *,
-        merge_callable: Optional[merging.MergeCallable] = None,
-        npartitions: Optional[int] = None,
+        merge_callable: merging.MergeCallable | None = None,
+        npartitions: int | None = None,
     ) -> None:
         """Insert a dataset into the collection.
 
@@ -561,7 +562,7 @@ class Collection:
         if isinstance(ds, xarray.Dataset):
             ds = dataset.Dataset.from_xarray(ds)
 
-        _LOGGER.info("Inserting of a %s dataset in the collection",
+        _LOGGER.info('Inserting of a %s dataset in the collection',
                      dask.utils.format_bytes(ds.nbytes))
 
         missing_variables = self.metadata.missing_variables(ds.metadata())
@@ -632,7 +633,7 @@ class Collection:
 
         for item in self.partitioning.list_partitions(self.fs, base_dir):
             # Filtering on partition names
-            partitions = item.replace(base_dir, "")
+            partitions = item.replace(base_dir, '')
             entry = partitions.split(sep)
 
             if self._is_selected(entry, expr):
@@ -663,7 +664,7 @@ class Collection:
 
         def invalidate_cache(path):
             """Invalidate the cache."""
-            _LOGGER.info("Dropped partition: %s", path)
+            _LOGGER.info('Dropped partition: %s', path)
             self.fs.invalidate_cache(path)
 
         tuple(map(invalidate_cache, folders))
@@ -675,9 +676,9 @@ class Collection:
         func: MapCallable,
         *args,
         filters: PartitionFilter = None,
-        partition_size: Optional[int] = None,
-        npartitions: Optional[int] = None,
-        selected_variables: Optional[Sequence[str]] = None,
+        partition_size: int | None = None,
+        npartitions: int | None = None,
+        selected_variables: Sequence[str] | None = None,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the collection.
@@ -710,10 +711,10 @@ class Collection:
         def _wrap(
             partition: str,
             func: PartitionCallable,
-            selected_variables: Optional[Sequence[str]],
+            selected_variables: Sequence[str] | None,
             *args,
             **kwargs,
-        ) -> Tuple[Tuple[Tuple[str, int], ...], Any]:
+        ) -> tuple[tuple[tuple[str, int], ...], Any]:
             """Wraps the function to apply on the partition.
 
             Args:
@@ -744,9 +745,9 @@ class Collection:
         depth: int,
         *args,
         filters: PartitionFilter = None,
-        partition_size: Optional[int] = None,
-        npartition: Optional[int] = None,
-        selected_variables: Optional[Sequence[str]] = None,
+        partition_size: int | None = None,
+        npartition: int | None = None,
+        selected_variables: Sequence[str] | None = None,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the collection with some
@@ -782,12 +783,12 @@ class Collection:
         def _wrap(
             partition: str,
             func: PartitionCallable,
-            partitions: Tuple[str, ...],
-            selected_variables: Optional[Sequence[str]],
+            partitions: tuple[str, ...],
+            selected_variables: Sequence[str] | None,
             depth: int,
             *args,
             **kwargs,
-        ) -> Tuple[Tuple[Tuple[str, int], ...], slice, Any]:
+        ) -> tuple[tuple[tuple[str, int], ...], slice, Any]:
             """Wraps the function to apply on the partition.
 
             Args:
@@ -847,9 +848,9 @@ class Collection:
         self,
         *,
         filters: PartitionFilter = None,
-        indexer: Optional[Indexer] = None,
-        selected_variables: Optional[Iterable[str]] = None,
-    ) -> Optional[dataset.Dataset]:
+        indexer: Indexer | None = None,
+        selected_variables: Iterable[str] | None = None,
+    ) -> dataset.Dataset | None:
         """Load the selected partitions.
 
         Args:
@@ -878,7 +879,7 @@ class Collection:
             ...     keys["month"] == 3 and keys["day"] % 2 == 0)
         """
         client = utilities.get_client()
-        arrays: List[dataset.Dataset] = []
+        arrays: list[dataset.Dataset] = []
         if indexer is None:
             selected_partitions = tuple(self.partitions(filters=filters))
             if len(selected_partitions) == 0:
@@ -924,9 +925,9 @@ class Collection:
         func: UpdateCallable,
         /,
         *args,
-        filters: Optional[PartitionFilter] = None,
-        partition_size: Optional[int] = None,
-        selected_variables: Optional[Iterable[str]] = None,
+        filters: PartitionFilter | None = None,
+        partition_size: int | None = None,
+        selected_variables: Iterable[str] | None = None,
         **kwargs,
     ) -> None:
         # pylint: disable=method-hidden
@@ -962,13 +963,13 @@ class Collection:
         unknown_variables = set(func_result) - set(
             self.metadata.variables.keys())
         if len(unknown_variables):
-            raise ValueError(f"Unknown variables: {unknown_variables}")
+            raise ValueError(f'Unknown variables: {unknown_variables}')
 
         local_func = _wrap_update_func(func, self.fs, selected_variables,
                                        *args, **kwargs)
 
-        _LOGGER.info("Updating of the (%s) variable in the collection",
-                     ", ".join(repr(item) for item in func_result))
+        _LOGGER.info('Updating of the (%s) variable in the collection',
+                     ', '.join(repr(item) for item in func_result))
         client = utilities.get_client()
         batchs = utilities.split_sequence(
             tuple(self.partitions(filters=filters)), partition_size
@@ -978,7 +979,7 @@ class Collection:
 
     def _bag_from_partitions(
         self,
-        filters: Optional[PartitionFilter] = None,
+        filters: PartitionFilter | None = None,
     ) -> dask.bag.core.Bag:
         """Return a dask bag from the partitions.
 
@@ -1011,13 +1012,13 @@ class Collection:
             ...     "my_collection", mode="w")
             >>> collection.drop_variable("my_variable")
         """
-        _LOGGER.info("Dropping of the %r variable in the collection", variable)
+        _LOGGER.info('Dropping of the %r variable in the collection', variable)
         if variable in self.partitioning.variables:
             raise ValueError(
-                f"The variable {variable!r} is part of the partitioning.")
+                f'The variable {variable!r} is part of the partitioning.')
         if variable not in self.metadata.variables:
             raise ValueError(
-                f"The variable {variable!r} does not exist in the collection.")
+                f'The variable {variable!r} does not exist in the collection.')
         bag = self._bag_from_partitions()
         bag.map(storage.del_zarr_array, variable, self.fs).compute()
         del self.metadata.variables[variable]
@@ -1025,7 +1026,7 @@ class Collection:
 
     def add_variable(
         self,
-        variable: Union[meta.Variable, dataset.Variable],
+        variable: meta.Variable | dataset.Variable,
     ) -> None:
         """Add a variable to the collection.
 
@@ -1051,11 +1052,11 @@ class Collection:
             >>> collection.add_variable(new_variable)
         """
         variable = dataset.get_variable_metadata(variable)
-        _LOGGER.info("Adding of the %r variable in the collection",
+        _LOGGER.info('Adding of the %r variable in the collection',
                      variable.name)
         if self.partition_properties.dim not in variable.dimensions:
             raise ValueError(
-                "The new variable must use the partitioning axis.")
+                'The new variable must use the partitioning axis.')
         self.metadata.add_variable(variable)
         self._write_config()
 
@@ -1072,7 +1073,7 @@ class Collection:
         self,
         *,
         relative: bool = False,
-    ) -> Iterator[Tuple[str, zarr.Group]]:
+    ) -> Iterator[tuple[str, zarr.Group]]:
         """Iterate over the partitions and the zarr groups.
 
         Args:
@@ -1087,8 +1088,8 @@ class Collection:
 
     def variables(
         self,
-        selected_variables: Optional[Iterable[str]] = None
-    ) -> Tuple[dataset.Variable, ...]:
+        selected_variables: Iterable[str] | None = None
+    ) -> tuple[dataset.Variable, ...]:
         """Return the variables of the collection.
 
         Args:

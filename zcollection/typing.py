@@ -21,8 +21,8 @@ import numpy
 import numpy.typing
 
 # pylint: disable=invalid-name
-_DType_co = TypeVar("_DType_co", covariant=True, bound="numpy.dtype[Any]")
-_ScalarType_co = TypeVar("_ScalarType_co", bound=numpy.generic, covariant=True)
+_DType_co = TypeVar('_DType_co', covariant=True, bound='numpy.dtype[Any]')
+_ScalarType_co = TypeVar('_ScalarType_co', bound=numpy.generic, covariant=True)
 # pylint: enable=invalid-name
 
 if TYPE_CHECKING:

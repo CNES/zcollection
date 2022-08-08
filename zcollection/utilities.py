@@ -48,7 +48,7 @@ def dask_workers(client: dask.distributed.Client,
             item
             for item in client.nthreads().values())  # type: ignore[arg-type]
     if result == 0:
-        raise RuntimeError("No dask workers available")
+        raise RuntimeError('No dask workers available')
     return result
 
 
@@ -80,7 +80,7 @@ def get_fs(
         >>> get_fs("hdfs")
         >>> get_fs(LocalFileSystem("/tmp/swot"))
     """
-    filesystem = filesystem or "file"
+    filesystem = filesystem or 'file'
     return fsspec.filesystem(filesystem) if isinstance(filesystem,
                                                        str) else filesystem
 
@@ -104,16 +104,16 @@ def fs_walk(
     dirs, files = [], []
     try:
         listing = fs.ls(path, detail=True)
-    except (FileNotFoundError, IOError):
-        yield "", [], []
+    except (FileNotFoundError, OSError):
+        yield '', [], []
         return
 
     for info in listing:
         # each info name must be at least [path]/part , but here
         # we check also for names like [path]/part/
-        pathname = info["name"].rstrip("/")
-        name = pathname.rsplit("/", 1)[-1]
-        if info["type"] == "directory" and pathname != path:
+        pathname = info['name'].rstrip('/')
+        name = pathname.rsplit('/', 1)[-1]
+        if info['type'] == 'directory' and pathname != path:
             # do not include "self" path
             dirs.append(pathname)
         else:
@@ -144,9 +144,9 @@ def normalize_path(fs: fsspec.AbstractFileSystem, path: str) -> str:
     # There is no public method to perform this operation.
     path = fs._strip_protocol(path)
     # pylint: enable=protected-access
-    if path == "":
+    if path == '':
         path = fs.sep
-    if fs.protocol in ("file", "memory"):
+    if fs.protocol in ('file', 'memory'):
         return os.path.normpath(path)
     return path
 
@@ -163,8 +163,9 @@ async def _available_workers(client: dask.distributed.Client) -> Set[str]:
         info = client.scheduler_info()
         assert client.scheduler is not None
         tasks = await client.scheduler.processing(workers=None)
-        result = set(info["workers"]) - set(
-            k for k, v in tasks.items() if v)  # type: ignore[arg-type]
+        result = set(info['workers']) - {k
+                                         for k, v in tasks.items()
+                                         if v}  # type: ignore[arg-type]
         if result:
             return result
         await asyncio.sleep(0.1)
@@ -201,7 +202,7 @@ def calculation_stream(func: Callable,
         Returns:
             int: The maximum number of workers allowed.
         """
-        return max_workers or len(client.scheduler_info()["workers"])
+        return max_workers or len(client.scheduler_info()['workers'])
 
     workers: Set[str] = set()
 
@@ -253,13 +254,13 @@ def split_sequence(sequence: Sequence[Any],
     """
     sections = len(sequence) if sections is None else sections
     if sections <= 0:
-        raise ValueError("The number of sections must be greater than zero.")
+        raise ValueError('The number of sections must be greater than zero.')
     length = len(sequence)
     sections = min(sections, length)
     size, extras = divmod(length, sections)
     div = tuple(
-        itertools.accumulate(
-            ([0] + extras * [size + 1] + (sections - extras) * [size])))
+        itertools.accumulate([0] + extras * [size + 1] +
+                             (sections - extras) * [size]))
     yield from (sequence[item:div[ix + 1]] for ix, item in enumerate(div[:-1]))
 
 

@@ -53,7 +53,7 @@ class Sequence(abc.Partitioning):
         >>> partitioning = Sequence(["a", "b", "c"], (None, 10, 10))
     """
     #: The ID of the partitioning scheme.
-    ID: ClassVar[str] = "Sequence"
+    ID: ClassVar[str] = 'Sequence'
 
     # pylint: disable=arguments-differ
     # False positive: `self` is used in the signature.
@@ -65,12 +65,12 @@ class Sequence(abc.Partitioning):
         schemes."""
         matrix = dask.array.routines.vstack(tuple(
             variables.values())).transpose()
-        if matrix.dtype.kind not in "iu":
-            raise TypeError("The variables must be integer")
+        if matrix.dtype.kind not in 'iu':
+            raise TypeError('The variables must be integer')
 
         index, indices = abc.unique(matrix)
         if not _is_monotonic(index):
-            raise ValueError("index is not monotonic")
+            raise ValueError('index is not monotonic')
 
         indices = abc.concatenate_item(indices, matrix.shape[0])
 
@@ -109,7 +109,7 @@ class Sequence(abc.Partitioning):
             (100, 10, 1)
         """
         return tuple(value
-                     for _, value in self.parse(self.join(partition, "/")))
+                     for _, value in self.parse(self.join(partition, '/')))
 
     def decode(self, values: Tuple[int, ...]) -> Tuple[Tuple[str, int], ...]:
         """Decode a partitioning scheme.

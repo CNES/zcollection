@@ -20,11 +20,11 @@ def _datetime64(year: int, month: int, day: int) -> numpy.datetime64:
 
 
 def _datetime(value: int) -> numpy.datetime64:
-    return numpy.datetime64(value, "D")
+    return numpy.datetime64(value, 'D')
 
 
 def _timedelta(value: int) -> numpy.timedelta64:
-    return numpy.timedelta64(value, "D")
+    return numpy.timedelta64(value, 'D')
 
 
 def _period(start: int, end: int, within: bool = False) -> Period:
@@ -123,14 +123,14 @@ def test_relation():
 
     assert period3.span(period1) == _period(1, 81)
 
-    period2 = Period(period1.begin - numpy.timedelta64(10, "s"),
-                     period1.end() - numpy.timedelta64(1, "D"))
+    period2 = Period(period1.begin - numpy.timedelta64(10, 's'),
+                     period1.end() - numpy.timedelta64(1, 'D'))
     assert period1.intersection(period2) == Period(period1.begin,
                                                    period2.end())
     assert period1.merge(period2) == Period(period2.begin, period1.end())
 
-    period2 = Period(period1.begin + numpy.timedelta64(10, "s"),
-                     period1.end() + numpy.timedelta64(1, "D"))
+    period2 = Period(period1.begin + numpy.timedelta64(10, 's'),
+                     period1.end() + numpy.timedelta64(1, 'D'))
     assert period1.intersection(period2) == Period(period2.begin,
                                                    period1.end())
 

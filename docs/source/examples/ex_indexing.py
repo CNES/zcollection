@@ -38,16 +38,16 @@ ds
 
 # %%
 collection = zcollection.create_collection(
-    "time",
+    'time',
     ds,
-    zcollection.partitioning.Date(("time", ), "M"),
-    partition_base_dir=str("/one_other_collection"),
+    zcollection.partitioning.Date(('time', ), 'M'),
+    partition_base_dir='/one_other_collection',
     filesystem=fs)
 collection.insert(ds, merge_callable=zcollection.merging.merge_time_series)
 
 # %%
 # Here we have created a collection partitioned by month.
-pprint.pprint(fs.listdir("/one_other_collection/year=2000"))
+pprint.pprint(fs.listdir('/one_other_collection/year=2000'))
 
 
 # %%
@@ -77,11 +77,10 @@ def split_half_orbit(
     half_orbit = numpy.unique(
         numpy.concatenate(
             (pass_idx, cycle_idx, numpy.array([pass_number.size],
-                                              dtype="int64"))))
+                                              dtype='int64'))))
     del pass_idx, cycle_idx
 
-    for idx0, idx1 in tuple(zip(half_orbit[:-1], half_orbit[1:])):
-        yield idx0, idx1
+    yield from tuple(zip(half_orbit[:-1], half_orbit[1:]))
 
 
 # %%
@@ -121,10 +120,10 @@ def _half_orbit(
 class HalfOrbitIndexer(zcollection.indexing.Indexer):
     """Index collection by half-orbit."""
     #: Column name of the cycle number.
-    CYCLE_NUMBER = "cycle_number"
+    CYCLE_NUMBER = 'cycle_number'
 
     #: Column name of the pass number.
-    PASS_NUMBER = "pass_number"
+    PASS_NUMBER = 'pass_number'
 
     @classmethod
     def dtype(cls, /, **kwargs) -> List[Tuple[str, str]]:
@@ -134,8 +133,8 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
             A tuple of (name, type) pairs.
         """
         return super().dtype() + [
-            (cls.CYCLE_NUMBER, "uint16"),
-            (cls.PASS_NUMBER, "uint16"),
+            (cls.CYCLE_NUMBER, 'uint16'),
+            (cls.PASS_NUMBER, 'uint16'),
         ]
 
     @classmethod
@@ -145,7 +144,7 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
         ds: zcollection.Collection,
         filesystem: Optional[fsspec.AbstractFileSystem] = None,
         **kwargs,
-    ) -> "HalfOrbitIndexer":
+    ) -> 'HalfOrbitIndexer':
         """Create a new index.
 
         Args:
@@ -157,7 +156,7 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
         """
         return super()._create(path,
                                ds,
-                               meta=dict(attribute=b"value"),
+                               meta=dict(attribute=b'value'),
                                filesystem=filesystem)  # type: ignore
 
     def update(
@@ -186,7 +185,7 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
 # ---------------
 #
 # Now we can create our index and fill it.
-indexer = HalfOrbitIndexer.create("/index.parquet", collection, filesystem=fs)
+indexer = HalfOrbitIndexer.create('/index.parquet', collection, filesystem=fs)
 indexer.update(collection)
 
 # The following command allows us to view the information stored in our index:

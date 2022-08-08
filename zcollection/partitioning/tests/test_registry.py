@@ -15,34 +15,34 @@ from .. import registry
 def test_get_codecs():
     """Test the get_codecs function."""
     with pytest.raises(ValueError):
-        registry.get_codecs({"ID": "foo"})
+        registry.get_codecs({'ID': 'foo'})
 
     with pytest.raises(ValueError):
-        registry.get_codecs({"id": "foo"})
+        registry.get_codecs({'id': 'foo'})
 
 
 class MyCodec:
     """A dummy codec."""
-    ID = "foo"
+    ID = 'foo'
 
-    __slots__ = ("attribute", )
+    __slots__ = ('attribute', )
 
     def __init__(self, attribute) -> None:
         self.attribute = attribute
 
     def get_config(self) -> dict:
         """Returns the configuration of the codec."""
-        return {"id": self.ID, "attribute": self.attribute}
+        return {'id': self.ID, 'attribute': self.attribute}
 
     @classmethod
-    def from_config(cls, config: dict) -> "MyCodec":
+    def from_config(cls, config: dict) -> 'MyCodec':
         """Creates an instance from the given configuration."""
-        return cls(config["attribute"])
+        return cls(config['attribute'])
 
 
 def test_register_codec():
     """Test the register_codec function."""
-    registry.register_codec(MyCodec, "foo")
+    registry.register_codec(MyCodec, 'foo')
 
     instance = MyCodec(12)
 
@@ -51,4 +51,4 @@ def test_register_codec():
     assert isinstance(other, MyCodec)
 
     with pytest.raises(ValueError):
-        registry.register_codec(MyCodec, "foo")
+        registry.register_codec(MyCodec, 'foo')

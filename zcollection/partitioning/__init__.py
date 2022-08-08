@@ -25,4 +25,4 @@ from .sequence import Sequence
 register_codec(Date)
 register_codec(Sequence)
 
-__all__ = ["Partitioning", "Date", "Sequence", "get_codecs"]
+__all__ = ['Partitioning', 'Date', 'Sequence', 'get_codecs']

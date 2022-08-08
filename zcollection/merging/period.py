@@ -15,11 +15,11 @@ import numpy
 from ..typing import DType
 
 # Parse the unit of numpy.timedelta64.
-PATTERN = re.compile(r"(?:datetime|timedelta)64\[(\w+)\]").search
+PATTERN = re.compile(r'(?:datetime|timedelta)64\[(\w+)\]').search
 
 #: Numpy time units
 RESOLUTION = [
-    "as", "fs", "ps", "ns", "us", "ms", "s", "m", "h", "D", "W", "M", "Y"
+    'as', 'fs', 'ps', 'ns', 'us', 'ms', 's', 'm', 'h', 'D', 'W', 'M', 'Y'
 ]
 
 
@@ -27,7 +27,7 @@ def _time64_unit(dtype: DType[Any]) -> str:
     """Get the unit of time."""
     match = PATTERN(dtype.name)
     if match is None:
-        raise ValueError(f"dtype is not a time duration: {dtype}")
+        raise ValueError(f'dtype is not a time duration: {dtype}')
     return match.group(1)
 
 
@@ -201,7 +201,7 @@ class Period:
             (i.e. the end date is within the period), otherwise the
             interval is open.
     """
-    __slots__ = ("_begin", "_duration_unit", "_last")
+    __slots__ = ('_begin', '_duration_unit', '_last')
 
     def __init__(self,
                  begin: numpy.datetime64,
@@ -219,7 +219,7 @@ class Period:
                                         self._duration_unit)
 
     def __repr__(self) -> str:
-        return f"[{self._begin}, {self.end()}["
+        return f'[{self._begin}, {self.end()}['
 
     def __getstate__(self) -> Tuple[Any, ...]:
         return self._begin, self._duration_unit, self._last
@@ -229,7 +229,7 @@ class Period:
 
     @classmethod
     def from_duration(cls, begin: numpy.datetime64,
-                      duration: numpy.timedelta64) -> "Period":
+                      duration: numpy.timedelta64) -> 'Period':
         """Create a Period as [begin, begin + duration[
 
         Args:
@@ -317,7 +317,7 @@ class Period:
 
     def contains(
         self,
-        other: Union[numpy.datetime64, "Period"],
+        other: Union[numpy.datetime64, 'Period'],
     ) -> numpy.bool_:
         """Check if the given period is contains this period.
 
@@ -334,7 +334,7 @@ class Period:
             return self._begin <= other <= self._last
         return (self._begin <= other.begin) and (self._last >= other.last)
 
-    def is_adjacent(self, other: "Period") -> bool:
+    def is_adjacent(self, other: 'Period') -> bool:
         """True if periods are next to each other without a gap.
 
         In the example below, p1 and p2 are adjacent, but p3 is not adjacent
@@ -400,7 +400,7 @@ class Period:
             return False
         return bool(self._last < point)  # numpy.bool_ -> bool
 
-    def intersects(self, other: "Period") -> bool:
+    def intersects(self, other: 'Period') -> bool:
         """True if the periods overlap in any way.
 
         In the example below p1 intersects with p2, p4, and p6.
@@ -424,7 +424,7 @@ class Period:
                 or ((other.begin < self._begin) and
                     (other.last >= self._begin)))  # type:ignore
 
-    def intersection(self, other: "Period") -> "Period":
+    def intersection(self, other: 'Period') -> 'Period':
         """Return the period of intersection or null period if no intersection.
 
         Args:
@@ -442,7 +442,7 @@ class Period:
             return Period(other.begin, self.end())
         return other
 
-    def merge(self, other: "Period") -> "Period":
+    def merge(self, other: 'Period') -> 'Period':
         """Return the union of intersecting periods -- or null period.
 
         Args:
@@ -462,7 +462,7 @@ class Period:
         # no intersect return null
         return Period(self._begin, self._begin)
 
-    def span(self, other: "Period") -> "Period":
+    def span(self, other: 'Period') -> 'Period':
         """Combine two periods with earliest start and latest end.
 
         Combines two periods and any gap between them such that
@@ -494,7 +494,7 @@ class Period:
     # This code has a lot of "return" statements because we have to determine
     # the relation between the two periods among 8 different cases.
     def _get_direct_relation(self,
-                             other: "Period") -> Optional[PeriodRelation]:
+                             other: 'Period') -> Optional[PeriodRelation]:
         """Get the direct relation between two periods."""
         if other.last < self._begin:
             return PeriodRelation.AFTER
@@ -520,7 +520,7 @@ class Period:
         return None
         # pylint: enable=too-many-return-statements
 
-    def get_relation(self, other: "Period") -> PeriodRelation:
+    def get_relation(self, other: 'Period') -> PeriodRelation:
         """Get the relationship between the two time periods.
 
         Args:
@@ -545,5 +545,5 @@ class Period:
         if period_contains_start:
             return PeriodRelation.START_INSIDE
 
-        assert period_contains_end, "Period must contain end"
+        assert period_contains_end, 'Period must contain end'
         return PeriodRelation.END_INSIDE

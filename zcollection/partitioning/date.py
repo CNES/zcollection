@@ -14,21 +14,21 @@ import numpy
 from . import abc
 
 #: Numpy time units
-RESOLUTION = ("Y", "M", "D", "h", "m", "s")
+RESOLUTION = ('Y', 'M', 'D', 'h', 'm', 's')
 
 #: Numpy time unit meanings
-UNITS = ("year", "month", "day", "hour", "minute", "second")
+UNITS = ('year', 'month', 'day', 'hour', 'minute', 'second')
 
 #: Data type for time units
-DATA_TYPES = ("uint16", "uint8", "uint8", "uint8", "uint8", "uint8")
+DATA_TYPES = ('uint16', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8')
 
 #: Time separation units
-SEPARATORS = dict(year="-",
-                  month="-",
-                  day="T",
-                  hour=":",
-                  minute=":",
-                  second=".")
+SEPARATORS = dict(year='-',
+                  month='-',
+                  day='T',
+                  hour=':',
+                  minute=':',
+                  second='.')
 
 
 class Date(abc.Partitioning):
@@ -46,17 +46,17 @@ class Date(abc.Partitioning):
     Example:
         >>> partitioning = Date(variables=("time", ), resolution="Y")
     """
-    __slots__ = ("_attrs", "_index", "resolution")
+    __slots__ = ('_attrs', '_index', 'resolution')
 
     #: The ID of the partitioning scheme
-    ID: ClassVar[str] = "Date"
+    ID: ClassVar[str] = 'Date'
 
     def __init__(self, variables: Sequence[str], resolution: str) -> None:
         if len(variables) != 1:
             raise ValueError(
-                "Partitioning on dates is performed on a single variable.")
+                'Partitioning on dates is performed on a single variable.')
         if resolution not in RESOLUTION:
-            raise ValueError("resolution must be in: " + ", ".join(RESOLUTION))
+            raise ValueError('resolution must be in: ' + ', '.join(RESOLUTION))
         index = RESOLUTION.index(resolution) + 1
 
         #: The time resolution of the partitioning
@@ -80,9 +80,9 @@ class Date(abc.Partitioning):
     ) -> Tuple[str, ...]:
         """Return the partitioning scheme for the given selection."""
         _, datetime64 = selection[0]
-        datetime = datetime64.astype("M8[s]").item()
-        return tuple(UNITS[ix] + "=" +
-                     f"{getattr(datetime, self._attrs[ix]):02d}"
+        datetime = datetime64.astype('M8[s]').item()
+        return tuple(UNITS[ix] + '=' +
+                     f'{getattr(datetime, self._attrs[ix]):02d}'
                      for ix in self._index)
         # pylint: enable=arguments-differ
 
@@ -93,17 +93,17 @@ class Date(abc.Partitioning):
         """Return the partitioning scheme for the given variables."""
         name, values = tuple(variables.items())[0]
 
-        if not numpy.issubdtype(values.dtype, numpy.dtype("datetime64")):
-            raise TypeError("values must be a datetime64 array")
+        if not numpy.issubdtype(values.dtype, numpy.dtype('datetime64')):
+            raise TypeError('values must be a datetime64 array')
 
         index, indices = abc.unique(
-            values.astype(f"datetime64[{self.resolution}]"))
+            values.astype(f'datetime64[{self.resolution}]'))
 
         # We don't use here the function `numpy.diff` but `abc.difference` for
         # optimization purposes.
         if not numpy.all(
                 abc.difference(index.view(numpy.int64)) >= 0):  # type: ignore
-            raise ValueError("index is not monotonic")
+            raise ValueError('index is not monotonic')
 
         indices = abc.concatenate_item(indices, values.size)
 
@@ -113,7 +113,7 @@ class Date(abc.Partitioning):
     @staticmethod
     def _stringify(partition: Tuple[Tuple[str, int], ...]) -> str:
         """Return a string representation of the partitioning scheme."""
-        string = "".join(f"{value:02d}" + SEPARATORS[item]
+        string = ''.join(f'{value:02d}' + SEPARATORS[item]
                          for item, value in partition)
         if string[-1] in SEPARATORS.values():
             string = string[:-1]
@@ -136,7 +136,7 @@ class Date(abc.Partitioning):
             ...                   "/")
             'year=2020/month=01/day=01'
         """
-        return sep.join(f"{k}={v:02d}" for k, v in partition_scheme)
+        return sep.join(f'{k}={v:02d}' for k, v in partition_scheme)
 
     def encode(
         self,
@@ -178,6 +178,6 @@ class Date(abc.Partitioning):
             (("year", 2020), ("month", 1), ("day", 1))
         """
         datetime64, = values
-        datetime = datetime64.astype("M8[s]").item()
+        datetime = datetime64.astype('M8[s]').item()
         return tuple((UNITS[ix], getattr(datetime, self._attrs[ix]))
                      for ix in self._index)

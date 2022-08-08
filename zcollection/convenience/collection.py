@@ -48,17 +48,17 @@ def create_collection(
     Raises:
         ValueError: If the base directory already exists.
     """
-    filesystem = utilities.get_fs(kwargs.pop("filesystem", None))
+    filesystem = utilities.get_fs(kwargs.pop('filesystem', None))
     if filesystem.exists(partition_base_dir):
         raise ValueError(
-            f"The directory {partition_base_dir!r} already exists.")
+            f'The directory {partition_base_dir!r} already exists.')
     if isinstance(ds, xarray.Dataset):
         ds = dataset.Dataset.from_xarray(ds)
     return collection.Collection(axis,
                                  ds.metadata(),
                                  partition_handler,
                                  partition_base_dir,
-                                 mode="w",
+                                 mode='w',
                                  filesystem=filesystem,
                                  **kwargs)
 

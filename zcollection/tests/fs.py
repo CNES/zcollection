@@ -28,8 +28,8 @@ class Local:
     def __init__(self, tmpdir, protocol) -> None:
         self.fs = fsspec.filesystem(protocol)
         self.root = pathlib.Path(tmpdir)
-        self.collection = self.root.joinpath("collection")
-        self.view = self.root.joinpath("view")
+        self.collection = self.root.joinpath('collection')
+        self.view = self.root.joinpath('view')
 
     def __getattr__(self, name):
         return getattr(self.fs, name)
@@ -38,7 +38,7 @@ class Local:
 @pytest.fixture
 def local_fs(tmpdir, pytestconfig):
     """Local filesystem."""
-    protocol = "memory" if pytestconfig.getoption("memory") else "file"
+    protocol = 'memory' if pytestconfig.getoption('memory') else 'file'
     instance = Local(tmpdir, protocol)
     yield instance
     try:
@@ -73,10 +73,10 @@ else:
     @pytest.fixture
     def s3_fs(pytestconfig):
         """S3 filesystem."""
-        if pytestconfig.getoption("s3"):
-            pytest.fail(f"Unable to test S3: {S3_IMPORT_EXCEPTION}")
+        if pytestconfig.getoption('s3'):
+            pytest.fail(f'Unable to test S3: {S3_IMPORT_EXCEPTION}')
         else:
-            pytest.skip("S3 is disabled")
+            pytest.skip('S3 is disabled')
 
 
 # pylint: enable=redefined-outer-name,function-redefined

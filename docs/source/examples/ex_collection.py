@@ -47,14 +47,14 @@ client = dask.distributed.Client(cluster)
 # Before creating our collection, we define the partitioning of our dataset. In
 # this example, we will partition the data by ``month`` using the variable
 # ``time``.
-partition_handler = zcollection.partitioning.Date(("time", ), resolution="M")
+partition_handler = zcollection.partitioning.Date(('time', ), resolution='M')
 
 # %%
 # Finally, we create our collection:
-collection = zcollection.create_collection("time",
+collection = zcollection.create_collection('time',
                                            ds,
                                            partition_handler,
-                                           "/my_collection",
+                                           '/my_collection',
                                            filesystem=fs)
 
 # %%
@@ -89,7 +89,7 @@ collection.insert(ds)
 #         ...     ds, merge_callable=zcollection.merging.merge_time_series)
 #
 # Let's look at the different partitions thus created.
-pprint.pprint(fs.listdir("/my_collection/year=2000"))
+pprint.pprint(fs.listdir('/my_collection/year=2000'))
 
 # %%
 # This collection is composed of several partitions, but it is always handled
@@ -105,19 +105,19 @@ collection.load()
 # %%
 # You can also filter the partitions to be considered by filtering the
 # partitions using keywords used for partitioning in a valid Python expression.
-collection.load(filters="year == 2000 and month == 2")
+collection.load(filters='year == 2000 and month == 2')
 
 # %%
 # You can also used a callback function to filter partitions with a complex
 # condition.
 collection.load(
     filters=lambda keys: datetime.date(2000, 2, 15) <= datetime.date(
-        keys["year"], keys["month"], 1) <= datetime.date(2000, 3, 15))
+        keys['year'], keys['month'], 1) <= datetime.date(2000, 3, 15))
 
 # %%
 # Note that the :py:meth:`load<zcollection.collection.Collection.load>`
 # function may return None if no partition has been selected.
-assert collection.load(filters="year == 2002 and month == 2") is None
+assert collection.load(filters='year == 2002 and month == 2') is None
 
 # %%
 # Editing variables
@@ -129,26 +129,26 @@ assert collection.load(filters="year == 2002 and month == 2") is None
 #     is :py:meth:`open<zcollection.open_collection>` in read-only mode.
 #
 # It's possible to delete a variable from a collection.
-collection.drop_variable("var2")
+collection.drop_variable('var2')
 collection.load()
 
 # %%
 # The variable used for partitioning cannot be deleted.
 try:
-    collection.drop_variable("time")
+    collection.drop_variable('time')
 except ValueError as exc:
     print(exc)
 
 # %%
 # The :py:meth:`add_variable<zcollection.collection.Collection.add_variable>`
 # method allows you to add a new variable to the collection.
-collection.add_variable(ds.metadata().variables["var2"])
+collection.add_variable(ds.metadata().variables['var2'])
 
 # %%
 # The newly created variable is initialized with its default value.
 ds = collection.load()
 assert ds is not None
-ds.variables["var2"].values
+ds.variables['var2'].values
 
 
 # %%
@@ -160,21 +160,21 @@ ds.variables["var2"].values
 # anywhere the variable ``var1`` is defined.
 def ones(ds):
     """Returns a variable with ones everywhere."""
-    return dict(var2=ds.variables["var1"].values * 0 + 1)
+    return dict(var2=ds.variables['var1'].values * 0 + 1)
 
 
 collection.update(ones)
 ds = collection.load()
 assert ds is not None
-ds.variables["var2"].values
+ds.variables['var2'].values
 
 # %%
 # Map a function over the collection
 # ----------------------------------
 # It's possible to map a function over the partitions of the view.
 for partition, array in collection.map(
-        lambda ds: ds["var1"].values + ds["var2"].values).compute():
-    print(f" * partition = {partition}: mean = {array.mean()}")
+        lambda ds: ds['var1'].values + ds['var2'].values).compute():
+    print(f' * partition = {partition}: mean = {array.mean()}')
 
 # %%
 # Close the local cluster to avoid printing warning messages in the other

@@ -46,7 +46,7 @@ class ViewReference:
     #: Path to the collection.
     path: str
     #: The file system used to access the reference collection.
-    filesystem: fsspec.AbstractFileSystem = utilities.get_fs("file")
+    filesystem: fsspec.AbstractFileSystem = utilities.get_fs('file')
 
 
 def _create_zarr_array(args: Tuple[str, zarr.Group], base_dir: str,
@@ -143,7 +143,7 @@ def _load_one_dataset(
                 zarr.open(
                     fs.get_mapper(fs.sep.join(
                         (base_dir, partition, variable))),
-                    mode="r",
+                    mode='r',
                 ), variable) for variable in variables
         ], ds.attrs), partition
 
@@ -152,7 +152,7 @@ def _load_one_dataset(
         for item in (storage.open_zarr_array(
             zarr.open(
                 fs.get_mapper(fs.sep.join((base_dir, partition, variable))),
-                mode="r",
+                mode='r',
             ), variable) for variable in variables)
     }
 
@@ -181,9 +181,9 @@ def _assert_variable_handled(reference: meta.Dataset, view: meta.Dataset,
         variable: The variable to check.
     """
     if variable in reference.variables:
-        raise ValueError(f"Variable {variable} is read-only")
+        raise ValueError(f'Variable {variable} is read-only')
     if variable not in view.variables:
-        raise ValueError(f"Variable {variable} does not exist")
+        raise ValueError(f'Variable {variable} does not exist')
 
 
 def _load_datasets_list(
@@ -232,7 +232,7 @@ def _assert_have_variables(metadata: meta.Dataset) -> None:
         metadata: The metadata of the dataset.
     """
     if not metadata.variables:
-        raise ValueError("The view has no variables")
+        raise ValueError('The view has no variables')
 
 
 class View:
@@ -246,7 +246,7 @@ class View:
         synchronizer: The synchronizer used to synchronize the view.
     """
     #: Configuration filename of the view.
-    CONFIG: ClassVar[str] = ".view"
+    CONFIG: ClassVar[str] = '.view'
 
     def __init__(
         self,
@@ -263,7 +263,7 @@ class View:
         self.base_dir = utilities.normalize_path(self.fs, base_dir)
         #: The reference collection of the view.
         self.view_ref = convenience.open_collection(
-            view_ref.path, mode="r", filesystem=view_ref.filesystem)
+            view_ref.path, mode='r', filesystem=view_ref.filesystem)
         #: The metadata of the variables handled by the view.
         self.metadata = ds or meta.Dataset(
             self.view_ref.metadata.dimensions, variables=[], attrs=[])
@@ -271,14 +271,14 @@ class View:
         self.synchronizer = synchronizer or sync.NoSync()
 
         if not self.fs.exists(self.base_dir):
-            _LOGGER.info("Creating view %s", self)
+            _LOGGER.info('Creating view %s', self)
             self.fs.makedirs(self.base_dir)
             self._write_config()
 
     def __str__(self) -> str:
-        return (f"{self.__class__.__name__}"
-                f"<filesystem={self.fs.__class__.__name__!r}, "
-                f"base_dir={self.base_dir!r}>")
+        return (f'{self.__class__.__name__}'
+                f'<filesystem={self.fs.__class__.__name__!r}, '
+                f'base_dir={self.base_dir!r}>')
 
     @classmethod
     def _config(cls, base_dir: str, fs: fsspec.AbstractFileSystem) -> str:
@@ -289,7 +289,7 @@ class View:
         """Write the configuration file for the view."""
         config = self._config(self.base_dir, self.fs)
         fs = json.loads(self.view_ref.fs.to_json())
-        with self.fs.open(config, mode="w") as stream:
+        with self.fs.open(config, mode='w') as stream:
             json.dump(dict(base_dir=self.base_dir,
                            metadata=self.metadata.get_config(),
                            view_ref=dict(
@@ -306,7 +306,7 @@ class View:
         *,
         filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
         synchronizer: Optional[sync.Sync] = None,
-    ) -> "View":
+    ) -> 'View':
         """Open a View described by a configuration file.
 
         Args:
@@ -320,21 +320,21 @@ class View:
         Raises:
             ValueError: If the provided directory does not contain a view.
         """
-        _LOGGER.info("Opening view %r", path)
+        _LOGGER.info('Opening view %r', path)
         fs = utilities.get_fs(filesystem)
         config = cls._config(path, fs)
         if not fs.exists(config):
-            raise ValueError(f"zarr view not found at path {path!r}")
+            raise ValueError(f'zarr view not found at path {path!r}')
         with fs.open(config) as stream:
             data = json.load(stream)
 
-        view_ref = data["view_ref"]
-        return View(data["base_dir"],
+        view_ref = data['view_ref']
+        return View(data['base_dir'],
                     ViewReference(
-                        view_ref["path"],
+                        view_ref['path'],
                         fsspec.AbstractFileSystem.from_json(
-                            json.dumps(view_ref["fs"]))),
-                    ds=meta.Dataset.from_config(data["metadata"]),
+                            json.dumps(view_ref['fs']))),
+                    ds=meta.Dataset.from_config(data['metadata']),
                     filesystem=filesystem,
                     synchronizer=synchronizer)
 
@@ -395,10 +395,10 @@ class View:
         # false positive, no code duplication
 
         variable = dataset.get_variable_metadata(variable)
-        _LOGGER.info("Adding variable %r in the view", variable.name)
+        _LOGGER.info('Adding variable %r in the view', variable.name)
         if (variable.name in self.view_ref.metadata.variables
                 or variable.name in self.metadata.variables):
-            raise ValueError(f"Variable {variable.name} already exists")
+            raise ValueError(f'Variable {variable.name} already exists')
         client = utilities.get_client()
         self.metadata.add_variable(variable)
         template = self.view_ref.metadata.search_same_dimensions_as(variable)
@@ -408,9 +408,10 @@ class View:
         # If the view already contains variables, you only need to modify the
         # existing partitions.
         if existing_partitions:
-            existing_partitions = set(
+            existing_partitions = {
                 pathlib.Path(path).relative_to(self.base_dir).as_posix()
-                for path in existing_partitions)
+                for path in existing_partitions
+            }
             args: Any = filter(lambda item: item[0] in existing_partitions,
                                self.view_ref.iterate_on_records(relative=True))
         else:
@@ -454,7 +455,7 @@ class View:
         Example:
             >>> view.drop_variable("temperature")
         """
-        _LOGGER.info("Dropping variable %r", varname)
+        _LOGGER.info('Dropping variable %r', varname)
         _assert_variable_handled(self.view_ref.metadata, self.metadata,
                                  varname)
         client = utilities.get_client()
@@ -591,8 +592,8 @@ class View:
                 lambda varname: _assert_variable_handled(
                     self.view_ref.metadata, self.metadata, varname),
                 func_result))
-        _LOGGER.info("Updating variable %s",
-                     ", ".join(repr(item) for item in func_result))
+        _LOGGER.info('Updating variable %s',
+                     ', '.join(repr(item) for item in func_result))
 
         def wrap_function(parameters: Iterable[Tuple[dataset.Dataset, str]],
                           base_dir: str) -> None:

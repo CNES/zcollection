@@ -18,7 +18,7 @@ from .fs import local_fs, s3, s3_base, s3_fs
 # pylint: enable=unused-import
 
 
-@pytest.mark.parametrize("arg", ["local_fs", "s3_fs"])
+@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
 def test_view(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
@@ -41,16 +41,16 @@ def test_view(
         instance.load()
 
     var = meta.Variable(
-        name="var2",
+        name='var2',
         dtype=numpy.float64,
-        dimensions=("num_lines", "num_pixels"),
-        attrs=(meta.Attribute(name="attr", value=1), ),
+        dimensions=('num_lines', 'num_pixels'),
+        attrs=(meta.Attribute(name='attr', value=1), ),
     )
 
     with pytest.raises(ValueError):
         instance.add_variable(var)
 
-    var.name = "var3"
+    var.name = 'var3'
     instance.add_variable(var)
 
     with pytest.raises(ValueError):
@@ -60,29 +60,29 @@ def test_view(
                                      filesystem=tested_fs.fs)
     ds = instance.load()
     assert ds is not None
-    assert set(ds["time"].values.astype("datetime64[D]")) == {
-        numpy.datetime64("2000-01-01"),
-        numpy.datetime64("2000-01-04"),
-        numpy.datetime64("2000-01-07"),
-        numpy.datetime64("2000-01-10"),
-        numpy.datetime64("2000-01-13"),
-        numpy.datetime64("2000-01-16"),
+    assert set(ds['time'].values.astype('datetime64[D]')) == {
+        numpy.datetime64('2000-01-01'),
+        numpy.datetime64('2000-01-04'),
+        numpy.datetime64('2000-01-07'),
+        numpy.datetime64('2000-01-10'),
+        numpy.datetime64('2000-01-13'),
+        numpy.datetime64('2000-01-16'),
     }
 
     # Loading a variable existing only in the view.
-    ds = instance.load(selected_variables=("var3", ))
+    ds = instance.load(selected_variables=('var3', ))
     assert ds is not None
-    assert tuple(ds.variables) == ("var3", )
+    assert tuple(ds.variables) == ('var3', )
 
     # Loading a non existing variable.
-    ds = instance.load(selected_variables=("var55", ))
+    ds = instance.load(selected_variables=('var55', ))
     assert ds is not None
     assert len(ds.variables) == 0
 
     # Test view loading that is no longer synchronized with the reference
     # collection.
     tested_fs.fs.rm(str(
-        tested_fs.view.joinpath("year=2000", "month=01", "day=13")),
+        tested_fs.view.joinpath('year=2000', 'month=01', 'day=13')),
                     recursive=True)
 
     assert len(tuple(instance.partitions())) == 5
@@ -90,16 +90,16 @@ def test_view(
 
     ds = instance.load()
     assert ds is not None
-    assert set(ds["time"].values.astype("datetime64[D]")) == {
-        numpy.datetime64("2000-01-01"),
-        numpy.datetime64("2000-01-04"),
-        numpy.datetime64("2000-01-07"),
-        numpy.datetime64("2000-01-10"),
-        numpy.datetime64("2000-01-16"),
+    assert set(ds['time'].values.astype('datetime64[D]')) == {
+        numpy.datetime64('2000-01-01'),
+        numpy.datetime64('2000-01-04'),
+        numpy.datetime64('2000-01-07'),
+        numpy.datetime64('2000-01-10'),
+        numpy.datetime64('2000-01-16'),
     }
 
     # Create a variable with the unsynchronized view
-    var.name = "var4"
+    var.name = 'var4'
     instance.add_variable(var)
 
     ds = instance.load()
@@ -107,32 +107,32 @@ def test_view(
 
     def update(ds, varname):
         """Update function used for this test."""
-        return {varname: ds.variables["var1"].values * 0 + 5}
+        return {varname: ds.variables['var1'].values * 0 + 5}
 
-    instance.update(update, "var3")  # type: ignore
-
-    with pytest.raises(ValueError):
-        instance.update(update, "varX")  # type: ignore
+    instance.update(update, 'var3')  # type: ignore
 
     with pytest.raises(ValueError):
-        instance.update(update, "var2")  # type: ignore
+        instance.update(update, 'varX')  # type: ignore
+
+    with pytest.raises(ValueError):
+        instance.update(update, 'var2')  # type: ignore
 
     ds = instance.load()
     assert ds is not None
-    numpy.all(ds.variables["var3"].values == 5)
+    numpy.all(ds.variables['var3'].values == 5)
 
     indexers = instance.map(
-        lambda x: slice(0, x.dimensions["num_lines"])  # type: ignore
+        lambda x: slice(0, x.dimensions['num_lines'])  # type: ignore
     ).compute()
     ds1 = instance.load(indexer=indexers)
     assert ds1 is not None
     ds2 = instance.load()
     assert ds2 is not None
 
-    assert numpy.allclose(ds1.variables["var1"].values,
-                          ds2.variables["var1"].values)
+    assert numpy.allclose(ds1.variables['var1'].values,
+                          ds2.variables['var1'].values)
 
-    instance.drop_variable("var3")
+    instance.drop_variable('var3')
 
     with pytest.raises(ValueError):
         convenience.open_view(str(tested_fs.collection),

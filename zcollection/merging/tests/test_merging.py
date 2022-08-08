@@ -27,7 +27,7 @@ class ThrowError(sync.Sync):
     """Throw an error when merging."""
 
     def __enter__(self) -> bool:
-        raise MyError("This is an error")
+        raise MyError('This is an error')
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         ...
@@ -41,9 +41,9 @@ def test_update_fs(
     generator = data.create_test_dataset()
     ds = next(generator)
 
-    partition_folder = local_fs.root.joinpath("partition_folder")
+    partition_folder = local_fs.root.joinpath('partition_folder')
 
-    zattrs = str(partition_folder.joinpath(".zattrs"))
+    zattrs = str(partition_folder.joinpath('.zattrs'))
     future = dask_client.submit(_update_fs, str(partition_folder),
                                 dask_client.scatter(ds), local_fs.fs)
     dask_client.gather(future)
@@ -71,16 +71,16 @@ def test_perform(
     generator = data.create_test_dataset()
     ds = next(generator)
 
-    path = str(local_fs.root.joinpath("folder"))
+    path = str(local_fs.root.joinpath('folder'))
 
     future = dask_client.submit(_update_fs, path, dask_client.scatter(ds),
                                 local_fs.fs)
     dask_client.gather(future)
 
-    future = dask_client.submit(perform, dask_client.scatter(ds), path, "time",
-                                local_fs.fs, "time", merge_time_series)
+    future = dask_client.submit(perform, dask_client.scatter(ds), path, 'time',
+                                local_fs.fs, 'time', merge_time_series)
     dask_client.gather(future)
 
     zgroup = zarr.open_consolidated(local_fs.get_mapper(path))
-    assert numpy.all(zgroup["time"][...] == ds["time"].values)
-    assert numpy.all(zgroup["var1"][...] == ds["var1"].values)
+    assert numpy.all(zgroup['time'][...] == ds['time'].values)
+    assert numpy.all(zgroup['var1'][...] == ds['var1'].values)

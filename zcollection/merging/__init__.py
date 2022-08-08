@@ -15,10 +15,10 @@ import zarr.storage
 from .. import dataset, storage, sync
 from .time_series import merge_time_series
 
-__all__ = ["MergeCallable", "perform", "merge_time_series"]
+__all__ = ['MergeCallable', 'perform', 'merge_time_series']
 
 #: Character set used to create a temporary directory.
-CHARACTERS = "abcdefghijklmnopqrstuvwxyz0123456789_"
+CHARACTERS = 'abcdefghijklmnopqrstuvwxyz0123456789_'
 
 
 #: pylint: disable=too-few-public-methods,duplicate-code
@@ -72,7 +72,7 @@ def _update_fs(
         synchronizer: The instance handling access to critical resources.
     """
     # Name of the temporary directory.
-    temp = dirname + "." + "".join(
+    temp = dirname + '.' + ''.join(
         random.choice(CHARACTERS) for _ in range(10))
 
     # Initializing Zarr group

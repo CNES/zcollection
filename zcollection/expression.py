@@ -24,16 +24,16 @@ class Expression:
     Example:
         >>> expr = Expression("year==2000 and month==1 and day in range(1, 12)")
     """
-    __slots__ = ("code", )
+    __slots__ = ('code', )
 
     #: Compiled expression to be evaluated
     code: Any
 
     #: The builtins that are allowed in the expression.
-    BUILTINS: ClassVar[Dict[str, Any]] = {"range": range}
+    BUILTINS: ClassVar[Dict[str, Any]] = {'range': range}
 
     def __init__(self, expression: str) -> None:
-        self.code = compile(ast.parse(expression, mode="eval"), " ", "eval")
+        self.code = compile(ast.parse(expression, mode='eval'), ' ', 'eval')
 
     def __call__(self, variables: Dict[str, Any]) -> Any:
         try:
@@ -44,7 +44,7 @@ class Expression:
             # pylint: disable=eval-used
             # The eval function is used here to evaluate a simple expression.
             # The only builtin functions allowed is the range function.
-            return eval(self.code, {"__builtins__": self.BUILTINS}, __locals)
+            return eval(self.code, {'__builtins__': self.BUILTINS}, __locals)
             # pylint: enable=eval-used
         except KeyError as err:
-            raise NameError(f"name {err!s} is not defined") from err
+            raise NameError(f'name {err!s} is not defined') from err

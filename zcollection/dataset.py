@@ -8,16 +8,7 @@ Dataset
 """
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Dict,
-    Iterable,
-    Mapping,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import Any, Iterable, Mapping, Sequence
 import collections
 
 import dask.array.core
@@ -51,10 +42,10 @@ def _dask_repr(array: dask.array.core.Array) -> str:
         The string representation of the dask array.
     """
     chunksize = tuple(item[0] for item in array.chunks)
-    return f"dask.array<chunksize={chunksize}>"
+    return f'dask.array<chunksize={chunksize}>'
 
 
-def _dataset_repr(ds: "Dataset") -> str:
+def _dataset_repr(ds: Dataset) -> str:
     """Get the string representation of a dataset.
 
     Args:
@@ -66,28 +57,28 @@ def _dataset_repr(ds: "Dataset") -> str:
     # Dimensions
     dims_str = _dimensions_repr(ds.dimensions)
     lines = [
-        f"<{ds.__module__}.{ds.__class__.__name__}>",
-        f"  Dimensions: {dims_str}", "Data variables:"
+        f'<{ds.__module__}.{ds.__class__.__name__}>',
+        f'  Dimensions: {dims_str}', 'Data variables:'
     ]
     # Variables
     if len(ds.variables) == 0:
-        lines.append("    <empty>")
+        lines.append('    <empty>')
     else:
         width = _calculate_column_width(ds.variables)
         for name, variable in ds.variables.items():
             dims_str = f"({', '.join(map(str, variable.dimensions))} "
-            name_str = f"    {name:<{width}s} {dims_str} {variable.dtype}"
+            name_str = f'    {name:<{width}s} {dims_str} {variable.dtype}'
             lines.append(
-                _pretty_print(f"{name_str}: {_dask_repr(variable.array)}"))
+                _pretty_print(f'{name_str}: {_dask_repr(variable.array)}'))
     # Attributes
     if len(ds.attrs):
-        lines.append("  Attributes:")
+        lines.append('  Attributes:')
         lines += _attributes_repr(ds.attrs)
 
-    return "\n".join(lines)
+    return '\n'.join(lines)
 
 
-def _duplicate(variable: Variable, data: dask.array.core.Array) -> "Variable":
+def _duplicate(variable: Variable, data: dask.array.core.Array) -> Variable:
     """Duplicate the variable with a new data.
 
     Args:
@@ -116,26 +107,26 @@ class Dataset:
         ValueError: If the dataset contains variables with the same dimensions
             but with different values.
     """
-    __slots__ = ("dimensions", "variables", "attrs")
+    __slots__ = ('dimensions', 'variables', 'attrs')
 
     def __init__(self,
                  variables: Iterable[Variable],
-                 attrs: Optional[Sequence[Attribute]] = None) -> None:
+                 attrs: Sequence[Attribute] | None = None) -> None:
         #: The list of global attributes on this dataset
         self.attrs = attrs or []
         #: Dataset contents as dict of :py:class:`Variable` objects.
         self.variables = collections.OrderedDict(
             (item.name, item) for item in variables)
         #: A dictionary of dimension names and their index in the dataset
-        self.dimensions: Dict[str, int] = {}
+        self.dimensions: dict[str, int] = {}
 
         for var in self.variables.values():
             for ix, dim in enumerate(var.dimensions):
                 if dim not in self.dimensions:
                     self.dimensions[dim] = var.array.shape[ix]
                 elif self.dimensions[dim] != var.array.shape[ix]:
-                    raise ValueError(f"variable {var.name} has conflicting "
-                                     "dimensions")
+                    raise ValueError(f'variable {var.name} has conflicting '
+                                     'dimensions')
 
     def __getitem__(self, name: str) -> Variable:
         """Return a variable from the dataset.
@@ -151,10 +142,10 @@ class Dataset:
         """
         return self.variables[name]
 
-    def __getstate__(self) -> Tuple[Any, ...]:
+    def __getstate__(self) -> tuple[Any, ...]:
         return self.dimensions, self.variables, self.attrs
 
-    def __setstate__(self, state: Tuple[Any, ...]) -> None:
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
         self.dimensions, self.variables, self.attrs = state
 
     @property
@@ -169,7 +160,7 @@ class Dataset:
     def add_variable(self,
                      variable: meta.Variable,
                      /,
-                     data: Optional[ArrayLike[Any]] = None):
+                     data: ArrayLike[Any] | None = None):
         """Add a variable to the dataset.
 
         Args:
@@ -184,8 +175,8 @@ class Dataset:
         """
         if set(variable.dimensions) - set(self.dimensions):
             raise ValueError(
-                f"variable {variable.name} has dimensions "
-                f"{variable.dimensions} that are not in the dataset")
+                f'variable {variable.name} has dimensions '
+                f'{variable.dimensions} that are not in the dataset')
 
         if data is None:
             shape = tuple(self.dimensions[dim] for dim in variable.dimensions)
@@ -196,9 +187,9 @@ class Dataset:
             for dim, size in zip(variable.dimensions, data.shape):
                 if size != self.dimensions[dim]:
                     raise ValueError(
-                        f"Conflicting sizes for dimension {dim!r}: "
-                        f"length {self.dimensions[dim]} on the data but length "
-                        f"{size} defined in dataset.")
+                        f'Conflicting sizes for dimension {dim!r}: '
+                        f'length {self.dimensions[dim]} on the data but length '
+                        f'{size} defined in dataset.')
         self.variables[variable.name] = Variable(
             variable.name,
             data,  # type: ignore[arg-type]
@@ -220,10 +211,10 @@ class Dataset:
         """
         for old, new in names.items():
             if new in self.variables:
-                raise ValueError(f"{new} already exists in the dataset")
+                raise ValueError(f'{new} already exists in the dataset')
             self.variables[new] = self.variables.pop(old).rename(new)
 
-    def drops_vars(self, names: Union[str, Sequence[str]]) -> None:
+    def drops_vars(self, names: str | Sequence[str]) -> None:
         """Drop variables from the dataset.
 
         Args:
@@ -235,7 +226,7 @@ class Dataset:
         {self.variables.pop(name) for name in names}
         # pylint: enable=expression-not-assigned
 
-    def select_vars(self, names: Union[str, Sequence[str]]) -> "Dataset":
+    def select_vars(self, names: str | Sequence[str]) -> Dataset:
         """Return a new dataset containing only the selected variables.
 
         Args:
@@ -264,7 +255,7 @@ class Dataset:
                             attrs=self.attrs)
 
     @staticmethod
-    def from_xarray(ds: xarray.Dataset) -> "Dataset":
+    def from_xarray(ds: xarray.Dataset) -> Dataset:
         """Create a new dataset from an xarray dataset.
 
         Args:
@@ -281,9 +272,9 @@ class Dataset:
                 tuple(
                     Attribute(*attr)  # type: ignore[arg-type]
                     for attr in array.attrs.items()),
-                array.encoding.get("compressor", None),
-                array.encoding.get("_FillValue", None),
-                array.encoding.get("filters", None))
+                array.encoding.get('compressor', None),
+                array.encoding.get('_FillValue', None),
+                array.encoding.get('filters', None))
             for name, array in ds.variables.items()
         ]
 
@@ -315,8 +306,8 @@ class Dataset:
         return ds
 
     def to_dict(self,
-                variables: Optional[Sequence[str]] = None,
-                **kwargs) -> Dict[str, Union[NDArray, NDMaskedArray]]:
+                variables: Sequence[str] | None = None,
+                **kwargs) -> dict[str, NDArray | NDMaskedArray]:
         """Convert the dataset to a dictionary, between the variable names and
         their data.
 
@@ -333,7 +324,7 @@ class Dataset:
                        if key in variables)
         return dict(dask.base.compute(*arrays, **kwargs))
 
-    def isel(self, slices: Dict[str, Any]) -> "Dataset":
+    def isel(self, slices: dict[str, Any]) -> Dataset:
         """Return a new dataset with each array indexed along the specified
         slices.
 
@@ -346,7 +337,7 @@ class Dataset:
         dims_invalid = set(slices) - set(self.dimensions)
         if dims_invalid:
             raise ValueError(
-                f"Slices contain invalid dimension name(s): {dims_invalid}")
+                f'Slices contain invalid dimension name(s): {dims_invalid}')
         default = slice(None)
         variables = [
             var.isel(tuple(slices.get(dim, default) for dim in var.dimensions))
@@ -354,8 +345,7 @@ class Dataset:
         ]
         return Dataset(variables=variables, attrs=self.attrs)
 
-    def delete(self, indexer: Union[slice, Sequence[int]],
-               axis: str) -> "Dataset":
+    def delete(self, indexer: slice | Sequence[int], axis: str) -> Dataset:
         """Return a new dataset without the data selected by the provided
         indices.
 
@@ -376,7 +366,7 @@ class Dataset:
         ]
         return Dataset(variables=variables, attrs=self.attrs)
 
-    def compute(self, **kwargs) -> "Dataset":
+    def compute(self, **kwargs) -> Dataset:
         """Compute the dataset variables.
 
         Args:
@@ -395,7 +385,7 @@ class Dataset:
         ]
         return Dataset(variables=variables, attrs=self.attrs)
 
-    def persist(self, **kwargs) -> "Dataset":
+    def persist(self, **kwargs) -> Dataset:
         """Persist the dataset variables.
 
         Args:
@@ -415,8 +405,7 @@ class Dataset:
             self.variables[name].fill_value = None
         return self
 
-    def concat(self, other: Union["Dataset", Iterable["Dataset"]],
-               dim: str) -> "Dataset":
+    def concat(self, other: Dataset | Iterable[Dataset], dim: str) -> Dataset:
         """Concatenate datasets along a dimension.
 
         Args:
@@ -433,7 +422,7 @@ class Dataset:
         if not isinstance(other, Iterable):
             other = [other]
         if not other:
-            raise ValueError("cannot concatenate an empty sequence")
+            raise ValueError('cannot concatenate an empty sequence')
         variables = [
             variable.concat(tuple(item.variables[name] for item in other), dim)
             for name, variable in self.variables.items()
@@ -447,8 +436,7 @@ class Dataset:
         return _dataset_repr(self)
 
 
-def get_variable_metadata(
-        variable: Union[Variable, meta.Variable]) -> meta.Variable:
+def get_variable_metadata(variable: Variable | meta.Variable) -> meta.Variable:
     """Get the variable metadata.
 
     Args:

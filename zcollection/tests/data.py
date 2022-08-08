@@ -14,9 +14,9 @@ import zarr
 from .. import collection, dataset, partitioning
 from ..partitioning.tests.data import create_test_sequence
 
-START_DATE = numpy.datetime64("2000-01-01", "us")
-END_DATE = numpy.datetime64("2000-06-30", "us")
-DELTA = numpy.timedelta64(72, "h")
+START_DATE = numpy.datetime64('2000-01-01', 'us')
+END_DATE = numpy.datetime64('2000-06-30', 'us')
+DELTA = numpy.timedelta64(72, 'h')
 
 
 def create_test_dataset():
@@ -30,25 +30,25 @@ def create_test_dataset():
         measures = numpy.vstack((indices[mask], ) * 25).T
 
         yield dataset.Dataset(
-            attrs=(dataset.Attribute(name="attr", value=1), ),
+            attrs=(dataset.Attribute(name='attr', value=1), ),
             variables=(
-                dataset.Variable(name="time",
+                dataset.Variable(name='time',
                                  data=item,
-                                 dimensions=("num_lines", ),
-                                 attrs=(dataset.Attribute(name="attr",
+                                 dimensions=('num_lines', ),
+                                 attrs=(dataset.Attribute(name='attr',
                                                           value=1), ),
                                  compressor=zarr.Blosc()),
                 dataset.Variable(
-                    name="var1",
+                    name='var1',
                     data=measures,
-                    dimensions=("num_lines", "num_pixels"),
-                    attrs=(dataset.Attribute(name="attr", value=1), ),
+                    dimensions=('num_lines', 'num_pixels'),
+                    attrs=(dataset.Attribute(name='attr', value=1), ),
                 ),
                 dataset.Variable(
-                    name="var2",
+                    name='var2',
                     data=measures,
-                    dimensions=("num_lines", "num_pixels"),
-                    attrs=(dataset.Attribute(name="attr", value=1), ),
+                    dimensions=('num_lines', 'num_pixels'),
+                    attrs=(dataset.Attribute(name='attr', value=1), ),
                 ),
             ))
 
@@ -62,33 +62,33 @@ def create_test_dataset_with_fillvalue():
     measures = numpy.vstack((measures, ) * 25).T * 1e-4
 
     yield dataset.Dataset(
-        attrs=(dataset.Attribute(name="attr", value=1), ),
+        attrs=(dataset.Attribute(name='attr', value=1), ),
         variables=(
             dataset.Variable(
-                name="time",
+                name='time',
                 data=dates,
-                dimensions=("num_lines", ),
-                attrs=(dataset.Attribute(name="attr", value=1), ),
+                dimensions=('num_lines', ),
+                attrs=(dataset.Attribute(name='attr', value=1), ),
                 compressor=zarr.Blosc(),
             ),
-            dataset.Variable(name="var1",
+            dataset.Variable(name='var1',
                              data=measures,
-                             dimensions=("num_lines", "num_pixels"),
-                             attrs=(dataset.Attribute(name="attr", value=1), ),
+                             dimensions=('num_lines', 'num_pixels'),
+                             attrs=(dataset.Attribute(name='attr', value=1), ),
                              fill_value=214748.3647,
                              filters=(zarr.FixedScaleOffset(scale=10000,
                                                             offset=0,
-                                                            dtype="<f8",
-                                                            astype="i4"), )),
-            dataset.Variable(name="var2",
+                                                            dtype='<f8',
+                                                            astype='i4'), )),
+            dataset.Variable(name='var2',
                              data=measures,
-                             dimensions=("num_lines", "num_pixels"),
-                             attrs=(dataset.Attribute(name="attr", value=1), ),
+                             dimensions=('num_lines', 'num_pixels'),
+                             attrs=(dataset.Attribute(name='attr', value=1), ),
                              fill_value=214748.3647,
                              filters=(zarr.FixedScaleOffset(scale=10000,
                                                             offset=0,
-                                                            dtype="<f8",
-                                                            astype="i4"), )),
+                                                            dtype='<f8',
+                                                            astype='i4'), )),
         ),
     )
 
@@ -97,9 +97,9 @@ def create_test_collection(tested_fs, with_fillvalue=False):
     """Create a collection."""
     ds = next(create_test_dataset_with_fillvalue(
     ) if with_fillvalue else create_test_dataset())
-    zcollection = collection.Collection("time",
+    zcollection = collection.Collection('time',
                                         ds.metadata(),
-                                        partitioning.Date(("time", ), "D"),
+                                        partitioning.Date(('time', ), 'D'),
                                         str(tested_fs.collection),
                                         filesystem=tested_fs.fs)
     zcollection.insert(ds)
@@ -108,8 +108,8 @@ def create_test_collection(tested_fs, with_fillvalue=False):
 
 FILE_SYSTEM_DATASET = list(
     itertools.product([
-        "local_fs",
-        "s3_fs",
+        'local_fs',
+        's3_fs',
     ], [
         create_test_dataset,
         create_test_dataset_with_fillvalue,

@@ -25,13 +25,13 @@ from .typing import ArrayLike
 BLOCK_SIZE_LIMIT = 134217728
 
 #: Name of the attribute storing the names of the dimensions of an array.
-DIMENSIONS = "_ARRAY_DIMENSIONS"
+DIMENSIONS = '_ARRAY_DIMENSIONS'
 
 #: Configuration file that describes the attributes of an array.
-ZATTRS = ".zattrs"
+ZATTRS = '.zattrs'
 
 #: Configuration file that describes the attributes of a group.
-ZGROUP = ".zgroup"
+ZGROUP = '.zgroup'
 
 #: Module logger.
 _LOGGER = logging.getLogger(__name__)
@@ -111,7 +111,7 @@ def write_zattrs(
                                     for item in variable.attrs)
     attrs[DIMENSIONS] = variable.dimensions
     path = fs.sep.join((dirname, variable.name, ZATTRS))
-    with fs.open(path, mode="w") as stream:
+    with fs.open(path, mode='w') as stream:
         json.dump(attrs, stream, indent=2)
 
 
@@ -173,12 +173,12 @@ def write_zarr_group(
 
     path = fs.sep.join((dirname, ZATTRS))
     attrs = collections.OrderedDict(item.get_config() for item in ds.attrs)
-    with fs.open(path, mode="w") as stream:
+    with fs.open(path, mode='w') as stream:
         json.dump(attrs, stream, indent=2)
 
     path = fs.sep.join((dirname, ZGROUP))
-    with fs.open(path, mode="w") as stream:
-        json.dump({"zarr_format": 2}, stream, indent=2)
+    with fs.open(path, mode='w') as stream:
+        json.dump({'zarr_format': 2}, stream, indent=2)
 
     zarr.consolidate_metadata(fs.get_mapper(dirname))
     # Invalidate any cached directory information.
@@ -213,7 +213,7 @@ def open_zarr_group(
     Returns:
         The zarr group stored in the partition.
     """
-    _LOGGER.debug("Opening Zarr group %r", dirname)
+    _LOGGER.debug('Opening Zarr group %r', dirname)
     store: zarr.Group = zarr.open_consolidated(fs.get_mapper(dirname))
     # Ignore unknown variables to retain.
     selected_variables = set(selected_variables) & set(
@@ -240,8 +240,8 @@ def update_zarr_array(
         array: The data updated to write.
         fs: The file system that the Zarr array is stored on.
     """
-    _LOGGER.debug("Updating Zarr array %r", dirname)
-    store = zarr.open_array(fs.get_mapper(dirname), mode="a")
+    _LOGGER.debug('Updating Zarr array %r', dirname)
+    store = zarr.open_array(fs.get_mapper(dirname), mode='a')
 
     if isinstance(array, dask.array.core.Array):
         array = array.compute()
@@ -268,7 +268,7 @@ def del_zarr_array(
         name: The name of the variable.
         fs: The file system that the dataset is stored on.
     """
-    _LOGGER.debug("Deleting Zarr array %r", dirname)
+    _LOGGER.debug('Deleting Zarr array %r', dirname)
     path = fs.sep.join((dirname, name))
     if fs.exists(path):
         fs.rm(path, recursive=True)
@@ -291,7 +291,7 @@ def add_zarr_array(
         template: The name of the template variable.
         fs: The file system that the dataset is stored on.
     """
-    _LOGGER.debug("Adding variable %r to Zarr dataset %r", variable.name,
+    _LOGGER.debug('Adding variable %r to Zarr dataset %r', variable.name,
                   dirname)
     shape = zarr.open(fs.get_mapper(fs.sep.join((dirname, template)))).shape
     store = fs.get_mapper(fs.sep.join((dirname, variable.name)))

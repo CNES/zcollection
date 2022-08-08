@@ -9,9 +9,9 @@ Make test data.
 import numpy
 import xarray
 
-START_DATE = numpy.datetime64("2000-01-01", "us")
-END_DATE = numpy.datetime64("2000-06-30", "us")
-DELTA = numpy.timedelta64(72, "h")
+START_DATE = numpy.datetime64('2000-01-01', 'us')
+END_DATE = numpy.datetime64('2000-06-30', 'us')
+DELTA = numpy.timedelta64(72, 'h')
 
 
 def create_test_sequence(repeatability, number_of_measures, number_of_cycles):
@@ -24,13 +24,13 @@ def create_test_sequence(repeatability, number_of_measures, number_of_cycles):
         numpy.tile(ix + 1, repeatability * number_of_measures)
         for ix in range(number_of_cycles)
     ])
-    delta = numpy.timedelta64(24 // repeatability // 2, "h")
+    delta = numpy.timedelta64(24 // repeatability // 2, 'h')
     time = numpy.arange(START_DATE, START_DATE + len(cycle_number) * delta,
                         delta)
     observation = numpy.random.rand(cycle_number.size)  # type: ignore
     ds = xarray.Dataset(
-        dict(time=xarray.DataArray(time, dims=("num_lines", )),
-             cycle_number=xarray.DataArray(cycle_number, dims=("num_lines", )),
-             pass_number=xarray.DataArray(pass_number, dims=("num_lines", )),
-             observation=xarray.DataArray(observation, dims=("num_lines", ))))
+        dict(time=xarray.DataArray(time, dims=('num_lines', )),
+             cycle_number=xarray.DataArray(cycle_number, dims=('num_lines', )),
+             pass_number=xarray.DataArray(pass_number, dims=('num_lines', )),
+             observation=xarray.DataArray(observation, dims=('num_lines', ))))
     return ds

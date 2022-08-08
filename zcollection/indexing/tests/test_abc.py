@@ -40,11 +40,10 @@ def split_half_orbit(
     half_orbit = numpy.unique(
         numpy.concatenate(
             (pass_idx, cycle_idx, numpy.array([pass_number.size],
-                                              dtype="int64"))))
+                                              dtype='int64'))))
     del pass_idx, cycle_idx
 
-    for idx0, idx1 in tuple(zip(half_orbit[:-1], half_orbit[1:])):
-        yield idx0, idx1
+    yield from tuple(zip(half_orbit[:-1], half_orbit[1:]))
 
 
 # pylint: disable=unused-argument,invalid-name
@@ -82,10 +81,10 @@ def _half_orbit(
 class HalfOrbitIndexer(abc.Indexer):
     """Index SWOT collection by half-orbit."""
     #: Column name of the cycle number.
-    CYCLE_NUMBER = "cycle_number"
+    CYCLE_NUMBER = 'cycle_number'
 
     #: Column name of the pass number.
-    PASS_NUMBER = "pass_number"
+    PASS_NUMBER = 'pass_number'
 
     @classmethod
     def dtype(cls, /, **kwargs) -> List[Tuple[str, str]]:
@@ -95,8 +94,8 @@ class HalfOrbitIndexer(abc.Indexer):
             A tuple of (name, type) pairs.
         """
         return super().dtype() + [
-            (cls.CYCLE_NUMBER, "uint16"),
-            (cls.PASS_NUMBER, "uint16"),
+            (cls.CYCLE_NUMBER, 'uint16'),
+            (cls.PASS_NUMBER, 'uint16'),
         ]
 
     @classmethod
@@ -107,7 +106,7 @@ class HalfOrbitIndexer(abc.Indexer):
         *,
         filesystem: Optional[fsspec.AbstractFileSystem] = None,
         **kwargs,
-    ) -> "HalfOrbitIndexer":
+    ) -> 'HalfOrbitIndexer':
         """Create a new index.
 
         Args:
@@ -120,7 +119,7 @@ class HalfOrbitIndexer(abc.Indexer):
         """
         return super()._create(path,
                                ds,
-                               meta=dict(attribute=b"value"),
+                               meta=dict(attribute=b'value'),
                                filesystem=filesystem)  # type: ignore
 
     def update(
@@ -153,15 +152,15 @@ def test_indexer(
     ds = dataset.Dataset.from_xarray(data.create_test_sequence(5, 20, 10))
 
     zcollection = convenience.create_collection(
-        "time",
+        'time',
         ds,
-        partitioning.Date(("time", ), "M"),
+        partitioning.Date(('time', ), 'M'),
         partition_base_dir=str(local_fs.collection),
         filesystem=local_fs.fs)
     zcollection.insert(ds, merge_callable=collection.merging.merge_time_series)
 
     indexer = HalfOrbitIndexer.create(str(
-        local_fs.collection.joinpath("index.parquet")),
+        local_fs.collection.joinpath('index.parquet')),
                                       zcollection,
                                       filesystem=local_fs.fs)
 
@@ -180,7 +179,7 @@ def test_indexer(
     assert set(selection.variables['cycle_number'].values) == {2}
 
     with pytest.raises(ValueError):
-        indexer.query(dict(cycle_number=3), logical_op="X")
+        indexer.query(dict(cycle_number=3), logical_op='X')
 
     with pytest.raises(ValueError):
         indexer.query(dict(X=3))
@@ -190,7 +189,7 @@ def test_indexer(
     other = zcollection.load(indexer=indexer.query(dict(cycle_number=2)))
     assert other is not None
     assert numpy.all(
-        other["observation"].values == selection["observation"].values)
+        other['observation'].values == selection['observation'].values)
 
     selection = zcollection.load(
         indexer=indexer.query(dict(cycle_number=[2, 4])))
@@ -210,9 +209,9 @@ def test_indexer(
     assert set(selection.variables['pass_number'].values) == {1, 5}
 
     indexer = HalfOrbitIndexer.open(str(
-        local_fs.collection.joinpath("index.parquet")),
+        local_fs.collection.joinpath('index.parquet')),
                                     filesystem=local_fs.fs)
-    assert indexer.meta == dict(attribute=b"value")
+    assert indexer.meta == dict(attribute=b'value')
     selection = zcollection.load(
         indexer=indexer.query(dict(cycle_number=[2, 4], pass_number=[1, 5])))
     assert selection is not None
@@ -228,5 +227,5 @@ def test_indexer(
         'month',
     )
 
-    indexer = abc.Indexer("", filesystem=fsspec.filesystem("memory"))
+    indexer = abc.Indexer('', filesystem=fsspec.filesystem('memory'))
     assert indexer.query(dict(cycle_number=[2, 4])) == tuple()

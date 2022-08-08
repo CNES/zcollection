@@ -8,16 +8,7 @@ Partitioning scheme.
 """
 from __future__ import annotations
 
-from typing import (
-    Any,
-    ClassVar,
-    Dict,
-    Iterator,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import Any, ClassVar, Iterator, Sequence, Tuple
 import abc
 import collections
 import re
@@ -37,13 +28,13 @@ from ..typing import NDArray
 Partition = Tuple[Tuple[Tuple[str, Any], ...], slice]
 
 #: Allowed data types for partitioning schemes
-DATA_TYPES = ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32",
-              "uint64")
+DATA_TYPES = ('int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32',
+              'uint64')
 
 
 def _logical_or_reduce(
     arr: dask.array.core.Array,
-    axis: Optional[Union[int, Tuple[int, ...]]] = None,
+    axis: int | tuple[int, ...] | None = None,
 ) -> dask.array.core.Array:
     """Implementation of `numpy.logical_or` reduction with dask.
 
@@ -78,7 +69,7 @@ def _logical_or_reduce(
         dtype=numpy.bool_)
 
 
-def unique(arr: dask.array.core.Array) -> Tuple[NDArray, NDArray]:
+def unique(arr: dask.array.core.Array) -> tuple[NDArray, NDArray]:
     """Return unique elements and their indices.
 
     Args:
@@ -154,8 +145,8 @@ def list_partitions(
         yield from sorted(fs.ls(path, detail=False))
     elif root:
         folders = map(
-            lambda info: info["name"].rstrip("/"),
-            filter(lambda info: info["type"] == "directory",
+            lambda info: info['name'].rstrip('/'),
+            filter(lambda info: info['type'] == 'directory',
                    fs.ls(path, detail=True)))
         for pathname in sorted(folders):
             yield from list_partitions(fs,
@@ -176,23 +167,23 @@ class Partitioning(abc.ABC):
             in a binary representation without loss of information.
             Defaults to int64.
     """
-    __slots__ = ("_dtype", "_pattern", "variables")
+    __slots__ = ('_dtype', '_pattern', 'variables')
 
     #: The ID of the partitioning scheme
-    ID: ClassVar[Optional[str]] = None
+    ID: ClassVar[str | None] = None
 
     def __init__(self,
                  variables: Sequence[str],
-                 dtype: Optional[Sequence[str]] = None) -> None:
+                 dtype: Sequence[str] | None = None) -> None:
         if isinstance(dtype, str):
-            raise TypeError("dtype must be a sequence of strings")
+            raise TypeError('dtype must be a sequence of strings')
         if len(variables) == 0:
-            raise ValueError("variables must not be empty")
+            raise ValueError('variables must not be empty')
         #: Variables to be used for the partitioning.
         self.variables = tuple(variables)
         #: Data type used to store variable values in a binary representation
         #: without data loss.
-        self._dtype = dtype or ("int64", ) * len(self.variables)
+        self._dtype = dtype or ('int64', ) * len(self.variables)
         #: The regular expression that matches the partitioning scheme.
         self._pattern = self._regex().search
 
@@ -204,7 +195,7 @@ class Partitioning(abc.ABC):
         """Return the number of partitions."""
         return len(self._dtype)
 
-    def dtype(self) -> Tuple[Tuple[str, str], ...]:
+    def dtype(self) -> tuple[tuple[str, str], ...]:
         """Return the data type of the partitioning scheme."""
         return tuple(zip(self._keys(), self._dtype))
 
@@ -214,13 +205,12 @@ class Partitioning(abc.ABC):
 
     def _regex(self) -> re.Pattern:
         """Return a regular expression that matches the partitioning scheme."""
-        return re.compile(".".join(
-            (f"({item})=(.*)" for item in self._keys())))
+        return re.compile('.'.join(f'({item})=(.*)' for item in self._keys()))
 
     @abc.abstractmethod
     def _split(
         self,
-        variables: Dict[str, dask.array.core.Array],
+        variables: dict[str, dask.array.core.Array],
     ) -> Iterator[Partition]:
         """Split the variables constituting the partitioning into partitioning
         schemes.
@@ -236,9 +226,9 @@ class Partitioning(abc.ABC):
         """
 
     @staticmethod
-    def _partition(selection: Tuple[Tuple[str, Any], ...]) -> Tuple[str, ...]:
+    def _partition(selection: tuple[tuple[str, Any], ...]) -> tuple[str, ...]:
         """Format the partitioning scheme."""
-        return tuple(f"{k}={v}" for k, v in selection)
+        return tuple(f'{k}={v}' for k, v in selection)
 
     def index_dataset(
         self,
@@ -268,7 +258,7 @@ class Partitioning(abc.ABC):
         self,
         ds: dataset.Dataset,
         axis: str,
-    ) -> Iterator[Tuple[Tuple[str, ...], Dict[str, slice]]]:
+    ) -> Iterator[tuple[tuple[str, ...], dict[str, slice]]]:
         """Split the dataset into partitions.
 
         Args:
@@ -285,26 +275,26 @@ class Partitioning(abc.ABC):
         """
         for item in self.variables:
             if len(ds.variables[item].shape) != 1:
-                raise ValueError(f"f{item!r} must be a one-dimensional array")
+                raise ValueError(f'f{item!r} must be a one-dimensional array')
         return ((self._partition(selection), {
             axis: indexer
         }) for selection, indexer in self.index_dataset(ds))
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         """Return the configuration of the partitioning scheme.
 
         Returns:
             The configuration of the partitioning scheme.
         """
         config = dict(id=self.ID)
-        slots = (getattr(_class, "__slots__", ())
+        slots = (getattr(_class, '__slots__', ())
                  for _class in reversed(self.__class__.__mro__))
         config.update((attr, getattr(self, attr)) for _class in slots
-                      for attr in _class if not attr.startswith("_"))
+                      for attr in _class if not attr.startswith('_'))
         return config
 
     @classmethod
-    def from_config(cls, config) -> "Partitioning":
+    def from_config(cls, config) -> Partitioning:
         """Create a partitioning scheme from a configuration.
 
         Args:
@@ -315,7 +305,7 @@ class Partitioning(abc.ABC):
         """
         return cls(**config)
 
-    def parse(self, partition: str) -> Tuple[Tuple[str, int], ...]:
+    def parse(self, partition: str) -> tuple[tuple[str, int], ...]:
         """Parse a partitioning scheme.
 
         Args:
@@ -327,7 +317,7 @@ class Partitioning(abc.ABC):
         match = self._pattern(partition)
         if match is None:
             raise ValueError(
-                f"Partition is not driven by this instance: {partition}")
+                f'Partition is not driven by this instance: {partition}')
         groups = match.groups()
         return tuple((groups[ix], int(groups[ix + 1]))
                      for ix in range(0, len(groups), 2))
@@ -335,8 +325,8 @@ class Partitioning(abc.ABC):
     @abc.abstractmethod
     def encode(
         self,
-        partition: Tuple[Tuple[str, int], ...],
-    ) -> Tuple[Any, ...]:
+        partition: tuple[tuple[str, int], ...],
+    ) -> tuple[Any, ...]:
         """Encode a partitioning scheme to the handled values.
 
         Args:
@@ -347,7 +337,7 @@ class Partitioning(abc.ABC):
         """
 
     @abc.abstractmethod
-    def decode(self, values: Tuple[Any, ...]) -> Tuple[Tuple[str, int], ...]:
+    def decode(self, values: tuple[Any, ...]) -> tuple[tuple[str, int], ...]:
         """Decode a partitioning scheme.
 
         Args:
@@ -358,7 +348,7 @@ class Partitioning(abc.ABC):
         """
 
     @staticmethod
-    def join(partition_scheme: Tuple[Tuple[str, int], ...], sep: str) -> str:
+    def join(partition_scheme: tuple[tuple[str, int], ...], sep: str) -> str:
         """Join a partitioning scheme.
 
         Args:
@@ -368,7 +358,7 @@ class Partitioning(abc.ABC):
         Returns:
             The joined partitioning scheme.
         """
-        return sep.join(f"{k}={v}" for k, v in partition_scheme)
+        return sep.join(f'{k}={v}' for k, v in partition_scheme)
 
     def list_partitions(
         self,

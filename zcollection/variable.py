@@ -8,19 +8,7 @@ Dataset variable.
 """
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import Any, Iterable, Iterator, Mapping, MutableMapping, Sequence
 import collections
 import uuid
 
@@ -41,7 +29,7 @@ from .meta import Attribute
 from .typing import ArrayLike, NDArray, NDMaskedArray
 
 
-def _dimensions_repr(dimensions: Dict[str, int]) -> str:
+def _dimensions_repr(dimensions: dict[str, int]) -> str:
     """Get the string representation of the dimensions.
 
     Args:
@@ -50,7 +38,7 @@ def _dimensions_repr(dimensions: Dict[str, int]) -> str:
     Returns:
         The string representation of the dimensions.
     """
-    return str(tuple(f"{name}: {value}" for name, value in dimensions.items()))
+    return str(tuple(f'{name}: {value}' for name, value in dimensions.items()))
 
 
 def _calculate_column_width(items: Iterable) -> int:
@@ -78,7 +66,7 @@ def _maybe_truncate(obj: Any, max_size: int) -> str:
     """
     result = str(obj)
     if len(result) > max_size:
-        return result[:max_size - 3] + "..."
+        return result[:max_size - 3] + '...'
     return result
 
 
@@ -93,7 +81,7 @@ def _pretty_print(obj: Any, num_characters: int = 120) -> str:
         The pretty printed string representation of the object.
     """
     result = _maybe_truncate(obj, num_characters)
-    return result + " " * max(num_characters - len(result), 0)
+    return result + ' ' * max(num_characters - len(result), 0)
 
 
 def _attributes_repr(attrs: Sequence[Attribute]) -> Iterator[str]:
@@ -107,11 +95,11 @@ def _attributes_repr(attrs: Sequence[Attribute]) -> Iterator[str]:
     """
     width = _calculate_column_width(item.name for item in attrs)
     for attr in attrs:
-        name_str = f"    {attr.name:<{width}s}"
-        yield _pretty_print(f"{name_str}: {attr.value!r}")
+        name_str = f'    {attr.name:<{width}s}'
+        yield _pretty_print(f'{name_str}: {attr.value!r}')
 
 
-def _variable_repr(var: "Variable") -> str:
+def _variable_repr(var: Variable) -> str:
     """Get the string representation of a variable.
 
     Args:
@@ -123,22 +111,22 @@ def _variable_repr(var: "Variable") -> str:
     # Dimensions
     dims_str = _dimensions_repr(dict(zip(var.dimensions, var.shape)))
     lines = [
-        f"<{var.__module__}.{var.__class__.__name__} {dims_str}>",
-        f"{var.array!r}"
+        f'<{var.__module__}.{var.__class__.__name__} {dims_str}>',
+        f'{var.array!r}'
     ]
     # Attributes
     if len(var.attrs):
-        lines.append("  Attributes:")
+        lines.append('  Attributes:')
         lines += _attributes_repr(var.attrs)
     # Filters
     if var.filters:
-        lines.append("  Filters:")
-        lines += [f"    {item!r}" for item in var.filters]
+        lines.append('  Filters:')
+        lines += [f'    {item!r}' for item in var.filters]
     # Compressor
     if var.compressor:
-        lines.append("  Compressor:")
-        lines += [f"    {var.compressor!r}"]
-    return "\n".join(lines)
+        lines.append('  Compressor:')
+        lines += [f'    {var.compressor!r}']
+    return '\n'.join(lines)
 
 
 def _not_equal(first: Any, second: Any) -> bool:
@@ -173,8 +161,8 @@ def _not_equal(first: Any, second: Any) -> bool:
 
 def _asarray(
     arr: ArrayLike[Any],
-    fill_value: Optional[Any] = None,
-) -> Tuple[dask.array.core.Array, Any]:
+    fill_value: Any | None = None,
+) -> tuple[dask.array.core.Array, Any]:
     """Convert an array-like object to a dask array.
 
     Args:
@@ -191,8 +179,8 @@ def _asarray(
     if isinstance(_meta, numpy.ma.MaskedArray):
         if fill_value is not None and _not_equal(fill_value, _meta.fill_value):
             raise ValueError(
-                f"The fill value {fill_value!r} does not match the fill value "
-                f"{_meta.fill_value!r} of the array.")
+                f'The fill value {fill_value!r} does not match the fill value '
+                f'{_meta.fill_value!r} of the array.')
         return dask.array.ma.filled(result, _meta.fill_value), _meta.fill_value
     return result, fill_value
 
@@ -209,18 +197,17 @@ class Variable:
         fill_value: Value to use for uninitialized values
         filters: Filters to apply before writing data to disk
     """
-    __slots__ = ("array", "attrs", "compressor", "dimensions", "fill_value",
-                 "filters", "name")
+    __slots__ = ('array', 'attrs', 'compressor', 'dimensions', 'fill_value',
+                 'filters', 'name')
 
-    def __init__(
-            self,
-            name: str,
-            data: ArrayLike[Any],
-            dimensions: Sequence[str],
-            attrs: Optional[Sequence[Attribute]] = None,
-            compressor: Optional[numcodecs.abc.Codec] = None,
-            fill_value: Optional[Any] = None,
-            filters: Optional[Sequence[numcodecs.abc.Codec]] = None) -> None:
+    def __init__(self,
+                 name: str,
+                 data: ArrayLike[Any],
+                 dimensions: Sequence[str],
+                 attrs: Sequence[Attribute] | None = None,
+                 compressor: numcodecs.abc.Codec | None = None,
+                 fill_value: Any | None = None,
+                 filters: Sequence[numcodecs.abc.Codec] | None = None) -> None:
         array, fill_value = _asarray(data, fill_value)
         #: Variable name
         self.name = name
@@ -248,7 +235,7 @@ class Variable:
         return len(self.dimensions)
 
     @property
-    def shape(self) -> Tuple[int, ...]:
+    def shape(self) -> tuple[int, ...]:
         """Return the shape of the variable."""
         return self.array.shape
 
@@ -272,12 +259,12 @@ class Variable:
                              self.attrs, self.compressor, self.fill_value,
                              self.filters)
 
-    def have_same_properties(self, other: "Variable") -> bool:
+    def have_same_properties(self, other: Variable) -> bool:
         """Return true if this instance and the other variable have the same
         properties."""
         return self.metadata() == other.metadata()
 
-    def persist(self, **kwargs) -> "Variable":
+    def persist(self, **kwargs) -> Variable:
         """Persist the variable data into memory.
 
         Args:
@@ -330,11 +317,11 @@ class Variable:
         """
         data, fill_value = _asarray(data, self.fill_value)
         if len(data.shape) != len(self.dimensions):
-            raise ValueError("data shape does not match variable dimensions")
+            raise ValueError('data shape does not match variable dimensions')
         self.array, self.fill_value = data, fill_value
 
     @property
-    def values(self) -> Union[NDArray, NDMaskedArray]:
+    def values(self) -> NDArray | NDMaskedArray:
         """Return the variable data as a numpy array.
 
         .. note::
@@ -347,7 +334,7 @@ class Variable:
         """
         return self.compute()
 
-    def compute(self, **kwargs) -> Union[NDArray, NDMaskedArray]:
+    def compute(self, **kwargs) -> NDArray | NDMaskedArray:
         """Return the variable data as a numpy array.
 
         .. note::
@@ -363,7 +350,7 @@ class Variable:
         return values if self.fill_value is None else numpy.ma.masked_equal(
             values, self.fill_value)
 
-    def fill(self) -> "Variable":
+    def fill(self) -> Variable:
         """Fill the variable with the fill value. If the variable has no fill
         value, this method does nothing.
 
@@ -381,10 +368,10 @@ class Variable:
         data: dask.array.core.Array,
         dimensions: Sequence[str],
         attrs: Sequence[Attribute],
-        compressor: Optional[numcodecs.abc.Codec],
-        fill_value: Optional[Any],
-        filters: Optional[Sequence[numcodecs.abc.Codec]],
-    ) -> "Variable":
+        compressor: numcodecs.abc.Codec | None,
+        fill_value: Any | None,
+        filters: Sequence[numcodecs.abc.Codec] | None,
+    ) -> Variable:
         """Create a new variable.
 
         Args:
@@ -406,7 +393,7 @@ class Variable:
         self.name = name
         return self
 
-    def isel(self, key: Tuple[slice, ...]) -> "Variable":
+    def isel(self, key: tuple[slice, ...]) -> Variable:
         """Return a new variable with data selected along the given dimension
         indices.
 
@@ -422,7 +409,7 @@ class Variable:
 
     @classmethod
     def from_zarr(cls, array: zarr.Array, name: str, dimension: str,
-                  **kwargs) -> "Variable":
+                  **kwargs) -> Variable:
         """Create a new variable from a zarr array.
 
         Args:
@@ -441,13 +428,13 @@ class Variable:
         data = dask.array.core.from_array(
             array,
             array.chunks,
-            name=f"{name}-{uuid.uuid1()}",
+            name=f'{name}-{uuid.uuid1()}',
             **kwargs,
         )
         return cls._new(name, data, array.attrs[dimension], attrs,
                         array.compressor, array.fill_value, array.filters)
 
-    def duplicate(self, data: Any) -> "Variable":
+    def duplicate(self, data: Any) -> Variable:
         """Create a new variable from the properties of this instance and the
         data provided.
 
@@ -464,10 +451,10 @@ class Variable:
         result = Variable(self.name, data, self.dimensions, self.attrs,
                           self.compressor, self.fill_value, self.filters)
         if len(result.shape) != len(self.dimensions):
-            raise ValueError("data shape does not match variable dimensions")
+            raise ValueError('data shape does not match variable dimensions')
         return result
 
-    def rename(self, name: str) -> "Variable":
+    def rename(self, name: str) -> Variable:
         """Rename the variable.
 
         Args:
@@ -479,7 +466,7 @@ class Variable:
         return self._new(name, self.array, self.dimensions, self.attrs,
                          self.compressor, self.fill_value, self.filters)
 
-    def dimension_index(self) -> Iterator[Tuple[str, int]]:
+    def dimension_index(self) -> Iterator[tuple[str, int]]:
         """Return an iterator over the variable dimensions and their index.
 
         Returns:
@@ -487,8 +474,8 @@ class Variable:
         """
         yield from ((item, ix) for ix, item in enumerate(self.dimensions))
 
-    def concat(self, other: Union["Variable", Sequence["Variable"]],
-               dim: str) -> "Variable":
+    def concat(self, other: Variable | Sequence[Variable],
+               dim: str) -> Variable:
         """Concatenate this variable with another variable or a list of
         variables along a dimension.
 
@@ -506,7 +493,7 @@ class Variable:
         if not isinstance(other, Sequence):
             other = [other]
         if not other:
-            raise ValueError("other must be a non-empty sequence")
+            raise ValueError('other must be a non-empty sequence')
         try:
             axis = self.dimensions.index(dim)
             return self._new(
@@ -535,20 +522,20 @@ class Variable:
         """
         encoding = {}
         if self.filters:
-            encoding["filters"] = self.filters
+            encoding['filters'] = self.filters
         if self.compressor:
-            encoding["compressor"] = self.compressor
+            encoding['compressor'] = self.compressor
         data = self.array
-        if self.dtype.kind == "M":
+        if self.dtype.kind == 'M':
             # xarray need a datetime64[ns] dtype
-            data = data.astype("datetime64[ns]")
-            encoding["dtype"] = "int64"
-        elif self.dtype.kind == "m":
-            encoding["dtype"] = "int64"
+            data = data.astype('datetime64[ns]')
+            encoding['dtype'] = 'int64'
+        elif self.dtype.kind == 'm':
+            encoding['dtype'] = 'int64'
         attrs = collections.OrderedDict(
             (item.name, item.value) for item in self.attrs)
         if self.fill_value is not None:
-            attrs["_FillValue"] = self.fill_value
+            attrs['_FillValue'] = self.fill_value
         return xarray.Variable(self.dimensions, data, attrs, encoding)
 
     def __str__(self) -> str:
@@ -578,15 +565,15 @@ class Variable:
         """
         return self.array
 
-    def __dask_graph__(self) -> Optional[Mapping]:
+    def __dask_graph__(self) -> Mapping | None:
         """Return the dask Graph."""
         return self.array.__dask_graph__()
 
-    def __dask_keys__(self) -> List:
+    def __dask_keys__(self) -> list:
         """Return the output keys for the Dask graph."""
         return self.array.__dask_keys__()
 
-    def __dask_layers__(self) -> Tuple:
+    def __dask_layers__(self) -> tuple:
         """Return the layers for the Dask graph."""
         return self.array.__dask_layers__()
 
@@ -597,7 +584,7 @@ class Variable:
              self.fill_value))
 
     @staticmethod
-    def __dask_optimize__(dsk: MutableMapping, keys: List,
+    def __dask_optimize__(dsk: MutableMapping, keys: list,
                           **kwargs) -> MutableMapping:
         """Returns whether the Dask graph can be optimized.
 
@@ -614,13 +601,13 @@ class Variable:
         return Variable._new(self.name, array, self.dimensions, self.attrs,
                              self.compressor, self.fill_value, self.filters)
 
-    def __dask_postcompute__(self) -> Tuple:
+    def __dask_postcompute__(self) -> tuple:
         """Return the finalizer and extra arguments to convert the computed
         results into their in-memory representation."""
         array_func, array_args = self.array.__dask_postcompute__()
         return self._dask_finalize, (array_func, ) + array_args
 
-    def __dask_postpersist__(self) -> Tuple:
+    def __dask_postpersist__(self) -> tuple:
         """Return the rebuilder and extra arguments to rebuild an equivalent
         Dask collection from a persisted or rebuilt graph."""
         array_func, array_args = self.array.__dask_postpersist__()

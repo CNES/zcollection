@@ -39,32 +39,32 @@ version = '.'.join(release.split('.')[:2])
 # ones.
 extensions = [
     'sphinx_inline_tabs',
-    "sphinx_gallery.gen_gallery",
-    "sphinx.ext.autodoc",
-    "sphinx.ext.autosummary",
-    "sphinx.ext.intersphinx",
-    "sphinx.ext.mathjax",
-    "sphinx.ext.napoleon",
-    "sphinx.ext.viewcode",
+    'sphinx_gallery.gen_gallery',
+    'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
+    'sphinx.ext.intersphinx',
+    'sphinx.ext.mathjax',
+    'sphinx.ext.napoleon',
+    'sphinx.ext.viewcode',
 ]
 
 autosummary_generate = True
 
-autodoc_typehints = "description"
+autodoc_typehints = 'description'
 autodoc_type_aliases = dict(
-    ArrayLike="ArrayLike",
-    DTypeLike="DTypeLike",
-    Indexer="Indexer",
-    PartitionCallback="PartitionCallback",
-    QueryDict="QueryDict",
-    Scalar="Scalar",
+    ArrayLike='ArrayLike',
+    DTypeLike='DTypeLike',
+    Indexer='Indexer',
+    PartitionCallback='PartitionCallback',
+    QueryDict='QueryDict',
+    Scalar='Scalar',
 )
 
 numpydoc_class_members_toctree = True
 numpydoc_show_class_members = False
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ["_templates"]
+templates_path = ['_templates']
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -82,20 +82,20 @@ html_title = 'ZCollection'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
+html_static_path = ['_static']
 
 intersphinx_mapping = {
-    "dask": ("https://docs.dask.org/en/latest/", None),
-    "fsspec": ("https://filesystem-spec.readthedocs.io/en/latest/", None),
-    "numpy": ("https://numpy.org/doc/stable/", None),
-    "python": ("http://docs.python.org/", None),
-    "xarray": ("http://xarray.pydata.org/en/stable/", None),
-    "zarr": ("https://zarr.readthedocs.io/en/stable", None),
+    'dask': ('https://docs.dask.org/en/latest/', None),
+    'fsspec': ('https://filesystem-spec.readthedocs.io/en/latest/', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
+    'python': ('http://docs.python.org/', None),
+    'xarray': ('http://xarray.pydata.org/en/stable/', None),
+    'zarr': ('https://zarr.readthedocs.io/en/stable', None),
 }
 
 # -- Extension configuration -------------------------------------------------
 sphinx_gallery_conf = {
-    'examples_dirs': [HERE.joinpath("examples")],
+    'examples_dirs': [HERE.joinpath('examples')],
     'filename_pattern': r'[\\\/]ex_',
     'pypandoc': True,
 }

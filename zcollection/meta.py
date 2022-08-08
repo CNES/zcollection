@@ -8,7 +8,7 @@ Configuration metadata
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple
+from typing import Any, Iterable, Sequence
 import abc
 
 import numcodecs.abc
@@ -26,7 +26,7 @@ class Pair(abc.ABC):
         name: name of the key.
         value: value of the key.
     """
-    __slots__ = ("name", "value")
+    __slots__ = ('name', 'value')
 
     def __init__(self, name: str, value: Any) -> None:
         #: Name of the key.
@@ -47,20 +47,20 @@ class Pair(abc.ABC):
         return value
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.name!r}, {self.value})"
+        return f'{self.__class__.__name__}({self.name!r}, {self.value})'
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Pair):
             return False
         return self.get_config() == other.get_config()
 
-    def get_config(self) -> Tuple[str, Any]:
+    def get_config(self) -> tuple[str, Any]:
         """Get the key/value pair configuration."""
         return self.name, self.value
 
     @staticmethod
     @abc.abstractmethod
-    def from_config(data: Tuple[str, Any]) -> "Pair":
+    def from_config(data: tuple[str, Any]) -> Pair:
         """Create a new Pair from the given key/value pair configuration."""
 
 
@@ -73,7 +73,7 @@ class Dimension(Pair):
     """
 
     @staticmethod
-    def from_config(data: Tuple[str, Any]) -> "Dimension":
+    def from_config(data: tuple[str, Any]) -> Dimension:
         """Creates a new instance from its metadata.
 
         Returns:
@@ -91,7 +91,7 @@ class Attribute(Pair):
     """
 
     @staticmethod
-    def from_config(data: Tuple[str, Any]) -> "Attribute":
+    def from_config(data: tuple[str, Any]) -> Attribute:
         """Create a new instance from its metadata.
 
         Args:
@@ -115,18 +115,17 @@ class Variable:
         fill_value: fill value for the variable
         filters: filters for the variable
     """
-    __slots__ = ("attrs", "compressor", "dimensions", "dtype", "fill_value",
-                 "filters", "name")
+    __slots__ = ('attrs', 'compressor', 'dimensions', 'dtype', 'fill_value',
+                 'filters', 'name')
 
-    def __init__(
-            self,
-            name: str,
-            dtype: DTypeLike,
-            dimensions: Optional[Sequence[str]] = None,
-            attrs: Optional[Sequence[Attribute]] = None,
-            compressor: Optional[numcodecs.abc.Codec] = None,
-            fill_value: Optional[Any] = None,
-            filters: Optional[Sequence[numcodecs.abc.Codec]] = None) -> None:
+    def __init__(self,
+                 name: str,
+                 dtype: DTypeLike,
+                 dimensions: Sequence[str] | None = None,
+                 attrs: Sequence[Attribute] | None = None,
+                 compressor: numcodecs.abc.Codec | None = None,
+                 fill_value: Any | None = None,
+                 filters: Sequence[numcodecs.abc.Codec] | None = None) -> None:
         attrs = attrs or tuple()
 
         #: Attributes of the variable.
@@ -145,14 +144,14 @@ class Variable:
         self.name = name
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.name!r})"
+        return f'{self.__class__.__name__}({self.name!r})'
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Variable):
             return False
         return self.get_config() == other.get_config()
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         """Get the variable metadata.
 
         Returns:
@@ -163,7 +162,7 @@ class Variable:
         ) if compressor is not None else None
         filters = tuple(item.get_config() for item in self.filters)
 
-        return dict(attrs=sorted((item.get_config() for item in self.attrs)),
+        return dict(attrs=sorted(item.get_config() for item in self.attrs),
                     compressor=compressor,
                     dimensions=self.dimensions,
                     dtype=zarr.meta.encode_dtype(self.dtype),
@@ -173,7 +172,7 @@ class Variable:
                     name=self.name)
 
     @staticmethod
-    def from_config(data: Dict[str, Any]) -> "Variable":
+    def from_config(data: dict[str, Any]) -> Variable:
         """Create a new variable from the given variable configuration.
 
         Args:
@@ -183,22 +182,22 @@ class Variable:
             new variable.
         """
 
-        def get_codec(codec) -> Optional[numcodecs.abc.Codec]:
+        def get_codec(codec) -> numcodecs.abc.Codec | None:
             """Get the codec from its configuration."""
             return zarr.codecs.get_codec(codec) if codec is not None else None
 
-        dtype = zarr.meta.decode_dtype(data["dtype"])
+        dtype = zarr.meta.decode_dtype(data['dtype'])
         filters: Sequence[numcodecs.abc.Codec] = tuple(
-            zarr.codecs.get_codec(item) for item in data["filters"]
+            zarr.codecs.get_codec(item) for item in data['filters']
             if item is not None)
 
         return Variable(
-            data["name"],
+            data['name'],
             dtype,
-            data["dimensions"],
-            tuple(Attribute.from_config(item) for item in data["attrs"]),
-            get_codec(data["compressor"]),
-            zarr.meta.decode_fill_value(data["fill_value"], dtype),
+            data['dimensions'],
+            tuple(Attribute.from_config(item) for item in data['attrs']),
+            get_codec(data['compressor']),
+            zarr.meta.decode_fill_value(data['fill_value'], dtype),
             filters,
         )
 
@@ -211,26 +210,26 @@ class Dataset:
         variables: variables of the dataset
         attrs: attributes of the dataset
     """
-    __slots__ = ("dimensions", "variables", "attrs")
+    __slots__ = ('dimensions', 'variables', 'attrs')
 
     def __init__(self,
                  dimensions: Sequence[str],
                  variables: Sequence[Variable],
-                 attrs: Optional[Sequence[Attribute]] = None) -> None:
+                 attrs: Sequence[Attribute] | None = None) -> None:
         #: Dimensions of the dataset.
         self.dimensions = tuple(dimensions)
 
         #: Variables of the dataset.
-        self.variables = dict((item.name, item) for item in variables)
+        self.variables = {item.name: item for item in variables}
 
         #: Attributes of the dataset.
         self.attrs = attrs or []
 
     def select_variables(
         self,
-        keep_variables: Optional[Iterable[str]] = None,
-        drop_variables: Optional[Iterable[str]] = None,
-    ) -> Set[str]:
+        keep_variables: Iterable[str] | None = None,
+        drop_variables: Iterable[str] | None = None,
+    ) -> set[str]:
         """Select variables to keep or drop from the dataset.
 
         Args:
@@ -257,13 +256,13 @@ class Dataset:
     def __ne__(self, other: object) -> bool:
         return not self.__eq__(other)
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         """Get the dataset metadata.
 
         Returns:
             Dataset configuration.
         """
-        return dict(attrs=sorted((item.get_config() for item in self.attrs)),
+        return dict(attrs=sorted(item.get_config() for item in self.attrs),
                     dimensions=self.dimensions,
                     variables=tuple(self.variables[name].get_config()
                                     for name in sorted(self.variables)))
@@ -281,20 +280,20 @@ class Dataset:
         """
         if not isinstance(variable, Variable):
             raise TypeError(
-                f"variable must be a Variable, not {type(variable)}")
+                f'variable must be a Variable, not {type(variable)}')
         if variable.name in self.variables:
             raise ValueError(
-                f"The variable {variable.name!r} already exists in the "
-                "collection.")
+                f'The variable {variable.name!r} already exists in the '
+                'collection.')
         dimensions = set(self.dimensions)
         # Looking for unknown dimensions.
         if (set(variable.dimensions) | dimensions) != dimensions:
             raise ValueError(
-                "The new variable must use the dataset dimensions.")
+                'The new variable must use the dataset dimensions.')
         self.variables[variable.name] = variable
 
     @staticmethod
-    def from_config(data: Dict[str, Any]) -> "Dataset":
+    def from_config(data: dict[str, Any]) -> Dataset:
         """Create a new dataset from the given dataset configuration.
 
         Args:
@@ -304,10 +303,10 @@ class Dataset:
             New dataset.
         """
         return Dataset(
-            dimensions=data["dimensions"],
+            dimensions=data['dimensions'],
             variables=tuple(
-                Variable.from_config(item) for item in data["variables"]),
-            attrs=tuple(Attribute.from_config(item) for item in data["attrs"]),
+                Variable.from_config(item) for item in data['variables']),
+            attrs=tuple(Attribute.from_config(item) for item in data['attrs']),
         )
 
     def search_same_dimensions_as(self, variable: Variable) -> Variable:
@@ -327,9 +326,9 @@ class Dataset:
         for item in self.variables.values():
             if item.dimensions == variable.dimensions:
                 return item
-        raise ValueError("No variable using the same dimensions exists.")
+        raise ValueError('No variable using the same dimensions exists.')
 
-    def missing_variables(self, other: "Dataset") -> Sequence[str]:
+    def missing_variables(self, other: Dataset) -> Sequence[str]:
         """Finds the variables in this dataset that are defined in the given
         dataset but not in this dataset.
 
@@ -344,6 +343,6 @@ class Dataset:
         others = set(other.variables)
 
         if len(others - this):
-            raise ValueError("This dataset contains variables that are "
-                             "missing from the given dataset.")
+            raise ValueError('This dataset contains variables that are '
+                             'missing from the given dataset.')
         return tuple(this - others)

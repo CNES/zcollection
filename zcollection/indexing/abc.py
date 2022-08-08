@@ -8,7 +8,7 @@ Abstract base class for indexing.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Protocol, Tuple, Union
+from typing import Any, Dict, Iterable, Protocol, Union
 import abc
 import functools
 import pathlib
@@ -77,34 +77,34 @@ class Indexer:
         filesystem: The filesystem to use.
     """
     #: The name of the column containing the start of the slice.
-    START = "start"
+    START = 'start'
 
     #: The name of the column containing the stop of the slice.
-    STOP = "stop"
+    STOP = 'stop'
 
     def __init__(
         self,
-        path: Union[pathlib.Path, str],
+        path: pathlib.Path | str,
         *,
-        filesystem: Optional[fsspec.AbstractFileSystem] = None,
+        filesystem: fsspec.AbstractFileSystem | None = None,
     ) -> None:
         if isinstance(path, pathlib.Path):
             path = str(path)
         #: Path to the index.
         self._path = path
         #: Filesystem to use.
-        self._fs = filesystem or fsspec.filesystem("file")
+        self._fs = filesystem or fsspec.filesystem('file')
         #: Metadata to attach to the index.
-        self._meta: Dict[str, bytes] = {}
+        self._meta: dict[str, bytes] = {}
         #: Partitioning keys of the indexed collection.
-        self._partition_keys: Tuple[str, ...] = ()
+        self._partition_keys: tuple[str, ...] = ()
         #: PyArrow table containing the index.
-        self._table: Optional[pyarrow.Table] = None
+        self._table: pyarrow.Table | None = None
         #: Type for each columns of the index.
-        self._type: Dict[str, pyarrow.DataType] = {}
+        self._type: dict[str, pyarrow.DataType] = {}
 
     @property
-    def meta(self) -> Dict[str, bytes]:
+    def meta(self) -> dict[str, bytes]:
         """Metadata attached to the index.
 
         Returns:
@@ -113,7 +113,7 @@ class Indexer:
         return self._meta
 
     @classmethod
-    def dtype(cls, **_kwargs) -> List[Tuple[str, str]]:
+    def dtype(cls, **_kwargs) -> list[tuple[str, str]]:
         """Return the columns of the index.
 
         Args:
@@ -123,12 +123,12 @@ class Indexer:
             A tuple of (name, type) pairs.
         """
         return [
-            (cls.START, "int64"),
-            (cls.STOP, "int64"),
+            (cls.START, 'int64'),
+            (cls.STOP, 'int64'),
         ]
 
     @classmethod
-    def pyarrow_type(cls, **kwargs) -> Dict[str, pyarrow.DataType]:
+    def pyarrow_type(cls, **kwargs) -> dict[str, pyarrow.DataType]:
         """Return the PyArrow DataType for the index.
 
         Args:
@@ -140,7 +140,7 @@ class Indexer:
         dtype = dict(cls.dtype(**kwargs))
         binary = {}
         for name, value in tuple(dtype.items()):
-            if value.startswith("S"):
+            if value.startswith('S'):
                 binary[name] = pyarrow.binary(int(value[1:]))
                 del dtype[name]
         result = {
@@ -152,7 +152,7 @@ class Indexer:
 
     def _set_schema(
         self,
-        partition_schema: Tuple[Tuple[str, pyarrow.DataType], ...],
+        partition_schema: tuple[tuple[str, pyarrow.DataType], ...],
         **kwargs,
     ) -> None:
         """Set the schema properties of the index.
@@ -166,20 +166,20 @@ class Indexer:
         self._type = {name: dtype[name] for name, _ in self.dtype()}
         self._type.update({item[0]: item[1] for item in partition_schema})
 
-    def _sort_keys(self) -> List[Tuple[str, str]]:
+    def _sort_keys(self) -> list[tuple[str, str]]:
         """Return the list of keys to sort the index by."""
         keys = self._partition_keys + (self.START, self.STOP)
-        return [(key, "ascending") for key in keys]
+        return [(key, 'ascending') for key in keys]
 
     @classmethod
     def _create(
         cls,
-        path: Union[pathlib.Path, str],
+        path: pathlib.Path | str,
         ds: collection.Collection,
-        meta: Optional[Dict[str, bytes]] = None,
-        filesystem: Optional[fsspec.AbstractFileSystem] = None,
+        meta: dict[str, bytes] | None = None,
+        filesystem: fsspec.AbstractFileSystem | None = None,
         **kwargs,
-    ) -> "Indexer":
+    ) -> Indexer:
         """Create a new index.
 
         Args:
@@ -202,12 +202,12 @@ class Indexer:
     @abc.abstractmethod
     def create(
         cls,
-        path: Union[pathlib.Path, str],
+        path: pathlib.Path | str,
         ds: collection.Collection,
         *,
-        filesystem: Optional[fsspec.AbstractFileSystem] = None,
+        filesystem: fsspec.AbstractFileSystem | None = None,
         **kwargs,
-    ) -> "Indexer":
+    ) -> Indexer:
         """Create a new index.
 
         Args:
@@ -222,10 +222,10 @@ class Indexer:
     @classmethod
     def open(
         cls,
-        path: Union[pathlib.Path, str],
+        path: pathlib.Path | str,
         *,
-        filesystem: Optional[fsspec.AbstractFileSystem] = None,
-    ) -> "Indexer":
+        filesystem: fsspec.AbstractFileSystem | None = None,
+    ) -> Indexer:
         """Open an index.
 
         Args:
@@ -236,7 +236,7 @@ class Indexer:
             The index.
         """
         self = cls(path, filesystem=filesystem)
-        with self._fs.open(path, "rb") as stream:
+        with self._fs.open(path, 'rb') as stream:
             schema = pyarrow.parquet.read_schema(stream)
         columns = tuple(name for name, _ in self.dtype())
         self._partition_keys = tuple(name for name in schema.names
@@ -252,8 +252,8 @@ class Indexer:
         self,
         ds: collection.Collection,
         func: IndexingCallable,
-        partition_size: Optional[int] = None,
-        npartitions: Optional[int] = None,
+        partition_size: int | None = None,
+        npartitions: int | None = None,
         **kwargs,
     ) -> None:
         """Update the index.
@@ -265,7 +265,7 @@ class Indexer:
             npartitions: The number of desired bag partitions.
             **kwargs: Additional arguments to pass to the function.
         """
-        tables: List[pyarrow.Table] = []
+        tables: list[pyarrow.Table] = []
         bag = ds.map(func,
                      partition_size=partition_size,
                      npartitions=npartitions,
@@ -278,9 +278,10 @@ class Indexer:
             if length == 0:
                 continue
             # Create a new table with the indexed data.
-            data = dict(
-                (field, pyarrow.array(data[field], type=self._type[field]))
-                for field in data.dtype.fields)
+            data = {
+                field: pyarrow.array(data[field], type=self._type[field])
+                for field in data.dtype.fields
+            }
             # Add the partition to the table.
             data.update(
                 (name,
@@ -331,8 +332,8 @@ class Indexer:
         self,
         ds: collection.Collection,
         *,
-        partition_size: Optional[int] = None,
-        npartitions: Optional[int] = None,
+        partition_size: int | None = None,
+        npartitions: int | None = None,
     ) -> None:
         """Update the index.
 
@@ -403,7 +404,7 @@ class Indexer:
         self,
         columns: QueryDict,
         *,
-        logical_op: Optional[str] = None,
+        logical_op: str | None = None,
         only_partition_keys: bool = True,
     ) -> collection.Indexer:
         """Query the index.
@@ -420,11 +421,11 @@ class Indexer:
         if len(self._partition_keys) == 0:
             return tuple()
 
-        logical_op = logical_op or "and"
-        if logical_op not in ("and", "and_not", "invert", "or", "xor"):
-            raise ValueError(f"Invalid logical operator: {logical_op}")
-        if logical_op in ("and", "or"):
-            logical_op += "_"
+        logical_op = logical_op or 'and'
+        if logical_op not in ('and', 'and_not', 'invert', 'or', 'xor'):
+            raise ValueError(f'Invalid logical operator: {logical_op}')
+        if logical_op in ('and', 'or'):
+            logical_op += '_'
         function = getattr(pyarrow.compute, logical_op)
 
         if not set(self._type) & set(columns.keys()):
@@ -432,8 +433,10 @@ class Indexer:
                 f'Invalid column names: {", ".join(columns.keys())}')
 
         # Transform the columns values into a list if they are not iterable.
-        values = dict((k, [v] if not isinstance(v, Iterable) else v)
-                      for k, v in columns.items())
+        values = {
+            k: [v] if not isinstance(v, Iterable) else v
+            for k, v in columns.items()
+        }
 
         table = self._read()
 
@@ -465,4 +468,4 @@ class Indexer:
         """
         if self._fs.exists(self._path):
             return self._read()
-        raise ValueError("The index is not initialized.")
+        raise ValueError('The index is not initialized.')
