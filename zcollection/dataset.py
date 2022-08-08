@@ -268,7 +268,7 @@ class Dataset:
             Variable(
                 name,  # type: ignore[arg-type]
                 array.data,
-                tuple(array.dims),
+                tuple(array.dims),  # type: ignore[arg-type]
                 tuple(
                     Attribute(*attr)  # type: ignore[arg-type]
                     for attr in array.attrs.items()),
@@ -399,10 +399,6 @@ class Dataset:
             *tuple(item.data for item in self.variables.values()), **kwargs)
         for name, array in zip(self.variables, arrays):
             self.variables[name].array = array
-            # If the variable holds a fill value, the computed array will
-            # be a masked array, so the fill value attribute is no longer
-            # needed (need to round around a bug in dask#9238)
-            self.variables[name].fill_value = None
         return self
 
     def concat(self, other: Dataset | Iterable[Dataset], dim: str) -> Dataset:
