@@ -88,8 +88,8 @@ intersphinx_mapping = {
     'dask': ('https://docs.dask.org/en/latest/', None),
     'fsspec': ('https://filesystem-spec.readthedocs.io/en/latest/', None),
     'numpy': ('https://numpy.org/doc/stable/', None),
-    'python': ('http://docs.python.org/', None),
-    'xarray': ('http://xarray.pydata.org/en/stable/', None),
+    'python': ('https://docs.python.org/3/', None),
+    'xarray': ('https://docs.xarray.dev/en/stable/', None),
     'zarr': ('https://zarr.readthedocs.io/en/stable', None),
 }
 
@@ -97,5 +97,5 @@ intersphinx_mapping = {
 sphinx_gallery_conf = {
     'examples_dirs': [HERE.joinpath('examples')],
     'filename_pattern': r'[\\\/]ex_',
-    'pypandoc': True,
+    'pypandoc': False,
 }

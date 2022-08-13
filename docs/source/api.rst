@@ -59,20 +59,10 @@ Indexing
 Convenience functions
 =====================
 
-Collection
-----------
-
 .. autosummary::
   :toctree: _generated/
 
   zcollection.create_collection
-  zcollection.open_collection
-
-view
-----
-
-.. autosummary::
-  :toctree: _generated/
-
   zcollection.create_view
+  zcollection.open_collection
   zcollection.open_view

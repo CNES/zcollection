@@ -62,6 +62,7 @@ and S3 file systems have been tested.
    install
    auto_examples/index.rst
    api
+   release
 
 Indices and tables
 ==================

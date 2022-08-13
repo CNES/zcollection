@@ -3,7 +3,7 @@ Overview of a View.
 ===================
 
 This section outlines the steps required to get started with the main features
-of a ``Collection``.
+of a ``View``.
 """
 import pprint
 
@@ -103,23 +103,10 @@ assert ds is not None
 var3 = ds['var3'].values
 var3
 
-# *Warning*: The variables of the reference collection cannot be edited.
+# %%
+# **Warning**: The variables of the reference collection cannot be edited.
 try:
     view.update(lambda ds: dict(var2=ds['var2'].values * 0))
-except ValueError as exc:
-    print(str(exc))
-
-# %%
-# A method allows you to
-# :py:meth:`drop_variable<zcollection.view.View.drop_variable>` variables from
-# the view.
-view.drop_variable('var3')
-view.load()
-
-# %%
-# *Warning*: The variables of the reference collection cannot be dropped.
-try:
-    view.drop_variable('var2')
 except ValueError as exc:
     print(str(exc))
 
@@ -130,6 +117,26 @@ except ValueError as exc:
 for partition, array in view.map(
         lambda ds: ds['var1'].values + ds['var2'].values).compute():
     print(f' * partition = {partition}: mean = {array.mean()}')
+
+# %%
+# Drop a variable
+# ----------------
+# A method allows you to
+# :py:meth:`drop_variable<zcollection.view.View.drop_variable>` variables from
+# the view.
+view.drop_variable('var3')
+try:
+    view.load()
+except ValueError as err:
+    # The view no longer has a variable.
+    print(err)
+
+# %%
+# **Warning**: The variables of the reference collection cannot be dropped.
+try:
+    view.drop_variable('var2')
+except ValueError as exc:
+    print(str(exc))
 
 # %%
 # Close the local cluster to avoid printing warning messages in the other
