@@ -41,8 +41,8 @@ cluster = dask.distributed.LocalCluster(processes=False)
 client = dask.distributed.Client(cluster)
 
 # %%
-# Creation of the partitionning
-# -----------------------------
+# Creation of the partitioning
+# ----------------------------
 #
 # Before creating our collection, we define the partitioning of our dataset. In
 # this example, we will partition the data by ``month`` using the variable
