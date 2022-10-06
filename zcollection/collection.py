@@ -22,6 +22,7 @@ from typing import (
     Union,
 )
 import dataclasses
+import datetime
 import io
 import itertools
 import json
@@ -644,6 +645,7 @@ class Collection:
         self,
         *,
         filters: PartitionFilter = None,
+        timedelta: datetime.timedelta | None = None,
     ) -> None:
         # pylint: disable=method-hidden
         """Drop the selected partitions.
@@ -652,15 +654,28 @@ class Collection:
             filters: The predicate used to filter the partitions to drop.
                 To get more information on the predicate, see the
                 documentation of the :meth:`partitions` method.
+            timedelta: Select the partitions created before the
+                specified time delta relative to the current time.
 
         Example:
             >>> collection.drop_partitions(filters="year == 2019")
+            >>> collection.drop_partitions(
+            ...     timedelta=datetime.timedelta(days=30))
         """
+        now = datetime.datetime.now()
         client = utilities.get_client()
-        folders = list(self.partitions(filters=filters))
+        folders = self.partitions(filters=filters)
+
+        def is_created_before(path: str) -> bool:
+            created = self.fs.created(path)
+            return now - created > timedelta
+
+        if timedelta is not None:
+            folders = filter(is_created_before, folders)
+
         storage.execute_transaction(
             client, self.synchronizer,
-            client.map(self.fs.rm, folders, recursive=True))
+            client.map(self.fs.rm, list(folders), recursive=True))
 
         def invalidate_cache(path):
             """Invalidate the cache."""

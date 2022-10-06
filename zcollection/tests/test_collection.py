@@ -248,6 +248,15 @@ def test_drop_partitions(
         item.split(zcollection.fs.sep)[-2] for item in partitions
     ]
 
+    npartitions = len(partitions)
+    zcollection.drop_partitions(timedelta=datetime.timedelta(days=1))
+    partitions = list(zcollection.partitions())
+    assert len(partitions) == npartitions
+
+    zcollection.drop_partitions(timedelta=datetime.timedelta(0))
+    partitions = list(zcollection.partitions())
+    assert len(partitions) == 0
+
     zcollection = convenience.open_collection(str(tested_fs.collection),
                                               mode='r',
                                               filesystem=tested_fs.fs)
