@@ -664,18 +664,18 @@ class Collection:
         """
         now = datetime.datetime.now()
         client = utilities.get_client()
-        folders = self.partitions(filters=filters)
+        folders = list(self.partitions(filters=filters))
 
         def is_created_before(path: str) -> bool:
             created = self.fs.created(path)
             return now - created > timedelta
 
         if timedelta is not None:
-            folders = filter(is_created_before, folders)
+            folders = list(filter(is_created_before, folders))
 
         storage.execute_transaction(
             client, self.synchronizer,
-            client.map(self.fs.rm, list(folders), recursive=True))
+            client.map(self.fs.rm, folders, recursive=True))
 
         def invalidate_cache(path):
             """Invalidate the cache."""
