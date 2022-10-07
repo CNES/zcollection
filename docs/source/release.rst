@@ -1,6 +1,14 @@
 Release notes
 =============
 
+2022.10.0
+---------
+
+Release on October 7, 20212
+
+* Added an option to the method ``drop_partitions`` to drop partitions
+  older than a specified time delta relative to the current time.
+
 2022.8.0
 --------
 
