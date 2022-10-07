@@ -463,7 +463,7 @@ class Collection:
                       partitioning=self.partitioning.get_config())
 
         with self.fs.open(config, mode='w') as stream:
-            json.dump(params, stream, indent=4)
+            json.dump(params, stream, indent=4)  # type: ignore[arg-type]
 
     def is_readonly(self) -> bool:
         """Return True if the collection is read-only."""
@@ -1097,9 +1097,10 @@ class Collection:
         Returns
             The iterator over the partitions and the zarr groups.
         """
-        for item in self.partitions():
-            yield (self._relative_path(item) if relative else item,
-                   zarr.open_consolidated(self.fs.get_mapper(item)))
+        yield from (
+            (self._relative_path(item) if relative else item,
+             zarr.open_consolidated(self.fs.get_mapper(item)))  # type: ignore
+            for item in self.partitions())
 
     def variables(
         self,

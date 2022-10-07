@@ -138,22 +138,28 @@ def _load_one_dataset(
     # If the user has not selected any variables in the reference view. In this
     # case, the dataset is built from all the variables selected in the view.
     if len(ds.dimensions) == 0:
-        return dataset.Dataset([
-            storage.open_zarr_array(
-                zarr.open(
-                    fs.get_mapper(fs.sep.join(
-                        (base_dir, partition, variable))),
-                    mode='r',
-                ), variable) for variable in variables
-        ], ds.attrs), partition
+        return dataset.Dataset(
+            [
+                storage.open_zarr_array(
+                    zarr.open(  # type: ignore[arg-type]
+                        fs.get_mapper(
+                            fs.sep.join((base_dir, partition, variable))),
+                        mode='r',
+                    ),
+                    variable) for variable in variables
+            ],
+            ds.attrs), partition
 
     _ = {
         ds.add_variable(item.metadata(), item.array)  # type: ignore[arg-type]
-        for item in (storage.open_zarr_array(
-            zarr.open(
-                fs.get_mapper(fs.sep.join((base_dir, partition, variable))),
-                mode='r',
-            ), variable) for variable in variables)
+        for item in (
+            storage.open_zarr_array(
+                zarr.open(  # type: ignore[arg-type]
+                    fs.get_mapper(fs.sep.join((base_dir, partition,
+                                               variable))),
+                    mode='r',
+                ),
+                variable) for variable in variables)
     }
 
     # Apply indexing if needed.
@@ -290,13 +296,13 @@ class View:
         config = self._config(self.base_dir, self.fs)
         fs = json.loads(self.view_ref.fs.to_json())
         with self.fs.open(config, mode='w') as stream:
-            json.dump(dict(base_dir=self.base_dir,
-                           metadata=self.metadata.get_config(),
-                           view_ref=dict(
-                               path=self.view_ref.partition_properties.dir,
-                               fs=fs)),
-                      stream,
-                      indent=4)
+            json.dump(
+                dict(base_dir=self.base_dir,
+                     metadata=self.metadata.get_config(),
+                     view_ref=dict(path=self.view_ref.partition_properties.dir,
+                                   fs=fs)),
+                stream,  # type: ignore[arg-type]
+                indent=4)
         self.fs.invalidate_cache(config)
 
     @classmethod
