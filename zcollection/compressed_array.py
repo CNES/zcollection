@@ -37,7 +37,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
 
     def __init__(
         self,
-        array: Union[NDArray, zarr.Array],
+        array: Union['CompressedArray', NDArray, zarr.Array],
         *args,
         **kwargs,
     ):
@@ -49,6 +49,9 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
                 raise ValueError('args or kwargs are not allowed when '
                                  'array is a zarr.Array')
             self._array = array
+        elif isinstance(array, CompressedArray):
+            self._array = array._array
+            self._fill_value = array._fill_value
         else:
             raise TypeError('array must be a numpy.ndarray or a zarr.Array')
 

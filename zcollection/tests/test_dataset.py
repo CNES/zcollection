@@ -277,10 +277,12 @@ def test_dataset_persist():
     """Test persisting of datasets."""
     ds1 = create_test_dataset()
     ds1.persist()
+    ds1.persist()
     assert ds1.variables['var1'].values is not None
     assert ds1.variables['var2'].values is not None
 
     ds2 = create_test_dataset()
+    ds2.persist(compress=True)
     ds2.persist(compress=True)
     assert ds2.variables['var1'].values is not None
     assert ds2.variables['var2'].values is not None

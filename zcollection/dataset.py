@@ -397,12 +397,14 @@ class Dataset:
         Returns:
             The dataset with the variables persisted into memory.
         """
+        if compress:
+            for variable in self.variables.values():
+                variable.array = variable.array.map_blocks(
+                    CompressedArray, fill_value=variable.fill_value)
         arrays = dask.base.persist(
             *tuple(item.data for item in self.variables.values()), **kwargs)
         for name, array in zip(self.variables, arrays):
-            variable = self.variables[name]
-            variable.array = array if not compress else array.map_blocks(
-                CompressedArray, fill_value=variable.fill_value)
+            self.variables[name].array = array
 
         return self
 
