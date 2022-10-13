@@ -1,6 +1,13 @@
 Release notes
 =============
 
+2022.10.1
+---------
+
+Release on October 13, 20212
+
+* Add compatibility with Python 3.8.
+
 2022.10.0
 ---------
 
