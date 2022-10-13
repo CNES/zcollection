@@ -21,6 +21,7 @@ import dask.threaded
 import xarray
 
 from . import meta
+from .compressed_array import CompressedArray
 from .meta import Attribute
 from .typing import ArrayLike, NDArray, NDMaskedArray
 from .variable import (
@@ -267,7 +268,7 @@ class Dataset:
         variables = [
             Variable(
                 name,  # type: ignore[arg-type]
-                array.data,
+                array.data,  # type: ignore[arg-type]
                 tuple(array.dims),  # type: ignore[arg-type]
                 tuple(
                     Attribute(*attr)  # type: ignore[arg-type]
@@ -385,10 +386,11 @@ class Dataset:
         ]
         return Dataset(variables=variables, attrs=self.attrs)
 
-    def persist(self, **kwargs) -> Dataset:
+    def persist(self, *, compress=False, **kwargs) -> Dataset:
         """Persist the dataset variables.
 
         Args:
+            compress: If true, compress the data loaded into memory.
             **kwargs: Additional parameters are passed to the function
                 :py:func:`dask.array.Array.persist`.
 
@@ -398,7 +400,10 @@ class Dataset:
         arrays = dask.base.persist(
             *tuple(item.data for item in self.variables.values()), **kwargs)
         for name, array in zip(self.variables, arrays):
-            self.variables[name].array = array
+            variable = self.variables[name]
+            variable.array = array if not compress else array.map_blocks(
+                CompressedArray, fill_value=variable.fill_value)
+
         return self
 
     def concat(self, other: Dataset | Iterable[Dataset], dim: str) -> Dataset:
