@@ -14,6 +14,7 @@ import collections
 import dask.array.core
 import dask.array.creation
 import dask.array.ma
+import dask.array.rechunk
 import dask.array.routines
 import dask.array.wrap
 import dask.base
@@ -386,7 +387,27 @@ class Dataset:
         ]
         return Dataset(variables=variables, attrs=self.attrs)
 
-    def persist(self, *, compress=False, **kwargs) -> Dataset:
+    def rechunk(self, **kwargs) -> Dataset:
+        """Rechunk the dataset.
+
+        Args:
+            **kwargs: Keyword arguments are passed through to
+                :py:func:`dask.array.rechunk.rechunk`.
+
+        Returns:
+            New dataset.
+
+        .. seealso:: :py:func:`dask.array.rechunk`
+        """
+        variables = [var.rechunk(**kwargs) for var in self.variables.values()]
+        return Dataset(variables=variables, attrs=self.attrs)
+
+    def persist(
+        self,
+        *,
+        compress: bool = False,
+        **kwargs,
+    ) -> Dataset:
         """Persist the dataset variables.
 
         Args:

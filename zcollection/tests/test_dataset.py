@@ -291,3 +291,21 @@ def test_dataset_persist():
         ds1.variables['var1'].values == ds2.variables['var1'].values)
     assert numpy.all(
         ds1.variables['var2'].values == ds2.variables['var2'].values)
+
+
+def test_dataset_rechunk():
+    """Test rechunking of datasets."""
+    ds1 = create_test_dataset()
+    ds2 = create_test_dataset()
+    ds2 = ds2.rechunk()
+
+    assert numpy.all(
+        ds1.variables['var1'].values == ds2.variables['var1'].values)
+    assert numpy.all(
+        ds1.variables['var2'].values == ds2.variables['var2'].values)
+
+    ds2 = ds1.rechunk().persist(compress=True)
+    assert numpy.all(
+        ds1.variables['var1'].values == ds2.variables['var1'].values)
+    assert numpy.all(
+        ds1.variables['var2'].values == ds2.variables['var2'].values)

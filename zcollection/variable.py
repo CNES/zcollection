@@ -274,7 +274,7 @@ class Variable:
         Returns:
             The variable
         """
-        self.array = dask.base.persist(self.data, **kwargs)
+        self.array = dask.base.persist(self.data, **kwargs)  # type: ignore
         return self
 
     @property
@@ -513,6 +513,20 @@ class Variable:
             return self._new(self.name, self.array, self.dimensions,
                              self.attrs, self.compressor, self.fill_value,
                              self.filters)
+
+    def rechunk(self, **kwargs) -> Variable:
+        """Rechunk the variable.
+
+        Args:
+            **kwargs: Keyword arguments passed to
+                :func:`dask.array.rechunk.rechunk`
+
+        Returns:
+            The variable.
+        """
+        return self._new(self.name, self.array.rechunk(**kwargs),
+                         self.dimensions, self.attrs, self.compressor,
+                         self.fill_value, self.filters)
 
     def to_xarray(self) -> xarray.Variable:
         """Convert the variable to an xarray.Variable.

@@ -310,3 +310,13 @@ def test_variable_fill(
     assert not var.values.all() is numpy.ma.masked
     var.fill()
     assert var.values.all() is numpy.ma.masked
+
+
+def test_variable_rechunk(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
+    """Test rechunking of variables."""
+    var = create_test_variable()
+    values = var.values
+    var = var.rechunk()
+    assert numpy.all(var.values == values)
