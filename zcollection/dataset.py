@@ -24,7 +24,7 @@ import xarray
 from . import meta
 from .compressed_array import CompressedArray
 from .meta import Attribute
-from .typing import ArrayLike, NDArray, NDMaskedArray
+from .type_hints import ArrayLike, NDArray, NDMaskedArray
 from .variable import (
     Variable,
     _attributes_repr,

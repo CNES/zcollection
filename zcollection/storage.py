@@ -19,7 +19,7 @@ import numpy
 import zarr
 
 from . import dataset, meta, sync
-from .typing import ArrayLike
+from .type_hints import ArrayLike
 
 #: Block size limit used with dask arrays. (128 MiB)
 BLOCK_SIZE_LIMIT = 134217728

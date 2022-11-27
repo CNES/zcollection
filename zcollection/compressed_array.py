@@ -14,7 +14,7 @@ import numpy
 import numpy.lib.mixins
 import zarr
 
-from .typing import DType, NDArray, NDMaskedArray
+from .type_hints import DType, NDArray, NDMaskedArray
 
 #: Type of arrays returned when a compressed array is decompressed.
 Array = Union[NDArray, NDMaskedArray]

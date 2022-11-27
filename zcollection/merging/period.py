@@ -12,7 +12,7 @@ import re
 
 import numpy
 
-from ..typing import DType
+from ..type_hints import DType
 
 # Parse the unit of numpy.timedelta64.
 PATTERN = re.compile(r'(?:datetime|timedelta)64\[(\w+)\]').search

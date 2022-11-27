@@ -15,7 +15,7 @@ except ImportError:
     # For Python < 3.9 we use a backport of GenericAlias provided by
     # numpy
     # isort: off
-    from numpy._typing._generic_alias import (  # type: ignore[misc,no-redef]
+    from numpy._typing._generic_alias import (  # type: ignore[assignment,misc]
         _GenericAlias as GenericAlias,  # yapf: disable
     )
     # isort: on

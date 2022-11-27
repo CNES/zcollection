@@ -26,7 +26,7 @@ import zarr
 
 from . import meta, utilities
 from .meta import Attribute
-from .typing import ArrayLike, NDArray, NDMaskedArray
+from .type_hints import ArrayLike, NDArray, NDMaskedArray
 
 
 def _dimensions_repr(dimensions: dict[str, int]) -> str:

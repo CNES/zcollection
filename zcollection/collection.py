@@ -49,7 +49,7 @@ from . import (
     sync,
     utilities,
 )
-from .typing import ArrayLike
+from .type_hints import ArrayLike
 
 #: Function type to load and call a callback function of type
 #: :class:`PartitionCallable`.

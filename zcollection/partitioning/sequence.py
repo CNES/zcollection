@@ -13,7 +13,7 @@ import dask.array.routines
 import numpy
 
 from . import abc
-from ..typing import NDArray
+from ..type_hints import NDArray
 
 
 def _is_monotonic(arr: NDArray) -> bool:

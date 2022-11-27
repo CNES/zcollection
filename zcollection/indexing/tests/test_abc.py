@@ -18,7 +18,7 @@ from ...partitioning.tests import data
 from ...tests.cluster import dask_client, dask_cluster
 from ...tests.fs import local_fs
 # pylint: enable=unused-import
-from ...typing import NDArray
+from ...type_hints import NDArray
 
 
 def split_half_orbit(

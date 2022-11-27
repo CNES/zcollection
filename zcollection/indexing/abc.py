@@ -19,7 +19,7 @@ import pyarrow
 import pyarrow.parquet
 
 from .. import collection, dataset
-from ..typing import NDArray
+from ..type_hints import NDArray
 
 #: Scalar data type for the index.
 Scalar = Union[int, float, bytes]

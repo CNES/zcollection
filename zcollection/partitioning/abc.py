@@ -22,7 +22,7 @@ import fsspec
 import numpy
 
 from .. import dataset
-from ..typing import NDArray
+from ..type_hints import NDArray
 
 #: Object that represents a partitioning scheme
 Partition = Tuple[Tuple[Tuple[str, Any], ...], slice]

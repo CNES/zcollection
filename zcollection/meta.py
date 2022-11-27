@@ -16,7 +16,7 @@ import numpy
 import zarr.codecs
 import zarr.meta
 
-from .typing import DTypeLike
+from .type_hints import DTypeLike
 
 
 class Pair(abc.ABC):
