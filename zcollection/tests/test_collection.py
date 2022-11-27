@@ -9,6 +9,7 @@ Test of the collections
 import datetime
 import io
 
+import dask.array.core
 import fsspec
 import numpy
 import pytest
@@ -55,6 +56,8 @@ def test_collection_creation(
         partition_base_dir=str(tested_fs.collection),
         filesystem=tested_fs.fs)
     assert isinstance(str(zcollection), str)
+    assert zcollection.immutable is False
+
     serialized = collection.Collection.from_config(str(tested_fs.collection),
                                                    filesystem=tested_fs.fs)
     assert serialized.axis == zcollection.axis
@@ -597,3 +600,107 @@ def test_map_overlap(
         ds = storage.open_zarr_group(folder, zcollection.fs)
         assert numpy.allclose(data[indices, :] * 2,
                               ds.variables['var1'].values * 2)
+
+
+@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+def test_insert_immutable(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
+    """Test the insertion of a dataset with variables that are immutable
+    relative to the partitioning."""
+    tested_fs = request.getfixturevalue(arg)
+
+    def make_dask_array(arr):
+        return dask.array.core.from_array(arr)
+
+    ds = dataset.Dataset(
+        [
+            dataset.Variable(
+                'time',
+                make_dask_array(  # type: ignore
+                    numpy.arange(numpy.datetime64('2000-01-01'),
+                                 numpy.datetime64('2000-01-30'),
+                                 numpy.timedelta64(1, 'D'))),
+                ('time', ),
+            ),
+            dataset.Variable(
+                'lon',
+                make_dask_array(numpy.arange(0, 360, 1)),  # type: ignore
+                ('lon', ),
+            ),
+            dataset.Variable(
+                'lat',
+                make_dask_array(numpy.arange(-90, 90, 1)),  # type: ignore
+                ('lat', ),
+            ),
+            dataset.Variable(
+                'grid',
+                make_dask_array(
+                    numpy.random.rand(  # type: ignore
+                        29,
+                        360,
+                        180,
+                    )),
+                ('time', 'lon', 'lat'),
+            ),
+        ],
+        (dataset.Attribute('history', 'Created for testing'), ),
+    )
+    zcollection = collection.Collection('time',
+                                        ds.metadata(),
+                                        partitioning.Date(('time', ), 'D'),
+                                        str(tested_fs.collection),
+                                        filesystem=tested_fs.fs)
+    assert zcollection.immutable
+    assert not tested_fs.fs.exists(zcollection._immutable)
+    zcollection.insert(ds)
+    assert tested_fs.fs.exists(zcollection._immutable)
+
+    zds = zcollection.load()
+    assert zds is not None
+
+    assert numpy.all(
+        zds.variables['grid'].values == ds.variables['grid'].values)
+    assert numpy.all(
+        zds.variables['time'].values == ds.variables['time'].values)
+    assert numpy.all(zds.variables['lon'].values == ds.variables['lon'].values)
+    assert numpy.all(zds.variables['lat'].values == ds.variables['lat'].values)
+
+    def update(ds: dataset.Dataset, varname: str) -> dict[str, numpy.ndarray]:
+        """Update function used for this test."""
+        return {varname: ds.variables['grid'].values * -1}
+
+    zcollection.update(update, varname='grid')  # type: ignore
+    zds = zcollection.load()
+    assert zds is not None
+
+    assert numpy.all(
+        zds.variables['grid'].values == ds.variables['grid'].values * -1)
+    assert numpy.all(
+        zds.variables['time'].values == ds.variables['time'].values)
+    assert numpy.all(zds.variables['lon'].values == ds.variables['lon'].values)
+    assert numpy.all(zds.variables['lat'].values == ds.variables['lat'].values)
+
+    new_variable = meta.Variable(
+        'new_var',
+        numpy.float64,
+        ('time', 'lon', 'lat'),
+        (meta.Attribute('units', 'm'), ),
+    )
+    zcollection.add_variable(new_variable)
+    zcollection.update(update, varname='new_var')  # type: ignore
+    zds = zcollection.load()
+    assert zds is not None
+    assert numpy.all(
+        zds.variables['new_var'].values == ds.variables['grid'].values)
+
+    new_variable = meta.Variable(
+        'new_var2',
+        numpy.float64,
+        ('another_dim', ),
+        (meta.Attribute('units', 'm'), ),
+    )
+    with pytest.raises(ValueError):
+        zcollection.add_variable(new_variable)

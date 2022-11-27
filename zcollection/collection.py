@@ -64,6 +64,9 @@ PartitionFilter = Optional[Union[str, PartitionFilterCallback]]
 #: Indexer's type.
 Indexer = Iterable[Tuple[Tuple[Tuple[str, int], ...], slice]]
 
+#: Name of the directory storing the immutable dataset.
+_IMMUTABLE = '.immutable'
+
 #: Module logger.
 _LOGGER = logging.getLogger(__name__)
 
@@ -340,6 +343,28 @@ def build_indexer_args(
     return ((item, indexers_map[item]) for item in sorted(selected_partitions))
 
 
+def _immutable_path(
+    fs: fsspec.AbstractFileSystem,
+    ds: meta.Dataset,
+    partition_properties: PartitioningProperties,
+) -> str | None:
+    """Return the immutable path of the dataset.
+
+    Args:
+        fs: The file system that the partition is stored on.
+        ds: The dataset to process.
+        partition_properties: The partitioning properties.
+
+    Returns:
+        The immutable path of the dataset containing data that are immutable
+        relative to the partitioning or None if the dataset does not contain
+        immutable data.
+    """
+    return fs.sep.join(
+        (partition_properties.dir, _IMMUTABLE)) if ds.select_variables_by_dims(
+            (partition_properties.dim, ), predicate=False) else None
+
+
 class Collection:
     """This class manages a collection of files in Zarr format stored in a set
     of subdirectories. These subdirectories split the data, by cycles or dates
@@ -406,6 +431,13 @@ class Collection:
         self.mode = mode
         #: The synchronizer used to synchronize the modifications.
         self.synchronizer = synchronizer or sync.NoSync()
+        #: The path to the dataset that contains the immutable data relative
+        #: to the partitioning.
+        self._immutable = _immutable_path(
+            self.fs,
+            ds,
+            self.partition_properties,
+        )
 
         self._write_config(skip_if_exists=True)
 
@@ -425,6 +457,12 @@ class Collection:
                     self, item,
                     types.MethodType(Collection._unsupported_operation, self))
             # pylint: enable=method-hidden
+
+    @property
+    def immutable(self) -> bool:
+        """Return True if the collection contains immutable data relative to
+        the partitioning."""
+        return self._immutable is not None
 
     def __str__(self) -> str:
         return (f'{self.__class__.__name__}'
@@ -573,6 +611,28 @@ class Collection:
 
         client = utilities.get_client()
 
+        # If the dataset contains variables that should not be partitioned.
+        if self._immutable is not None:
+
+            # On the first call, we store the immutable variables in a
+            # a directory located at the root of the collection.
+            if not self.fs.exists(self._immutable):
+                immutable = ds.select_variables_by_dims((self.axis, ),
+                                                        predicate=False)
+                assert len(immutable.variables) != 0, (
+                    'The dataset to insert does not contain any variable '
+                    'that is not split.')
+                _LOGGER.info('Creating the immutable dataset: %s',
+                             self._immutable)
+                client.submit(storage.write_zarr_group,
+                              ds=immutable,
+                              dirname=self._immutable,
+                              fs=self.fs,
+                              synchronizer=self.synchronizer).result()
+
+            # Remove the variables that should not be partitioned.
+            ds = ds.select_variables_by_dims((self.axis, ))
+
         utilities.calculation_stream(
             _insert,
             self.partitioning.split_dataset(ds, self.partition_properties.dim),
@@ -633,6 +693,8 @@ class Collection:
         sep = self.fs.sep
 
         for item in self.partitioning.list_partitions(self.fs, base_dir):
+            if item == self._immutable:
+                continue
             # Filtering on partition names
             partitions = item.replace(base_dir, '')
             entry = partitions.split(sep)
@@ -745,6 +807,10 @@ class Collection:
             """
             ds = storage.open_zarr_group(partition, self.fs,
                                          selected_variables)
+            if self._immutable:
+                ds.merge(
+                    storage.open_zarr_group(partition, self.fs,
+                                            selected_variables))
             return self.partitioning.parse(partition), func(
                 ds, *args, **kwargs)
 
@@ -848,6 +914,11 @@ class Collection:
             ds = groups.pop(0)
             ds.concat(groups, self.partition_properties.dim)
 
+            if self._immutable:
+                ds.merge(
+                    storage.open_zarr_group(partition, self.fs,
+                                            selected_variables))
+
             # Finally, apply the function.
             return (self.partitioning.parse(partition), indices,
                     func(ds, *args, **kwargs))
@@ -932,6 +1003,10 @@ class Collection:
         array = arrays.pop(0)
         if arrays:
             array = array.concat(arrays, self.partition_properties.dim)
+        if self._immutable:
+            array.merge(
+                storage.open_zarr_group(self._immutable, self.fs,
+                                        selected_variables))
         return array
 
     # pylint: disable=method-hidden
@@ -1034,6 +1109,12 @@ class Collection:
         if variable not in self.metadata.variables:
             raise ValueError(
                 f'The variable {variable!r} does not exist in the collection.')
+        if self._immutable:
+            ds = storage.open_zarr_group(self._immutable, self.fs)
+            if variable in ds.variables:
+                raise ValueError(
+                    f'The variable {variable!r} is part of the immutable '
+                    'dataset.')
         bag = self._bag_from_partitions()
         bag.map(storage.del_zarr_array, variable, self.fs).compute()
         del self.metadata.variables[variable]

@@ -176,3 +176,41 @@ def test_add_variable():
         ds.add_variable(meta.Variable('f', numpy.float64, ('a')))
 
     ds.add_variable(meta.Variable('g', numpy.float64, ()))
+
+
+def test_select_variables_by_dims():
+    """Test select_variable_by_dims."""
+    ds = meta.Dataset(('a', 'b', 'x', 'y'), [], [])
+    ds.add_variable(meta.Variable('a', numpy.float64, ('x', 'y')))
+    ds.add_variable(meta.Variable('b', numpy.float64, ('x')))
+    ds.add_variable(meta.Variable('c', numpy.float64, ('y')))
+    ds.add_variable(meta.Variable('d', numpy.float64, ('a', 'y')))
+    ds.add_variable(meta.Variable('e', numpy.float64, ('a', 'b')))
+    ds.add_variable(meta.Variable('f', numpy.float64, ('a')))
+    ds.add_variable(meta.Variable('g', numpy.float64, ()))
+
+    assert ds.select_variables_by_dims(('x', 'y')) == {'a', 'b', 'c', 'd'}
+    assert ds.select_variables_by_dims(('x', )) == {'a', 'b'}
+    assert ds.select_variables_by_dims(('y', )) == {'a', 'c', 'd'}
+    assert ds.select_variables_by_dims(('a', 'y')) == {'a', 'c', 'd', 'e', 'f'}
+    assert ds.select_variables_by_dims(('a', 'b')) == {'d', 'e', 'f'}
+    assert ds.select_variables_by_dims(('a', )) == {'d', 'e', 'f'}
+    assert ds.select_variables_by_dims(()) == {'g'}
+    assert ds.select_variables_by_dims(('z', )) == set()
+
+    assert ds.select_variables_by_dims(('x', 'y'),
+                                       predicate=False) == {'e', 'f', 'g'}
+    assert ds.select_variables_by_dims(
+        ('x', ), predicate=False) == {'c', 'd', 'e', 'f', 'g'}
+    assert ds.select_variables_by_dims(
+        ('y', ), predicate=False) == {'b', 'e', 'f', 'g'}
+    assert ds.select_variables_by_dims(('a', 'y'),
+                                       predicate=False) == {'b', 'g'}
+    assert ds.select_variables_by_dims(
+        ('a', 'b'), predicate=False) == {'a', 'b', 'c', 'g'}
+    assert ds.select_variables_by_dims(
+        ('a', ), predicate=False) == {'a', 'b', 'c', 'g'}
+    assert ds.select_variables_by_dims(
+        (), predicate=False) == {'a', 'b', 'c', 'd', 'e', 'f'}
+    assert ds.select_variables_by_dims(
+        ('z', ), predicate=False) == {'a', 'b', 'c', 'd', 'e', 'f', 'g'}

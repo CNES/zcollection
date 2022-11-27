@@ -8,7 +8,7 @@ Dataset
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, OrderedDict, Sequence
 import collections
 
 import dask.array.core
@@ -115,7 +115,7 @@ class Dataset:
                  variables: Iterable[Variable],
                  attrs: Sequence[Attribute] | None = None) -> None:
         #: The list of global attributes on this dataset
-        self.attrs = attrs or []
+        self.attrs = tuple(attrs or [])
         #: Dataset contents as dict of :py:class:`Variable` objects.
         self.variables = collections.OrderedDict(
             (item.name, item) for item in variables)
@@ -129,6 +129,12 @@ class Dataset:
                 elif self.dimensions[dim] != var.array.shape[ix]:
                     raise ValueError(f'variable {var.name} has conflicting '
                                      'dimensions')
+
+    def __len__(self) -> int:
+        return len(self.variables)
+
+    def __bool__(self) -> bool:
+        return bool(self.variables)
 
     def __getitem__(self, name: str) -> Variable:
         """Return a variable from the dataset.
@@ -147,7 +153,10 @@ class Dataset:
     def __getstate__(self) -> tuple[Any, ...]:
         return self.dimensions, self.variables, self.attrs
 
-    def __setstate__(self, state: tuple[Any, ...]) -> None:
+    def __setstate__(
+        self, state: tuple[dict[str, int], OrderedDict[str, Variable],
+                           tuple[Attribute, ...]]
+    ) -> None:
         self.dimensions, self.variables, self.attrs = state
 
     @property
@@ -450,6 +459,72 @@ class Dataset:
         variables = [
             variable.concat(tuple(item.variables[name] for item in other), dim)
             for name, variable in self.variables.items()
+        ]
+        return Dataset(variables=variables, attrs=self.attrs)
+
+    def merge(self, other: Dataset) -> None:
+        """Merge the provided dataset into this dataset.
+
+        Args:
+            other: Dataset to merge into this dataset.
+        """
+        # Merge the variables
+        for name, variable in other.variables.items():
+
+            # It's impossible to merge a variable with itself.
+            if name in self.variables:
+                raise ValueError(f'variable {name} already exists')
+            self.variables[name] = variable
+
+        # If the dataset has common dimensions, they must be identical.
+        same_dims = set(self.dimensions) & set(other.dimensions)
+        if same_dims:
+            if not all(self.dimensions[dim] == other.dimensions[dim]
+                       for dim in same_dims):
+                raise ValueError(f'dimensions {same_dims} are not identical')
+
+        # Merge the dimensions.
+        self.dimensions.update(other.dimensions)
+
+        # Merge the attributes (overwriting any existing attributes).
+        if self.attrs is None:
+            self.attrs = other.attrs
+        elif other.attrs is not None:
+            attrs = dict(item.get_config() for item in self.attrs)
+            attrs.update(item.get_config() for item in other.attrs)
+            self.attrs = tuple(Attribute(*item) for item in attrs.items())
+
+    def select_variables_by_dims(self,
+                                 dims: Sequence[str],
+                                 predicate: bool = True) -> Dataset:
+        """Return a new dataset with only the variables that have the specified
+        dimensions if predicate is true, otherwise return a new dataset with
+        only the variables that do not have the specified dimensions.
+
+        Args:
+            dims: Dimensions to select.
+            predicate: If true, select variables with the specified dimensions,
+                otherwise select variables without the specified dimensions.
+
+        Returns:
+            New dataset or None if no variables match the predicate.
+        """
+
+        def _predicate_for_dimension_less(variable: Variable) -> bool:
+            """Return true if the variable is selected by the predicate."""
+            return (len(variable.dimensions) == 0) == predicate
+
+        def _predicate_for_dimension(variable: Variable) -> bool:
+            """Return true if the variable is selected by the predicate."""
+            return bool(set(variable.dimensions) & set_of_dims) == predicate
+
+        condition = (_predicate_for_dimension_less
+                     if not dims else _predicate_for_dimension)
+
+        set_of_dims = set(dims)
+        variables = [
+            variable for variable in self.variables.values()
+            if condition(variable)
         ]
         return Dataset(variables=variables, attrs=self.attrs)
 

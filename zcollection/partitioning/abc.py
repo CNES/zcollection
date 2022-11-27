@@ -146,8 +146,13 @@ def list_partitions(
     elif root:
         folders = map(
             lambda info: info['name'].rstrip('/'),
-            filter(lambda info: info['type'] == 'directory',
-                   fs.ls(path, detail=True)))
+            filter(
+                lambda info: info['type'] == 'directory' and not info['name'].
+                split(fs.sep)[-1].startswith('.'),
+                fs.ls(path, detail=True),
+            ),
+        )
+
         for pathname in sorted(folders):
             yield from list_partitions(fs,
                                        pathname,

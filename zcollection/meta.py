@@ -346,3 +346,31 @@ class Dataset:
             raise ValueError('This dataset contains variables that are '
                              'missing from the given dataset.')
         return tuple(this - others)
+
+    def select_variables_by_dims(self,
+                                 dims: Sequence[str],
+                                 predicate: bool = True) -> set[str]:
+        """Select variables that have at least one dimension in the given
+        dimensions depending on the predicate.
+
+        Args:
+            dims: The dimensions to select.
+            predicate: If True, select variables that have the given dimensions.
+                If False, select variables that don't have the given dimensions.
+
+        Returns:
+            The names of the variables that have the given dimensions.
+        """
+        if len(dims) == 0:
+            return {
+                name
+                for name, var in self.variables.items()
+                if (len(var.dimensions) == 0) == predicate
+            }
+
+        set_of_dims = set(dims)
+        return {
+            name
+            for name, var in self.variables.items()
+            if bool(set(var.dimensions) & set_of_dims) == predicate
+        }

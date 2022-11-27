@@ -8,8 +8,6 @@ Testing datasets
 """
 import pickle
 
-import dask.array.core
-import dask.array.ma
 import numpy
 import pytest
 import xarray
@@ -252,7 +250,7 @@ def test_dataset_add_variable(
 def test_empty_dataset():
     """Test empty dataset."""
     ds = dataset.Dataset([], [])
-    assert ds.attrs == []
+    assert ds.attrs == ()
     assert list(ds.variables) == []
     assert (str(ds)) == """<zcollection.dataset.Dataset>
   Dimensions: ()
@@ -309,3 +307,139 @@ def test_dataset_rechunk():
         ds1.variables['var1'].values == ds2.variables['var1'].values)
     assert numpy.all(
         ds1.variables['var2'].values == ds2.variables['var2'].values)
+
+
+def test_dataset_merge():
+    template = dataset.Dataset([
+        dataset.Variable('var1', numpy.empty(10), ('x', ), ()),
+        dataset.Variable('var2', numpy.empty(10), ('x', ), ()),
+        dataset.Variable('var3', numpy.empty((10, 10)), ('x', 'y'), ()),
+        dataset.Variable('var4', numpy.empty((10, 10)), ('x', 'y'), ()),
+    ], [dataset.Attribute('attr1', 1),
+        dataset.Attribute('attr2', 2)])
+    ds2 = dataset.Dataset([
+        dataset.Variable('var5', numpy.empty(10), ('x', ), ()),
+        dataset.Variable('var6', numpy.empty(10), ('x', ), ()),
+        dataset.Variable('var7', numpy.empty((10, 10)), ('x', 'y'), ()),
+        dataset.Variable('var8', numpy.empty((10, 10)), ('x', 'y'), ()),
+    ], [dataset.Attribute('attr3', 3),
+        dataset.Attribute('attr4', 4)])
+    ds1 = pickle.loads(pickle.dumps(template))
+    ds1.merge(ds2)
+    assert list(ds1.variables) == [
+        'var1', 'var2', 'var3', 'var4', 'var5', 'var6', 'var7', 'var8'
+    ]
+    assert ds1.dimensions == {'x': 10, 'y': 10}
+    assert ds1.variables['var1'].shape == (10, )
+    assert ds1.variables['var2'].shape == (10, )
+    assert ds1.variables['var3'].shape == (10, 10)
+    assert ds1.variables['var4'].shape == (10, 10)
+    assert ds1.variables['var5'].shape == (10, )
+    assert ds1.variables['var6'].shape == (10, )
+    assert ds1.variables['var7'].shape == (10, 10)
+    assert ds1.variables['var8'].shape == (10, 10)
+    assert ds1.attrs == (dataset.Attribute('attr1',
+                                           1), dataset.Attribute('attr2', 2),
+                         dataset.Attribute('attr3',
+                                           3), dataset.Attribute('attr4', 4))
+
+    ds2 = dataset.Dataset([
+        dataset.Variable('var5', numpy.empty(10), ('a', ), ()),
+        dataset.Variable('var6', numpy.empty((10, 10)), ('a', 'b'), ()),
+    ], [dataset.Attribute('attr3', 3),
+        dataset.Attribute('attr4', 4)])
+    ds1 = pickle.loads(pickle.dumps(template))
+    ds1.merge(ds2)
+    assert list(
+        ds1.variables) == ['var1', 'var2', 'var3', 'var4', 'var5', 'var6']
+    assert ds1.dimensions == {'x': 10, 'y': 10, 'a': 10, 'b': 10}
+    assert ds1.variables['var1'].shape == (10, )
+    assert ds1.variables['var2'].shape == (10, )
+    assert ds1.variables['var3'].shape == (10, 10)
+    assert ds1.variables['var4'].shape == (10, 10)
+    assert ds1.variables['var5'].shape == (10, )
+    assert ds1.variables['var6'].shape == (10, 10)
+
+    ds2 = dataset.Dataset([
+        dataset.Variable('var5', numpy.empty(10), ('z', ), ()),
+    ], [dataset.Attribute('attr3', 3),
+        dataset.Attribute('attr4', 4)])
+    ds1 = pickle.loads(pickle.dumps(template))
+    ds1.merge(ds2)
+    assert list(ds1.variables) == ['var1', 'var2', 'var3', 'var4', 'var5']
+    assert ds1.dimensions == {'x': 10, 'y': 10, 'z': 10}
+    assert ds1.variables['var1'].shape == (10, )
+    assert ds1.variables['var2'].shape == (10, )
+    assert ds1.variables['var3'].shape == (10, 10)
+    assert ds1.variables['var4'].shape == (10, 10)
+    assert ds1.variables['var5'].shape == (10, )
+
+    ds2 = dataset.Dataset([
+        dataset.Variable('var1', numpy.empty(10), ('x', ), ()),
+    ], [dataset.Attribute('attr1', 1),
+        dataset.Attribute('attr2', 2)])
+    ds1 = pickle.loads(pickle.dumps(template))
+    with pytest.raises(ValueError):
+        ds1.merge(ds2)
+
+    ds2 = dataset.Dataset([
+        dataset.Variable('var5', numpy.empty(20), ('x', ), ()),
+    ], [dataset.Attribute('attr3', 3),
+        dataset.Attribute('attr4', 4)])
+    ds1 = pickle.loads(pickle.dumps(template))
+    with pytest.raises(ValueError):
+        ds1.merge(ds2)
+
+
+def test_dataset_select_variables_by_dims():
+    ds = dataset.Dataset([
+        dataset.Variable('var1', numpy.empty(10), ('x', ), ()),
+        dataset.Variable('var2', numpy.empty(10), ('y', ), ()),
+        dataset.Variable('var3', numpy.empty((10, 10)), ('x', 'y'), ()),
+        dataset.Variable('var4', numpy.empty(20), ('a', ), ()),
+        dataset.Variable('var5', numpy.empty(20), ('b', ), ()),
+        dataset.Variable('var6', numpy.empty((20, 20)), ('a', 'b'), ()),
+        dataset.Variable('var7', numpy.int64(1), (), ()),
+    ], [
+        dataset.Attribute('attr1', 1),
+    ])
+    selected = ds.select_variables_by_dims(('x', ))
+    assert list(selected.variables) == ['var1', 'var3']
+    assert selected.dimensions == {'x': 10, 'y': 10}
+
+    selected = ds.select_variables_by_dims(('x', 'y'))
+    assert list(selected.variables) == ['var1', 'var2', 'var3']
+    assert selected.dimensions == {'x': 10, 'y': 10}
+
+    selected = ds.select_variables_by_dims(('x', 'y', 'z'))
+    assert list(selected.variables) == ['var1', 'var2', 'var3']
+    assert selected.dimensions == {'x': 10, 'y': 10}
+
+    selected = ds.select_variables_by_dims(('a', ))
+    assert list(selected.variables) == ['var4', 'var6']
+    assert selected.dimensions == {'a': 20, 'b': 20}
+
+    selected = ds.select_variables_by_dims(('a', 'b'))
+    assert list(selected.variables) == ['var4', 'var5', 'var6']
+    assert selected.dimensions == {'a': 20, 'b': 20}
+
+    selected = ds.select_variables_by_dims(('a', 'b', 'c'))
+    assert list(selected.variables) == ['var4', 'var5', 'var6']
+    assert selected.dimensions == {'a': 20, 'b': 20}
+
+    selected = ds.select_variables_by_dims(('x', 'a'))
+    assert list(selected.variables) == ['var1', 'var3', 'var4', 'var6']
+    assert selected.dimensions == {'x': 10, 'y': 10, 'a': 20, 'b': 20}
+
+    selected = ds.select_variables_by_dims(tuple())
+    assert list(selected.variables) == ['var7']
+    assert selected.dimensions == {}
+
+    selected = ds.select_variables_by_dims(tuple(), predicate=False)
+    assert list(selected.variables) == [
+        'var1', 'var2', 'var3', 'var4', 'var5', 'var6'
+    ]
+    assert selected.dimensions == {'x': 10, 'y': 10, 'a': 20, 'b': 20}
+
+    selected = ds.select_variables_by_dims(('x', ), predicate=False)
+    assert list(selected.variables) == ['var2', 'var4', 'var5', 'var6', 'var7']
