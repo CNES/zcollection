@@ -329,22 +329,24 @@ class Dataset:
         raise ValueError('No variable using the same dimensions exists.')
 
     def missing_variables(self, other: Dataset) -> Sequence[str]:
-        """Finds the variables in this dataset that are defined in the given
-        dataset but not in this dataset.
+        """Finds the variables in the provided dataset that are not in this
+        instance.
 
         Args:
             other: The dataset to compare against.
 
         Returns:
-            The names of the missing variables in this dataset compared to the
-            data dataset.
+            The names of the missing variables in this dataset relative to the
+            provided dataset.
         """
         this = set(self.variables)
         others = set(other.variables)
 
         if len(others - this):
-            raise ValueError('This dataset contains variables that are '
-                             'missing from the given dataset.')
+            raise ValueError('The reference dataset does not define the '
+                             f'{", ".join(others - this)} variables that are '
+                             'defined in this dataset.')
+
         return tuple(this - others)
 
     def select_variables_by_dims(self,
