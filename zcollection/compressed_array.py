@@ -2,7 +2,9 @@
 Compressed array class
 ======================
 """
-from typing import Any, Callable, Optional, Sequence, Tuple, Type, Union
+from __future__ import annotations
+
+from typing import Any, Callable, Sequence, Union
 
 import dask.array.backends
 import dask.array.chunk_types
@@ -37,7 +39,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
 
     def __init__(
         self,
-        array: Union['CompressedArray', NDArray, zarr.Array],
+        array: CompressedArray | NDArray | zarr.Array,
         *args,
         **kwargs,
     ):
@@ -66,7 +68,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
 
     def __getitem__(
         self,
-        key: Union[int, Tuple[Union[int, slice], ...]],
+        key: int | tuple[int | slice, ...],
     ) -> Array:
         """Retrieve data for an item or region of the array.
 
@@ -83,7 +85,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
 
     def __setitem__(
         self,
-        key: Union[int, Tuple[Union[int, slice], ...]],
+        key: int | tuple[int | slice, ...],
         value: Array,
     ) -> None:
         """Set data for an item or region of the array.
@@ -105,7 +107,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return self._array.nchunks
 
     @property
-    def shape(self) -> Tuple[int, ...]:
+    def shape(self) -> tuple[int, ...]:
         """Shape of the array."""
         return self._array.shape
 
@@ -125,7 +127,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return self._array.nbytes
 
     @property
-    def compressor(self) -> Optional[numcodecs.abc.Codec]:
+    def compressor(self) -> numcodecs.abc.Codec | None:
         """The compressor used to compress the array."""
         return self._array.compressor
 
@@ -135,7 +137,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return self._fill_value
 
     @property
-    def filters(self) -> Optional[list[numcodecs.abc.Codec]]:
+    def filters(self) -> list[numcodecs.abc.Codec] | None:
         """One or more codecs used to transform data prior to compression."""
         return self._array.filters
 
@@ -156,7 +158,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         chunk of the array."""
         return self._array.chunks
 
-    def rechunk(self, chunks: Sequence[Sequence[int]]) -> 'CompressedArray':
+    def rechunk(self, chunks: Sequence[Sequence[int]]) -> CompressedArray:
         """Rechunk the array.
 
         Args:
@@ -205,7 +207,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
     def __array_function__(
         self,
         func: Callable,
-        types: Sequence[Type],
+        types: Sequence[type],
         args,
         kwargs,
     ) -> Any:
@@ -268,7 +270,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
 
 def dask_array_from_compressed_array(
     array: CompressedArray,
-    name: Optional[str] = None,
+    name: str | None = None,
     inline_array=False,
     **kwargs,
 ) -> dask.array.core.Array:

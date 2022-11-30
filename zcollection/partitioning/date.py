@@ -6,7 +6,9 @@
 Partitioning by date
 ====================
 """
-from typing import Any, ClassVar, Dict, Iterator, Sequence, Tuple
+from __future__ import annotations
+
+from typing import Any, ClassVar, Iterator, Sequence
 
 import dask.array.core
 import numpy
@@ -76,8 +78,8 @@ class Date(abc.Partitioning):
     # False positive: the base method is static.
     def _partition(  # type: ignore[override]
         self,
-        selection: Tuple[Tuple[str, Any], ...],
-    ) -> Tuple[str, ...]:
+        selection: tuple[tuple[str, Any], ...],
+    ) -> tuple[str, ...]:
         """Return the partitioning scheme for the given selection."""
         _, datetime64 = selection[0]
         datetime = datetime64.astype('M8[s]').item()
@@ -88,7 +90,7 @@ class Date(abc.Partitioning):
 
     def _split(
         self,
-        variables: Dict[str, dask.array.core.Array],
+        variables: dict[str, dask.array.core.Array],
     ) -> Iterator[abc.Partition]:
         """Return the partitioning scheme for the given variables."""
         name, values = tuple(variables.items())[0]
@@ -111,7 +113,7 @@ class Date(abc.Partitioning):
                 for date, (ix, start) in zip(index, enumerate(indices[:-1])))
 
     @staticmethod
-    def _stringify(partition: Tuple[Tuple[str, int], ...]) -> str:
+    def _stringify(partition: tuple[tuple[str, int], ...]) -> str:
         """Return a string representation of the partitioning scheme."""
         string = ''.join(f'{value:02d}' + SEPARATORS[item]
                          for item, value in partition)
@@ -120,7 +122,7 @@ class Date(abc.Partitioning):
         return string
 
     @staticmethod
-    def join(partition_scheme: Tuple[Tuple[str, int], ...], sep: str) -> str:
+    def join(partition_scheme: tuple[tuple[str, int], ...], sep: str) -> str:
         """Join a partitioning scheme.
 
         Args:
@@ -140,8 +142,8 @@ class Date(abc.Partitioning):
 
     def encode(
         self,
-        partition: Tuple[Tuple[str, int], ...],
-    ) -> Tuple[Any, ...]:
+        partition: tuple[tuple[str, int], ...],
+    ) -> tuple[Any, ...]:
         """Encode a partitioning scheme.
 
         Args:
@@ -162,8 +164,8 @@ class Date(abc.Partitioning):
 
     def decode(
         self,
-        values: Tuple[Any, ...],
-    ) -> Tuple[Tuple[str, int], ...]:
+        values: tuple[Any, ...],
+    ) -> tuple[tuple[str, int], ...]:
         """Decode a partitioning scheme.
 
         Args:

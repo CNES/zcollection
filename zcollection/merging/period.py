@@ -6,7 +6,9 @@
 Time period
 ===========
 """
-from typing import Any, Optional, Tuple, Union
+from __future__ import annotations
+
+from typing import Any
 import enum
 import re
 
@@ -221,15 +223,15 @@ class Period:
     def __repr__(self) -> str:
         return f'[{self._begin}, {self.end()}['
 
-    def __getstate__(self) -> Tuple[Any, ...]:
+    def __getstate__(self) -> tuple[Any, ...]:
         return self._begin, self._duration_unit, self._last
 
-    def __setstate__(self, state: Tuple[Any, ...]) -> None:
+    def __setstate__(self, state: tuple[Any, ...]) -> None:
         self._begin, self._duration_unit, self._last = state
 
     @classmethod
     def from_duration(cls, begin: numpy.datetime64,
-                      duration: numpy.timedelta64) -> 'Period':
+                      duration: numpy.timedelta64) -> Period:
         """Create a Period as [begin, begin + duration[
 
         Args:
@@ -317,7 +319,7 @@ class Period:
 
     def contains(
         self,
-        other: Union[numpy.datetime64, 'Period'],
+        other: numpy.datetime64 | Period,
     ) -> numpy.bool_:
         """Check if the given period is contains this period.
 
@@ -334,7 +336,7 @@ class Period:
             return self._begin <= other <= self._last
         return (self._begin <= other.begin) and (self._last >= other.last)
 
-    def is_adjacent(self, other: 'Period') -> bool:
+    def is_adjacent(self, other: Period) -> bool:
         """True if periods are next to each other without a gap.
 
         In the example below, p1 and p2 are adjacent, but p3 is not adjacent
@@ -400,7 +402,7 @@ class Period:
             return False
         return bool(self._last < point)  # numpy.bool_ -> bool
 
-    def intersects(self, other: 'Period') -> bool:
+    def intersects(self, other: Period) -> bool:
         """True if the periods overlap in any way.
 
         In the example below p1 intersects with p2, p4, and p6.
@@ -424,7 +426,7 @@ class Period:
                 or ((other.begin < self._begin) and
                     (other.last >= self._begin)))  # type:ignore
 
-    def intersection(self, other: 'Period') -> 'Period':
+    def intersection(self, other: Period) -> Period:
         """Return the period of intersection or null period if no intersection.
 
         Args:
@@ -442,7 +444,7 @@ class Period:
             return Period(other.begin, self.end())
         return other
 
-    def merge(self, other: 'Period') -> 'Period':
+    def merge(self, other: Period) -> Period:
         """Return the union of intersecting periods -- or null period.
 
         Args:
@@ -462,7 +464,7 @@ class Period:
         # no intersect return null
         return Period(self._begin, self._begin)
 
-    def span(self, other: 'Period') -> 'Period':
+    def span(self, other: Period) -> Period:
         """Combine two periods with earliest start and latest end.
 
         Combines two periods and any gap between them such that
@@ -493,8 +495,7 @@ class Period:
     # pylint: disable=too-many-return-statements
     # This code has a lot of "return" statements because we have to determine
     # the relation between the two periods among 8 different cases.
-    def _get_direct_relation(self,
-                             other: 'Period') -> Optional[PeriodRelation]:
+    def _get_direct_relation(self, other: Period) -> PeriodRelation | None:
         """Get the direct relation between two periods."""
         if other.last < self._begin:
             return PeriodRelation.AFTER
@@ -520,7 +521,7 @@ class Period:
         return None
         # pylint: enable=too-many-return-statements
 
-    def get_relation(self, other: 'Period') -> PeriodRelation:
+    def get_relation(self, other: Period) -> PeriodRelation:
         """Get the relationship between the two time periods.
 
         Args:

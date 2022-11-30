@@ -6,7 +6,7 @@
 Convenience functions
 =====================
 """
-from typing import Optional, Union
+from __future__ import annotations
 
 import xarray
 
@@ -15,7 +15,7 @@ from .. import collection, dataset, partitioning, utilities
 
 def create_collection(
     axis: str,
-    ds: Union[xarray.Dataset, dataset.Dataset],
+    ds: xarray.Dataset | dataset.Dataset,
     partition_handler: partitioning.Partitioning,
     partition_base_dir: str,
     **kwargs,
@@ -66,7 +66,7 @@ def create_collection(
 # pylint: disable=redefined-builtin
 def open_collection(path: str,
                     *,
-                    mode: Optional[str] = None,
+                    mode: str | None = None,
                     **kwargs) -> collection.Collection:
     """Open a collection.
 

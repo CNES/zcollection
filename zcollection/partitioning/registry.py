@@ -6,15 +6,15 @@
 Registers the partitioning codecs.
 ==================================
 """
-from typing import Dict
+from __future__ import annotations
 
 from . import abc
 
 #: A registry of all available partitioning codecs.
-CODEC_REGISTRY: Dict[str, abc.Partitioning] = {}
+CODEC_REGISTRY: dict[str, abc.Partitioning] = {}
 
 
-def get_codecs(config: Dict) -> abc.Partitioning:
+def get_codecs(config: dict) -> abc.Partitioning:
     """Get the partitioning scheme for the given configuration.
 
     Args:

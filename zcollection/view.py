@@ -6,17 +6,9 @@
 View on a reference collection.
 ===============================
 """
-from typing import (
-    Any,
-    ClassVar,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from __future__ import annotations
+
+from typing import Any, ClassVar, Iterable, Iterator, Sequence
 import dataclasses
 import json
 import logging
@@ -49,7 +41,7 @@ class ViewReference:
     filesystem: fsspec.AbstractFileSystem = utilities.get_fs('file')
 
 
-def _create_zarr_array(args: Tuple[str, zarr.Group], base_dir: str,
+def _create_zarr_array(args: tuple[str, zarr.Group], base_dir: str,
                        fs: fsspec.AbstractFileSystem, template: str,
                        variable: meta.Variable) -> None:
     """Create a Zarr array, with fill_value being used as the default value for
@@ -105,13 +97,13 @@ def _drop_zarr_zarr(partition: str,
 
 
 def _load_one_dataset(
-    args: Tuple[Tuple[Tuple[str, int], ...], List[slice]],
+    args: tuple[tuple[tuple[str, int], ...], list[slice]],
     base_dir: str,
     fs: fsspec.AbstractFileSystem,
-    selected_variables: Optional[Iterable[str]],
+    selected_variables: Iterable[str] | None,
     view_ref: collection.Collection,
     variables: Sequence[str],
-) -> Optional[Tuple[dataset.Dataset, str]]:
+) -> tuple[dataset.Dataset, str] | None:
     """Load a dataset from a partition stored in the reference collection and
     merge it with the variables defined in this view.
 
@@ -165,7 +157,7 @@ def _load_one_dataset(
     # Apply indexing if needed.
     if len(slices):
         dim = view_ref.partition_properties.dim
-        ds_list: List[dataset.Dataset] = []
+        ds_list: list[dataset.Dataset] = []
         _ = {
             ds_list.append(  # type: ignore[func-returns-value]
                 ds.isel({dim: indexer}))
@@ -199,8 +191,8 @@ def _load_datasets_list(
     view_ref: collection.Collection,
     metadata: meta.Dataset,
     partitions: Iterable[str],
-    selected_variables: Optional[Iterable[str]] = None,
-) -> Iterator[Tuple[dataset.Dataset, str]]:
+    selected_variables: Iterable[str] | None = None,
+) -> Iterator[tuple[dataset.Dataset, str]]:
     """Load datasets from a list of partitions.
 
     Args:
@@ -215,7 +207,7 @@ def _load_datasets_list(
     Returns:
         The datasets and their paths.
     """
-    arguments: Tuple[Tuple[Tuple[Tuple[str, int], ...], List], ...] = tuple(
+    arguments: tuple[tuple[tuple[tuple[str, int], ...], list], ...] = tuple(
         (view_ref.partitioning.parse(item), []) for item in partitions)
     futures = client.map(
         _load_one_dataset,
@@ -259,9 +251,9 @@ class View:
         base_dir: str,
         view_ref: ViewReference,
         *,
-        ds: Optional[meta.Dataset] = None,
-        filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
-        synchronizer: Optional[sync.Sync] = None,
+        ds: meta.Dataset | None = None,
+        filesystem: fsspec.AbstractFileSystem | str | None = None,
+        synchronizer: sync.Sync | None = None,
     ) -> None:
         #: The file system used to access the view (default local file system).
         self.fs = utilities.get_fs(filesystem)
@@ -310,9 +302,9 @@ class View:
         cls,
         path: str,
         *,
-        filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
-        synchronizer: Optional[sync.Sync] = None,
-    ) -> 'View':
+        filesystem: fsspec.AbstractFileSystem | str | None = None,
+        synchronizer: sync.Sync | None = None,
+    ) -> View:
         """Open a View described by a configuration file.
 
         Args:
@@ -363,8 +355,8 @@ class View:
 
     def variables(
         self,
-        selected_variables: Optional[Iterable[str]] = None
-    ) -> Tuple[dataset.Variable, ...]:
+        selected_variables: Iterable[str] | None = None
+    ) -> tuple[dataset.Variable, ...]:
         """Return the variables of the view.
 
         Args:
@@ -378,7 +370,7 @@ class View:
 
     def add_variable(
         self,
-        variable: Union[meta.Variable, dataset.Variable],
+        variable: meta.Variable | dataset.Variable,
     ) -> None:
         """Add a variable to the view.
 
@@ -480,9 +472,9 @@ class View:
         self,
         *,
         filters: collection.PartitionFilter = None,
-        indexer: Optional[collection.Indexer] = None,
-        selected_variables: Optional[Iterable[str]] = None,
-    ) -> Optional[dataset.Dataset]:
+        indexer: collection.Indexer | None = None,
+        selected_variables: Iterable[str] | None = None,
+    ) -> dataset.Dataset | None:
         """Load the view.
 
         Args:
@@ -529,7 +521,7 @@ class View:
         # The load function returns the path to the partitions and the loaded
         # datasets. Only the loaded datasets are retrieved here and filter None
         # values corresponding to empty partitions.
-        arrays: List[dataset.Dataset] = list(
+        arrays: list[dataset.Dataset] = list(
             map(
                 lambda item: item[0],  # type: ignore[arg-type]
                 filter(lambda item: item is not None,
@@ -548,8 +540,8 @@ class View:
         /,
         *args,
         filters: collection.PartitionFilter = None,
-        partition_size: Optional[int] = None,
-        selected_variables: Optional[Iterable[str]] = None,
+        partition_size: int | None = None,
+        selected_variables: Iterable[str] | None = None,
         **kwargs,
     ) -> None:
         """Update a variable stored int the view.
@@ -601,7 +593,7 @@ class View:
         _LOGGER.info('Updating variable %s',
                      ', '.join(repr(item) for item in func_result))
 
-        def wrap_function(parameters: Iterable[Tuple[dataset.Dataset, str]],
+        def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
                           base_dir: str) -> None:
             """Wrap the function to be applied to the dataset."""
             for ds, partition in parameters:
@@ -632,9 +624,9 @@ class View:
         func: collection.MapCallable,
         *args,
         filters: collection.PartitionFilter = None,
-        partition_size: Optional[int] = None,
-        npartitions: Optional[int] = None,
-        selected_variables: Optional[Iterable[str]] = None,
+        partition_size: int | None = None,
+        npartitions: int | None = None,
+        selected_variables: Iterable[str] | None = None,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the view.
@@ -667,11 +659,11 @@ class View:
         """
 
         def _wrap(
-            arguments: Tuple[dataset.Dataset, str],
+            arguments: tuple[dataset.Dataset, str],
             func: collection.PartitionCallable,
             *args,
             **kwargs,
-        ) -> Tuple[Tuple[Tuple[str, int], ...], Any]:
+        ) -> tuple[tuple[tuple[str, int], ...], Any]:
             """Wraps the function to apply on the partition.
 
             Args:
@@ -706,9 +698,9 @@ class View:
         depth: int,
         *args,
         filters: collection.PartitionFilter = None,
-        partition_size: Optional[int] = None,
-        npartitions: Optional[int] = None,
-        selected_variables: Optional[Iterable[str]] = None,
+        partition_size: int | None = None,
+        npartitions: int | None = None,
+        selected_variables: Iterable[str] | None = None,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the view with some overlap.
@@ -742,13 +734,13 @@ class View:
         """
 
         def _wrap(
-            arguments: Tuple[dataset.Dataset, str],
+            arguments: tuple[dataset.Dataset, str],
             func: collection.PartitionCallable,
-            datasets_list: Tuple[Tuple[dataset.Dataset, str]],
+            datasets_list: tuple[tuple[dataset.Dataset, str]],
             depth: int,
             *args,
             **kwargs,
-        ) -> Tuple[Tuple[Tuple[str, int], ...], slice, Any]:
+        ) -> tuple[tuple[tuple[str, int], ...], slice, Any]:
             """Wraps the function to apply on the partition.
 
             Args:

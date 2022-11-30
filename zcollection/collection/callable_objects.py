@@ -2,6 +2,8 @@
 Callable objects.
 =================
 """
+from __future__ import annotations
+
 from typing import Any, Callable, Protocol, Sequence
 
 from .. import dataset

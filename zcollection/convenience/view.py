@@ -6,7 +6,7 @@
 Convenience functions
 =====================
 """
-from typing import Optional, Union
+from __future__ import annotations
 
 import fsspec
 
@@ -17,8 +17,8 @@ def create_view(
     path: str,
     view_ref: view.ViewReference,
     *,
-    filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
-    synchronizer: Optional[sync.Sync] = None,
+    filesystem: fsspec.AbstractFileSystem | str | None = None,
+    synchronizer: sync.Sync | None = None,
 ) -> view.View:
     """Create a new view.
 
@@ -52,8 +52,8 @@ def create_view(
 def open_view(
     path: str,
     *,
-    filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None,
-    synchronizer: Optional[sync.Sync] = None,
+    filesystem: fsspec.AbstractFileSystem | str | None = None,
+    synchronizer: sync.Sync | None = None,
 ) -> view.View:
     """Open an existing view.
 

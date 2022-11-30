@@ -6,7 +6,9 @@
 Handle merging of datasets of a partition.
 ==========================================
 """
-from typing import Optional, Protocol
+from __future__ import annotations
+
+from typing import Protocol
 import random
 
 import fsspec
@@ -61,7 +63,7 @@ def _update_fs(
     dirname: str,
     ds: dataset.Dataset,
     fs: fsspec.AbstractFileSystem,
-    synchronizer: Optional[sync.Sync] = None,
+    synchronizer: sync.Sync | None = None,
 ) -> None:
     """Updates a dataset stored in a partition.
 
@@ -98,8 +100,8 @@ def perform(
     axis: str,
     fs: fsspec.AbstractFileSystem,
     partitioning_dim: str,
-    merge_callable: Optional[MergeCallable],
-    synchronizer: Optional[sync.Sync] = None,
+    merge_callable: MergeCallable | None,
+    synchronizer: sync.Sync | None = None,
 ) -> None:
     """Performs the merge between a new dataset and an existing partition.
 

@@ -3,6 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """Test the base class for indexing."""
+from __future__ import annotations
+
 from typing import Iterator, List, Optional, Tuple, Union
 import pathlib
 
@@ -24,7 +26,7 @@ from ...type_hints import NDArray
 def split_half_orbit(
     cycle_number: numpy.ndarray,
     pass_number: numpy.ndarray,
-) -> Iterator[Tuple[int, int]]:
+) -> Iterator[tuple[int, int]]:
     """Calculate the indexes of the start and stop of each half-orbit.
 
     Args:
@@ -87,7 +89,7 @@ class HalfOrbitIndexer(abc.Indexer):
     PASS_NUMBER = 'pass_number'
 
     @classmethod
-    def dtype(cls, /, **kwargs) -> List[Tuple[str, str]]:
+    def dtype(cls, /, **kwargs) -> list[tuple[str, str]]:
         """Return the columns of the index.
 
         Returns:
@@ -101,12 +103,12 @@ class HalfOrbitIndexer(abc.Indexer):
     @classmethod
     def create(
         cls,
-        path: Union[pathlib.Path, str],
+        path: pathlib.Path | str,
         ds: collection.Collection,
         *,
-        filesystem: Optional[fsspec.AbstractFileSystem] = None,
+        filesystem: fsspec.AbstractFileSystem | None = None,
         **kwargs,
-    ) -> 'HalfOrbitIndexer':
+    ) -> HalfOrbitIndexer:
         """Create a new index.
 
         Args:
@@ -126,8 +128,8 @@ class HalfOrbitIndexer(abc.Indexer):
         self,
         ds: collection.Collection,
         *,
-        partition_size: Optional[int] = None,
-        npartitions: Optional[int] = None,
+        partition_size: int | None = None,
+        npartitions: int | None = None,
         **kwargs,
     ) -> None:
         """Update the index.

@@ -6,7 +6,9 @@
 Handles the partition selection expressions
 ===========================================
 """
-from typing import Any, ClassVar, Dict
+from __future__ import annotations
+
+from typing import Any, ClassVar
 import ast
 import dataclasses
 
@@ -30,12 +32,12 @@ class Expression:
     code: Any
 
     #: The builtins that are allowed in the expression.
-    BUILTINS: ClassVar[Dict[str, Any]] = {'range': range}
+    BUILTINS: ClassVar[dict[str, Any]] = {'range': range}
 
     def __init__(self, expression: str) -> None:
         self.code = compile(ast.parse(expression, mode='eval'), ' ', 'eval')
 
-    def __call__(self, variables: Dict[str, Any]) -> Any:
+    def __call__(self, variables: dict[str, Any]) -> Any:
         try:
             __locals = {
                 name: variables[name]

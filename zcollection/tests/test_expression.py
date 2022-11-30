@@ -6,6 +6,8 @@
 Tests of the expression evaluation
 ==================================
 """
+from __future__ import annotations
+
 from typing import Optional
 import timeit
 
@@ -22,7 +24,7 @@ from .cluster import dask_client, dask_cluster
 # pylint enable=unused-import
 
 
-def make_dataset(num_samples: Optional[int] = None) -> dataset.Dataset:
+def make_dataset(num_samples: int | None = None) -> dataset.Dataset:
     """Creation of a data set for testing purposes."""
     dates = numpy.arange(numpy.datetime64('2000-01-01'),
                          numpy.datetime64('2009-12-31'),

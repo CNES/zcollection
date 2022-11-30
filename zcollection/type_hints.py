@@ -6,7 +6,9 @@
 Typing
 ======
 """
-from typing import TYPE_CHECKING, Any, Protocol, Tuple, TypeVar
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 try:
     from types import GenericAlias  # type: ignore[attr-defined]
@@ -60,7 +62,7 @@ class ArrayLike(Protocol[_DType_co]):
         ...
 
     @property
-    def shape(self) -> Tuple[int, ...]:
+    def shape(self) -> tuple[int, ...]:
         """The shape of the array."""
         # pylint: disable=unnecessary-ellipsis
         # Make checker happy.

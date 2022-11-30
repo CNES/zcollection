@@ -6,6 +6,8 @@
 Test partitioning by sequence.
 ==============================
 """
+from __future__ import annotations
+
 from typing import Dict, Iterator
 import pickle
 
@@ -136,7 +138,7 @@ def test_multiple_sequence(
             arrays['_c'] = numpy.concatenate(
                 (arrays['_c'], numpy.arange(5, dtype='i8')))
     partitioning = Sequence(('_a', '_b', '_c'))
-    variables: Dict[str, dask.array.Array] = dict(
+    variables: dict[str, dask.array.Array] = dict(
         _a=dask.array.from_array(arrays['_a'], chunks=(10, )),  # type: ignore
         _b=dask.array.from_array(arrays['_b'], chunks=(10, )),  # type: ignore
         _c=dask.array.from_array(arrays['_c'], chunks=(10, )))  # type: ignore

@@ -6,7 +6,9 @@
 I/O operations
 ==============
 """
-from typing import Any, Iterable, Optional, Sequence, Tuple, Union
+from __future__ import annotations
+
+from typing import Any, Iterable, Sequence
 import collections
 import json
 import logging
@@ -97,7 +99,7 @@ def _to_zarr(array: dask.array.core.Array, mapper: fsspec.FSMap, path: str,
 
 def write_zattrs(
     dirname: str,
-    variable: Union[meta.Variable, dataset.Variable],
+    variable: meta.Variable | dataset.Variable,
     fs: fsspec.AbstractFileSystem,
 ) -> None:
     """Write the attributes of a variable to a Zarr dataset.
@@ -116,7 +118,7 @@ def write_zattrs(
 
 
 def write_zarr_variable(
-    args: Tuple[str, dataset.Variable],
+    args: tuple[str, dataset.Variable],
     dirname: str,
     fs: fsspec.AbstractFileSystem,
 ) -> None:
@@ -201,7 +203,7 @@ def open_zarr_array(array: zarr.Array, name: str) -> dataset.Variable:
 def open_zarr_group(
         dirname,
         fs: fsspec.AbstractFileSystem,
-        selected_variables: Optional[Iterable[str]] = None) -> dataset.Dataset:
+        selected_variables: Iterable[str] | None = None) -> dataset.Dataset:
     """Open a Zarr group stored in a partition.
 
     Args:

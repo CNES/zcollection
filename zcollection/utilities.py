@@ -6,18 +6,9 @@
 Internal utilities
 ==================
 """
-from typing import (
-    Any,
-    Callable,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Union,
-)
+from __future__ import annotations
+
+from typing import Any, Callable, Iterable, Iterator, Sequence
 import asyncio
 import functools
 import itertools
@@ -65,7 +56,7 @@ def get_client() -> dask.distributed.Client:
 
 
 def get_fs(
-    filesystem: Optional[Union[fsspec.AbstractFileSystem, str]] = None
+    filesystem: fsspec.AbstractFileSystem | str | None = None
 ) -> fsspec.AbstractFileSystem:
     """Return the file system object from the input.
 
@@ -89,7 +80,7 @@ def fs_walk(
     fs: fsspec.AbstractFileSystem,
     path: str,
     sort: bool = False,
-) -> Iterator[Tuple[str, List[str], List[str]]]:
+) -> Iterator[tuple[str, list[str], list[str]]]:
     """Return the list of files and directories in a directory.
 
     Args:
@@ -151,7 +142,7 @@ def normalize_path(fs: fsspec.AbstractFileSystem, path: str) -> str:
     return path
 
 
-async def _available_workers(client: dask.distributed.Client) -> Set[str]:
+async def _available_workers(client: dask.distributed.Client) -> set[str]:
     """Get the list of available workers.
     Args:
         client: Client connected to the Dask cluster.
@@ -174,8 +165,8 @@ async def _available_workers(client: dask.distributed.Client) -> Set[str]:
 def calculation_stream(func: Callable,
                        seq: Iterator,
                        *args,
-                       max_workers: Optional[int] = None,
-                       **kwargs) -> List[Any]:
+                       max_workers: int | None = None,
+                       **kwargs) -> list[Any]:
     """Streams the calculation to almost n workers.
 
     Args:
@@ -193,7 +184,7 @@ def calculation_stream(func: Callable,
     client = get_client()
     completed = dask.distributed.as_completed()
 
-    def n_workers(max_workers: Optional[int]) -> int:
+    def n_workers(max_workers: int | None) -> int:
         """Limit the number of workers.
 
         Args:
@@ -204,7 +195,7 @@ def calculation_stream(func: Callable,
         """
         return max_workers or len(client.scheduler_info()['workers'])
 
-    workers: Set[str] = set()
+    workers: set[str] = set()
 
     result = []
     iterate = True
@@ -241,7 +232,7 @@ def calculation_stream(func: Callable,
 
 
 def split_sequence(sequence: Sequence[Any],
-                   sections: Optional[int] = None) -> Iterator[Sequence[Any]]:
+                   sections: int | None = None) -> Iterator[Sequence[Any]]:
     """Split a sequence into sections.
 
     Args:

@@ -6,7 +6,9 @@
 Partitioning a sequence of variables
 ====================================
 """
-from typing import Any, ClassVar, Dict, Iterator, Tuple
+from __future__ import annotations
+
+from typing import Any, ClassVar, Iterator
 
 import dask.array.core
 import dask.array.routines
@@ -59,7 +61,7 @@ class Sequence(abc.Partitioning):
     # False positive: `self` is used in the signature.
     @staticmethod
     def _split(
-        variables: Dict[str,
+        variables: dict[str,
                         dask.array.core.Array]) -> Iterator[abc.Partition]:
         """Split the variables constituting the partitioning into partitioning
         schemes."""
@@ -90,8 +92,8 @@ class Sequence(abc.Partitioning):
 
     def encode(
         self,
-        partition: Tuple[Tuple[str, int], ...],
-    ) -> Tuple[int, ...]:
+        partition: tuple[tuple[str, int], ...],
+    ) -> tuple[int, ...]:
         """Encode a partitioning scheme to the handled values.
 
         Args:
@@ -111,7 +113,7 @@ class Sequence(abc.Partitioning):
         return tuple(value
                      for _, value in self.parse(self.join(partition, '/')))
 
-    def decode(self, values: Tuple[int, ...]) -> Tuple[Tuple[str, int], ...]:
+    def decode(self, values: tuple[int, ...]) -> tuple[tuple[str, int], ...]:
         """Decode a partitioning scheme.
 
         Args:
