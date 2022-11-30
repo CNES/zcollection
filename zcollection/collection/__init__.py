@@ -414,11 +414,11 @@ class Collection:
                     'that is not split.')
                 _LOGGER.info('Creating the immutable dataset: %s',
                              self._immutable)
-                client.submit(storage.write_zarr_group,
-                              ds=immutable,
-                              dirname=self._immutable,
-                              fs=self.fs,
-                              synchronizer=self.synchronizer).result()
+                storage.write_zarr_group(immutable,
+                                         self._immutable,
+                                         self.fs,
+                                         self.synchronizer,
+                                         no_distributed=True)
 
             # Remove the variables that should not be partitioned.
             ds = ds.select_variables_by_dims((self.axis, ))

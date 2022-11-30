@@ -114,7 +114,7 @@ def write_zattrs(
     attrs[DIMENSIONS] = variable.dimensions
     path = fs.sep.join((dirname, variable.name, ZATTRS))
     with fs.open(path, mode='w') as stream:
-        json.dump(attrs, stream, indent=2)
+        json.dump(attrs, stream, indent=2)  # type: ignore[arg-type]
 
 
 def write_zarr_variable(
@@ -150,11 +150,40 @@ def write_zarr_variable(
     write_zattrs(dirname, variable, fs)
 
 
+def _write_meta(
+    ds: dataset.Dataset,
+    dirname: str,
+    fs: fsspec.AbstractFileSystem,
+) -> None:
+    """Write the metadata of a dataset to a Zarr dataset.
+
+    Args:
+        ds: The dataset to process.
+        dirname: The storage directory of the Zarr dataset.
+        fs: The file system on which the Zarr dataset is stored.
+    """
+    path = fs.sep.join((dirname, ZATTRS))
+    attrs = collections.OrderedDict(item.get_config() for item in ds.attrs)
+    with fs.open(path, mode='w') as stream:
+        json.dump(attrs, stream, indent=2)  # type: ignore[arg-type]
+
+    path = fs.sep.join((dirname, ZGROUP))
+    with fs.open(path, mode='w') as stream:
+        json.dump(
+            {'zarr_format': 2},
+            stream,  # type: ignore[arg-type]
+            indent=2,
+        )
+    zarr.consolidate_metadata(fs.get_mapper(dirname))  # type: ignore[arg-type]
+    fs.invalidate_cache(dirname)
+
+
 def write_zarr_group(
     ds: dataset.Dataset,
     dirname: str,
     fs: fsspec.AbstractFileSystem,
     synchronizer: sync.Sync,
+    no_distributed: bool = False,
 ) -> None:
     """Write a partition to a Zarr group.
 
@@ -163,7 +192,14 @@ def write_zarr_group(
         dirname: The name of the partition.
         fs: The file system that the partition is stored on.
         synchronizer: The instance handling access to critical resources.
+        no_distributed: If True, the dataset is written in a single process.
     """
+    if no_distributed:
+        for name, variable in ds.variables.items():
+            write_zarr_variable((name, variable), dirname, fs)
+        _write_meta(ds, dirname, fs)
+        return
+
     with dask.distributed.worker_client() as client:
         iterables = [(name, client.scatter(variable))
                      for name, variable in ds.variables.items()]
@@ -172,19 +208,7 @@ def write_zarr_group(
                              dirname=dirname,
                              fs=fs)
         execute_transaction(client, synchronizer, futures)
-
-    path = fs.sep.join((dirname, ZATTRS))
-    attrs = collections.OrderedDict(item.get_config() for item in ds.attrs)
-    with fs.open(path, mode='w') as stream:
-        json.dump(attrs, stream, indent=2)
-
-    path = fs.sep.join((dirname, ZGROUP))
-    with fs.open(path, mode='w') as stream:
-        json.dump({'zarr_format': 2}, stream, indent=2)
-
-    zarr.consolidate_metadata(fs.get_mapper(dirname))
-    # Invalidate any cached directory information.
-    fs.invalidate_cache(dirname)
+    _write_meta(ds, dirname, fs)
 
 
 def open_zarr_array(array: zarr.Array, name: str) -> dataset.Variable:
@@ -216,7 +240,8 @@ def open_zarr_group(
         The zarr group stored in the partition.
     """
     _LOGGER.debug('Opening Zarr group %r', dirname)
-    store: zarr.Group = zarr.open_consolidated(fs.get_mapper(dirname))
+    store: zarr.Group = zarr.open_consolidated(  # type: ignore[arg-type]
+        fs.get_mapper(dirname), )
     # Ignore unknown variables to retain.
     selected_variables = set(selected_variables) & set(
         store) if selected_variables is not None else set(store)
@@ -274,7 +299,9 @@ def del_zarr_array(
     path = fs.sep.join((dirname, name))
     if fs.exists(path):
         fs.rm(path, recursive=True)
-        zarr.consolidate_metadata(fs.get_mapper(dirname))
+        zarr.consolidate_metadata(
+            fs.get_mapper(dirname),  # type: ignore[arg-type]
+        )
         # Invalidate any cached directory information.
         fs.invalidate_cache(dirname)
 
@@ -306,4 +333,4 @@ def add_zarr_array(
         store=store,
         filters=variable.filters)
     write_zattrs(dirname, variable, fs)
-    zarr.consolidate_metadata(fs.get_mapper(dirname))
+    zarr.consolidate_metadata(fs.get_mapper(dirname))  # type: ignore[arg-type]
