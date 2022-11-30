@@ -1,6 +1,6 @@
 """
-Private functions for the implementation of the collection.
-===========================================================
+Implementation details.
+=======================
 """
 from __future__ import annotations
 
