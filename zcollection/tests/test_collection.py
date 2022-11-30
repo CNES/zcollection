@@ -605,7 +605,7 @@ def test_map_overlap(
             (zcollection.partition_properties.dir,
              zcollection.partitioning.join(partition, zcollection.fs.sep)))
         ds = storage.open_zarr_group(folder, zcollection.fs)
-        assert numpy.allclose(data[indices, :] * 2,
+        assert numpy.allclose(data[indices, :],
                               ds.variables['var1'].values * 2)
 
 
