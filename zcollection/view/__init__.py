@@ -8,8 +8,7 @@ View on a reference collection.
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar, Iterable, Iterator, Sequence
-import dataclasses
+from typing import Any, ClassVar, Iterable, Iterator
 import json
 import logging
 import pathlib
@@ -18,219 +17,26 @@ import dask.array.core
 import dask.bag.core
 import dask.distributed
 import fsspec
-import zarr
 
-from . import collection, dataset, meta, storage, sync, utilities
-from .convenience import collection as convenience
+from .. import collection, dataset, meta, storage, sync, utilities
+from ..convenience import collection as convenience
+from .detail import (
+    ViewReference,
+    _assert_have_variables,
+    _assert_variable_handled,
+    _create_zarr_array,
+    _drop_zarr_zarr,
+    _load_datasets_list,
+    _load_one_dataset,
+    _select_overlap,
+    _wrap_update_func,
+    _wrap_update_func_overlap,
+)
+
+__all__ = ['View', 'ViewReference']
 
 #: Module logger.
 _LOGGER = logging.getLogger(__name__)
-
-
-@dataclasses.dataclass(frozen=True)
-class ViewReference:
-    """Properties of the collection used as reference by a view.
-
-    Args:
-        path: Path to the collection.
-        filesystem: The file system used to access the reference collection.
-    """
-    #: Path to the collection.
-    path: str
-    #: The file system used to access the reference collection.
-    filesystem: fsspec.AbstractFileSystem = utilities.get_fs('file')
-
-
-def _create_zarr_array(args: tuple[str, zarr.Group], base_dir: str,
-                       fs: fsspec.AbstractFileSystem, template: str,
-                       variable: meta.Variable) -> None:
-    """Create a Zarr array, with fill_value being used as the default value for
-    uninitialized portions of the array.
-
-    Args:
-        args: Tuple of (path, zarr.Group).
-        base_dir: Base directory for the Zarr array.
-        fs: The filesystem used to create the Zarr array.
-        template: The variable's name is used as a template for the Zarr array
-            to determine the shape of the new variable.
-        variable: The properties of the variable to create.
-    """
-    partition, group = args
-    data: dask.array.core.Array = dask.array.core.from_zarr(group[template])
-
-    dirname = fs.sep.join((base_dir, partition))
-    mapper = fs.get_mapper(fs.sep.join((dirname, variable.name)))
-    zarr.full(data.shape,
-              chunks=data.chunksize,
-              dtype=variable.dtype,
-              compressor=variable.compressor,
-              fill_value=variable.fill_value,
-              store=mapper,
-              overwrite=True,
-              filters=variable.filters)
-    storage.write_zattrs(dirname, variable, fs)
-    fs.invalidate_cache(dirname)
-
-
-def _drop_zarr_zarr(partition: str,
-                    fs: fsspec.AbstractFileSystem,
-                    variable: str,
-                    ignore_errors: bool = False) -> None:
-    """Drop a Zarr array.
-
-    Args:
-        partition: The partition that contains the array to drop.
-        base_dir: Base directory for the Zarr array.
-        fs: The filesystem used to delete the Zarr array.
-        variable: The name of the variable to drop.
-        ignore_errors: If True, ignore errors when dropping the array.
-    """
-    try:
-        fs.rm(fs.sep.join((partition, variable)), recursive=True)
-        fs.invalidate_cache(partition)
-    # pylint: disable=broad-except
-    # We don't want to fail on errors.
-    except Exception:
-        if not ignore_errors:
-            raise
-    # pylint: enable=broad-except
-
-
-def _load_one_dataset(
-    args: tuple[tuple[tuple[str, int], ...], list[slice]],
-    base_dir: str,
-    fs: fsspec.AbstractFileSystem,
-    selected_variables: Iterable[str] | None,
-    view_ref: collection.Collection,
-    variables: Sequence[str],
-) -> tuple[dataset.Dataset, str] | None:
-    """Load a dataset from a partition stored in the reference collection and
-    merge it with the variables defined in this view.
-
-    Args:
-        args: Tuple containing the partition's keys and its indexer.
-        base_dir: Base directory of the view.
-        fs: The file system used to access the variables in the view.
-        selected_variables: The list of variable to retain from the view
-            reference.
-        view_ref: The view reference.
-        variables: The variables to retain from the view
-
-    Returns:
-        The dataset and the partition's path.
-    """
-    partition_scheme, slices = args
-    partition = view_ref.partitioning.join(partition_scheme, fs.sep)
-    ds = storage.open_zarr_group(
-        view_ref.fs.sep.join((view_ref.partition_properties.dir, partition)),
-        view_ref.fs, selected_variables)
-    if ds is None:
-        return None
-
-    # If the user has not selected any variables in the reference view. In this
-    # case, the dataset is built from all the variables selected in the view.
-    if len(ds.dimensions) == 0:
-        return dataset.Dataset(
-            [
-                storage.open_zarr_array(
-                    zarr.open(  # type: ignore[arg-type]
-                        fs.get_mapper(
-                            fs.sep.join((base_dir, partition, variable))),
-                        mode='r',
-                    ),
-                    variable) for variable in variables
-            ],
-            ds.attrs), partition
-
-    _ = {
-        ds.add_variable(item.metadata(), item.array)  # type: ignore[arg-type]
-        for item in (
-            storage.open_zarr_array(
-                zarr.open(  # type: ignore[arg-type]
-                    fs.get_mapper(fs.sep.join((base_dir, partition,
-                                               variable))),
-                    mode='r',
-                ),
-                variable) for variable in variables)
-    }
-
-    # Apply indexing if needed.
-    if len(slices):
-        dim = view_ref.partition_properties.dim
-        ds_list: list[dataset.Dataset] = []
-        _ = {
-            ds_list.append(  # type: ignore[func-returns-value]
-                ds.isel({dim: indexer}))
-            for indexer in slices
-        }
-        ds = ds_list.pop(0)
-        if ds_list:
-            ds = ds.concat(ds_list, dim)
-    return ds, partition
-
-
-def _assert_variable_handled(reference: meta.Dataset, view: meta.Dataset,
-                             variable: str) -> None:
-    """Assert that a variable belongs to a view.
-
-    Args:
-        reference: The reference dataset.
-        view: The view dataset.
-        variable: The variable to check.
-    """
-    if variable in reference.variables:
-        raise ValueError(f'Variable {variable} is read-only')
-    if variable not in view.variables:
-        raise ValueError(f'Variable {variable} does not exist')
-
-
-def _load_datasets_list(
-    client: dask.distributed.Client,
-    base_dir: str,
-    fs: fsspec.AbstractFileSystem,
-    view_ref: collection.Collection,
-    metadata: meta.Dataset,
-    partitions: Iterable[str],
-    selected_variables: Iterable[str] | None = None,
-) -> Iterator[tuple[dataset.Dataset, str]]:
-    """Load datasets from a list of partitions.
-
-    Args:
-        client: The client used to load the datasets.
-        base_dir: Base directory of the view.
-        fs: The file system used to access the variables in the view.
-        view_ref: The view reference.
-        metadata: The metadata of the dataset.
-        partitions: The list of partitions to load.
-        selected_variables: The list of variable to retain from the view
-
-    Returns:
-        The datasets and their paths.
-    """
-    arguments: tuple[tuple[tuple[tuple[str, int], ...], list], ...] = tuple(
-        (view_ref.partitioning.parse(item), []) for item in partitions)
-    futures = client.map(
-        _load_one_dataset,
-        arguments,
-        base_dir=base_dir,
-        fs=fs,
-        selected_variables=view_ref.metadata.select_variables(
-            keep_variables=selected_variables),
-        view_ref=client.scatter(view_ref),
-        variables=metadata.select_variables(selected_variables))
-
-    return filter(lambda item: item is not None,
-                  client.gather(futures))  # type: ignore[arg-type]
-
-
-def _assert_have_variables(metadata: meta.Dataset) -> None:
-    """Assert that the current view has variables.
-
-    Args:
-        metadata: The metadata of the dataset.
-    """
-    if not metadata.variables:
-        raise ValueError('The view has no variables')
 
 
 class View:
@@ -251,7 +57,7 @@ class View:
         base_dir: str,
         view_ref: ViewReference,
         *,
-        ds: meta.Dataset | None = None,
+        ds: meta.Dataset | None,
         filesystem: fsspec.AbstractFileSystem | str | None = None,
         synchronizer: sync.Sync | None = None,
     ) -> None:
@@ -539,6 +345,7 @@ class View:
         func: collection.UpdateCallable,
         /,
         *args,
+        depth: int = 0,
         filters: collection.PartitionFilter = None,
         partition_size: int | None = None,
         selected_variables: Iterable[str] | None = None,
@@ -549,6 +356,8 @@ class View:
         Args:
             func: The function to apply to calculate the new values for the
                 target variables.
+            depth: The depth of the overlap between the partitions. Default is
+                0 (no overlap).
             filters: The predicate used to filter the partitions to drop.
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
@@ -593,20 +402,24 @@ class View:
         _LOGGER.info('Updating variable %s',
                      ', '.join(repr(item) for item in func_result))
 
-        def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
-                          base_dir: str) -> None:
-            """Wrap the function to be applied to the dataset."""
-            for ds, partition in parameters:
-                # Applying function on partition's data
-                dictionary = func(ds, *args, **kwargs)
-                tuple(
-                    storage.
-                    update_zarr_array(  # type: ignore[func-returns-value]
-                        dirname=self.fs.sep.join((base_dir, partition,
-                                                  varname)),
-                        array=array,
-                        fs=self.fs,
-                    ) for varname, array in dictionary.items())
+        # Wrap the function to apply to each partition.
+        if depth == 0:
+            wrap_function = _wrap_update_func(
+                func,
+                self.fs,
+                *args,
+                **kwargs,
+            )
+        else:
+            wrap_function = _wrap_update_func_overlap(
+                datasets_list,
+                depth,
+                func,
+                self.fs,
+                self.view_ref,
+                *args,
+                **kwargs,
+            )
 
         batchs = utilities.split_sequence(
             datasets_list, partition_size
@@ -754,37 +567,11 @@ class View:
             Returns:
                 The result of the function.
             """
-            # pylint: disable=too-many-locals
-            # The local function is not taken into account for counting
-            # locals.
-            _, partition = arguments
-            where = next(ix for ix, item in enumerate(datasets_list)
-                         if item[1] == partition)
-
-            # Search for the overlapping partitions
-            selected_datasets = [
-                datasets_list[ix]
-                for ix in range(where - depth, where + depth + 1)
-                if 0 <= ix < len(datasets_list)
-            ]
-
-            # Compute the slice of the given partition.
-            start = 0
-            indices = slice(0, 0, None)
-            for ds, current_partition in datasets_list:
-                size = ds[self.view_ref.axis].size
-                indices = slice(start, start + size, None)
-                if partition == current_partition:
-                    break
-                start += size
-
-            # Build the dataset for the selected partitions.
-            groups = [ds for ds, _ in selected_datasets]
-            ds = groups.pop(0)
-            ds.concat(groups, self.view_ref.partition_properties.dim)
+            ds, indices = _select_overlap(arguments, datasets_list, depth,
+                                          self.view_ref)
 
             # Finally, apply the function.
-            return (self.view_ref.partitioning.parse(partition), indices,
+            return (self.view_ref.partitioning.parse(arguments[1]), indices,
                     func(ds, *args, **kwargs))
             # pylint: enable=too-many-locals
 
