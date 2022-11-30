@@ -208,17 +208,24 @@ def test_update(
                                         filesystem=tested_fs.fs)
     zcollection.insert(ds)
 
-    data = zcollection.load()
-    assert data is not None
-
-    def update(ds: dataset.Dataset):
+    def update(ds: dataset.Dataset, shift: int = 3):
         """Update function used for this test."""
-        return dict(var2=ds.variables['var1'].values * -1 + 3)
+        return dict(var2=ds.variables['var1'].values * -1 + shift)
 
     zcollection.update(update)  # type: ignore
 
+    data = zcollection.load()
+    assert data is not None
     assert numpy.allclose(data.variables['var2'].values,
                           data.variables['var1'].values * -1 + 3,
+                          rtol=0)
+
+    zcollection.update(update, depth=1, shift=5)  # type: ignore
+
+    data = zcollection.load()
+    assert data is not None
+    assert numpy.allclose(data.variables['var2'].values,
+                          data.variables['var1'].values * -1 + 5,
                           rtol=0)
 
     def invalid_var_name(ds: dataset.Dataset):

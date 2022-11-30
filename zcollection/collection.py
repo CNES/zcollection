@@ -53,7 +53,7 @@ from .type_hints import ArrayLike
 
 #: Function type to load and call a callback function of type
 #: :class:`PartitionCallable`.
-WrappedPartitionCallable = Callable[[Iterable[str]], None]
+WrappedPartitionCallable = Callable[[Sequence[str]], None]
 
 #: Type of functions filtering the partitions.
 PartitionFilterCallback = Callable[[Dict[str, int]], bool]
@@ -164,9 +164,101 @@ class PartitioningProperties:
     dim: str
 
 
+def _load_dataset(
+    fs: fsspec.AbstractFileSystem,
+    immutable: str | None,
+    partition: str,
+    selected_variables: Iterable[str] | None,
+):
+    """Load a dataset from a partition.
+
+    Args:
+        fs: File system on which the Zarr dataset is stored.
+        immutable: Name of the immutable directory.
+        partition: Name of the partition.
+        selected_variables: Name of the variables to load from the dataset.
+
+    Returns:
+        The loaded dataset.
+    """
+    ds = storage.open_zarr_group(partition, fs, selected_variables)
+    if immutable:
+        ds.merge(storage.open_zarr_group(immutable, fs, selected_variables))
+    return ds
+
+
+def _load_dataset_with_overlap(
+    axis: str,
+    depth: int,
+    dim: str,
+    fs: fsspec.AbstractFileSystem,
+    immutable: str | None,
+    partition: str,
+    partitions: Sequence[str],
+    selected_variables: Iterable[str] | None,
+) -> tuple[dataset.Dataset, slice]:
+    """Load a dataset from a partition with overlap.
+
+    Args:
+        axis: The axis of the collection.
+        depth: Depth of the overlap.
+        dim: Name of the partitioning dimension.
+        fs: File system on which the Zarr dataset is stored.
+        immutable: Name of the immutable directory.
+        partition: Name of the partition.
+        partitions: List of all partitions.
+        selected_variables: Name of the variables to load from the dataset.
+
+    Returns:
+        The loaded dataset and the slice to select the data without the
+        overlap.
+    """
+
+    def calculate_slice(
+        groups: list[dataset.Dataset],
+        selected_partitions: list[str],
+    ) -> slice:
+        """Compute the slice of the selected dataset (without overlap)."""
+        start = 0
+        indices = slice(0, 0, None)
+        for ix, ds in enumerate(groups):
+            size = ds[axis].size
+            indices = slice(start, start + size, None)
+            if partition == selected_partitions[ix]:
+                break
+            start += size
+        return indices
+
+    where = partitions.index(partition)
+
+    # Search for the overlapping partitions
+    selected_partitions = [
+        partitions[ix] for ix in range(where - depth, where + depth + 1)
+        if 0 <= ix < len(partitions)
+    ]
+
+    # Load the datasets for each selected partition.
+    groups = [
+        storage.open_zarr_group(partition, fs, selected_variables)
+        for partition in selected_partitions
+    ]
+
+    # Compute the slice of the given partition.
+    indices = calculate_slice(groups, selected_partitions)
+
+    # Build the dataset for the selected partitions.
+    ds = groups.pop(0)
+    ds = ds.concat(groups, dim)
+
+    if immutable:
+        ds.merge(storage.open_zarr_group(partition, fs, selected_variables))
+    return ds, indices
+
+
 def _wrap_update_func(
     func: UpdateCallable,
     fs: fsspec.AbstractFileSystem,
+    immutable: str | None,
     selected_variables: Iterable[str] | None,
     *args,
     **kwargs,
@@ -177,7 +269,7 @@ def _wrap_update_func(
     Args:
         func: Function to apply to update each partition.
         fs: File system on which the Zarr dataset is stored.
-        variable: Name of the variable to update.
+        immutable: Name of the immutable directory.
         selected_variables: Name of the variables to load from the dataset.
             If None, all variables are loaded.
         *args: Positional arguments to pass to the function.
@@ -192,15 +284,64 @@ def _wrap_update_func(
     def wrap_function(partitions: Iterable[str]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
-            dictionary = func(
-                storage.open_zarr_group(partition, fs, selected_variables),
-                *args, **kwargs)
+            ds = _load_dataset(fs, immutable, partition, selected_variables)
+            dictionary = func(ds, *args, **kwargs)
             tuple(
                 storage.update_zarr_array(  # type: ignore[func-returns-value]
                     dirname=fs.sep.join((partition, varname)),
                     array=array,
                     fs=fs,
                 ) for varname, array in dictionary.items())
+
+    return wrap_function
+
+
+def _wrap_update_func_with_overlap(
+    axis: str,
+    depth: int,
+    dim: str,
+    func: UpdateCallable,
+    fs: fsspec.AbstractFileSystem,
+    immutable: str | None,
+    selected_variables: Iterable[str] | None,
+    *args,
+    **kwargs,
+) -> WrappedPartitionCallable:
+    """Wrap an update function taking a partition's dataset as input and
+    returning variable's values as a numpy array.
+
+    Args:
+        func: Function to apply to update each partition.
+        fs: File system on which the Zarr dataset is stored.
+        selected_variables: Name of the variables to load from the dataset.
+            If None, all variables are loaded.
+        *args: Positional arguments to pass to the function.
+        **kwargs: Keyword arguments to pass to the function.
+
+    Returns:
+        The wrapped function that takes a set of dataset partitions and the
+        variable name as input and returns the variable's values as a numpy
+        array.
+    """
+
+    def wrap_function(partitions: Sequence[str]) -> None:
+        # Applying function for each partition's data
+        for partition in partitions:
+
+            ds, indices = _load_dataset_with_overlap(axis, depth, dim, fs,
+                                                     immutable, partition,
+                                                     partitions,
+                                                     selected_variables)
+            dictionary = func(ds, *args, **kwargs)
+
+            for varname, array in dictionary.items():
+                slices = tuple(indices if dimname == dim else slice(None)
+                               for dimname, _ in ds[varname].dimension_index())
+                storage.update_zarr_array(
+                    dirname=fs.sep.join((partition, varname)),
+                    array=array[slices],  # type: ignore[index]
+                    fs=fs,
+                )
 
     return wrap_function
 
@@ -805,12 +946,8 @@ class Collection:
             Returns:
                 The result of the function.
             """
-            ds = storage.open_zarr_group(partition, self.fs,
-                                         selected_variables)
-            if self._immutable:
-                ds.merge(
-                    storage.open_zarr_group(partition, self.fs,
-                                            selected_variables))
+            ds = _load_dataset(self.fs, self._immutable, partition,
+                               selected_variables)
             return self.partitioning.parse(partition), func(
                 ds, *args, **kwargs)
 
@@ -885,40 +1022,9 @@ class Collection:
             Returns:
                 The result of the function.
             """
-            where = partitions.index(partition)
-
-            # Search for the overlapping partitions
-            selected_partitions = [
-                partitions[ix]
-                for ix in range(where - depth, where + depth + 1)
-                if 0 <= ix < len(partitions)
-            ]
-
-            # Load the datasets for each selected partition.
-            groups = [
-                storage.open_zarr_group(partition, self.fs, selected_variables)
-                for partition in selected_partitions
-            ]
-
-            # Compute the slice of the given partition.
-            start = 0
-            indices = slice(0, 0, None)
-            for ix, ds in enumerate(groups):
-                size = ds[self.axis].size
-                indices = slice(start, start + size, None)
-                if partition == partitions[ix]:
-                    break
-                start += size
-
-            # Build the dataset for the selected partitions.
-            ds = groups.pop(0)
-            ds.concat(groups, self.partition_properties.dim)
-
-            if self._immutable:
-                ds.merge(
-                    storage.open_zarr_group(partition, self.fs,
-                                            selected_variables))
-
+            ds, indices = _load_dataset_with_overlap(
+                self.axis, depth, self.partition_properties.dim, self.fs,
+                self._immutable, partition, partitions, selected_variables)
             # Finally, apply the function.
             return (self.partitioning.parse(partition), indices,
                     func(ds, *args, **kwargs))
@@ -1015,6 +1121,7 @@ class Collection:
         func: UpdateCallable,
         /,
         *args,
+        depth: int = 0,
         filters: PartitionFilter | None = None,
         partition_size: int | None = None,
         selected_variables: Iterable[str] | None = None,
@@ -1026,6 +1133,8 @@ class Collection:
         Args:
             func: The function to apply on each partition.
             *args: The positional arguments to pass to the function.
+            depth: The depth of the overlap between the partitions. Default is
+                0 (no overlap).
             filters: The expression used to filter the partitions to update.
             partition_size: The number of partitions to update in a single
                 batch. By default 1, which is the same as to map the function to
@@ -1055,8 +1164,13 @@ class Collection:
         if len(unknown_variables):
             raise ValueError(f'Unknown variables: {unknown_variables}')
 
-        local_func = _wrap_update_func(func, self.fs, selected_variables,
-                                       *args, **kwargs)
+        if depth == 0:
+            local_func = _wrap_update_func(func, self.fs, self._immutable,
+                                           selected_variables, *args, **kwargs)
+        else:
+            local_func = _wrap_update_func_with_overlap(
+                self.axis, depth, self.partition_properties.dim, func, self.fs,
+                self._immutable, selected_variables, *args, **kwargs)
 
         _LOGGER.info('Updating of the (%s) variable in the collection',
                      ', '.join(repr(item) for item in func_result))
