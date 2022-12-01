@@ -31,9 +31,9 @@ test:
     - pytest --pyargs zcollection
 
 about:
-  home: https://gitlab.cls.fr/fbriol/zcollection
+  home: https://github.com/CNES/zcollection
   license: Proprietary
   license_family: Proprietary
   summary: 'Handle a collection of Zarr groups'
-  # doc_url: TODO
-  dev_url: https://gitlab.cls.fr/fbriol/zcollection
+  doc_url: https://zcollection.readthedocs.io/en/latest/
+  dev_url: https://github.com/CNES/zcollection
