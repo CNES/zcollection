@@ -3,8 +3,29 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Typing
-======
+Type hints for the zcollection package.
+=======================================
+
+.. rubric:: Type aliases
+
+.. py:data:: DType
+    :canonical: DType
+
+    Type of a numpy array.
+
+.. py:data:: DTypeLike
+    :canonical: DTypeLike
+
+    Type of a numpy array or a string.
+
+.. py:data:: NDArray
+    :canonical: NDArray
+
+    Type of a numpy array.
+
+.. py:data:: NDMaskedArray
+
+    Type of a numpy array with a mask.
 """
 from __future__ import annotations
 
@@ -40,18 +61,13 @@ _ScalarType_co = TypeVar('_ScalarType_co', bound=numpy.generic, covariant=True)
 # pylint: enable=invalid-name
 
 if TYPE_CHECKING:
-    #: numpy.dtype.
     DType = numpy.dtype[_ScalarType_co]
-    #: A numpy masked tensor with any type.
     NDMaskedArray = numpy.ma.MaskedArray[Any, DType]  # pragma: no cover
 else:
     DType = GenericAlias(numpy.dtype, (_ScalarType_co, ))
     NDMaskedArray = GenericAlias(numpy.ma.MaskedArray, (Any, DType))
 
-#: A numpy tensor with any type.
 NDArray: TypeAlias = numpy.typing.NDArray  # pragma: no cover
-
-#: Anything that can be coerced into numpy.dtype.
 DTypeLike: TypeAlias = numpy.typing.DTypeLike  # pragma: no cover
 
 

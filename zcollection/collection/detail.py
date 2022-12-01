@@ -167,7 +167,7 @@ def _load_dataset_with_overlap(
         start = 0
         indices = slice(0, 0, None)
         for ix, ds in enumerate(groups):
-            size = ds[axis].size
+            size = ds[axis].shape[0]
             indices = slice(start, start + size, None)
             if partition == selected_partitions[ix]:
                 break

@@ -198,6 +198,17 @@ class Collection:
         ValueError: If the axis does not exist in the dataset, if the
             partition key is not defined in the dataset or if the access mode
             is not supported.
+
+    .. note::
+
+        On the first call to the constructor, the dataset given as an argument
+        is used to create the metadata of the collection. This information is
+        used to validate datasets that are inserted in the collection.
+
+        Normally, this class is not instantiated directly but through the
+        :py:meth:`create_collection <zcollection.create_collection>` and
+        :py:meth:`open_collection <zcollection.open_collection>` methods of this
+        library.
     """
     #: Configuration filename of the collection.
     CONFIG: ClassVar[str] = '.zcollection'

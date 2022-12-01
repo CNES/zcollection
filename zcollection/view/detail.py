@@ -227,7 +227,18 @@ def _select_overlap(
     datasets_list: tuple[tuple[dataset.Dataset, str], ...],
     depth: int,
     view_ref: collection.Collection,
-):
+) -> tuple[dataset.Dataset, slice]:
+    """Select the neighboring partitions of a given partition.
+
+    Args:
+        arguments: The partition to select the neighbors of.
+        datasets_list: The list of partitions.
+        depth: The depth of the overlap.
+        view_ref: The view reference.
+
+    Returns:
+        The neighboring partitions.
+    """
 
     def calculate_slice(
             selected_datasets: list[tuple[dataset.Dataset, str]]) -> slice:
@@ -235,7 +246,7 @@ def _select_overlap(
         start = 0
         indices = slice(0, 0, None)
         for ds, selected_partition in selected_datasets:
-            size = ds[view_ref.axis].size
+            size = ds[view_ref.axis].shape[0]
             indices = slice(start, start + size, None)
             if partition == selected_partition:
                 break

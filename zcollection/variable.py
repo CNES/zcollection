@@ -264,7 +264,7 @@ class Variable:
 
         Args:
             **kwargs: Keyword arguments passed to
-                :func:`dask.array.Array.persist`.
+                :meth:`dask.array.Array.persist`.
 
         Returns:
             The variable
@@ -339,7 +339,7 @@ class Variable:
 
         Args:
             **kwargs: Keyword arguments passed to
-                :func:`dask.array.Array.compute`.
+                :meth:`dask.array.Array.compute`.
         """
         (values, ) = dask.base.compute(self.array, traverse=False, **kwargs)
         return values if self.fill_value is None else numpy.ma.masked_equal(
@@ -514,7 +514,7 @@ class Variable:
 
         Args:
             **kwargs: Keyword arguments passed to
-                :func:`dask.array.rechunk.rechunk`
+                :func:`dask.array.rechunk`
 
         Returns:
             The variable.
@@ -570,7 +570,7 @@ class Variable:
 
         .. seealso::
 
-            :func:`dask.array.core.asarray`
+            :func:`dask.array.asarray`
         """
         return self.array
 
@@ -598,7 +598,7 @@ class Variable:
         """Returns whether the Dask graph can be optimized.
 
         .. seealso::
-            :func:`dask.array.Array.__dask_optimize__`
+            :meth:`dask.array.Array.__dask_optimize__`
         """
         return dask.array.core.Array.__dask_optimize__(dsk, keys, **kwargs)
 

@@ -50,6 +50,12 @@ class View:
         ds: The dataset handled by this view.
         filesystem: The file system used to access the view.
         synchronizer: The synchronizer used to synchronize the view.
+
+    .. note::
+
+        Normally, you should not call this constructor directly. Instead, use
+        :func:`create_view <zcollection.create_view>` or :func:`open_view
+        <zcollection.open_view>` to create or open a view.
     """
     #: Configuration filename of the view.
     CONFIG: ClassVar[str] = '.view'
@@ -286,7 +292,7 @@ class View:
         """Load the view.
 
         Args:
-            filters: The predicate used to filter the partitions to drop.
+            filters: The predicate used to filter the partitions to select.
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
                 <zcollection.collection.Collection.partitions>` method.
