@@ -63,7 +63,11 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return f'<{self.__class__.__name__} ({self.shape}) {self.dtype}>'
 
     def _repr_html_(self) -> str:
+        # pylint: disable=protected-access
+        # Useless to rewrite the html representation of the array. Use the
+        # zarr one.
         html_code = self._array.info._repr_html_()
+        #: pylint: enable=protected-access
         return html_code.replace('zarr.core.Array', str(type(self)))
 
     def __getitem__(
@@ -194,8 +198,11 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
     def _cast(self, obj: Any) -> Any:
         """Cast an object to a value compatible with numpy.ndarray."""
         if isinstance(obj, CompressedArray):
+            #: pylint: disable=protected-access
+            # obj is a CompressedArray, we can access its _array attribute.
             return obj._array[...] if self._fill_value is None else \
                 numpy.ma.masked_equal(obj._array[...], self._fill_value)
+            #: pylint: enable=protected-access
         if isinstance(obj, numpy.ndarray):
             return obj
         if isinstance(obj, dask.array.core.Array):
@@ -207,7 +214,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
     def __array_function__(
         self,
         func: Callable,
-        types: Sequence[type],
+        _types: Sequence[type],
         args,
         kwargs,
     ) -> Any:
@@ -304,7 +311,12 @@ def _concatenate_compressed_array(arrays, **kwargs):
 
 @dask.array.dispatch.numel_lookup.register(CompressedArray)
 def _numel_compressed_array(array, **kwargs):
+    #: pylint: disable=protected-access
+    # array is a CompressedArray, we can access its _array attribute.
+    # We reuse the implementation of dask array numel. Useless to
+    # reimplement it.
     arr = array.__array__(dtype=kwargs.get('dtype', None))
     if array._fill_value is not None:
         return dask.array.backends._numel_masked(arr, **kwargs)
     return dask.array.backends._numel_ndarray(arr, **kwargs)
+    #: pylint: enable=protected-access

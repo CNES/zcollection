@@ -56,6 +56,7 @@ from .detail import (
     _load_dataset_with_overlap,
     _wrap_update_func,
     _wrap_update_func_with_overlap,
+    try_infer_callable,
 )
 
 #: Type of functions filtering the partitions.
@@ -153,6 +154,29 @@ def _immutable_path(
     return fs.sep.join(
         (partition_properties.dir, _IMMUTABLE)) if ds.select_variables_by_dims(
             (partition_properties.dim, ), predicate=False) else None
+
+
+def _write_immutable_dataset(ds: dataset.Dataset, axis: str, path: str,
+                             fs: fsspec.AbstractFileSystem) -> None:
+    """Write the immutable dataset.
+
+    Args:
+        ds: The dataset to write.
+        axis: The partitioning axis.
+        path: The path to the immutable dataset.
+        fs: The file system that the partition is stored on.
+        synchronizer: The synchronizer to use.
+    """
+    immutable_dataset = ds.select_variables_by_dims((axis, ), predicate=False)
+    assert len(immutable_dataset.variables) != 0, (
+        'The dataset to insert does not contain any variable '
+        'that is not split.')
+    _LOGGER.info('Creating the immutable dataset: %s', path)
+    storage.write_zarr_group(immutable_dataset,
+                             path,
+                             fs,
+                             sync.NoSync(),
+                             parallel=False)
 
 
 class Collection:
@@ -407,18 +431,8 @@ class Collection:
             # On the first call, we store the immutable variables in a
             # a directory located at the root of the collection.
             if not self.fs.exists(self._immutable):
-                immutable = ds.select_variables_by_dims((self.axis, ),
-                                                        predicate=False)
-                assert len(immutable.variables) != 0, (
-                    'The dataset to insert does not contain any variable '
-                    'that is not split.')
-                _LOGGER.info('Creating the immutable dataset: %s',
-                             self._immutable)
-                storage.write_zarr_group(immutable,
-                                         self._immutable,
-                                         self.fs,
-                                         self.synchronizer,
-                                         no_distributed=True)
+                _write_immutable_dataset(ds, self.axis, self._immutable,
+                                         self.fs)
 
             # Remove the variables that should not be partitioned.
             ds = ds.select_variables_by_dims((self.axis, ))
@@ -600,6 +614,9 @@ class Collection:
             return self.partitioning.parse(partition), func(
                 ds, *args, **kwargs)
 
+        if not callable(func):
+            raise TypeError('func must be a callable')
+
         bag = dask.bag.core.from_sequence(self.partitions(filters=filters),
                                           partition_size=partition_size,
                                           npartitions=npartitions)
@@ -622,6 +639,9 @@ class Collection:
 
         Args:
             func: The function to apply to every partition of the collection.
+                If ``func`` accepts a ``partition_info`` as keyword argument,
+                it will be passed a slice object with the indices of the
+                partition selected without the overlap.
             depth: The depth of the overlap between the partitions.
             *args: The positional arguments to pass to the function.
             filters: The predicate used to filter the partitions to process.
@@ -646,6 +666,10 @@ class Collection:
             [1.0, 2.0, 3.0, 4.0]
             [5.0, 6.0, 7.0, 8.0]
         """
+        if not callable(func):
+            raise TypeError('func must be a callable')
+
+        add_partition_info = dask.utils.has_keyword(func, 'partition_info')
 
         def _wrap(
             partition: str,
@@ -674,6 +698,11 @@ class Collection:
             ds, indices = _load_dataset_with_overlap(
                 self.axis, depth, self.partition_properties.dim, self.fs,
                 self._immutable, partition, partitions, selected_variables)
+
+            if add_partition_info:
+                kwargs = kwargs.copy()
+                kwargs['partition_info'] = indices
+
             # Finally, apply the function.
             return (self.partitioning.parse(partition), indices,
                     func(ds, *args, **kwargs))
@@ -783,7 +812,11 @@ class Collection:
             func: The function to apply on each partition.
             *args: The positional arguments to pass to the function.
             depth: The depth of the overlap between the partitions. Default is
-                0 (no overlap).
+                0 (no overlap). If depth is greater than 0, the function is
+                applied on the partition and its neighbors selected by the
+                depth. If ``func`` accepts a ``partition_info`` as keyword
+                argument, it will be passed a slice object with the indices of
+                the partition selected without the overlap.
             filters: The expression used to filter the partitions to update.
             partition_size: The number of partitions to update in a single
                 batch. By default 1, which is the same as to map the function to
@@ -801,13 +834,18 @@ class Collection:
             >>> collection = zcollection.Collection("my_collection", mode="w")
             >>> collection.update(ones)
         """
+        if not callable(func):
+            raise TypeError('func must be a callable')
+
         try:
             one_partition = next(self.partitions(filters=filters))
         except StopIteration:
             return
-        func_result = func(
+        func_result = try_infer_callable(
+            func,
             storage.open_zarr_group(one_partition, self.fs,
-                                    selected_variables), *args, **kwargs)
+                                    selected_variables),
+            self.partition_properties.dim, *args, **kwargs)
         unknown_variables = set(func_result) - set(
             self.metadata.variables.keys())
         if len(unknown_variables):

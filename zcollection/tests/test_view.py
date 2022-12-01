@@ -137,3 +137,50 @@ def test_view(
     with pytest.raises(ValueError):
         convenience.open_view(str(tested_fs.collection),
                               filesystem=tested_fs.fs)
+
+
+@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+def test_view_overlap(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
+    """Test the creation of a view."""
+    tested_fs = request.getfixturevalue(arg)
+
+    create_test_collection(tested_fs)
+    instance = convenience.create_view(str(tested_fs.view),
+                                       view.ViewReference(
+                                           str(tested_fs.collection),
+                                           tested_fs.fs),
+                                       filesystem=tested_fs.fs)
+
+    var = meta.Variable(
+        name='var3',
+        dtype=numpy.int8,
+        dimensions=('num_lines', 'num_pixels'),
+    )
+
+    instance.add_variable(var)
+
+    def update(ds, varname):
+        """Update function used for this test."""
+        return {varname: ds.variables['var1'].values * 1 + 5}
+
+    instance.update(update, 'var3', depth=1)  # type: ignore
+
+    ds = instance.load()
+    assert ds is not None
+    numpy.all(ds.variables['var3'].values == 5)
+
+    def map_func(x, partition_info=None):
+        """Map function used for this test."""
+        return partition_info
+
+    indexers = instance.map_overlap(
+        map_func,  # type: ignore
+        depth=1,
+    ).compute()
+
+    for (_, b, c) in indexers:
+        assert b == c

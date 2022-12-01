@@ -230,6 +230,20 @@ def test_update(
                           data.variables['var1'].values * -1 + 5,
                           rtol=0)
 
+    def update_with_info(ds: dataset.Dataset, partition_info=None, shift=3):
+        """Update function used for this test."""
+        assert partition_info is not None
+        assert isinstance(partition_info, slice)
+        return dict(var2=ds.variables['var1'].values * -1 + shift)
+
+    zcollection.update(update_with_info, depth=1, shift=10)  # type: ignore
+
+    data = zcollection.load()
+    assert data is not None
+    assert numpy.allclose(data.variables['var2'].values,
+                          data.variables['var1'].values * -1 + 10,
+                          rtol=0)
+
     def invalid_var_name(ds: dataset.Dataset):
         """Update function used to test if the user wants to update a non-
         existent variable name."""

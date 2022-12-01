@@ -13,6 +13,7 @@ import fsspec
 import zarr
 
 from .. import collection, dataset, meta, storage, utilities
+from ..collection.detail import update_with_overlap
 
 
 @dataclasses.dataclass(frozen=True)
@@ -328,15 +329,8 @@ def _wrap_update_func_overlap(
         for ds, partition in parameters:
             ds, indices = _select_overlap((ds, partition), datasets_list,
                                           depth, view_ref)
-            dictionary = func(ds, *args, **kwargs)
-
-            for varname, array in dictionary.items():
-                slices = tuple(indices if dimname == dim else slice(None)
-                               for dimname, _ in ds[varname].dimension_index())
-                storage.update_zarr_array(  # type: ignore[func-returns-value]
-                    dirname=fs.sep.join((base_dir, partition, varname)),
-                    array=array[slices],  # type: ignore[index]
-                    fs=fs,
-                )
+            update_with_overlap(func, ds, indices, dim, fs,
+                                fs.sep.join((base_dir, partition)), *args,
+                                **kwargs)
 
     return wrap_function

@@ -183,7 +183,7 @@ def write_zarr_group(
     dirname: str,
     fs: fsspec.AbstractFileSystem,
     synchronizer: sync.Sync,
-    no_distributed: bool = False,
+    parallel: bool = True,
 ) -> None:
     """Write a partition to a Zarr group.
 
@@ -192,23 +192,24 @@ def write_zarr_group(
         dirname: The name of the partition.
         fs: The file system that the partition is stored on.
         synchronizer: The instance handling access to critical resources.
-        no_distributed: If True, the dataset is written in a single process.
+        parallel: Whether to write the variables in parallel using Dask.
     """
-    if no_distributed:
-        for name, variable in ds.variables.items():
-            write_zarr_variable((name, variable), dirname, fs)
+    if parallel:
+        with dask.distributed.worker_client() as client:
+            iterables = [(name, client.scatter(variable))
+                         for name, variable in ds.variables.items()]
+            futures = client.map(write_zarr_variable,
+                                 iterables,
+                                 dirname=dirname,
+                                 fs=fs)
+            execute_transaction(client, synchronizer, futures)
         _write_meta(ds, dirname, fs)
         return
 
-    with dask.distributed.worker_client() as client:
-        iterables = [(name, client.scatter(variable))
-                     for name, variable in ds.variables.items()]
-        futures = client.map(write_zarr_variable,
-                             iterables,
-                             dirname=dirname,
-                             fs=fs)
-        execute_transaction(client, synchronizer, futures)
+    for name, variable in ds.variables.items():
+        write_zarr_variable((name, variable), dirname, fs)
     _write_meta(ds, dirname, fs)
+    return
 
 
 def open_zarr_array(array: zarr.Array, name: str) -> dataset.Variable:

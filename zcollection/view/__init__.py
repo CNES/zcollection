@@ -16,9 +16,11 @@ import pathlib
 import dask.array.core
 import dask.bag.core
 import dask.distributed
+import dask.utils
 import fsspec
 
 from .. import collection, dataset, meta, storage, sync, utilities
+from ..collection.detail import try_infer_callable
 from ..convenience import collection as convenience
 from .detail import (
     ViewReference,
@@ -357,7 +359,11 @@ class View:
             func: The function to apply to calculate the new values for the
                 target variables.
             depth: The depth of the overlap between the partitions. Default is
-                0 (no overlap).
+                0 (no overlap). If depth is greater than 0, the function is
+                applied on the partition and its neighbors selected by the
+                depth. If ``func`` accepts a ``partition_info`` as keyword
+                argument, it will be passed a slice object with the indices of
+                the partition selected without the overlap.
             filters: The predicate used to filter the partitions to drop.
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
@@ -393,7 +399,9 @@ class View:
                                 self.view_ref, self.metadata,
                                 self.partitions(filters), selected_variables))
 
-        func_result = func(datasets_list[0][0], *args, **kwargs)
+        func_result = try_infer_callable(
+            func, datasets_list[0][0], self.view_ref.partition_properties.dim,
+            *args, **kwargs)
         tuple(
             map(
                 lambda varname: _assert_variable_handled(
@@ -520,7 +528,12 @@ class View:
 
         Args:
             func: The function to apply to every partition of the view.
-            depth: The depth of the overlap between the partitions.
+            depth: The depth of the overlap between the partitions. Default is
+                0 (no overlap). If depth is greater than 0, the function is
+                applied on the partition and its neighbors selected by the
+                depth. If ``func`` accepts a ``partition_info`` as keyword
+                argument, it will be passed a slice object with the indices of
+                the partition selected without the overlap.
             *args: The positional arguments to pass to the function.
             filters: The predicate used to filter the partitions to process.
                 To get more information on the predicate, see the
@@ -545,6 +558,7 @@ class View:
             ...     print(item)
             [1.0, 2.0, 3.0, 4.0]
         """
+        add_partition_info = dask.utils.has_keyword(func, 'partition_info')
 
         def _wrap(
             arguments: tuple[dataset.Dataset, str],
@@ -569,6 +583,10 @@ class View:
             """
             ds, indices = _select_overlap(arguments, datasets_list, depth,
                                           self.view_ref)
+
+            if add_partition_info:
+                kwargs = kwargs.copy()
+                kwargs['partition_info'] = indices
 
             # Finally, apply the function.
             return (self.view_ref.partitioning.parse(arguments[1]), indices,

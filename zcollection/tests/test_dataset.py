@@ -40,7 +40,7 @@ def test_dataset(
 
     var1 = create_test_variable()
     assert numpy.all(ds.variables['var1'].values == var1.values)
-    assert ds.variables['var1'].have_same_properties(var1)
+    assert ds.variables['var1'].metadata() == var1.metadata()
     assert numpy.all(var1.values == ds['var1'].values)
     assert var1.metadata() == ds['var1'].metadata()
     with pytest.raises(KeyError):
@@ -49,7 +49,7 @@ def test_dataset(
     var2 = create_test_variable('var2')
     assert numpy.all(ds.variables['var2'].values == var2.values)
     assert id(ds['var2']) == id(ds.variables['var2'])
-    assert ds.variables['var2'].have_same_properties(var2)
+    assert ds.variables['var2'].metadata() == var2.metadata()
     assert isinstance(ds.metadata(), meta.Dataset)
 
     other = ds.compute()

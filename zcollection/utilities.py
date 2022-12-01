@@ -8,11 +8,9 @@ Internal utilities
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, Iterator, Sequence
+from typing import Any, Callable, Iterator, Sequence
 import asyncio
-import functools
 import itertools
-import operator
 import os
 
 import dask.distributed
@@ -133,7 +131,7 @@ def normalize_path(fs: fsspec.AbstractFileSystem, path: str) -> str:
     """
     # pylint: disable=protected-access
     # There is no public method to perform this operation.
-    path = fs._strip_protocol(path)
+    path = fs._strip_protocol(path)  # type: ignore[return-value]
     # pylint: enable=protected-access
     if path == '':
         path = fs.sep
@@ -154,6 +152,7 @@ async def _available_workers(client: dask.distributed.Client) -> set[str]:
         info = client.scheduler_info()
         assert client.scheduler is not None
         tasks = await client.scheduler.processing(workers=None)
+        assert tasks is not None
         result = set(info['workers']) - {k
                                          for k, v in tasks.items()
                                          if v}  # type: ignore[arg-type]
@@ -253,15 +252,3 @@ def split_sequence(sequence: Sequence[Any],
         itertools.accumulate([0] + extras * [size + 1] +
                              (sections - extras) * [size]))
     yield from (sequence[item:div[ix + 1]] for ix, item in enumerate(div[:-1]))
-
-
-def prod(iterable: Iterable) -> int:
-    """Get the product of an iterable.
-
-    Args:
-        iterable: An iterable.
-
-    Returns:
-        The product of the iterable.
-    """
-    return functools.reduce(operator.mul, iterable, 1)

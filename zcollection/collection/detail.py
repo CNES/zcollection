@@ -4,9 +4,12 @@ Implementation details.
 """
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 import dataclasses
+import sys
+import traceback
 
+import dask.utils
 import fsspec
 import zarr.storage
 
@@ -21,6 +24,89 @@ class PartitioningProperties:
     dir: str
     #: The name of the partitioning dimension.
     dim: str
+
+
+def _get_slices(variable: dataset.Variable, dim: str,
+                indices: slice) -> tuple[slice, ...]:
+    """Return a tuple of slices that can be used to select the given dimension
+    indices.
+
+    Args:
+        dim: Dimension to select
+        indices: Dimension indices to select
+
+    Returns:
+        The slices
+    """
+    slices = [slice(None)] * len(variable.dimensions)
+    slices[variable.dimensions.index(dim)] = indices
+    return tuple(slices)
+
+
+def try_infer_callable(
+    func: Callable,
+    ds: dataset.Dataset,
+    dim: str,
+    *args,
+    **kwargs,
+) -> Any:
+    """Try to call a function with the given arguments.
+
+    Args:
+        func: Function to call.
+        ds: Dataset to pass to the function.
+        dim: Name of the partitioning dimension.
+        *args: Positional arguments to pass to the function.
+        **kwargs: Keyword arguments to pass to the function.
+
+    Returns:
+        The result of the function.
+    """
+    partition_info = slice(0, ds.dimensions[dim])
+    try:
+        if dask.utils.has_keyword(func, 'partition_info'):
+            return func(ds, *args, partition_info=partition_info, **kwargs)
+        return func(ds, *args, **kwargs)
+    except Exception as exc:
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        execution_tb = ''.join(traceback.format_tb(exc_traceback))
+        raise RuntimeError(
+            f'An error occurred while applying the function {func} with '
+            f'the arguments {args} and {kwargs} to the partition. The '
+            f'error is: {exc_type!r}: {exc_value}. The traceback '
+            f'is: {execution_tb}') from exc
+
+
+def update_with_overlap(func: UpdateCallable, ds: dataset.Dataset,
+                        indices: slice, dim: str,
+                        fs: fsspec.AbstractFileSystem, path: str, *args,
+                        **kwargs) -> None:
+    """Update a partition with overlap.
+
+    Args:
+        func: Function to apply to update each partition.
+        ds: Dataset to update.
+        indices: Indices of the partition to update.
+        dim: Name of the partitioning dimension.
+        fs: File system on which the Zarr dataset is stored.
+        path: Path to the Zarr group.
+        *args: Positional arguments to pass to the function.
+        **kwargs: Keyword arguments to pass to the function.
+
+    Returns:
+        The updated variables.
+    """
+    dictionary = (func(ds, *args, partition_info=indices, **kwargs)
+                  if dask.utils.has_keyword(func, 'partition_info') else func(
+                      ds, *args, **kwargs))
+
+    for varname, array in dictionary.items():
+        slices = _get_slices(ds[varname], dim, indices)
+        storage.update_zarr_array(
+            dirname=fs.sep.join((path, varname)),
+            array=array[slices],  # type: ignore[index]
+            fs=fs,
+        )
 
 
 def _load_dataset(
@@ -186,21 +272,12 @@ def _wrap_update_func_with_overlap(
     def wrap_function(partitions: Sequence[str]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
-
             ds, indices = _load_dataset_with_overlap(axis, depth, dim, fs,
                                                      immutable, partition,
                                                      partitions,
                                                      selected_variables)
-            dictionary = func(ds, *args, **kwargs)
-
-            for varname, array in dictionary.items():
-                slices = tuple(indices if dimname == dim else slice(None)
-                               for dimname, _ in ds[varname].dimension_index())
-                storage.update_zarr_array(
-                    dirname=fs.sep.join((partition, varname)),
-                    array=array[slices],  # type: ignore[index]
-                    fs=fs,
-                )
+            update_with_overlap(func, ds, indices, dim, fs, partition, *args,
+                                **kwargs)
 
     return wrap_function
 

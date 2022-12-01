@@ -24,7 +24,7 @@ import numpy
 import xarray
 import zarr
 
-from . import meta, utilities
+from . import mathematics, meta
 from .meta import Attribute
 from .type_hints import ArrayLike, NDArray, NDMaskedArray
 
@@ -242,7 +242,7 @@ class Variable:
     @property
     def size(self: Any) -> int:
         """Return the size of the variable."""
-        return utilities.prod(self.shape)
+        return mathematics.prod(self.shape)
 
     @property
     def nbytes(self):
@@ -258,11 +258,6 @@ class Variable:
         return meta.Variable(self.name, self.dtype, self.dimensions,
                              self.attrs, self.compressor, self.fill_value,
                              self.filters)
-
-    def have_same_properties(self, other: Variable) -> bool:
-        """Return true if this instance and the other variable have the same
-        properties."""
-        return self.metadata() == other.metadata()
 
     def persist(self, **kwargs) -> Variable:
         """Persist the variable data into memory.
