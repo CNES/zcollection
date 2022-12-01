@@ -21,7 +21,7 @@ import dask.base
 import dask.threaded
 import xarray
 
-from . import meta
+from . import meta, variable
 from .compressed_array import CompressedArray
 from .meta import Attribute
 from .type_hints import ArrayLike, NDArray, NDMaskedArray
@@ -67,11 +67,10 @@ def _dataset_repr(ds: Dataset) -> str:
         lines.append('    <empty>')
     else:
         width = _calculate_column_width(ds.variables)
-        for name, variable in ds.variables.items():
-            dims_str = f"({', '.join(map(str, variable.dimensions))} "
-            name_str = f'    {name:<{width}s} {dims_str} {variable.dtype}'
-            lines.append(
-                _pretty_print(f'{name_str}: {_dask_repr(variable.array)}'))
+        for name, var in ds.variables.items():
+            dims_str = f"({', '.join(map(str, var.dimensions))} "
+            name_str = f'    {name:<{width}s} {dims_str} {var.dtype}'
+            lines.append(_pretty_print(f'{name_str}: {_dask_repr(var.array)}'))
     # Attributes
     if len(ds.attrs):
         lines.append('  Attributes:')
@@ -80,11 +79,12 @@ def _dataset_repr(ds: Dataset) -> str:
     return '\n'.join(lines)
 
 
-def _duplicate(variable: Variable, data: dask.array.core.Array) -> Variable:
+def _duplicate(var: variable.Variable,
+               data: dask.array.core.Array) -> variable.Variable:
     """Duplicate the variable with a new data.
 
     Args:
-        variable: Variable to duplicate.
+        var: Variable to duplicate.
         data: The new data to use
 
     Returns:
@@ -92,9 +92,8 @@ def _duplicate(variable: Variable, data: dask.array.core.Array) -> Variable:
     """
     # pylint: disable=protected-access
     # _new is a protected member of this class
-    return variable._new(variable.name, data, variable.dimensions,
-                         variable.attrs, variable.compressor,
-                         variable.fill_value, variable.filters)
+    return var._new(var.name, data, var.dimensions, var.attrs, var.compressor,
+                    var.fill_value, var.filters)
     # pylint: enable=protected-access
 
 
@@ -112,11 +111,12 @@ class Dataset:
     __slots__ = ('dimensions', 'variables', 'attrs')
 
     def __init__(self,
-                 variables: Iterable[Variable],
+                 variables: Iterable[variable.Variable],
                  attrs: Sequence[Attribute] | None = None) -> None:
         #: The list of global attributes on this dataset
         self.attrs = tuple(attrs or [])
-        #: Dataset contents as dict of :py:class:`Variable` objects.
+        #: Dataset contents as dict of
+        #: :py:class:`Variable <zcollection.variable.Variable>` objects.
         self.variables = collections.OrderedDict(
             (item.name, item) for item in variables)
         #: A dictionary of dimension names and their index in the dataset
@@ -136,7 +136,7 @@ class Dataset:
     def __bool__(self) -> bool:
         return bool(self.variables)
 
-    def __getitem__(self, name: str) -> Variable:
+    def __getitem__(self, name: str) -> variable.Variable:
         """Return a variable from the dataset.
 
         Args:
@@ -154,7 +154,7 @@ class Dataset:
         return self.dimensions, self.variables, self.attrs
 
     def __setstate__(
-        self, state: tuple[dict[str, int], OrderedDict[str, Variable],
+        self, state: tuple[dict[str, int], OrderedDict[str, variable.Variable],
                            tuple[Attribute, ...]]
     ) -> None:
         self.dimensions, self.variables, self.attrs = state
@@ -169,13 +169,13 @@ class Dataset:
         return sum(item.nbytes for item in self.variables.values())
 
     def add_variable(self,
-                     variable: meta.Variable,
+                     var: meta.Variable,
                      /,
                      data: ArrayLike[Any] | None = None):
         """Add a variable to the dataset.
 
         Args:
-            variable: The variable to add
+            var: The variable to add
             data: The data to add to the variable. If not provided, the variable
                 will be created with the default fill value.
 
@@ -184,31 +184,28 @@ class Dataset:
                 existing dimensions, or if the variable has dimensions not
                 defined in the dataset.
         """
-        if set(variable.dimensions) - set(self.dimensions):
-            raise ValueError(
-                f'variable {variable.name} has dimensions '
-                f'{variable.dimensions} that are not in the dataset')
+        if set(var.dimensions) - set(self.dimensions):
+            raise ValueError(f'variable {var.name} has dimensions '
+                             f'{var.dimensions} that are not in the dataset')
 
         if data is None:
-            shape = tuple(self.dimensions[dim] for dim in variable.dimensions)
-            data = dask.array.wrap.full(shape,
-                                        variable.fill_value,
-                                        dtype=variable.dtype)
+            shape = tuple(self.dimensions[dim] for dim in var.dimensions)
+            data = dask.array.wrap.full(shape, var.fill_value, dtype=var.dtype)
         else:
-            for dim, size in zip(variable.dimensions, data.shape):
+            for dim, size in zip(var.dimensions, data.shape):
                 if size != self.dimensions[dim]:
                     raise ValueError(
                         f'Conflicting sizes for dimension {dim!r}: '
                         f'length {self.dimensions[dim]} on the data but length '
                         f'{size} defined in dataset.')
-        self.variables[variable.name] = Variable(
-            variable.name,
+        self.variables[var.name] = Variable(
+            var.name,
             data,  # type: ignore[arg-type]
-            variable.dimensions,
-            variable.attrs,
-            variable.compressor,
-            variable.fill_value,
-            variable.filters,
+            var.dimensions,
+            var.attrs,
+            var.compressor,
+            var.fill_value,
+            var.filters,
         )
 
     def rename(self, names: Mapping[str, str]) -> None:
@@ -306,8 +303,7 @@ class Dataset:
             Dataset as an xarray dataset.
         """
         data_vars = collections.OrderedDict(
-            (name, variable.to_xarray())
-            for name, variable in self.variables.items())
+            (name, var.to_xarray()) for name, var in self.variables.items())
         attrs = collections.OrderedDict(
             (item.name, item.value) for item in self.attrs)
         data_vars, attrs, coord_names = xarray.conventions.decode_cf_variables(
@@ -428,9 +424,9 @@ class Dataset:
             The dataset with the variables persisted into memory.
         """
         if compress:
-            for variable in self.variables.values():
-                variable.array = variable.array.map_blocks(
-                    CompressedArray, fill_value=variable.fill_value)
+            for var in self.variables.values():
+                var.array = var.array.map_blocks(CompressedArray,
+                                                 fill_value=var.fill_value)
         arrays = dask.base.persist(
             *tuple(item.data for item in self.variables.values()), **kwargs)
         for name, array in zip(self.variables, arrays):
@@ -457,8 +453,8 @@ class Dataset:
         if not other:
             raise ValueError('cannot concatenate an empty sequence')
         variables = [
-            variable.concat(tuple(item.variables[name] for item in other), dim)
-            for name, variable in self.variables.items()
+            var.concat(tuple(item.variables[name] for item in other), dim)
+            for name, var in self.variables.items()
         ]
         return Dataset(variables=variables, attrs=self.attrs)
 
@@ -469,12 +465,12 @@ class Dataset:
             other: Dataset to merge into this dataset.
         """
         # Merge the variables
-        for name, variable in other.variables.items():
+        for name, var in other.variables.items():
 
             # It's impossible to merge a variable with itself.
             if name in self.variables:
                 raise ValueError(f'variable {name} already exists')
-            self.variables[name] = variable
+            self.variables[name] = var
 
         # If the dataset has common dimensions, they must be identical.
         same_dims = set(self.dimensions) & set(other.dimensions)
@@ -510,22 +506,19 @@ class Dataset:
             New dataset or None if no variables match the predicate.
         """
 
-        def _predicate_for_dimension_less(variable: Variable) -> bool:
+        def _predicate_for_dimension_less(var: variable.Variable) -> bool:
             """Return true if the variable is selected by the predicate."""
-            return (len(variable.dimensions) == 0) == predicate
+            return (len(var.dimensions) == 0) == predicate
 
-        def _predicate_for_dimension(variable: Variable) -> bool:
+        def _predicate_for_dimension(var: variable.Variable) -> bool:
             """Return true if the variable is selected by the predicate."""
-            return bool(set(variable.dimensions) & set_of_dims) == predicate
+            return bool(set(var.dimensions) & set_of_dims) == predicate
 
         condition = (_predicate_for_dimension_less
                      if not dims else _predicate_for_dimension)
 
         set_of_dims = set(dims)
-        variables = [
-            variable for variable in self.variables.values()
-            if condition(variable)
-        ]
+        variables = [var for var in self.variables.values() if condition(var)]
         return Dataset(variables=variables, attrs=self.attrs)
 
     def __str__(self) -> str:
@@ -535,15 +528,16 @@ class Dataset:
         return _dataset_repr(self)
 
 
-def get_variable_metadata(variable: Variable | meta.Variable) -> meta.Variable:
+def get_variable_metadata(
+        var: variable.Variable | meta.Variable) -> meta.Variable:
     """Get the variable metadata.
 
     Args:
-        variable: Variable to get the metadata for.
+        var: Variable to get the metadata for.
 
     Returns:
         Variable metadata.
     """
-    if isinstance(variable, Variable):
-        return variable.metadata()
-    return variable
+    if isinstance(var, Variable):
+        return var.metadata()
+    return var

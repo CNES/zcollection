@@ -612,17 +612,17 @@ def test_map_overlap(
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
 
-    result = zcollection.map_overlap(
-        lambda x: x.variables['var1'].values * 2,  # type: ignore
-        depth=3)  # type: ignore
+    def func(ds, partition_info=slice(None)):
+        return ds.variables['var1'].values[partition_info] * 2
 
-    for partition, indices, data in result.compute():
+    result = zcollection.map_overlap(func, depth=1)  # type: ignore
+
+    for partition, data in result.compute():
         folder = zcollection.fs.sep.join(
             (zcollection.partition_properties.dir,
              zcollection.partitioning.join(partition, zcollection.fs.sep)))
         ds = storage.open_zarr_group(folder, zcollection.fs)
-        assert numpy.allclose(data[indices, :],
-                              ds.variables['var1'].values * 2)
+        assert numpy.allclose(data, ds.variables['var1'].values * 2)
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])

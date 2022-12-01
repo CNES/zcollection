@@ -182,5 +182,5 @@ def test_view_overlap(
         depth=1,
     ).compute()
 
-    for (_, b, c) in indexers:
-        assert b == c
+    for _, data in indexers:
+        assert isinstance(data, slice)

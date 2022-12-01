@@ -339,7 +339,7 @@ class Variable:
 
         Args:
             **kwargs: Keyword arguments passed to
-            :func:`dask.array.Array.compute`.
+                :func:`dask.array.Array.compute`.
         """
         (values, ) = dask.base.compute(self.array, traverse=False, **kwargs)
         return values if self.fill_value is None else numpy.ma.masked_equal(

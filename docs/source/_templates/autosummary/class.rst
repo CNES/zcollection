@@ -22,6 +22,7 @@
                    '__members__',
                    '__module__',
                    '__slots__',
+                   '.__slotnames__',
                    '__weakref__'] -%}
 
    {%- for item in methods if not item in skip -%}

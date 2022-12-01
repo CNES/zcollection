@@ -42,7 +42,7 @@ Collection
   zcollection.expression
   zcollection.meta
   zcollection.sync
-  zcollection.typing
+  zcollection.type_hints
   zcollection.utilities
   zcollection.variable
   zcollection.view

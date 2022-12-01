@@ -10,6 +10,7 @@ import pprint
 
 import dask.distributed
 import fsspec
+import numpy
 
 import zcollection
 import zcollection.tests.data
@@ -163,7 +164,41 @@ def ones(ds):
     return dict(var2=ds.variables['var1'].values * 0 + 1)
 
 
-collection.update(ones)
+collection.update(ones)  # type: ignore[arg-type]
+
+ds = collection.load()
+assert ds is not None
+ds.variables['var2'].values
+
+# %%
+# Sometime is it important to know the values of the neighboring partitions.
+# This can be done using the
+# :py:meth:`update<zcollection.collection.Collection.update>` method with the
+# ``depth`` argument. In this example, we will set the variable ``var2`` to 2
+# everywhere the processed partition is surrounded by at least one partition, -1
+# if the left partition is missing and -2 if the right partition is missing.
+
+
+def twos(ds, partition_info=slice(None)):
+    """Returns a variable with twos everywhere if the partition is surrounded
+    by partitions on both sides, -1 if the left partition is missing and -2 if
+    the right partition is missing."""
+    # ``partition_info`` contains the slices of the target partition. If start
+    # is equal to 0, it means that the left partition is missing. If stop is
+    # equal to the length of the given dataset, it means that the right
+    # partition is missing.
+    data = numpy.zeros(ds.variables['var1'].shape, dtype='int8')
+    if partition_info.start != 0:
+        data[:] = -1
+    elif partition_info.stop != data.shape[0]:
+        data[:] = -2
+    else:
+        data[:] = 2
+    return dict(var2=data)
+
+
+collection.update(twos, depth=1)  # type: ignore[arg-type]
+
 ds = collection.load()
 assert ds is not None
 ds.variables['var2'].values
@@ -171,9 +206,26 @@ ds.variables['var2'].values
 # %%
 # Map a function over the collection
 # ----------------------------------
-# It's possible to map a function over the partitions of the view.
-for partition, array in collection.map(
-        lambda ds: ds['var1'].values + ds['var2'].values).compute():
+# It's possible to map a function over the partitions of the collection.
+for partition, array in collection.map(lambda ds: (  # type: ignore[arg-type]
+        ds['var1'].values + ds['var2'].values)).compute():
+    print(f' * partition = {partition}: mean = {array.mean()}')
+
+# %%
+# .. note::
+#
+#     The :py:meth:`map<zcollection.collection.Collection.map>` method is
+#     lazy. To compute the result, you need to call the method ``compute``
+#     on the returned object.
+#
+# It's also possible to map a function over the partitions with a a number of
+# neighboring partitions, like the
+# :py:meth:`update<zcollection.collection.Collection.update>`. To do so, use the
+# :py:meth:`map_overlap<zcollection.collection.Collection.map_overlap>` method.
+for partition, array in collection.map_overlap(
+        lambda ds: (  # type: ignore[arg-type]
+            ds['var1'].values + ds['var2'].values),
+        depth=1).compute():
     print(f' * partition = {partition}: mean = {array.mean()}')
 
 # %%

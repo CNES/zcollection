@@ -7,20 +7,17 @@ Handle a collection of Zarr groups.
 ===================================
 """
 from . import merging, partitioning
-from .collection import (
-    Collection,
-    Indexer,
-    PartitionCallable,
-    PartitionFilter,
-    UpdateCallable,
-)
+from .collection import Collection, Indexer, PartitionFilter
+from .collection.callable_objects import PartitionCallable, UpdateCallable
 from .convenience import (
     create_collection,
     create_view,
     open_collection,
     open_view,
 )
-from .dataset import Attribute, Dataset, Variable
+from .dataset import Dataset
+from .meta import Attribute
+from .variable import Variable
 from .version import __version__
 from .view import View, ViewReference
 

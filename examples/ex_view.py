@@ -95,7 +95,13 @@ ds.variables['var3'].values
 # %%
 # The same principle used by the collection allows to
 # :py:meth:`update<zcollection.view.View.update>` the variables.
-view.update(lambda ds: dict(var3=ds['var1'].values * 0 + 1))
+view.update(
+    lambda ds: dict(var3=ds['var1'].values * 0 + 1))  # type: ignore[arg-type]
+
+# %%
+# Like the :py:meth:`update<zcollection.collection.Collection.update>` method
+# of the collection, the update method of view allows to selecting the
+# neighboring partitions with the keyword argument ``depth``.
 
 # %%
 ds = view.load()
@@ -106,7 +112,8 @@ var3
 # %%
 # **Warning**: The variables of the reference collection cannot be edited.
 try:
-    view.update(lambda ds: dict(var2=ds['var2'].values * 0))
+    view.update(
+        lambda ds: dict(var2=ds['var2'].values * 0))  # type: ignore[arg-type]
 except ValueError as exc:
     print(str(exc))
 
@@ -114,11 +121,17 @@ except ValueError as exc:
 # Map a function over the view
 # ----------------------------
 # It's possible to map a function over the partitions of the view.
-for partition, array in view.map(
-        lambda ds: ds['var1'].values + ds['var2'].values).compute():
+for partition, array in view.map(lambda ds: (  # type: ignore[arg-type]
+        ds['var1'].values + ds['var2'].values)).compute():
     print(f' * partition = {partition}: mean = {array.mean()}')
 
 # %%
+# .. seealso::
+#
+#     See the :py:meth:`map_overlap<zcollection.view.View.map_overlap>` method
+#     apply a function over the partitions of the view of selecting the
+#     neighboring partitions.
+#
 # Drop a variable
 # ----------------
 # A method allows you to

@@ -679,7 +679,7 @@ class Collection:
             depth: int,
             *args,
             **kwargs,
-        ) -> tuple[tuple[tuple[str, int], ...], slice, Any]:
+        ) -> tuple[tuple[tuple[str, int], ...], Any]:
             """Wraps the function to apply on the partition.
 
             Args:
@@ -704,7 +704,7 @@ class Collection:
                 kwargs['partition_info'] = indices
 
             # Finally, apply the function.
-            return (self.partitioning.parse(partition), indices,
+            return (self.partitioning.parse(partition),
                     func(ds, *args, **kwargs))
 
         partitions = tuple(self.partitions(filters=filters))

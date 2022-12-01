@@ -567,7 +567,7 @@ class View:
             depth: int,
             *args,
             **kwargs,
-        ) -> tuple[tuple[tuple[str, int], ...], slice, Any]:
+        ) -> tuple[tuple[tuple[str, int], ...], Any]:
             """Wraps the function to apply on the partition.
 
             Args:
@@ -589,9 +589,8 @@ class View:
                 kwargs['partition_info'] = indices
 
             # Finally, apply the function.
-            return (self.view_ref.partitioning.parse(arguments[1]), indices,
+            return (self.view_ref.partitioning.parse(arguments[1]),
                     func(ds, *args, **kwargs))
-            # pylint: enable=too-many-locals
 
         _assert_have_variables(self.metadata)
 
