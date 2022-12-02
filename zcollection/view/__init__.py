@@ -367,9 +367,10 @@ class View:
             depth: The depth of the overlap between the partitions. Default is
                 0 (no overlap). If depth is greater than 0, the function is
                 applied on the partition and its neighbors selected by the
-                depth. If ``func`` accepts a ``partition_info`` as keyword
-                argument, it will be passed a slice object with the indices of
-                the partition selected without the overlap.
+                depth. If ``func`` accepts a partition_info as a keyword
+                argument, it will be passed a tuple with the name of the
+                partitioned dimension and the slice allowing getting in the
+                dataset the selected partition without the overlap.
             filters: The predicate used to filter the partitions to drop.
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
@@ -537,9 +538,10 @@ class View:
             depth: The depth of the overlap between the partitions. Default is
                 0 (no overlap). If depth is greater than 0, the function is
                 applied on the partition and its neighbors selected by the
-                depth. If ``func`` accepts a ``partition_info`` as keyword
-                argument, it will be passed a slice object with the indices of
-                the partition selected without the overlap.
+                depth. If ``func`` accepts a partition_info as a keyword
+                argument, it will be passed a tuple with the name of the
+                partitioned dimension and the slice allowing getting in the
+                dataset the selected partition without the overlap.
             *args: The positional arguments to pass to the function.
             filters: The predicate used to filter the partitions to process.
                 To get more information on the predicate, see the

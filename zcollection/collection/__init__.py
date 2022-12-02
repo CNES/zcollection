@@ -650,9 +650,10 @@ class Collection:
 
         Args:
             func: The function to apply to every partition of the collection.
-                If ``func`` accepts a ``partition_info`` as keyword argument,
-                it will be passed a slice object with the indices of the
-                partition selected without the overlap.
+                If ``func`` accepts a partition_info as a keyword
+                argument, it will be passed a tuple with the name of the
+                partitioned dimension and the slice allowing getting in the
+                dataset the selected partition without the overlap.
             depth: The depth of the overlap between the partitions.
             *args: The positional arguments to pass to the function.
             filters: The predicate used to filter the partitions to process.
@@ -825,9 +826,10 @@ class Collection:
             depth: The depth of the overlap between the partitions. Default is
                 0 (no overlap). If depth is greater than 0, the function is
                 applied on the partition and its neighbors selected by the
-                depth. If ``func`` accepts a ``partition_info`` as keyword
-                argument, it will be passed a slice object with the indices of
-                the partition selected without the overlap.
+                depth. If ``func`` accepts a partition_info as a keyword
+                argument, it will be passed a tuple with the name of the
+                partitioned dimension and the slice allowing getting in the
+                dataset the selected partition.
             filters: The expression used to filter the partitions to update.
             partition_size: The number of partitions to update in a single
                 batch. By default 1, which is the same as to map the function to

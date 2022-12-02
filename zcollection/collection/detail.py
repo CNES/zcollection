@@ -62,7 +62,7 @@ def try_infer_callable(
     Returns:
         The result of the function.
     """
-    partition_info = slice(0, ds.dimensions[dim])
+    partition_info = dim, slice(0, ds.dimensions[dim])
     try:
         if dask.utils.has_keyword(func, 'partition_info'):
             return func(ds, *args, partition_info=partition_info, **kwargs)
@@ -96,7 +96,7 @@ def update_with_overlap(func: UpdateCallable, ds: dataset.Dataset,
     Returns:
         The updated variables.
     """
-    dictionary = (func(ds, *args, partition_info=indices, **kwargs)
+    dictionary = (func(ds, *args, partition_info=(dim, indices), **kwargs)
                   if dask.utils.has_keyword(func, 'partition_info') else func(
                       ds, *args, **kwargs))
 

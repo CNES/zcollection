@@ -5,6 +5,8 @@ Overview of a Collection.
 This section outlines the steps required to get started with the main features
 of a ``Collection``.
 """
+from __future__ import annotations
+
 import datetime
 import pprint
 
@@ -170,6 +172,7 @@ ds = collection.load()
 assert ds is not None
 ds.variables['var2'].values
 
+
 # %%
 # Sometime is it important to know the values of the neighboring partitions.
 # This can be done using the
@@ -177,20 +180,24 @@ ds.variables['var2'].values
 # ``depth`` argument. In this example, we will set the variable ``var2`` to 2
 # everywhere the processed partition is surrounded by at least one partition, -1
 # if the left partition is missing and -2 if the right partition is missing.
-
-
-def twos(ds, partition_info=slice(None)):
+#
+# .. note::
+#
+#   ``partition_info`` contains information about the target partition: a tuple
+#   with the partitioned dimension and the slice to select the partition. If the
+#   start of the slice is 0, it means that the left partition is missing. If the
+#   stop of the slice is equal to the length of the given dataset, it means that
+#   the right partition is missing.
+def twos(ds, partition_info: tuple[str, slice]):
     """Returns a variable with twos everywhere if the partition is surrounded
     by partitions on both sides, -1 if the left partition is missing and -2 if
     the right partition is missing."""
-    # ``partition_info`` contains the slices of the target partition. If start
-    # is equal to 0, it means that the left partition is missing. If stop is
-    # equal to the length of the given dataset, it means that the right
-    # partition is missing.
     data = numpy.zeros(ds.variables['var1'].shape, dtype='int8')
-    if partition_info.start != 0:
+    dim, indices = partition_info
+    assert dim == 'num_lines'
+    if indices.start != 0:
         data[:] = -1
-    elif partition_info.stop != data.shape[0]:
+    elif indices.stop != data.shape[0]:
         data[:] = -2
     else:
         data[:] = 2

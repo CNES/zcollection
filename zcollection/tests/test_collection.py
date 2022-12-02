@@ -233,7 +233,11 @@ def test_update(
     def update_with_info(ds: dataset.Dataset, partition_info=None, shift=3):
         """Update function used for this test."""
         assert partition_info is not None
-        assert isinstance(partition_info, slice)
+        assert isinstance(partition_info, tuple)
+        assert len(partition_info) == 2
+        assert isinstance(partition_info[0], str)
+        assert isinstance(partition_info[1], slice)
+        assert partition_info[0] == 'num_lines'
         return dict(var2=ds.variables['var1'].values * -1 + shift)
 
     zcollection.update(update_with_info, depth=1, shift=10)  # type: ignore
