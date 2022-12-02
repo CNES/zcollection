@@ -708,12 +708,13 @@ class Collection:
                 The result of the function.
             """
             ds, indices = _load_dataset_with_overlap(
-                self.axis, depth, self.partition_properties.dim, self.fs,
-                self._immutable, partition, partitions, selected_variables)
+                depth, self.partition_properties.dim, self.fs, self._immutable,
+                partition, partitions, selected_variables)
 
             if add_partition_info:
                 kwargs = kwargs.copy()
-                kwargs['partition_info'] = indices
+                kwargs['partition_info'] = (self.partition_properties.dim,
+                                            indices)
 
             # Finally, apply the function.
             return (self.partitioning.parse(partition),
@@ -869,7 +870,7 @@ class Collection:
                                            selected_variables, *args, **kwargs)
         else:
             local_func = _wrap_update_func_with_overlap(
-                self.axis, depth, self.partition_properties.dim, func, self.fs,
+                depth, self.partition_properties.dim, func, self.fs,
                 self._immutable, selected_variables, *args, **kwargs)
 
         _LOGGER.info('Updating of the (%s) variable in the collection',

@@ -133,7 +133,6 @@ def _load_dataset(
 
 
 def _load_dataset_with_overlap(
-    axis: str,
     depth: int,
     dim: str,
     fs: fsspec.AbstractFileSystem,
@@ -145,7 +144,6 @@ def _load_dataset_with_overlap(
     """Load a dataset from a partition with overlap.
 
     Args:
-        axis: The axis of the collection.
         depth: Depth of the overlap.
         dim: Name of the partitioning dimension.
         fs: File system on which the Zarr dataset is stored.
@@ -167,7 +165,7 @@ def _load_dataset_with_overlap(
         start = 0
         indices = slice(0, 0, None)
         for ix, ds in enumerate(groups):
-            size = ds[axis].shape[0]
+            size = ds.dimensions[dim]
             indices = slice(start, start + size, None)
             if partition == selected_partitions[ix]:
                 break
@@ -242,7 +240,6 @@ def _wrap_update_func(
 
 
 def _wrap_update_func_with_overlap(
-    axis: str,
     depth: int,
     dim: str,
     func: UpdateCallable,
@@ -268,13 +265,14 @@ def _wrap_update_func_with_overlap(
         variable name as input and returns the variable's values as a numpy
         array.
     """
+    if depth < 0:
+        raise ValueError('Depth must be non-negative.')
 
     def wrap_function(partitions: Sequence[str]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
-            ds, indices = _load_dataset_with_overlap(axis, depth, dim, fs,
-                                                     immutable, partition,
-                                                     partitions,
+            ds, indices = _load_dataset_with_overlap(depth, dim, fs, immutable,
+                                                     partition, partitions,
                                                      selected_variables)
             update_with_overlap(func, ds, indices, dim, fs, partition, *args,
                                 **kwargs)

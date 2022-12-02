@@ -6,6 +6,8 @@
 Test of views
 =============
 """
+from __future__ import annotations
+
 import numpy
 import pytest
 
@@ -163,8 +165,13 @@ def test_view_overlap(
 
     instance.add_variable(var)
 
-    def update(ds, varname):
+    def update(ds, varname, partition_info: tuple[str, slice]):
         """Update function used for this test."""
+        assert isinstance(partition_info, tuple)
+        assert len(partition_info) == 2
+        assert isinstance(partition_info[0], str)
+        assert isinstance(partition_info[1], slice)
+        assert partition_info[0] == 'num_lines'
         return {varname: ds.variables['var1'].values * 1 + 5}
 
     instance.update(update, 'var3', depth=1)  # type: ignore
@@ -173,8 +180,13 @@ def test_view_overlap(
     assert ds is not None
     numpy.all(ds.variables['var3'].values == 5)
 
-    def map_func(x, partition_info=None):
+    def map_func(x, partition_info: tuple[str, slice]):
         """Map function used for this test."""
+        assert isinstance(partition_info, tuple)
+        assert len(partition_info) == 2
+        assert isinstance(partition_info[0], str)
+        assert isinstance(partition_info[1], slice)
+        assert partition_info[0] == 'num_lines'
         return partition_info
 
     indexers = instance.map_overlap(
@@ -183,4 +195,7 @@ def test_view_overlap(
     ).compute()
 
     for _, data in indexers:
-        assert isinstance(data, slice)
+        assert isinstance(data, tuple)
+        assert len(data) == 2
+        assert isinstance(data[0], str)
+        assert isinstance(data[1], slice)

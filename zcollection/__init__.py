@@ -8,7 +8,11 @@ Handle a collection of Zarr groups.
 """
 from . import merging, partitioning
 from .collection import Collection, Indexer, PartitionFilter
-from .collection.callable_objects import PartitionCallable, UpdateCallable
+from .collection.callable_objects import (
+    MapCallable,
+    PartitionCallable,
+    UpdateCallable,
+)
 from .convenience import (
     create_collection,
     create_view,
@@ -29,6 +33,7 @@ __all__ = [
     'create_view',
     'Dataset',
     'Indexer',
+    'MapCallable',
     'merging',
     'open_collection',
     'open_view',

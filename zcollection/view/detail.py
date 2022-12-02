@@ -246,7 +246,7 @@ def _select_overlap(
         start = 0
         indices = slice(0, 0, None)
         for ds, selected_partition in selected_datasets:
-            size = ds[view_ref.axis].shape[0]
+            size = ds.dimensions[view_ref.partition_properties.dim]
             indices = slice(start, start + size, None)
             if partition == selected_partition:
                 break
@@ -333,6 +333,9 @@ def _wrap_update_func_overlap(
         The wrapped function.
     """
     dim = view_ref.partition_properties.dim
+
+    if depth < 0:
+        raise ValueError('The depth must be positive')
 
     def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
                       base_dir: str) -> None:

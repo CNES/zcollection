@@ -616,8 +616,12 @@ def test_map_overlap(
     tested_fs = request.getfixturevalue(arg)
     zcollection = create_test_collection(tested_fs)
 
-    def func(ds, partition_info=slice(None)):
-        return ds.variables['var1'].values[partition_info] * 2
+    def func(ds: dataset.Dataset, partition_info: tuple[str, slice]):
+        assert partition_info[0] == 'num_lines'
+        var = ds.variables['var1']
+        slices = [slice(None)] * len(var.dimensions)
+        slices[var.dimensions.index(partition_info[0])] = partition_info[1]
+        return var.values[tuple(slices)] * 2
 
     result = zcollection.map_overlap(func, depth=1)  # type: ignore
 

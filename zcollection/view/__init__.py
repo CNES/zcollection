@@ -399,6 +399,7 @@ class View:
             >>> view.update(update_temperature)
         """
         _assert_have_variables(self.metadata)
+
         client = utilities.get_client()
 
         datasets_list = tuple(
@@ -566,6 +567,9 @@ class View:
             ...     print(item)
             [1.0, 2.0, 3.0, 4.0]
         """
+        if depth < 0:
+            raise ValueError('Depth must be greater than or equal to 0')
+
         add_partition_info = dask.utils.has_keyword(func, 'partition_info')
 
         def _wrap(
@@ -594,7 +598,8 @@ class View:
 
             if add_partition_info:
                 kwargs = kwargs.copy()
-                kwargs['partition_info'] = indices
+                kwargs['partition_info'] = (
+                    self.view_ref.partition_properties.dim, indices)
 
             # Finally, apply the function.
             return (self.view_ref.partitioning.parse(arguments[1]),
