@@ -16,13 +16,13 @@
                    '__annotations__',
                    '__dict__',
                    '__doc__',
-                   '__entries',
+                   '__entries__',
                    '__hash__',
                    '__init__',
                    '__members__',
                    '__module__',
                    '__slots__',
-                   '.__slotnames__',
+                   '__slotnames__',
                    '__weakref__'] -%}
 
    {%- for item in methods if not item in skip -%}
