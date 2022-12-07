@@ -474,10 +474,9 @@ class Dataset:
 
         # If the dataset has common dimensions, they must be identical.
         same_dims = set(self.dimensions) & set(other.dimensions)
-        if same_dims:
-            if not all(self.dimensions[dim] == other.dimensions[dim]
-                       for dim in same_dims):
-                raise ValueError(f'dimensions {same_dims} are not identical')
+        if same_dims and not all(self.dimensions[dim] == other.dimensions[dim]
+                                 for dim in same_dims):
+            raise ValueError(f'dimensions {same_dims} are not identical')
 
         # Merge the dimensions.
         self.dimensions.update(other.dimensions)

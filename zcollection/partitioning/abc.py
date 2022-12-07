@@ -139,11 +139,13 @@ def list_partitions(
         Iterator of (path, directories, files).
     """
     if depth == -1:
-        return
+        return StopIteration()
 
     if depth == 0:
         yield from sorted(fs.ls(path, detail=False))
-    elif root:
+        return StopIteration()
+
+    if root:
         folders = map(
             lambda info: info['name'].rstrip('/'),
             filter(
@@ -158,9 +160,11 @@ def list_partitions(
                                        pathname,
                                        depth=depth - 1,
                                        root=False)
-    else:
-        for item in sorted(fs.ls(path, detail=False)):
-            yield from list_partitions(fs, item, depth=depth - 1, root=False)
+        return StopIteration()
+
+    for item in sorted(fs.ls(path, detail=False)):
+        yield from list_partitions(fs, item, depth=depth - 1, root=False)
+    return StopIteration()
 
 
 class Partitioning(abc.ABC):
