@@ -8,6 +8,8 @@ Test of views
 """
 from __future__ import annotations
 
+import pathlib
+
 import numpy
 import pytest
 
@@ -137,8 +139,10 @@ def test_view(
 
     instance.drop_variable('var3')
 
-    assert tuple(instance.partitions(filters=instance.sync())) == (str(
-        tested_fs.view.joinpath('year=2000', 'month=01', 'day=13')), )
+    assert tuple(
+        str(pathlib.Path(item))
+        for item in instance.partitions(filters=instance.sync())) == (str(
+            tested_fs.view.joinpath('year=2000', 'month=01', 'day=13')), )
 
     with pytest.raises(ValueError):
         convenience.open_view(str(tested_fs.collection),
