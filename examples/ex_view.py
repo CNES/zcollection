@@ -152,6 +152,22 @@ except ValueError as exc:
     print(str(exc))
 
 # %%
+# Sync the view with the reference
+# --------------------------------
+# The view can be synchronized with the reference view using the
+# :py:meth:`sync<zcollection.view.View.sync>` method.
+filters = view.sync()
+
+# %%
+# The method returns a callable that can be used to filter the partitions that
+# have been synchronized. You can use this information to perform a
+# :py:meth:`update<zcollection.view.View.update>` of the view on the
+# synchronized partitions.
+view.update(
+    lambda ds: dict(var3=ds['var1'].values * 0 + 1),  # type: ignore[arg-type]
+    filters=filters)
+
+# %%
 # Close the local cluster to avoid printing warning messages in the other
 # examples.
 client.close()
