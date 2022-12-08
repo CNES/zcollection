@@ -21,6 +21,7 @@ import numpy
 import zarr
 
 from . import dataset, meta, sync
+from .fs_tools import join_path
 from .type_hints import ArrayLike
 
 #: Block size limit used with dask arrays. (128 MiB)
@@ -112,7 +113,7 @@ def write_zattrs(
     attrs = collections.OrderedDict(item.get_config()
                                     for item in variable.attrs)
     attrs[DIMENSIONS] = variable.dimensions
-    path = fs.sep.join((dirname, variable.name, ZATTRS))
+    path = join_path(dirname, variable.name, ZATTRS)
     with fs.open(path, mode='w') as stream:
         json.dump(attrs, stream, indent=2)  # type: ignore[arg-type]
 
@@ -162,12 +163,12 @@ def _write_meta(
         dirname: The storage directory of the Zarr dataset.
         fs: The file system on which the Zarr dataset is stored.
     """
-    path = fs.sep.join((dirname, ZATTRS))
+    path = join_path(dirname, ZATTRS)
     attrs = collections.OrderedDict(item.get_config() for item in ds.attrs)
     with fs.open(path, mode='w') as stream:
         json.dump(attrs, stream, indent=2)  # type: ignore[arg-type]
 
-    path = fs.sep.join((dirname, ZGROUP))
+    path = join_path(dirname, ZGROUP)
     with fs.open(path, mode='w') as stream:
         json.dump(
             {'zarr_format': 2},
@@ -297,7 +298,7 @@ def del_zarr_array(
         fs: The file system that the dataset is stored on.
     """
     _LOGGER.debug('Deleting Zarr array %r', dirname)
-    path = fs.sep.join((dirname, name))
+    path = join_path(dirname, name)
     if fs.exists(path):
         fs.rm(path, recursive=True)
         zarr.consolidate_metadata(
@@ -323,8 +324,8 @@ def add_zarr_array(
     """
     _LOGGER.debug('Adding variable %r to Zarr dataset %r', variable.name,
                   dirname)
-    shape = zarr.open(fs.get_mapper(fs.sep.join((dirname, template)))).shape
-    store = fs.get_mapper(fs.sep.join((dirname, variable.name)))
+    shape = zarr.open(fs.get_mapper(join_path(dirname, template))).shape
+    store = fs.get_mapper(join_path(dirname, variable.name))
     zarr.create(
         shape,
         chunks=True,

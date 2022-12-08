@@ -39,10 +39,12 @@ def dask_cluster(pytestconfig, tmpdir_factory, scope='session'):
     dask.config.set(temporary_directory=str(dask_worker))
 
     logging.info('Dask local cluster starting')
-    cluster = dask.distributed.LocalCluster(protocol='tcp://',
-                                            n_workers=1,
-                                            threads_per_worker=1,
-                                            processes=False)
+    cluster = dask.distributed.LocalCluster(
+        protocol='tcp://',
+        n_workers=n_workers,
+        threads_per_worker=threads_per_worker,
+        processes=processes,
+    )
 
     def teardown():
         """Stop the cluster and remove the scheduler file."""

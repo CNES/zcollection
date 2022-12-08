@@ -13,7 +13,9 @@ import dask.utils
 import fsspec
 import zarr.storage
 
-from .. import dataset, merging, partitioning, storage, sync
+from .. import dataset, merging, partitioning, sync
+from ..fs_tools import join_path
+from ..storage import open_zarr_group, update_zarr_array, write_zarr_group
 from .callable_objects import UpdateCallable, WrappedPartitionCallable
 
 
@@ -102,8 +104,8 @@ def update_with_overlap(func: UpdateCallable, ds: dataset.Dataset,
 
     for varname, array in dictionary.items():
         slices = _get_slices(ds[varname], dim, indices)
-        storage.update_zarr_array(
-            dirname=fs.sep.join((path, varname)),
+        update_zarr_array(
+            dirname=join_path(path, varname),
             array=array[slices],  # type: ignore[index]
             fs=fs,
         )
@@ -126,9 +128,9 @@ def _load_dataset(
     Returns:
         The loaded dataset.
     """
-    ds = storage.open_zarr_group(partition, fs, selected_variables)
+    ds = open_zarr_group(partition, fs, selected_variables)
     if immutable:
-        ds.merge(storage.open_zarr_group(immutable, fs, selected_variables))
+        ds.merge(open_zarr_group(immutable, fs, selected_variables))
     return ds
 
 
@@ -182,7 +184,7 @@ def _load_dataset_with_overlap(
 
     # Load the datasets for each selected partition.
     groups = [
-        storage.open_zarr_group(partition, fs, selected_variables)
+        open_zarr_group(partition, fs, selected_variables)
         for partition in selected_partitions
     ]
 
@@ -194,7 +196,7 @@ def _load_dataset_with_overlap(
     ds = ds.concat(groups, dim)
 
     if immutable:
-        ds.merge(storage.open_zarr_group(partition, fs, selected_variables))
+        ds.merge(open_zarr_group(partition, fs, selected_variables))
     return ds, indices
 
 
@@ -230,8 +232,8 @@ def _wrap_update_func(
             ds = _load_dataset(fs, immutable, partition, selected_variables)
             dictionary = func(ds, *args, **kwargs)
             tuple(
-                storage.update_zarr_array(  # type: ignore[func-returns-value]
-                    dirname=fs.sep.join((partition, varname)),
+                update_zarr_array(  # type: ignore[func-returns-value]
+                    dirname=join_path(partition, varname),
                     array=array,
                     fs=fs,
                 ) for varname, array in dictionary.items())
@@ -299,11 +301,11 @@ def _insert(
         partitioning_properties: The partitioning properties.
     """
     partition, indexer = args
-    dirname = fs.sep.join((partitioning_properties.dir, ) + partition)
+    dirname = join_path(*((partitioning_properties.dir, ) + partition))
 
     # If the consolidated zarr metadata does not exist, we consider the
     # partition as empty.
-    if fs.exists(fs.sep.join((dirname, '.zmetadata'))):
+    if fs.exists(join_path(dirname, '.zmetadata')):
         # The current partition already exists, so we need to merge
         # the dataset.
         merging.perform(ds.isel(indexer), dirname, axis, fs,
@@ -316,7 +318,7 @@ def _insert(
         zarr.storage.init_group(store=fs.get_mapper(dirname))
 
         # The synchronization is done by the caller.
-        storage.write_zarr_group(ds.isel(indexer), dirname, fs, sync.NoSync())
+        write_zarr_group(ds.isel(indexer), dirname, fs, sync.NoSync())
     except:  # noqa: E722
         # If the construction of the new dataset fails, the created
         # partition is deleted, to guarantee the integrity of the
@@ -346,10 +348,10 @@ def _load_and_apply_indexer(
         The list of loaded datasets.
     """
     partition_scheme, items = args
-    partition = fs.sep.join((partition_properties.dir,
-                             partition_handler.join(partition_scheme, fs.sep)))
+    partition = join_path(partition_properties.dir,
+                          partition_handler.join(partition_scheme, fs.sep))
 
-    ds = storage.open_zarr_group(partition, fs, selected_variables)
+    ds = open_zarr_group(partition, fs, selected_variables)
     arrays = []
     _ = {
         arrays.append(  # type: ignore[func-returns-value]

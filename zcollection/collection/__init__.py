@@ -40,6 +40,7 @@ import zarr.storage
 from .. import (
     dataset,
     expression,
+    fs_tools,
     merging,
     meta,
     partitioning,
@@ -135,14 +136,12 @@ def build_indexer_args(
 
 
 def _immutable_path(
-    fs: fsspec.AbstractFileSystem,
     ds: meta.Dataset,
     partition_properties: PartitioningProperties,
 ) -> str | None:
     """Return the immutable path of the dataset.
 
     Args:
-        fs: The file system that the partition is stored on.
         ds: The dataset to process.
         partition_properties: The partitioning properties.
 
@@ -151,8 +150,8 @@ def _immutable_path(
         relative to the partitioning or None if the dataset does not contain
         immutable data.
     """
-    return fs.sep.join(
-        (partition_properties.dir, _IMMUTABLE)) if ds.select_variables_by_dims(
+    return fs_tools.join_path(
+        partition_properties.dir, _IMMUTABLE) if ds.select_variables_by_dims(
             (partition_properties.dim, ), predicate=False) else None
 
 
@@ -243,13 +242,12 @@ class Collection:
         #: The metadata that describes the dataset handled by the collection.
         self.metadata = ds
         #: The file system used to read/write the collection.
-        self.fs = utilities.get_fs(filesystem)
+        self.fs = fs_tools.get_fs(filesystem)
         #: The partitioning strategy used to split the data.
         self.partitioning = partition_handler
         #: The partitioning properties (base directory and dimension).
         self.partition_properties = PartitioningProperties(
-            utilities.normalize_path(self.fs,
-                                     partition_base_dir.rstrip(self.fs.sep)),
+            fs_tools.normalize_path(self.fs, partition_base_dir),
             ds.variables[axis].dimensions[0],
         )
         #: The access mode of the collection.
@@ -258,11 +256,7 @@ class Collection:
         self.synchronizer = synchronizer or sync.NoSync()
         #: The path to the dataset that contains the immutable data relative
         #: to the partitioning.
-        self._immutable = _immutable_path(
-            self.fs,
-            ds,
-            self.partition_properties,
-        )
+        self._immutable = _immutable_path(ds, self.partition_properties)
 
         self._write_config(skip_if_exists=True)
 
@@ -301,15 +295,14 @@ class Collection:
         raise io.UnsupportedOperation('not writable')
 
     @classmethod
-    def _config(cls, partition_base_dir: str,
-                fs: fsspec.AbstractFileSystem) -> str:
+    def _config(cls, partition_base_dir: str) -> str:
         """Return the configuration path."""
-        return fs.sep.join((partition_base_dir, cls.CONFIG))
+        return fs_tools.join_path(partition_base_dir, cls.CONFIG)
 
     def _write_config(self, skip_if_exists: bool = False) -> None:
         """Write the configuration file."""
         base_dir = self.partition_properties.dir
-        config = self._config(base_dir, self.fs)
+        config = self._config(base_dir)
         exists = self.fs.exists(config)
 
         if skip_if_exists and exists:
@@ -356,8 +349,8 @@ class Collection:
             ValueError: If the provided directory does not contain a collection.
         """
         _LOGGER.info('Opening collection: %r', path)
-        fs = utilities.get_fs(filesystem)
-        config = cls._config(path, fs)
+        fs = fs_tools.get_fs(filesystem)
+        config = cls._config(path)
         if not fs.exists(config):
             raise ValueError(f'zarr collection not found at path {path!r}')
         with fs.open(config) as stream:

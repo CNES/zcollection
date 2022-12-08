@@ -13,7 +13,7 @@ import dask.distributed
 import fsspec
 import pytest
 
-from .. import utilities
+from .. import fs_tools, utilities
 # pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster
 
@@ -55,23 +55,23 @@ def test_fs_walk(tmpdir):
                                                       encoding='utf-8'):
                 ...
 
-    fs = utilities.get_fs()
+    fs = fs_tools.get_fs()
     listing1 = []
-    for root, _dirs, files in utilities.fs_walk(fs, tmpdir, sort=True):
+    for root, _dirs, files in fs_tools.fs_walk(fs, tmpdir, sort=True):
         for item in files:
             listing1.append(fs.sep.join([root, item]))
 
     listing2 = []
-    for root, _dirs, files in utilities.fs_walk(fs, tmpdir, sort=False):
+    for root, _dirs, files in fs_tools.fs_walk(fs, tmpdir, sort=False):
         for item in files:
             listing2.append(fs.sep.join([root, item]))
 
     assert listing1 == sorted(listing2)
 
     assert list(
-        utilities.fs_walk(fs,
-                          str(pathlib.Path(tmpdir).joinpath('inexistent')),
-                          sort=True)) == [('', [], [])]
+        fs_tools.fs_walk(fs,
+                         str(pathlib.Path(tmpdir).joinpath('inexistent')),
+                         sort=True)) == [('', [], [])]
 
 
 def test_get_client_with_no_cluster():
@@ -238,14 +238,14 @@ def test_normalize_path():
     else:
         sep = '/'
 
-    assert utilities.normalize_path(fs, '/') == root
-    assert utilities.normalize_path(fs, './foo') == str(
+    assert fs_tools.normalize_path(fs, '/') == root
+    assert fs_tools.normalize_path(fs, './foo') == str(
         pathlib.Path('.').resolve() / 'foo')
 
     fs = fsspec.filesystem('memory')
-    assert utilities.normalize_path(fs, '/') == sep
-    assert utilities.normalize_path(fs, './foo') == f'{sep}foo'
+    assert fs_tools.normalize_path(fs, '/') == sep
+    assert fs_tools.normalize_path(fs, './foo') == f'{sep}foo'
 
     fs = fsspec.filesystem('s3')
-    assert utilities.normalize_path(fs, '/') == '/'
-    assert utilities.normalize_path(fs, './foo') == './foo'
+    assert fs_tools.normalize_path(fs, '/') == '/'
+    assert fs_tools.normalize_path(fs, './foo') == './foo'

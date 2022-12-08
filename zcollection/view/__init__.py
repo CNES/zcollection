@@ -19,9 +19,10 @@ import dask.distributed
 import dask.utils
 import fsspec
 
-from .. import collection, dataset, meta, storage, sync, utilities
+from .. import collection, dataset, fs_tools, meta, storage, sync, utilities
 from ..collection.detail import try_infer_callable
 from ..convenience import collection as convenience
+from ..fs_tools import join_path
 from .detail import (
     ViewReference,
     _assert_have_variables,
@@ -72,9 +73,9 @@ class View:
         synchronizer: sync.Sync | None = None,
     ) -> None:
         #: The file system used to access the view (default local file system).
-        self.fs = utilities.get_fs(filesystem)
+        self.fs = fs_tools.get_fs(filesystem)
         #: Path to the directory where the view is stored.
-        self.base_dir = utilities.normalize_path(self.fs, base_dir)
+        self.base_dir = fs_tools.normalize_path(self.fs, base_dir)
         #: The reference collection of the view.
         self.view_ref = convenience.open_collection(
             view_ref.path, mode='r', filesystem=view_ref.filesystem)
@@ -95,13 +96,13 @@ class View:
                 f'base_dir={self.base_dir!r}>')
 
     @classmethod
-    def _config(cls, base_dir: str, fs: fsspec.AbstractFileSystem) -> str:
+    def _config(cls, base_dir: str) -> str:
         """Returns the configuration path."""
-        return fs.sep.join((base_dir, cls.CONFIG))
+        return fs_tools.join_path(base_dir, cls.CONFIG)
 
     def _write_config(self) -> None:
         """Write the configuration file for the view."""
-        config = self._config(self.base_dir, self.fs)
+        config = self._config(self.base_dir)
         fs = json.loads(self.view_ref.fs.to_json())
         with self.fs.open(config, mode='w') as stream:
             json.dump(
@@ -135,8 +136,8 @@ class View:
             ValueError: If the provided directory does not contain a view.
         """
         _LOGGER.info('Opening view %r', path)
-        fs = utilities.get_fs(filesystem)
-        config = cls._config(path, fs)
+        fs = fs_tools.get_fs(filesystem)
+        config = cls._config(path)
         if not fs.exists(config):
             raise ValueError(f'zarr view not found at path {path!r}')
         with fs.open(config) as stream:
@@ -166,7 +167,7 @@ class View:
         """
         return filter(
             self.fs.exists,
-            map(lambda item: self.fs.sep.join((self.base_dir, item)),
+            map(lambda item: join_path(self.base_dir, item),
                 self.view_ref.partitions(filters=filters, relative=True)))
 
     def variables(
