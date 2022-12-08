@@ -1,6 +1,22 @@
 Release notes
 =============
 
+xxxx.xx.xx
+----------
+
+* Synchronize the view with the reference collection.
+
+2022.12.0/2022.12.1
+-------------------
+
+Release on December 2, 2022
+
+* Write immutable variables of a dataset into a single group.
+* Possibility to update partitions using neighbor partitions (useful for
+  filtering, for example).
+* Refactor methods overlapping partitions.
+* Update documentation.
+
 2022.10.2/2022.10.1
 -------------------
 
