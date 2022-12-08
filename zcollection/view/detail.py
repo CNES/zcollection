@@ -6,14 +6,19 @@ from __future__ import annotations
 
 from typing import Callable, Iterable, Iterator, Sequence
 import dataclasses
+import hashlib
 
 import dask.array.core
+import dask.bag.core
 import dask.distributed
 import fsspec
 import zarr
 
 from .. import collection, dataset, meta, storage, utilities
 from ..collection.detail import update_with_overlap
+
+#: Name of the file that contains the checksum of the view.
+CHECKSUM_FILE = '.checksum'
 
 
 @dataclasses.dataclass(frozen=True)
@@ -30,9 +35,12 @@ class ViewReference:
     filesystem: fsspec.AbstractFileSystem = utilities.get_fs('file')
 
 
-def _create_zarr_array(args: tuple[str, zarr.Group], base_dir: str,
-                       fs: fsspec.AbstractFileSystem, template: str,
-                       variable: meta.Variable) -> None:
+def _create_zarr_array(args: tuple[str, zarr.Group],
+                       base_dir: str,
+                       fs: fsspec.AbstractFileSystem,
+                       template: str,
+                       variable: meta.Variable,
+                       invalidate_cache: bool = True) -> None:
     """Create a Zarr array, with fill_value being used as the default value for
     uninitialized portions of the array.
 
@@ -43,6 +51,8 @@ def _create_zarr_array(args: tuple[str, zarr.Group], base_dir: str,
         template: The variable's name is used as a template for the Zarr array
             to determine the shape of the new variable.
         variable: The properties of the variable to create.
+        invalidate_cache: If True, invalidate the cache of the directory
+            containing the Zarr array.
     """
     partition, group = args
     data: dask.array.core.Array = dask.array.core.from_zarr(group[template])
@@ -58,7 +68,8 @@ def _create_zarr_array(args: tuple[str, zarr.Group], base_dir: str,
               overwrite=True,
               filters=variable.filters)
     storage.write_zattrs(dirname, variable, fs)
-    fs.invalidate_cache(dirname)
+    if invalidate_cache:
+        fs.invalidate_cache(dirname)
 
 
 def _drop_zarr_zarr(partition: str,
@@ -348,3 +359,130 @@ def _wrap_update_func_overlap(
                                 **kwargs)
 
     return wrap_function
+
+
+def _checksum(path: str,
+              view_ref: collection.Collection,
+              group: zarr.Group | None = None) -> str:
+    """Compute the checksum of a partition.
+
+    Args:
+        path: The path of the partition.
+        fs: The file system used to access the variables in the view.
+        view_ref: The view reference.
+        group: The group to compute the checksum of (if None, the group is
+            reload from the file system).
+
+    Returns:
+        The checksum of the partition.
+    """
+    store = group or zarr.open_consolidated(  # type: ignore[arg-type]
+        view_ref.fs.get_mapper(path), )
+    array = store[view_ref.axis][...]
+    return hashlib.sha256(array).hexdigest()  # type: ignore[arg-type]
+
+
+def _write_checksum(
+    partition: str,
+    base_dir: str,
+    view_ref: collection.Collection,
+    fs: fsspec.AbstractFileSystem,
+    group: zarr.Group | None = None,
+) -> None:
+    """Write the checksum of a partition to a file.
+
+    Args:
+        partition: The path of the partition.
+        base_dir: The base directory of the view.
+        view_ref: The view reference.
+        fs: The file system used to access the variables in the view.
+        group: The group to compute the checksum of (if None, the group is
+            reload from the file system).
+    """
+    partition_ref = view_ref.fs.sep.join(
+        (view_ref.partition_properties.dir, partition.replace(base_dir, '')))
+    checksum_path = fs.sep.join((partition, CHECKSUM_FILE))
+    with fs.open(checksum_path, 'w') as stream:
+        stream.write(_checksum(partition_ref, view_ref, group=group))
+        fs.invalidate_cache(checksum_path)
+
+
+def _sync_partition(
+    metadata: meta.Dataset,
+    partition: str,
+    base_dir: str,
+    fs: fsspec.AbstractFileSystem,
+    view_ref: collection.Collection,
+) -> None:
+    """Sync a partition: create the partition and the underlying variables.
+
+    Args:
+        metadata: The dataset to sync.
+        partition: The partition to sync.
+        base_dir: The base directory of the view.
+        fs: The file system used to access the variables in the view.
+        view_ref: The view reference.
+    """
+    mapper = view_ref.fs.get_mapper(
+        view_ref.fs.sep.join((view_ref.partition_properties.dir, partition)))
+    group: zarr.Group = zarr.open_consolidated(  # type: ignore
+        mapper, mode='r')
+    path = fs.sep.join((base_dir, partition))
+    try:
+        for variable in metadata.variables.values():
+            template = view_ref.metadata.search_same_dimensions_as(variable)
+            _create_zarr_array((partition, group),
+                               base_dir,
+                               fs,
+                               template.name,
+                               variable,
+                               invalidate_cache=False)
+        _write_checksum(path, base_dir, view_ref, fs, group)
+        fs.invalidate_cache(path)
+
+    except Exception as exc:
+        fs.rm(path, recursive=True)
+        fs.invalidate_cache(path)
+        raise exc from None
+
+
+def _sync(
+    partition: str,
+    base_dir: str,
+    fs: fsspec.AbstractFileSystem,
+    view_ref: collection.Collection,
+    metadata: meta.Dataset,
+) -> str | None:
+    """Sync the partitions of a view.
+
+    Args:
+        partition: The partition to sync.
+        base_dir: The base directory of the view.
+        fs: The file system used to access the variables in the view.
+        view_ref: The view reference.
+        metadata: The dataset to sync.
+
+    Returns:
+        The partition synced or None if the partition is already synced.
+    """
+    partition_view = fs.sep.join((base_dir, partition))
+    if not fs.exists(partition_view):
+        # The partition does not exist, so we create it.
+        _sync_partition(metadata, partition, base_dir, fs, view_ref)
+        return partition
+
+    # The partition exists, so we check if it is synced.
+    partition_ref = view_ref.fs.sep.join(
+        (view_ref.partition_properties.dir, partition))
+    checksum_ref = _checksum(partition_ref, view_ref)
+    with fs.open(fs.sep.join((partition_view, CHECKSUM_FILE)), 'r') as stream:
+        checksum = stream.read().strip()
+    # If the checksums are different, the partition is not synced. So we
+    # remove it (information between the partition and the reference are
+    # not consistent)
+    if checksum_ref != checksum:
+        fs.rm(partition, recursive=True)
+        fs.invalidate_cache(partition)
+        _sync_partition(metadata, partition, base_dir, fs, view_ref)
+        return partition
+    return None

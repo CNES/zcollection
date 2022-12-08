@@ -11,10 +11,11 @@ from __future__ import annotations
 import numpy
 import pytest
 
-from .. import convenience, meta, view
+from .. import collection, convenience, meta, partitioning, view
+from ..view.detail import _checksum
 # pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster
-from .data import create_test_collection
+from .data import create_test_collection, create_test_dataset
 from .fs import local_fs, s3, s3_base, s3_fs
 
 # pylint: enable=unused-import
@@ -136,6 +137,9 @@ def test_view(
 
     instance.drop_variable('var3')
 
+    assert tuple(instance.partitions(filters=instance.sync())) == (str(
+        tested_fs.view.joinpath('year=2000', 'month=01', 'day=13')), )
+
     with pytest.raises(ValueError):
         convenience.open_view(str(tested_fs.collection),
                               filesystem=tested_fs.fs)
@@ -199,3 +203,20 @@ def test_view_overlap(
         assert len(data) == 2
         assert isinstance(data[0], str)
         assert isinstance(data[1], slice)
+
+
+def test_view_checksum(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        tmpdir):
+    ds = next(create_test_dataset())
+    zcollection = collection.Collection('time', ds.metadata(),
+                                        partitioning.Date(('time', ), 'D'),
+                                        str(tmpdir))
+
+    zcollection.insert(ds)
+    partition = tmpdir / 'year=2000' / 'month=01' / 'day=01'
+    sha256 = _checksum(str(partition), zcollection)
+    assert isinstance(sha256, str)
+    assert len(sha256) == 64
+    assert sha256 == ('4bbb9253c07f36002098f8bba57151eb'
+                      '0143f5fe5c634950340f3e2f1a4f51cf')

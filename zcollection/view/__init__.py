@@ -31,8 +31,10 @@ from .detail import (
     _load_datasets_list,
     _load_one_dataset,
     _select_overlap,
+    _sync,
     _wrap_update_func,
     _wrap_update_func_overlap,
+    _write_checksum,
 )
 
 __all__ = ['View', 'ViewReference']
@@ -250,6 +252,17 @@ class View:
 
         self._write_config()
         # pylint: enable=duplicate-code
+
+        if not existing_partitions:
+            storage.execute_transaction(
+                client, self.synchronizer,
+                client.map(
+                    _write_checksum,
+                    tuple(self.partitions()),
+                    base_dir=self.base_dir,
+                    view_ref=self.view_ref,
+                    fs=self.fs,
+                ))
 
     def drop_variable(
         self,
@@ -616,3 +629,31 @@ class View:
                                           partition_size=partition_size,
                                           npartitions=npartitions)
         return bag.map(_wrap, func, datasets_list, depth, *args, **kwargs)
+
+    def sync(self) -> collection.PartitionFilterCallback:
+        """Synchronize the view with the underlying collection.
+
+        This method is useful to update the view after a change in the
+        underlying collection.
+
+        Returns:
+            A function that can be used as a predicate to get the partitions
+            that have been synchronized using the :meth:`View.partitions`
+            method.
+        """
+        partitions = tuple(self.view_ref.partitions(relative=True))
+
+        client = utilities.get_client()
+        synchronized_partition = storage.execute_transaction(
+            client, self.synchronizer,
+            client.map(_sync,
+                       partitions,
+                       base_dir=self.base_dir,
+                       fs=self.fs,
+                       view_ref=self.view_ref,
+                       metadata=self.metadata))
+        partition_ids = []
+        for item in filter(lambda item: item is not None,
+                           synchronized_partition):
+            partition_ids.append(dict(self.view_ref.partitioning.parse(item)))
+        return lambda item: item in partition_ids
