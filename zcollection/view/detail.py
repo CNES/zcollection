@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Callable, Iterable, Iterator, Sequence
 import dataclasses
 import hashlib
+import pathlib
 
 import dask.array.core
 import dask.bag.core
@@ -400,7 +401,8 @@ def _write_checksum(
             reload from the file system).
     """
     partition_ref = view_ref.fs.sep.join(
-        (view_ref.partition_properties.dir, partition.replace(base_dir, '')))
+        (view_ref.partition_properties.dir,
+         str(pathlib.Path(partition).relative_to(base_dir))))
     checksum_path = fs.sep.join((partition, CHECKSUM_FILE))
     with fs.open(checksum_path, 'w') as stream:
         stream.write(_checksum(partition_ref, view_ref, group=group))
