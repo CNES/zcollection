@@ -113,8 +113,8 @@ def write_zattrs(
     attrs = collections.OrderedDict(item.get_config()
                                     for item in variable.attrs)
     attrs[DIMENSIONS] = variable.dimensions
-    path = join_path(dirname, variable.name, ZATTRS)
-    with fs.open(path, mode='w') as stream:
+    with fs.open(join_path(dirname, variable.name, ZATTRS),
+                 mode='w') as stream:
         json.dump(attrs, stream, indent=2)  # type: ignore[arg-type]
 
 
@@ -163,13 +163,11 @@ def _write_meta(
         dirname: The storage directory of the Zarr dataset.
         fs: The file system on which the Zarr dataset is stored.
     """
-    path = join_path(dirname, ZATTRS)
     attrs = collections.OrderedDict(item.get_config() for item in ds.attrs)
-    with fs.open(path, mode='w') as stream:
+    with fs.open(join_path(dirname, ZATTRS), mode='w') as stream:
         json.dump(attrs, stream, indent=2)  # type: ignore[arg-type]
 
-    path = join_path(dirname, ZGROUP)
-    with fs.open(path, mode='w') as stream:
+    with fs.open(join_path(dirname, ZGROUP), mode='w') as stream:
         json.dump(
             {'zarr_format': 2},
             stream,  # type: ignore[arg-type]

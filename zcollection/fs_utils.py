@@ -90,8 +90,8 @@ def fs_walk(
     for info in listing:
         # each info name must be at least [path]/part , but here
         # we check also for names like [path]/part/
-        pathname = info['name'].rstrip('/')
-        name = pathname.rsplit('/', 1)[-1]
+        pathname = info['name'].rstrip(SEPARATOR)
+        name = pathname.rsplit(SEPARATOR, 1)[-1]
         if info['type'] == 'directory' and pathname != path:
             # do not include "self" path
             dirs.append(pathname)

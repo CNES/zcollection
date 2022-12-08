@@ -230,9 +230,7 @@ class Dataset:
         """
         if isinstance(names, str) or not isinstance(names, Iterable):
             names = [names]
-        # pylint: disable=expression-not-assigned
-        {self.variables.pop(name) for name in names}
-        # pylint: enable=expression-not-assigned
+        tuple(map(self.variables.pop, names))
 
     def select_vars(self, names: str | Sequence[str]) -> Dataset:
         """Return a new dataset containing only the selected variables.
