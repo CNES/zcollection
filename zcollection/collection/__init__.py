@@ -994,9 +994,12 @@ class Collection:
             The iterator over the partitions and the zarr groups.
         """
         yield from (
-            (self._relative_path(item) if relative else item,
-             zarr.open_consolidated(self.fs.get_mapper(item)))  # type: ignore
-            for item in self.partitions())
+            (
+                self._relative_path(item) if relative else item,
+                zarr.open_consolidated(
+                    self.fs.get_mapper(item),  # type: ignore
+                    mode='r',
+                )) for item in self.partitions())
 
     def variables(
         self,
