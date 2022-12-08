@@ -19,10 +19,9 @@ import dask.distributed
 import dask.utils
 import fsspec
 
-from .. import collection, dataset, fs_tools, meta, storage, sync, utilities
+from .. import collection, dask_utils, dataset, fs_utils, meta, storage, sync
 from ..collection.detail import try_infer_callable
 from ..convenience import collection as convenience
-from ..fs_tools import join_path
 from .detail import (
     ViewReference,
     _assert_have_variables,
@@ -73,9 +72,9 @@ class View:
         synchronizer: sync.Sync | None = None,
     ) -> None:
         #: The file system used to access the view (default local file system).
-        self.fs = fs_tools.get_fs(filesystem)
+        self.fs = fs_utils.get_fs(filesystem)
         #: Path to the directory where the view is stored.
-        self.base_dir = fs_tools.normalize_path(self.fs, base_dir)
+        self.base_dir = fs_utils.normalize_path(self.fs, base_dir)
         #: The reference collection of the view.
         self.view_ref = convenience.open_collection(
             view_ref.path, mode='r', filesystem=view_ref.filesystem)
@@ -98,7 +97,7 @@ class View:
     @classmethod
     def _config(cls, base_dir: str) -> str:
         """Returns the configuration path."""
-        return fs_tools.join_path(base_dir, cls.CONFIG)
+        return fs_utils.join_path(base_dir, cls.CONFIG)
 
     def _write_config(self) -> None:
         """Write the configuration file for the view."""
@@ -136,7 +135,7 @@ class View:
             ValueError: If the provided directory does not contain a view.
         """
         _LOGGER.info('Opening view %r', path)
-        fs = fs_tools.get_fs(filesystem)
+        fs = fs_utils.get_fs(filesystem)
         config = cls._config(path)
         if not fs.exists(config):
             raise ValueError(f'zarr view not found at path {path!r}')
@@ -167,7 +166,7 @@ class View:
         """
         return filter(
             self.fs.exists,
-            map(lambda item: join_path(self.base_dir, item),
+            map(lambda item: fs_utils.join_path(self.base_dir, item),
                 self.view_ref.partitions(filters=filters, relative=True)))
 
     def variables(
@@ -214,7 +213,7 @@ class View:
         if (variable.name in self.view_ref.metadata.variables
                 or variable.name in self.metadata.variables):
             raise ValueError(f'Variable {variable.name} already exists')
-        client = utilities.get_client()
+        client = dask_utils.get_client()
         self.metadata.add_variable(variable)
         template = self.view_ref.metadata.search_same_dimensions_as(variable)
 
@@ -284,7 +283,7 @@ class View:
         _LOGGER.info('Dropping variable %r', varname)
         _assert_variable_handled(self.view_ref.metadata, self.metadata,
                                  varname)
-        client = utilities.get_client()
+        client = dask_utils.get_client()
 
         variable = self.metadata.variables.pop(varname)
         self._write_config()
@@ -335,7 +334,7 @@ class View:
             arguments = tuple((self.view_ref.partitioning.parse(item), [])
                               for item in self.partitions(filters=filters))
 
-        client = utilities.get_client()
+        client = dask_utils.get_client()
         futures = client.map(
             _load_one_dataset,
             arguments,
@@ -414,7 +413,7 @@ class View:
         """
         _assert_have_variables(self.metadata)
 
-        client = utilities.get_client()
+        client = dask_utils.get_client()
 
         datasets_list = tuple(
             _load_datasets_list(client, self.base_dir, self.fs,
@@ -451,9 +450,9 @@ class View:
                 **kwargs,
             )
 
-        batchs = utilities.split_sequence(
+        batchs = dask_utils.split_sequence(
             datasets_list, partition_size
-            or utilities.dask_workers(client, cores_only=True))
+            or dask_utils.dask_workers(client, cores_only=True))
         awaitables = client.map(wrap_function,
                                 tuple(batchs),
                                 key=func.__name__,
@@ -524,7 +523,7 @@ class View:
 
         _assert_have_variables(self.metadata)
 
-        client = utilities.get_client()
+        client = dask_utils.get_client()
         datasets_list = tuple(
             _load_datasets_list(client, self.base_dir, self.fs,
                                 self.view_ref, self.metadata,
@@ -621,7 +620,7 @@ class View:
 
         _assert_have_variables(self.metadata)
 
-        client = utilities.get_client()
+        client = dask_utils.get_client()
         datasets_list = tuple(
             _load_datasets_list(client, self.base_dir, self.fs,
                                 self.view_ref, self.metadata,
@@ -644,7 +643,7 @@ class View:
         """
         partitions = tuple(self.view_ref.partitions(relative=True))
 
-        client = utilities.get_client()
+        client = dask_utils.get_client()
         synchronized_partition = storage.execute_transaction(
             client, self.synchronizer,
             client.map(_sync,

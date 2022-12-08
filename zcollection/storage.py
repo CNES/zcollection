@@ -21,7 +21,7 @@ import numpy
 import zarr
 
 from . import dataset, meta, sync
-from .fs_tools import join_path
+from .fs_utils import join_path
 from .type_hints import ArrayLike
 
 #: Block size limit used with dask arrays. (128 MiB)

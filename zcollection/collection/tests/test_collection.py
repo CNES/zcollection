@@ -17,7 +17,7 @@ import numpy
 import pytest
 import zarr
 
-from .. import (
+from ... import (
     collection,
     convenience,
     dataset,
@@ -27,8 +27,8 @@ from .. import (
     storage,
 )
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_client, dask_cluster
-from .data import (
+from ...tests.cluster import dask_client, dask_cluster
+from ...tests.data import (
     DELTA,
     END_DATE,
     FILE_SYSTEM_DATASET,
@@ -37,7 +37,7 @@ from .data import (
     create_test_dataset,
     create_test_dataset_with_fillvalue,
 )
-from .fs import local_fs, s3, s3_base, s3_fs
+from ...tests.fs import local_fs, s3, s3_base, s3_fs
 
 # pylint: disable=unused-import
 

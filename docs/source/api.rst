@@ -38,12 +38,13 @@ Collection
   :toctree: _generated/
 
   zcollection.collection
+  zcollection.dask_utils
   zcollection.dataset
   zcollection.expression
+  zcollection.fs_utils
   zcollection.meta
   zcollection.sync
   zcollection.type_hints
-  zcollection.utilities
   zcollection.variable
   zcollection.view
 

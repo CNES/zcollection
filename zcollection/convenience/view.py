@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import fsspec
 
-from .. import fs_tools, sync, view
+from .. import fs_utils, sync, view
 
 
 def create_view(
@@ -39,7 +39,7 @@ def create_view(
     Raises:
         ValueError: If the path already exists.
     """
-    filesystem = fs_tools.get_fs(filesystem)
+    filesystem = fs_utils.get_fs(filesystem)
     if filesystem.exists(path):
         raise ValueError(f'path {path!r} already exists.')
     return view.View(path,

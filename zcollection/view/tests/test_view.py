@@ -13,12 +13,12 @@ import pathlib
 import numpy
 import pytest
 
-from .. import collection, convenience, meta, partitioning, view
-from ..view.detail import _checksum
+from ... import collection, convenience, meta, partitioning, view
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_client, dask_cluster
-from .data import create_test_collection, create_test_dataset
-from .fs import local_fs, s3, s3_base, s3_fs
+from ...tests.cluster import dask_client, dask_cluster
+from ...tests.data import create_test_collection, create_test_dataset
+from ...tests.fs import local_fs, s3, s3_base, s3_fs
+from ...view.detail import _checksum
 
 # pylint: enable=unused-import
 

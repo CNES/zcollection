@@ -38,15 +38,15 @@ import zarr
 import zarr.storage
 
 from .. import (
+    dask_utils,
     dataset,
     expression,
-    fs_tools,
+    fs_utils,
     merging,
     meta,
     partitioning,
     storage,
     sync,
-    utilities,
 )
 from .callable_objects import MapCallable, PartitionCallable, UpdateCallable
 from .detail import (
@@ -150,7 +150,7 @@ def _immutable_path(
         relative to the partitioning or None if the dataset does not contain
         immutable data.
     """
-    return fs_tools.join_path(
+    return fs_utils.join_path(
         partition_properties.dir, _IMMUTABLE) if ds.select_variables_by_dims(
             (partition_properties.dim, ), predicate=False) else None
 
@@ -242,12 +242,12 @@ class Collection:
         #: The metadata that describes the dataset handled by the collection.
         self.metadata = ds
         #: The file system used to read/write the collection.
-        self.fs = fs_tools.get_fs(filesystem)
+        self.fs = fs_utils.get_fs(filesystem)
         #: The partitioning strategy used to split the data.
         self.partitioning = partition_handler
         #: The partitioning properties (base directory and dimension).
         self.partition_properties = PartitioningProperties(
-            fs_tools.normalize_path(self.fs, partition_base_dir),
+            fs_utils.normalize_path(self.fs, partition_base_dir),
             ds.variables[axis].dimensions[0],
         )
         #: The access mode of the collection.
@@ -297,7 +297,7 @@ class Collection:
     @classmethod
     def _config(cls, partition_base_dir: str) -> str:
         """Return the configuration path."""
-        return fs_tools.join_path(partition_base_dir, cls.CONFIG)
+        return fs_utils.join_path(partition_base_dir, cls.CONFIG)
 
     def _write_config(self, skip_if_exists: bool = False) -> None:
         """Write the configuration file."""
@@ -349,7 +349,7 @@ class Collection:
             ValueError: If the provided directory does not contain a collection.
         """
         _LOGGER.info('Opening collection: %r', path)
-        fs = fs_tools.get_fs(filesystem)
+        fs = fs_utils.get_fs(filesystem)
         config = cls._config(path)
         if not fs.exists(config):
             raise ValueError(f'zarr collection not found at path {path!r}')
@@ -427,7 +427,7 @@ class Collection:
             variable = self.metadata.variables[item]
             ds.add_variable(variable)
 
-        client = utilities.get_client()
+        client = dask_utils.get_client()
 
         # If the dataset contains variables that should not be partitioned.
         if self._immutable is not None:
@@ -441,7 +441,7 @@ class Collection:
             # Remove the variables that should not be partitioned.
             ds = ds.select_variables_by_dims((self.axis, ))
 
-        utilities.calculation_stream(
+        dask_utils.calculation_stream(
             _insert,
             self.partitioning.split_dataset(ds, self.partition_properties.dim),
             max_workers=npartitions,
@@ -533,7 +533,7 @@ class Collection:
             ...     timedelta=datetime.timedelta(days=30))
         """
         now = datetime.datetime.now()
-        client = utilities.get_client()
+        client = dask_utils.get_client()
         folders = list(self.partitions(filters=filters))
 
         def is_created_before(path: str) -> bool:
@@ -754,7 +754,7 @@ class Collection:
             ...     filters=lambda keys: keys["year"] == 2019 and
             ...     keys["month"] == 3 and keys["day"] % 2 == 0)
         """
-        client = utilities.get_client()
+        client = dask_utils.get_client()
         arrays: list[dataset.Dataset] = []
         if indexer is None:
             selected_partitions = tuple(self.partitions(filters=filters))
@@ -765,7 +765,7 @@ class Collection:
             # selected partition.
             bag = dask.bag.core.from_sequence(
                 self.partitions(filters=filters),
-                npartitions=utilities.dask_workers(client, cores_only=True))
+                npartitions=dask_utils.dask_workers(client, cores_only=True))
             arrays = bag.map(storage.open_zarr_group,
                              fs=self.fs,
                              selected_variables=selected_variables).compute()
@@ -777,7 +777,7 @@ class Collection:
 
             bag = dask.bag.core.from_sequence(
                 args,
-                npartitions=utilities.dask_workers(client, cores_only=True))
+                npartitions=dask_utils.dask_workers(client, cores_only=True))
 
             # Finally, load the selected partitions and apply the indexer.
             arrays = list(
@@ -868,10 +868,10 @@ class Collection:
 
         _LOGGER.info('Updating of the (%s) variable in the collection',
                      ', '.join(repr(item) for item in func_result))
-        client = utilities.get_client()
-        batchs = utilities.split_sequence(
+        client = dask_utils.get_client()
+        batchs = dask_utils.split_sequence(
             tuple(self.partitions(filters=filters)), partition_size
-            or utilities.dask_workers(client, cores_only=True))
+            or dask_utils.dask_workers(client, cores_only=True))
         awaitables = client.map(local_func, tuple(batchs), key=func.__name__)
         storage.execute_transaction(client, self.synchronizer, awaitables)
 

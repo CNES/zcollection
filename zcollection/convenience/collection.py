@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import xarray
 
-from .. import collection, dataset, fs_tools, partitioning
+from .. import collection, dataset, fs_utils, partitioning
 
 
 def create_collection(
@@ -48,7 +48,7 @@ def create_collection(
     Raises:
         ValueError: If the base directory already exists.
     """
-    filesystem = fs_tools.get_fs(kwargs.pop('filesystem', None))
+    filesystem = fs_utils.get_fs(kwargs.pop('filesystem', None))
     if filesystem.exists(partition_base_dir):
         raise ValueError(
             f'The directory {partition_base_dir!r} already exists.')

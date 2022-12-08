@@ -14,7 +14,7 @@ import fsspec
 import zarr.storage
 
 from .. import dataset, merging, partitioning, sync
-from ..fs_tools import join_path
+from ..fs_utils import join_path
 from ..storage import open_zarr_group, update_zarr_array, write_zarr_group
 from .callable_objects import UpdateCallable, WrappedPartitionCallable
 

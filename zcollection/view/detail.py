@@ -17,7 +17,7 @@ import zarr
 
 from .. import collection, dataset, meta
 from ..collection.detail import update_with_overlap
-from ..fs_tools import get_fs, join_path
+from ..fs_utils import get_fs, join_path
 from ..storage import (
     open_zarr_array,
     open_zarr_group,
