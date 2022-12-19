@@ -9,8 +9,8 @@ Dask utilities
 from __future__ import annotations
 
 from typing import Any, Callable, Iterator, Sequence
-import asyncio
 import itertools
+import time
 
 import dask.distributed
 
@@ -51,7 +51,7 @@ def get_client() -> dask.distributed.Client:
         return dask.distributed.Client()
 
 
-async def _available_workers(client: dask.distributed.Client) -> set[str]:
+def _available_workers(client: dask.distributed.Client) -> set[str]:
     """Get the list of available workers.
     Args:
         client: Client connected to the Dask cluster.
@@ -60,16 +60,16 @@ async def _available_workers(client: dask.distributed.Client) -> set[str]:
         The list of available workers.
     """
     while True:
-        info = client.scheduler_info()
+        workers = set(client.scheduler_info()['workers'])
         assert client.scheduler is not None
-        tasks = await client.scheduler.processing(workers=None)
+        tasks: dict[str, Any] = client.sync(  # type: ignore[return-value]
+            client.scheduler.processing,
+            workers=None)
         assert tasks is not None
-        result = set(info['workers']) - {k
-                                         for k, v in tasks.items()
-                                         if v}  # type: ignore[arg-type]
+        result = workers - {k for k, v in tasks.items() if v}
         if result:
             return result
-        await asyncio.sleep(0.1)
+        time.sleep(0.1)
 
 
 def calculation_stream(func: Callable,
@@ -115,8 +115,7 @@ def calculation_stream(func: Callable,
         while completed.count() < n_workers(max_workers):
             try:
                 if not workers:
-                    workers = client.sync(  # type: ignore[arg-type]
-                        _available_workers, client)
+                    workers = _available_workers(client)
                 completed.add(
                     client.submit(func,
                                   next(seq),
