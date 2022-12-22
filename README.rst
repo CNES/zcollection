@@ -11,7 +11,7 @@ by **date** (hour, day, month, etc.) or by **sequence**.
 A collection partitioned by date, with a monthly resolution, may look like on
 the disk:
 
-.. code-block:: ASCII
+.. code-block:: text
 
     collection/
     ├── year=2022
