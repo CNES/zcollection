@@ -292,6 +292,10 @@ class Indexer:
                 (name, value) for name, value in partition))
             tables.append(pyarrow.Table.from_pydict(data))
 
+        # If no new data, skip the update.
+        if not partitions:
+            return
+
         # The existing index must be updated?
         if self._fs.exists(self._path):
             table = pyarrow.parquet.read_table(self._path, filesystem=self._fs)
