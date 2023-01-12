@@ -16,9 +16,13 @@ import pytest
 from ... import collection, convenience, meta, partitioning, view
 # pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster
-from ...tests.data import create_test_collection, create_test_dataset
+from ...tests.data import (
+    create_test_collection,
+    create_test_dataset,
+    make_dataset,
+)
 from ...tests.fs import local_fs, s3, s3_base, s3_fs
-from ...view.detail import _checksum
+from ...view.detail import _calculate_axis_reference
 
 # pylint: enable=unused-import
 
@@ -219,8 +223,54 @@ def test_view_checksum(
 
     zcollection.insert(ds)
     partition = tmpdir / 'year=2000' / 'month=01' / 'day=01'
-    sha256 = _checksum(str(partition), zcollection)
-    assert isinstance(sha256, str)
-    assert len(sha256) == 64
-    assert sha256 == ('4bbb9253c07f36002098f8bba57151eb'
-                      '0143f5fe5c634950340f3e2f1a4f51cf')
+    axis_ref = _calculate_axis_reference(str(partition), zcollection)
+    assert isinstance(axis_ref.array, numpy.ndarray)
+    assert isinstance(axis_ref.checksum, str)
+    assert isinstance(axis_ref.dimension, str)
+    assert len(axis_ref.checksum) == 64
+    assert axis_ref.dimension == 'num_lines'
+    assert axis_ref.checksum == ('4bbb9253c07f36002098f8bba57151eb'
+                                 '0143f5fe5c634950340f3e2f1a4f51cf')
+
+
+@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+def test_view_sync(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
+    """Test the synchronization of a view."""
+    tested_fs = request.getfixturevalue(arg)
+    create_test_collection(tested_fs)
+    instance = convenience.create_view(str(tested_fs.view),
+                                       view.ViewReference(
+                                           str(tested_fs.collection),
+                                           tested_fs.fs),
+                                       filesystem=tested_fs.fs)
+    var = meta.Variable(name='var3',
+                        dtype=numpy.float64,
+                        dimensions=('num_lines', 'num_pixels'))
+    instance.add_variable(var)
+    del instance
+
+    collection = convenience.open_collection(str(tested_fs.collection),
+                                             filesystem=tested_fs.fs,
+                                             mode='w')
+    ds = collection.load(filters=lambda keys: keys['year'] == 2000 and keys[
+        'month'] == 1 and keys['day'] == 16)
+    assert ds is not None
+    dates = numpy.arange(numpy.datetime64('2000-01-16'),
+                         numpy.datetime64('2000-01-16T23:59:59'),
+                         numpy.timedelta64(1, 'h'))
+    ds = make_dataset(
+        dates,
+        numpy.ones((len(dates), ds.dimensions['num_pixels']),
+                   dtype=numpy.float64))
+    collection.insert(ds)
+    del collection
+    instance = convenience.open_view(str(tested_fs.view),
+                                     filesystem=tested_fs.fs)
+    assert instance is not None
+    instance.sync()
+    ds = instance.load()
+    assert ds is not None

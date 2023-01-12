@@ -6,6 +6,8 @@
 Make test datasets
 ==================
 """
+from __future__ import annotations
+
 import itertools
 
 import numpy
@@ -17,51 +19,15 @@ from ..partitioning.tests.data import create_test_sequence
 START_DATE = numpy.datetime64('2000-01-01', 'us')
 END_DATE = numpy.datetime64('2000-06-30', 'us')
 DELTA = numpy.timedelta64(72, 'h')
+FILL_VALUE = 2147483647
 
 
-def create_test_dataset():
-    """Create a temporal dataset."""
-
-    dates = numpy.arange(START_DATE, END_DATE, DELTA)
-    indices = numpy.arange(0, len(dates))
-
-    for item in numpy.array_split(dates, 12):
-        mask = (dates >= item[0]) & (dates <= item[-1])
-        measures = numpy.vstack((indices[mask], ) * 25).T
-
-        yield dataset.Dataset(
-            attrs=(dataset.Attribute(name='attr', value=1), ),
-            variables=(
-                dataset.Variable(name='time',
-                                 data=item,
-                                 dimensions=('num_lines', ),
-                                 attrs=(dataset.Attribute(name='attr',
-                                                          value=1), ),
-                                 compressor=zarr.Blosc()),
-                dataset.Variable(
-                    name='var1',
-                    data=measures,
-                    dimensions=('num_lines', 'num_pixels'),
-                    attrs=(dataset.Attribute(name='attr', value=1), ),
-                ),
-                dataset.Variable(
-                    name='var2',
-                    data=measures,
-                    dimensions=('num_lines', 'num_pixels'),
-                    attrs=(dataset.Attribute(name='attr', value=1), ),
-                ),
-            ))
-
-
-def create_test_dataset_with_fillvalue():
-    """Create a dataset with a fixed scale offset filter and fill values."""
-
-    dates = numpy.arange(START_DATE, END_DATE, DELTA)
-    measures = numpy.arange(0, len(dates), dtype=numpy.float64)
-    measures[measures % 2 == 0] = 2147483647
-    measures = numpy.vstack((measures, ) * 25).T * 1e-4
-
-    yield dataset.Dataset(
+def make_dataset(dates: numpy.ndarray,
+                 measures: numpy.ndarray,
+                 fill_value: float | None = None,
+                 filters: tuple | None = None) -> dataset.Dataset:
+    """Create a dataset."""
+    return dataset.Dataset(
         attrs=(dataset.Attribute(name='attr', value=1), ),
         variables=(
             dataset.Variable(
@@ -75,22 +41,46 @@ def create_test_dataset_with_fillvalue():
                              data=measures,
                              dimensions=('num_lines', 'num_pixels'),
                              attrs=(dataset.Attribute(name='attr', value=1), ),
-                             fill_value=214748.3647,
-                             filters=(zarr.FixedScaleOffset(scale=10000,
-                                                            offset=0,
-                                                            dtype='<f8',
-                                                            astype='i4'), )),
+                             fill_value=fill_value,
+                             filters=filters),
             dataset.Variable(name='var2',
                              data=measures,
                              dimensions=('num_lines', 'num_pixels'),
                              attrs=(dataset.Attribute(name='attr', value=1), ),
-                             fill_value=214748.3647,
-                             filters=(zarr.FixedScaleOffset(scale=10000,
-                                                            offset=0,
-                                                            dtype='<f8',
-                                                            astype='i4'), )),
+                             fill_value=fill_value,
+                             filters=filters),
         ),
     )
+
+
+def create_test_dataset():
+    """Create a temporal dataset."""
+
+    dates = numpy.arange(START_DATE, END_DATE, DELTA)
+    indices = numpy.arange(0, len(dates))
+
+    for item in numpy.array_split(dates, 12):
+        mask = (dates >= item[0]) & (dates <= item[-1])
+        measures = numpy.vstack((indices[mask], ) * 25).T
+
+        yield make_dataset(item, measures)
+
+
+def create_test_dataset_with_fillvalue():
+    """Create a dataset with a fixed scale offset filter and fill values."""
+
+    dates = numpy.arange(START_DATE, END_DATE, DELTA)
+    measures = numpy.arange(0, len(dates), dtype=numpy.float64)
+    measures[measures % 2 == 0] = FILL_VALUE
+    measures = numpy.vstack((measures, ) * 25).T * 1e-4
+
+    yield make_dataset(dates,
+                       measures,
+                       fill_value=FILL_VALUE * 1e-4,
+                       filters=(zarr.FixedScaleOffset(scale=10000,
+                                                      offset=0,
+                                                      dtype='<f8',
+                                                      astype='i4'), ))
 
 
 def create_test_collection(tested_fs, with_fillvalue=False):
