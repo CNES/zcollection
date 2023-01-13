@@ -51,6 +51,12 @@ class View:
         view_ref: Access properties for the reference view.
         ds: The dataset handled by this view.
         filesystem: The file system used to access the view.
+        filters: The filters used to select the partitions of the reference. If
+            not provided, all partitions are selected.
+        resync: If True, the view is synchronized with the reference collection.
+            This is equivalent to calling :func:`sync
+            <zcollection.view.View.sync>`, but here the list of synchronized
+            partitions will be lost.
         synchronizer: The synchronizer used to synchronize the view.
 
     .. note::
@@ -69,6 +75,8 @@ class View:
         *,
         ds: meta.Dataset | None,
         filesystem: fsspec.AbstractFileSystem | str | None = None,
+        filters: collection.PartitionFilter = None,
+        resync: bool = True,
         synchronizer: sync.Sync | None = None,
     ) -> None:
         #: The file system used to access the view (default local file system).
@@ -86,8 +94,21 @@ class View:
 
         if not self.fs.exists(self.base_dir):
             _LOGGER.info('Creating view %s', self)
+            if not resync:
+                raise ValueError(
+                    'The view does not exist. You must synchronize it with '
+                    'the reference collection.')
             self.fs.makedirs(self.base_dir)
             self._write_config()
+            self._init_partitions(filters)
+        else:
+            _LOGGER.info('Opening view %s', self)
+            if filters:
+                self._init_partitions(filters)
+            if resync or filters:
+                # If the user asks to create new partitions, then the view must
+                # be synchronized.
+                self.sync()
 
     def __str__(self) -> str:
         return (f'{self.__class__.__name__}'
@@ -112,6 +133,29 @@ class View:
                 stream,  # type: ignore[arg-type]
                 indent=4)
         self.fs.invalidate_cache(config)
+
+    def _init_partitions(self, filters: collection.PartitionFilter) -> None:
+        """Initialize the partitions of the view."""
+        _LOGGER.info('Populating view %s', self)
+        args = tuple(
+            map(lambda item: fs_utils.join_path(self.base_dir, item),
+                self.view_ref.partitions(filters=filters, relative=True)))
+        # When opening an existing view, if the user asks to use new partitions
+        # from the reference collection, in this case only the missing
+        # partitions are created.
+        args = tuple(filter(lambda item: not self.fs.exists(item), args))
+        _LOGGER.info('%d partitions selected from %s', len(args),
+                     self.view_ref)
+        client = dask_utils.get_client()
+        storage.execute_transaction(
+            client, self.synchronizer,
+            client.map(
+                _write_checksum,
+                tuple(args),
+                base_dir=self.base_dir,
+                view_ref=self.view_ref,
+                fs=self.fs,
+            ))
 
     @classmethod
     def from_config(
@@ -217,20 +261,17 @@ class View:
         self.metadata.add_variable(variable)
         template = self.view_ref.metadata.search_same_dimensions_as(variable)
 
-        existing_partitions: Iterable[str] = tuple(self.partitions())
+        existing_partitions = {
+            pathlib.Path(path).relative_to(self.base_dir).as_posix()
+            for path in self.partitions()
+        }
 
-        # If the view already contains variables, you only need to modify the
-        # existing partitions.
-        if existing_partitions:
-            existing_partitions = {
-                pathlib.Path(path).relative_to(self.base_dir).as_posix()
-                for path in existing_partitions
-            }
-            args: Any = filter(lambda item: item[0] in existing_partitions,
-                               self.view_ref.iterate_on_records(relative=True))
-        else:
-            args = self.view_ref.iterate_on_records(relative=True)
+        if len(existing_partitions) == 0:
+            _LOGGER.info('No partitions found, skipping variable creation')
+            return
 
+        args = filter(lambda item: item[0] in existing_partitions,
+                      self.view_ref.iterate_on_records(relative=True))
         try:
             storage.execute_transaction(
                 client, self.synchronizer,
@@ -252,17 +293,6 @@ class View:
 
         self._write_config()
         # pylint: enable=duplicate-code
-
-        if not existing_partitions:
-            storage.execute_transaction(
-                client, self.synchronizer,
-                client.map(
-                    _write_checksum,
-                    tuple(self.partitions()),
-                    base_dir=self.base_dir,
-                    view_ref=self.view_ref,
-                    fs=self.fs,
-                ))
 
     def drop_variable(
         self,
@@ -641,7 +671,10 @@ class View:
             that have been synchronized using the :meth:`View.partitions`
             method.
         """
+
+        _LOGGER.info('Synchronizing view %s', self)
         partitions = tuple(self.view_ref.partitions(relative=True))
+        _LOGGER.info('%d partitions to synchronize', len(partitions))
 
         client = dask_utils.get_client()
         synchronized_partition = storage.execute_transaction(
