@@ -24,7 +24,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
         mamba-version: "*"
         channels: conda-forge,defaults
-        auto-update-conda: true
+        auto-update-conda: false
         auto-activate-base: false
         activate-environment: ZCollection
         environment-file: conda/environment.yml
@@ -58,7 +58,7 @@ jobs:
         python-version: 3.9
         mamba-version: "*"
         channels: conda-forge,defaults
-        auto-update-conda: true
+        auto-update-conda: false
         auto-activate-base: false
         activate-environment: ZCollection
         environment-file: conda/environment.yml
@@ -83,7 +83,7 @@ jobs:
         python-version: 3.9
         mamba-version: "*"
         channels: conda-forge,defaults
-        auto-update-conda: true
+        auto-update-conda: false
         auto-activate-base: false
         activate-environment: ZCollection
         environment-file: conda/environment.yml
