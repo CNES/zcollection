@@ -23,13 +23,14 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
         mamba-version: "*"
+        channels: conda-forge,defaults
         auto-update-conda: true
         auto-activate-base: false
-        activate-environment: test_env
+        activate-environment: ZCollection
         environment-file: conda/environment.yml
 
     - name: Run Tests
-      shell: bash -l {0}
+      shell: bash -el {0}
       run: |
         python -m setuptools_scm
         pytest -v -ra
@@ -56,13 +57,14 @@ jobs:
       with:
         python-version: 3.9
         mamba-version: "*"
+        channels: conda-forge,defaults
         auto-update-conda: true
         auto-activate-base: false
-        activate-environment: test_env
+        activate-environment: ZCollection
         environment-file: conda/environment.yml
 
     - name: Run Tests
-      shell: bash -l {0}
+      shell: bash -el {0}
       run: |
         python -m setuptools_scm
         pytest -v -ra --s3
@@ -80,13 +82,14 @@ jobs:
       with:
         python-version: 3.9
         mamba-version: "*"
+        channels: conda-forge,defaults
         auto-update-conda: true
         auto-activate-base: false
-        activate-environment: test_env
+        activate-environment: ZCollection
         environment-file: conda/environment.yml
 
     - name: Run Tests
-      shell: bash -l {0}
+      shell: bash -el {0}
       run: |
         python -m setuptools_scm
         pytest -v -ra
