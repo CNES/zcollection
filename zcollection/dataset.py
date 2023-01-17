@@ -123,12 +123,16 @@ class Dataset:
         self.dimensions: dict[str, int] = {}
 
         for var in self.variables.values():
-            for ix, dim in enumerate(var.dimensions):
-                if dim not in self.dimensions:
-                    self.dimensions[dim] = var.array.shape[ix]
-                elif self.dimensions[dim] != var.array.shape[ix]:
-                    raise ValueError(f'variable {var.name} has conflicting '
-                                     'dimensions')
+            try:
+                for ix, dim in enumerate(var.dimensions):
+                    if dim not in self.dimensions:
+                        self.dimensions[dim] = var.array.shape[ix]
+                    elif self.dimensions[dim] != var.array.shape[ix]:
+                        raise ValueError(
+                            f'variable {var.name} has conflicting '
+                            'dimensions')
+            except IndexError:
+                raise ValueError(f'variable {var.name} has missing dimensions')
 
     def __len__(self) -> int:
         return len(self.variables)
