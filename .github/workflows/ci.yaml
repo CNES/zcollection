@@ -25,8 +25,8 @@ jobs:
         channels: conda-forge,defaults
         environment-name: ZCollection
         environment-file: conda/environment.yml
-      extra-specs: |
-        python=${{ matrix.python-version }}
+        extra-specs: |
+          python=${{ matrix.python-version }}
 
     - name: Run Tests
       shell: bash -l {0}
@@ -58,8 +58,8 @@ jobs:
         channels: conda-forge,defaults
         environment-name: ZCollection
         environment-file: conda/environment.yml
-      extra-specs: |
-        python=3.9
+        extra-specs: |
+          python=3.9
 
     - name: Run Tests
       shell: bash -l {0}
@@ -82,8 +82,8 @@ jobs:
         channels: conda-forge,defaults
         environment-name: ZCollection
         environment-file: conda/environment.yml
-      extra-specs: |
-        python=3.9
+        extra-specs: |
+          python=3.9
 
     - name: Run Tests
       shell: bash -l {0}
