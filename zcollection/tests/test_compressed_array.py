@@ -9,6 +9,10 @@ import numpy
 import pytest
 
 from ..compressed_array import CompressedArray
+# pylint: disable=unused-import # Need to import for fixtures
+from .cluster import dask_client, dask_cluster
+
+# pylint: enable=unused-import
 
 #: Functions to test
 functions = [
@@ -73,7 +77,10 @@ functions = [
 @pytest.mark.filterwarnings(
     'ignore:Casting complex values to real discards the imaginary part')
 @pytest.mark.parametrize('func', functions)
-def test_basic(func):
+def test_basic(
+        func,
+        dask_client,  # pylint: disable=redefined-outer-name
+):
     """Test basic functionality."""
     values = numpy.random.random((2, 3, 4))
     arr = dask.array.core.from_array(CompressedArray(values), chunks='auto')
@@ -83,7 +90,9 @@ def test_basic(func):
     assert numpy.allclose(compressed_array, array)
 
 
-def test_metadata():
+def test_metadata(
+        dask_client,  # pylint: disable=redefined-outer-name
+):
     """Test metadata."""
     y = dask.array.random.random((10, 10), chunks=(5, 5))
     z = CompressedArray(y.compute())
@@ -97,20 +106,24 @@ def test_metadata():
     assert isinstance(y.persist()._meta, numpy.ndarray)
 
 
-def test_from_delayed_meta():
+def test_from_delayed_meta(
+        dask_client,  # pylint: disable=redefined-outer-name
+):
     """Test from_delayed with meta."""
 
     def f():
         return CompressedArray(numpy.eye(3))
 
-    d = dask.delayed(f)()
+    d = dask.delayed(f)()  # type: ignore
     x = dask.array.core.from_delayed(d,
                                      shape=(3, 3),
                                      meta=CompressedArray(numpy.eye(1)))
     assert numpy.all(x.compute() == f()[...])
 
 
-def test_from_array():
+def test_from_array(
+        dask_client,  # pylint: disable=redefined-outer-name
+):
     """Test from_array."""
     x = CompressedArray(numpy.eye(10))
     d = dask.array.core.from_array(x, chunks=(5, 5))
@@ -120,7 +133,9 @@ def test_from_array():
     assert numpy.allclose(d.compute(), x)
 
 
-def test_map_blocks():
+def test_map_blocks(
+        dask_client,  # pylint: disable=redefined-outer-name
+):
     """Test map_blocks."""
     x = dask.array.creation.eye(10, chunks=5)
     y = x.map_blocks(CompressedArray)
@@ -128,7 +143,9 @@ def test_map_blocks():
     assert numpy.allclose(y.compute(), x.compute())
 
 
-def test_compressed_masked_array():
+def test_compressed_masked_array(
+        dask_client,  # pylint: disable=redefined-outer-name
+):
     """Test CompressedMaskedArray."""
     x = dask.array.creation.eye(10, chunks=5)
     y = x.map_blocks(CompressedArray, fill_value=0)
