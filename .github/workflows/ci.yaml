@@ -16,21 +16,18 @@ jobs:
         python-version: ['3.9', '3.10', '3.11']
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Setup Miniconda
-      uses: conda-incubator/setup-miniconda@v2
+      uses: mamba-org/provision-with-micromamba@main
       with:
-        python-version: ${{ matrix.python-version }}
-        mamba-version: "*"
+        python: ${{ matrix.python-version }}
         channels: conda-forge,defaults
-        auto-update-conda: false
-        auto-activate-base: false
-        activate-environment: ZCollection
+        environment-name: ZCollection
         environment-file: conda/environment.yml
 
     - name: Run Tests
-      shell: bash -el {0}
+      shell: bash -l {0}
       run: |
         python -m setuptools_scm
         pytest -v -ra
@@ -39,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Install MinIO
       run: |
@@ -53,18 +50,15 @@ jobs:
         echo /opt/minio/bin >> $GITHUB_PATH
 
     - name: Setup Miniconda
-      uses: conda-incubator/setup-miniconda@v2
+      uses: mamba-org/provision-with-micromamba@main
       with:
         python-version: 3.9
-        mamba-version: "*"
         channels: conda-forge,defaults
-        auto-update-conda: false
-        auto-activate-base: false
-        activate-environment: ZCollection
+        environment-name: ZCollection
         environment-file: conda/environment.yml
 
     - name: Run Tests
-      shell: bash -el {0}
+      shell: bash -l {0}
       run: |
         python -m setuptools_scm
         pytest -v -ra --s3
@@ -75,21 +69,18 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Setup Miniconda
-      uses: conda-incubator/setup-miniconda@v2
+      uses: mamba-org/provision-with-micromamba@main
       with:
         python-version: 3.9
-        mamba-version: "*"
         channels: conda-forge,defaults
-        auto-update-conda: false
-        auto-activate-base: false
-        activate-environment: ZCollection
+        environment-name: ZCollection
         environment-file: conda/environment.yml
 
     - name: Run Tests
-      shell: bash -el {0}
+      shell: bash -l {0}
       run: |
         python -m setuptools_scm
         pytest -v -ra
