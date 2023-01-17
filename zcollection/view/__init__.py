@@ -27,10 +27,12 @@ from .detail import (
     _assert_have_variables,
     _assert_variable_handled,
     _create_zarr_array,
+    _deserialize_filters,
     _drop_zarr_zarr,
     _load_datasets_list,
     _load_one_dataset,
     _select_overlap,
+    _serialize_filters,
     _sync,
     _wrap_update_func,
     _wrap_update_func_overlap,
@@ -53,10 +55,6 @@ class View:
         filesystem: The file system used to access the view.
         filters: The filters used to select the partitions of the reference. If
             not provided, all partitions are selected.
-        resync: If True, the view is synchronized with the reference collection.
-            This is equivalent to calling :func:`sync
-            <zcollection.view.View.sync>`, but here the list of synchronized
-            partitions will be lost.
         synchronizer: The synchronizer used to synchronize the view.
 
     .. note::
@@ -76,7 +74,6 @@ class View:
         ds: meta.Dataset | None,
         filesystem: fsspec.AbstractFileSystem | str | None = None,
         filters: collection.PartitionFilter = None,
-        resync: bool = True,
         synchronizer: sync.Sync | None = None,
     ) -> None:
         #: The file system used to access the view (default local file system).
@@ -91,48 +88,16 @@ class View:
             self.view_ref.metadata.dimensions, variables=[], attrs=[])
         #: The synchronizer used to synchronize the view.
         self.synchronizer = synchronizer or sync.NoSync()
+        #: The filters used to select the partitions of the reference.
+        self.filters = filters
 
         if not self.fs.exists(self.base_dir):
             _LOGGER.info('Creating view %s', self)
-            if not resync:
-                raise ValueError(
-                    'The view does not exist. You must synchronize it with '
-                    'the reference collection.')
             self.fs.makedirs(self.base_dir)
             self._write_config()
             self._init_partitions(filters)
         else:
             _LOGGER.info('Opening view %s', self)
-            if filters:
-                self._init_partitions(filters)
-            if resync or filters:
-                # If the user asks to create new partitions, then the view must
-                # be synchronized.
-                self.sync()
-
-    def __str__(self) -> str:
-        return (f'{self.__class__.__name__}'
-                f'<filesystem={self.fs.__class__.__name__!r}, '
-                f'base_dir={self.base_dir!r}>')
-
-    @classmethod
-    def _config(cls, base_dir: str) -> str:
-        """Returns the configuration path."""
-        return fs_utils.join_path(base_dir, cls.CONFIG)
-
-    def _write_config(self) -> None:
-        """Write the configuration file for the view."""
-        config = self._config(self.base_dir)
-        fs = json.loads(self.view_ref.fs.to_json())
-        with self.fs.open(config, mode='w') as stream:
-            json.dump(
-                dict(base_dir=self.base_dir,
-                     metadata=self.metadata.get_config(),
-                     view_ref=dict(path=self.view_ref.partition_properties.dir,
-                                   fs=fs)),
-                stream,  # type: ignore[arg-type]
-                indent=4)
-        self.fs.invalidate_cache(config)
 
     def _init_partitions(self, filters: collection.PartitionFilter) -> None:
         """Initialize the partitions of the view."""
@@ -156,6 +121,31 @@ class View:
                 view_ref=self.view_ref,
                 fs=self.fs,
             ))
+
+    def __str__(self) -> str:
+        return (f'{self.__class__.__name__}'
+                f'<filesystem={self.fs.__class__.__name__!r}, '
+                f'base_dir={self.base_dir!r}>')
+
+    @classmethod
+    def _config(cls, base_dir: str) -> str:
+        """Returns the configuration path."""
+        return fs_utils.join_path(base_dir, cls.CONFIG)
+
+    def _write_config(self) -> None:
+        """Write the configuration file for the view."""
+        config = self._config(self.base_dir)
+        fs = json.loads(self.view_ref.fs.to_json())
+        with self.fs.open(config, mode='w') as stream:
+            json.dump(
+                dict(base_dir=self.base_dir,
+                     filters=_serialize_filters(self.filters),
+                     metadata=self.metadata.get_config(),
+                     view_ref=dict(path=self.view_ref.partition_properties.dir,
+                                   fs=fs)),
+                stream,  # type: ignore[arg-type]
+                indent=4)
+        self.fs.invalidate_cache(config)
 
     @classmethod
     def from_config(
@@ -194,6 +184,7 @@ class View:
                             json.dumps(view_ref['fs']))),
                     ds=meta.Dataset.from_config(data['metadata']),
                     filesystem=filesystem,
+                    filters=_deserialize_filters(data['filters']),
                     synchronizer=synchronizer)
 
     def partitions(
@@ -660,19 +651,61 @@ class View:
                                           npartitions=npartitions)
         return bag.map(_wrap, func, datasets_list, depth, *args, **kwargs)
 
-    def sync(self) -> collection.PartitionFilterCallback:
+    def is_synced(self) -> bool:
+        """Check if the view is synchronized with the underlying collection.
+
+        Returns:
+            True if the view is synchronized, False otherwise.
+        """
+        partitions = tuple(self.view_ref.partitions(relative=True))
+        client = dask_utils.get_client()
+        unsynchronized_partition = storage.execute_transaction(
+            client, self.synchronizer,
+            client.map(_sync,
+                       partitions,
+                       base_dir=self.base_dir,
+                       fs=self.fs,
+                       view_ref=self.view_ref,
+                       metadata=self.metadata,
+                       dry_run=True))
+        return len(
+            tuple(
+                filter(lambda item: item is not None,
+                       unsynchronized_partition))) == 0
+
+    def sync(
+        self,
+        filters: collection.PartitionFilter = None
+    ) -> collection.PartitionFilterCallback:
         """Synchronize the view with the underlying collection.
 
         This method is useful to update the view after a change in the
         underlying collection.
+
+        Args:
+            filters: The predicate used to select the partitions to
+                synchronize. To get more information on the predicate, see the
+                documentation of the :meth:`zcollection.Collection.partitions`
+                method.
+                If None, the view is synchronized with all the partitions
+                already present in the view. If you want to extend the view
+                with new partitions, use must provide a predicate that
+                selects the new partitions.
+                Existing partitions are not removed, even if they are not
+                selected by the predicate.
 
         Returns:
             A function that can be used as a predicate to get the partitions
             that have been synchronized using the :meth:`View.partitions`
             method.
         """
-
         _LOGGER.info('Synchronizing view %s', self)
+
+        if filters is not None:
+            self.filters = filters
+            self._write_config()
+            self._init_partitions(filters)
+
         partitions = tuple(self.view_ref.partitions(relative=True))
         _LOGGER.info('%d partitions to synchronize', len(partitions))
 

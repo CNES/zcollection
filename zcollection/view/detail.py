@@ -5,9 +5,13 @@ Implementation details.
 from __future__ import annotations
 
 from typing import Callable, Iterable, Iterator, Sequence
+import base64
 import dataclasses
 import hashlib
+import io
 import pathlib
+import pickle
+import warnings
 
 import dask.array.core
 import dask.bag.core
@@ -561,6 +565,7 @@ def _sync(
     fs: fsspec.AbstractFileSystem,
     view_ref: collection.Collection,
     metadata: meta.Dataset,
+    dry_run: bool = False,
 ) -> str | None:
     """Sync the partitions of a view.
 
@@ -570,6 +575,7 @@ def _sync(
         fs: The file system used to access the variables in the view.
         view_ref: The view reference.
         metadata: The dataset to sync.
+        dry_run: If True, the partition is not synced.
 
     Returns:
         The partition synced or None if the partition is already synced.
@@ -577,7 +583,8 @@ def _sync(
     partition_view = join_path(base_dir, partition)
     if not fs.exists(partition_view):
         # The partition does not exist, so we create it.
-        _sync_partition(metadata, partition, base_dir, fs, view_ref)
+        if not dry_run:
+            _sync_partition(metadata, partition, base_dir, fs, view_ref)
         return partition
 
     # The partition exists, so we check if it is synced.
@@ -597,11 +604,50 @@ def _sync(
             # The view partition is a subset of the reference partition.
             # So we extend the view partition to the reference partition.
             # fs_invalid_cache is done by _extend_partition
-            _extend_partition(partition_view, fs, axis_ref)
+            if not dry_run:
+                _extend_partition(partition_view, fs, axis_ref)
             return partition
         # The partition is not synced, so we remove it.
-        fs.rm(partition_view, recursive=True)
-        fs.invalidate_cache(partition_view)
-        _sync_partition(metadata, partition, base_dir, fs, view_ref)
+        if not dry_run:
+            fs.rm(partition_view, recursive=True)
+            fs.invalidate_cache(partition_view)
+            _sync_partition(metadata, partition, base_dir, fs, view_ref)
         return partition
     return None
+
+
+def _serialize_filters(filters: collection.PartitionFilter, ) -> str:
+    """Serialize a partition filter.
+
+    Args:
+        filters: The partition filter to serialize.
+
+    Returns:
+        The serialized partition filter.
+    """
+    stream = io.BytesIO()
+    try:
+        pickle.dump(filters, stream)
+    except (pickle.PicklingError, AttributeError):
+        warnings.warn(
+            'The partition filter cannot be serialized, it will be ignored.',
+            UserWarning,
+            stacklevel=2)
+        pickle.dump(None, stream)
+    return base64.b64encode(stream.getvalue()).decode('utf-8')
+
+
+def _deserialize_filters(filters: str) -> collection.PartitionFilter:
+    """Unserialize a partition filter.
+
+    Args:
+        filters: The partition filter to unserialize.
+
+    Returns:
+        The unserialized partition filter.
+    """
+    stream = io.BytesIO(base64.b64decode(filters.encode('utf-8')))
+    try:
+        return pickle.load(stream)
+    except pickle.UnpicklingError:
+        return None

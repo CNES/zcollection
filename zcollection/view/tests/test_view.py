@@ -233,6 +233,7 @@ def test_view_checksum(
                                  '0143f5fe5c634950340f3e2f1a4f51cf')
 
 
+@pytest.mark.filterwarnings('ignore:.*cannot be serialized.*')
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
 def test_view_sync(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
@@ -271,6 +272,7 @@ def test_view_sync(
     instance = convenience.open_view(str(tested_fs.view),
                                      filesystem=tested_fs.fs)
     assert instance is not None
-    instance.sync()
+    assert instance.is_synced() is False
+    instance.sync(filters=lambda keys: True)
     ds = instance.load()
     assert ds is not None

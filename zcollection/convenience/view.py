@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import fsspec
 
-from .. import fs_utils, sync, view
+from .. import collection, fs_utils, sync, view
 
 
 def create_view(
@@ -18,6 +18,7 @@ def create_view(
     view_ref: view.ViewReference,
     *,
     filesystem: fsspec.AbstractFileSystem | str | None = None,
+    filters: collection.PartitionFilter = None,
     synchronizer: sync.Sync | None = None,
 ) -> view.View:
     """Create a new view.
@@ -26,6 +27,8 @@ def create_view(
         path: View storage directory.
         view_ref: Access properties for the reference view.
         filesystem: The file system used to access the view.
+        filters: The filters used to select the partitions of the reference
+            view. If not provided, all partitions are selected.
         synchronizer: The synchronizer used to synchronize the view.
 
     Example:
@@ -46,6 +49,7 @@ def create_view(
                      view_ref,
                      ds=None,
                      filesystem=filesystem,
+                     filters=filters,
                      synchronizer=synchronizer)
 
 
