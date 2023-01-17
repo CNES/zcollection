@@ -247,7 +247,9 @@ def test_dataset_add_variable(
         ds.add_variable(var)
 
 
-def test_empty_dataset():
+def test_empty_dataset(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test empty dataset."""
     ds = dataset.Dataset([], [])
     assert ds.attrs == ()
@@ -258,7 +260,9 @@ Data variables:
     <empty>"""
 
 
-def test_dataset_rename():
+def test_dataset_rename(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test renaming of datasets."""
     ds = create_test_dataset()
     ds.rename(dict(var1='var3', var2='var4'))
@@ -271,7 +275,9 @@ def test_dataset_rename():
         ds.rename(dict(var3='var4'))
 
 
-def test_dataset_persist():
+def test_dataset_persist(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test persisting of datasets."""
     ds1 = create_test_dataset()
     ds1.persist()
@@ -291,7 +297,9 @@ def test_dataset_persist():
         ds1.variables['var2'].values == ds2.variables['var2'].values)
 
 
-def test_dataset_rechunk():
+def test_dataset_rechunk(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     """Test rechunking of datasets."""
     ds1 = create_test_dataset()
     ds2 = create_test_dataset()
@@ -309,7 +317,9 @@ def test_dataset_rechunk():
         ds1.variables['var2'].values == ds2.variables['var2'].values)
 
 
-def test_dataset_merge():
+def test_dataset_merge(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     template = dataset.Dataset([
         dataset.Variable('var1', numpy.empty(10), ('x', ), ()),
         dataset.Variable('var2', numpy.empty(10), ('x', ), ()),
@@ -391,7 +401,9 @@ def test_dataset_merge():
         ds1.merge(ds2)
 
 
-def test_dataset_select_variables_by_dims():
+def test_dataset_select_variables_by_dims(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+):
     ds = dataset.Dataset([
         dataset.Variable('var1', numpy.empty(10), ('x', ), ()),
         dataset.Variable('var2', numpy.empty(10), ('y', ), ()),
