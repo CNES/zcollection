@@ -12,6 +12,7 @@ from typing import Any, ClassVar, Iterable, Iterator
 import json
 import logging
 import pathlib
+import warnings
 
 import dask.array.core
 import dask.bag.core
@@ -440,6 +441,12 @@ class View:
             _load_datasets_list(client, self.base_dir, self.fs,
                                 self.view_ref, self.metadata,
                                 self.partitions(filters), selected_variables))
+
+        # If no dataset is selected, we have nothing to do.
+        if not datasets_list:
+            warnings.warn('The update function is not applied because no '
+                          'data is selected with the given filters.')
+            return
 
         func_result = try_infer_callable(
             func, datasets_list[0][0], self.view_ref.partition_properties.dim,
