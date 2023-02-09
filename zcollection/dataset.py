@@ -388,8 +388,10 @@ class Dataset:
         arrays = tuple(item.array for item in self.variables.values())
         arrays = dask.base.compute(*arrays, **kwargs)
 
+        # Don't use _duplicate here because we because we want to transform
+        # the numpy arrays computed by dask into dask arrays
         variables = [
-            _duplicate(self.variables[k], array)
+            self.variables[k].duplicate(array)
             for k, array in zip(self.variables, arrays)
         ]
         return Dataset(variables=variables, attrs=self.attrs)
