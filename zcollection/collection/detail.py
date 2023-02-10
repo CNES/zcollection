@@ -302,7 +302,7 @@ def _rm(fs: fsspec.AbstractFileSystem, dirname: str) -> None:
         except OSError:
             fs.invalidate_cache(dirname)
             time.sleep(1)
-            tries += 1
+        tries += 1
 
 
 def _insert(
