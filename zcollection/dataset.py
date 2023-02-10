@@ -19,6 +19,7 @@ import dask.array.routines
 import dask.array.wrap
 import dask.base
 import dask.threaded
+import fsspec
 import xarray
 
 from . import meta, variable
@@ -523,6 +524,26 @@ class Dataset:
         set_of_dims = set(dims)
         variables = [var for var in self.variables.values() if condition(var)]
         return Dataset(variables=variables, attrs=self.attrs)
+
+    def to_zarr(self,
+                path: str,
+                fs: fsspec.AbstractFileSystem | None = None,
+                parallel: bool = True) -> None:
+        """Write the dataset to a Zarr store.
+
+        Args:
+            path: Path to the Zarr store.
+            fs: Filesystem to use.
+            parallel: If true, write the data in parallel.
+        """
+        # pylint: disable=import-outside-toplevel
+        # Avoid circular import
+        import storage
+        import sync
+
+        # pylint: enable=import-outside-toplevel
+        storage.write_zarr_group(self, path, fs or fsspec.filesystem('file'),
+                                 sync.NoSync(), parallel)
 
     def __str__(self) -> str:
         return _dataset_repr(self)
