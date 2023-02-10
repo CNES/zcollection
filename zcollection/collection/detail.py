@@ -193,7 +193,8 @@ def _load_dataset_with_overlap(
 
     # Build the dataset for the selected partitions.
     ds = groups.pop(0)
-    ds = ds.concat(groups, dim)
+    if groups:
+        ds = ds.concat(groups, dim)
 
     if immutable:
         ds.merge(open_zarr_group(partition, fs, selected_variables))
