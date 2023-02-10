@@ -6,11 +6,7 @@
 Testing utilities
 =================
 """
-import pathlib
-import platform
-
 import dask.distributed
-import fsspec
 import pytest
 
 from .. import dask_utils
@@ -42,33 +38,6 @@ def test_dask_workers(
         dask_client.ncores())  # type: ignore
     assert dask_utils.dask_workers(dask_client, cores_only=False) == sum(
         item for item in dask_client.nthreads().values())  # type: ignore
-
-
-def test_calculation_stream(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
-    """Test the calculation_stream function."""
-
-    def add_1_return_list(item):
-        """Add 1 to each item in the list and return the result in a list."""
-        return [item + 1]
-
-    def add_1(item):
-        """Add 1 to each item in the list and return the result."""
-        return item + 1
-
-    stream = dask_utils.calculation_stream(add_1_return_list,
-                                           iter(list(range(100))),
-                                           max_workers=4)
-    assert sorted(list(stream)) == [[item + 1] for item in range(100)]
-
-    stream = dask_utils.calculation_stream(add_1,
-                                           iter(list(range(100))),
-                                           max_workers=4)
-    assert sorted(list(stream)) == [item + 1 for item in range(100)]
-
-    stream = dask_utils.calculation_stream(add_1, iter([1]), max_workers=4)
-    assert sorted(list(stream)) == [2]
 
 
 def test_split_sequence():

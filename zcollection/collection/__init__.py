@@ -441,15 +441,19 @@ class Collection:
             # Remove the variables that should not be partitioned.
             ds = ds.select_variables_by_dims((self.axis, ))
 
-        dask_utils.calculation_stream(
-            _insert,
-            self.partitioning.split_dataset(ds, self.partition_properties.dim),
-            max_workers=npartitions,
-            axis=self.axis,
-            ds=client.scatter(ds),
-            fs=self.fs,
-            merge_callable=merge_callable,
-            partitioning_properties=self.partition_properties)
+        scattared_ds = client.scatter(ds)
+        futures = [
+            dask_utils.simple_delayed('insert', _insert)(
+                partition,  # type: ignore[arg-type]
+                axis=self.axis,
+                ds=scattared_ds,
+                fs=self.fs,
+                merge_callable=merge_callable,
+                partitioning_properties=self.partition_properties,
+            ) for partition in self.partitioning.split_dataset(
+                ds, self.partition_properties.dim)
+        ]
+        client.compute(futures, sync=True)
 
     def _relative_path(self, path: str) -> str:
         """Return the relative path to the collection.

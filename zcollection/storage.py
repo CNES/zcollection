@@ -14,13 +14,15 @@ import json
 import logging
 
 import dask.array.core
+import dask.base
+from dask.delayed import Delayed as dask_Delayed
 import dask.distributed
 import dask.local
 import fsspec
 import numpy
 import zarr
 
-from . import dataset, meta, sync
+from . import dask_utils, dataset, meta, sync
 from .fs_utils import join_path
 from .type_hints import ArrayLike
 
@@ -43,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 def execute_transaction(
     client: dask.distributed.Client,
     synchronizer: sync.Sync,
-    futures: Sequence[dask.distributed.Future],
+    futures: Sequence[dask.distributed.Future | dask_Delayed],
 ) -> Any:
     """Execute a transaction in the collection.
 
@@ -92,6 +94,7 @@ def _to_zarr(array: dask.array.core.Array, mapper: fsspec.FSMap, path: str,
         **kwargs)
     dask.array.core.store(array,
                           target,
+                          flush=True,
                           lock=False,
                           compute=True,
                           scheduler=dask.local.get_sync,
@@ -193,22 +196,17 @@ def write_zarr_group(
         synchronizer: The instance handling access to critical resources.
         parallel: Whether to write the variables in parallel using Dask.
     """
+    futures = [
+        dask_utils.simple_delayed(name, write_zarr_variable)((name, variable),
+                                                             dirname, fs)
+        for name, variable in ds.variables.items()
+    ]
     if parallel:
         with dask.distributed.worker_client() as client:
-            iterables = [(name, client.scatter(variable))
-                         for name, variable in ds.variables.items()]
-            futures = client.map(write_zarr_variable,
-                                 iterables,
-                                 dirname=dirname,
-                                 fs=fs)
             execute_transaction(client, synchronizer, futures)
-        _write_meta(ds, dirname, fs)
-        return
-
-    for name, variable in ds.variables.items():
-        write_zarr_variable((name, variable), dirname, fs)
+    else:
+        dask.base.compute(*futures, scheduler=dask.local.get_sync)
     _write_meta(ds, dirname, fs)
-    return
 
 
 def open_zarr_array(array: zarr.Array, name: str) -> dataset.Variable:
