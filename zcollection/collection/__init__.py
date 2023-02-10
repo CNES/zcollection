@@ -400,8 +400,8 @@ class Collection:
                 None, the new partitioned data overwrites the existing
                 partitioned data.
             npartitions: The maximum number of partitions to process in
-                parallel. By default, the number of available cores of the dask
-                cluster is used.
+                parallel. By default, all partitions are processed in parallel
+                in a single task.
 
         .. warning::
 
@@ -441,12 +441,17 @@ class Collection:
             # Remove the variables that should not be partitioned.
             ds = ds.select_variables_by_dims((self.axis, ))
 
-        scattared_ds = client.scatter(ds)
+        # Process the partitions to insert or update by batches to avoid
+        # memory issues.
         partitions = tuple(
             self.partitioning.split_dataset(ds, self.partition_properties.dim))
 
-        # Process the partitions to insert or update by batches to avoid
-        # memory issues.
+        if npartitions is not None:
+            if npartitions < 1:
+                raise ValueError('The number of partitions must be positive')
+            npartitions = len(partitions) // npartitions + 1
+
+        scattared_ds = client.scatter(ds)
         for sequence in dask_utils.split_sequence(partitions, npartitions):
             futures = [
                 dask_utils.simple_delayed('insert', _insert)(
