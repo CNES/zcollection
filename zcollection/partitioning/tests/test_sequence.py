@@ -8,10 +8,10 @@ Test partitioning by sequence.
 """
 from __future__ import annotations
 
-from typing import Dict, Iterator
+from typing import Iterator
 import pickle
 
-import dask.array
+import dask.array.core
 import numpy
 import pytest
 import xarray
@@ -138,10 +138,13 @@ def test_multiple_sequence(
             arrays['_c'] = numpy.concatenate(
                 (arrays['_c'], numpy.arange(5, dtype='i8')))
     partitioning = Sequence(('_a', '_b', '_c'))
-    variables: dict[str, dask.array.Array] = dict(
-        _a=dask.array.from_array(arrays['_a'], chunks=(10, )),  # type: ignore
-        _b=dask.array.from_array(arrays['_b'], chunks=(10, )),  # type: ignore
-        _c=dask.array.from_array(arrays['_c'], chunks=(10, )))  # type: ignore
+    variables: dict[str, dask.array.core.Array] = dict(
+        _a=dask.array.core.from_array(arrays['_a'],
+                                      chunks=(10, )),  # type: ignore[arg-type]
+        _b=dask.array.core.from_array(arrays['_b'],
+                                      chunks=(10, )),  # type: ignore[arg-type]
+        _c=dask.array.core.from_array(arrays['_c'],
+                                      chunks=(10, )))  # type: ignore[arg-type]
     _a = 0
     _b = 0
     _c = 0
@@ -157,8 +160,8 @@ def test_multiple_sequence(
         assert item[1] == slice(ix, ix + 1)
 
     numpy.random.shuffle(arrays['_c'])
-    variables['_c'] = dask.array.from_array(arrays['_c'],
-                                            chunks=(10, ))  # type: ignore
+    variables['_c'] = dask.array.core.from_array(arrays['_c'],
+                                                 chunks=(10, ))  # type: ignore
 
     with pytest.raises(ValueError):
         list(partitioning._split(variables))
@@ -183,5 +186,7 @@ def test_values_must_be_integer(
     partitioning = Sequence(('values', ))
     # pylint: disable=protected-access
     with pytest.raises(TypeError):
-        list(partitioning._split({'values': dask.array.from_array(values)}))
+        list(
+            partitioning._split({'values':
+                                 dask.array.core.from_array(values)}))
     # pylint: enable=protected-access

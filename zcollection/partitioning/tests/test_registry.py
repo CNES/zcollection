@@ -8,7 +8,6 @@ Test the registry module.
 """
 import pytest
 
-#
 from .. import registry
 
 

@@ -52,7 +52,8 @@ functions = [
     lambda x: x.dot(numpy.arange(x.shape[-1])),
     lambda x: x.dot(numpy.eye(x.shape[-1])),
     lambda x: dask.array.routines.tensordot(
-        x, numpy.ones(x.shape[:2]), axes=[(0, 1), (0, 1)]),
+        x, numpy.ones(x.shape[:2]), axes=[(0, 1),
+                                          (0, 1)]),  # type: ignore[arg-type]
     lambda x: x.sum(axis=0),
     lambda x: x.max(axis=0),
     lambda x: x.min(axis=0),
@@ -118,7 +119,7 @@ def test_from_delayed_meta(
     x = dask.array.core.from_delayed(d,
                                      shape=(3, 3),
                                      meta=CompressedArray(numpy.eye(1)))
-    assert numpy.all(x.compute() == f()[...])
+    assert numpy.all(x.compute() == f()[...])  # type: ignore
 
 
 def test_from_array(
@@ -126,7 +127,7 @@ def test_from_array(
 ):
     """Test from_array."""
     x = CompressedArray(numpy.eye(10))
-    d = dask.array.core.from_array(x, chunks=(5, 5))
+    d = dask.array.core.from_array(x, chunks=(5, 5))  # type: ignore
 
     assert isinstance(d._meta, numpy.ndarray)
     assert isinstance(d.compute(), numpy.ndarray)
@@ -137,7 +138,7 @@ def test_map_blocks(
         dask_client,  # pylint: disable=redefined-outer-name
 ):
     """Test map_blocks."""
-    x = dask.array.creation.eye(10, chunks=5)
+    x = dask.array.creation.eye(10, chunks=5)  # type: ignore[arg-type]
     y = x.map_blocks(CompressedArray)
     assert isinstance(y._meta, numpy.ndarray)
     assert numpy.allclose(y.compute(), x.compute())
@@ -147,7 +148,7 @@ def test_compressed_masked_array(
         dask_client,  # pylint: disable=redefined-outer-name
 ):
     """Test CompressedMaskedArray."""
-    x = dask.array.creation.eye(10, chunks=5)
+    x = dask.array.creation.eye(10, chunks=5)  # type: ignore[arg-type]
     y = x.map_blocks(CompressedArray, fill_value=0)
     # assert isinstance(y._meta, CompressedArray)
     assert isinstance(y[...].compute(), numpy.ma.MaskedArray)

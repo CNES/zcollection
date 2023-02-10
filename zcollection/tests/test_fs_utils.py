@@ -9,15 +9,30 @@ Testing utilities
 import pathlib
 import platform
 
-import dask.distributed
 import fsspec
-import pytest
+import fsspec.implementations.local
 
 from .. import fs_utils
 # pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster
 
 # pylint: disable=unused-import
+
+
+def test_join_path():
+    """Test the join_path function."""
+    assert fs_utils.join_path('a', 'b', 'c') == 'a/b/c'
+    assert fs_utils.join_path('a', 'b', 'c', 'd') == 'a/b/c/d'
+    assert fs_utils.join_path('a', 'b', 'c', 'd', 'e') == 'a/b/c/d/e'
+    assert fs_utils.join_path('a', 'b', 'c', 'd', 'e', 'f') == 'a/b/c/d/e/f'
+
+
+def test_get_fs():
+    """Test the get_fs function."""
+    fs = fs_utils.get_fs('file')
+    assert isinstance(fs, fsspec.implementations.local.LocalFileSystem)
+    fs = fs_utils.get_fs()
+    assert isinstance(fs, fsspec.implementations.local.LocalFileSystem)
 
 
 def test_fs_walk(tmpdir):
