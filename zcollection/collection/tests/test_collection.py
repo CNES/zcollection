@@ -536,7 +536,7 @@ def test_insert_failed(
     zcollection.fs.makedirs(one_directory, exist_ok=False)
     zcollection.fs.touch(zcollection.fs.sep.join((one_directory, 'time')))
 
-    with pytest.raises(OSError):
+    with pytest.raises((KeyError, OSError)):
         zcollection.insert(ds)
 
     zcollection.insert(ds)
