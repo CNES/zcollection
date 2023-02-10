@@ -292,11 +292,13 @@ def _rm(fs: fsspec.AbstractFileSystem, dirname: str) -> None:
         dirname: The name of the directory to remove.
     """
     tries = 0
-    while tries < 60:
+    while fs.exists(dirname) and tries < 10:
         try:
             fs.rm(dirname, recursive=True)
+            fs.invalidate_cache(dirname)
             break
         except OSError:
+            fs.invalidate_cache(dirname)
             time.sleep(1)
             tries += 1
 
