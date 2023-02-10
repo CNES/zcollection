@@ -442,18 +442,23 @@ class Collection:
             ds = ds.select_variables_by_dims((self.axis, ))
 
         scattared_ds = client.scatter(ds)
-        futures = [
-            dask_utils.simple_delayed('insert', _insert)(
-                partition,  # type: ignore[arg-type]
-                axis=self.axis,
-                ds=scattared_ds,
-                fs=self.fs,
-                merge_callable=merge_callable,
-                partitioning_properties=self.partition_properties,
-            ) for partition in self.partitioning.split_dataset(
-                ds, self.partition_properties.dim)
-        ]
-        client.compute(futures, sync=True)
+        partitions = tuple(
+            self.partitioning.split_dataset(ds, self.partition_properties.dim))
+
+        # Process the partitions to insert or update by batches to avoid
+        # memory issues.
+        for sequence in dask_utils.split_sequence(partitions, npartitions):
+            futures = [
+                dask_utils.simple_delayed('insert', _insert)(
+                    partition,  # type: ignore[arg-type]
+                    axis=self.axis,
+                    ds=scattared_ds,
+                    fs=self.fs,
+                    merge_callable=merge_callable,
+                    partitioning_properties=self.partition_properties,
+                ) for partition in sequence
+            ]
+            client.compute(futures, sync=True)
 
     def _relative_path(self, path: str) -> str:
         """Return the relative path to the collection.
