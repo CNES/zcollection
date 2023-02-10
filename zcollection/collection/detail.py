@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any, Callable, Iterable, Sequence
 import dataclasses
 import sys
+import time
 import traceback
 
 import dask.utils
@@ -283,6 +284,23 @@ def _wrap_update_func_with_overlap(
     return wrap_function
 
 
+def _rm(fs: fsspec.AbstractFileSystem, dirname: str) -> None:
+    """Remove a directory and its content.
+
+    Args:
+        fs: The file system on which the directory is stored.
+        dirname: The name of the directory to remove.
+    """
+    tries = 0
+    while tries < 60:
+        try:
+            fs.rm(dirname, recursive=True)
+            break
+        except OSError:
+            time.sleep(1)
+            tries += 1
+
+
 def _insert(
     args: tuple[tuple[str, ...], dict[str, slice]],
     axis: str,
@@ -324,7 +342,7 @@ def _insert(
         # If the construction of the new dataset fails, the created
         # partition is deleted, to guarantee the integrity of the
         # collection.
-        fs.rm(dirname, recursive=True)
+        _rm(fs, dirname)
         fs.invalidate_cache(dirname)
         raise
 
