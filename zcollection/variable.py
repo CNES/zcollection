@@ -607,6 +607,8 @@ class Variable:
 
     def _dask_finalize(self, results, array_func, *args, **kwargs):
         array = array_func(results, *args, **kwargs)
+        if not isinstance(array, dask.array.core.Array):
+            array = dask.array.core.from_array(array)
         return Variable._new(self.name, array, self.dimensions, self.attrs,
                              self.compressor, self.fill_value, self.filters)
 
