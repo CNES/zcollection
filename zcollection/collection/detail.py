@@ -296,12 +296,11 @@ def _rm(fs: fsspec.AbstractFileSystem, dirname: str) -> None:
         try:
             fs.rm(dirname, recursive=True)
             fs.invalidate_cache(dirname)
-            time.sleep(1)
             if not fs.exists(dirname):
                 break
         except OSError:
             fs.invalidate_cache(dirname)
-            time.sleep(1)
+        time.sleep(1)
         tries += 1
 
 
@@ -347,7 +346,6 @@ def _insert(
         # partition is deleted, to guarantee the integrity of the
         # collection.
         _rm(fs, dirname)
-        fs.invalidate_cache(dirname)
         raise
 
 
