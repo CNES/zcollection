@@ -31,6 +31,7 @@ from .variable import (
     _attributes_repr,
     _calculate_column_width,
     _dimensions_repr,
+    _new_variable,
     _pretty_print,
 )
 
@@ -93,8 +94,8 @@ def _duplicate(var: variable.Variable,
     """
     # pylint: disable=protected-access
     # _new is a protected member of this class
-    return var._new(var.name, data, var.dimensions, var.attrs, var.compressor,
-                    var.fill_value, var.filters)
+    return _new_variable(var.name, data, var.dimensions, var.attrs,
+                         var.compressor, var.fill_value, var.filters)
     # pylint: enable=protected-access
 
 
@@ -132,8 +133,9 @@ class Dataset:
                         raise ValueError(
                             f'variable {var.name} has conflicting '
                             'dimensions')
-            except IndexError:
-                raise ValueError(f'variable {var.name} has missing dimensions')
+            except IndexError as exc:
+                raise ValueError(
+                    f'variable {var.name} has missing dimensions') from exc
 
     def __len__(self) -> int:
         return len(self.variables)
@@ -434,8 +436,9 @@ class Dataset:
                                                  fill_value=var.fill_value)
         arrays = dask.base.persist(
             *tuple(item.data for item in self.variables.values()), **kwargs)
+        variables = self.variables
         for name, array in zip(self.variables, arrays):
-            self.variables[name].array = array
+            variables[name].array = array
 
         return self
 
@@ -536,12 +539,12 @@ class Dataset:
             fs: Filesystem to use.
             parallel: If true, write the data in parallel.
         """
-        # pylint: disable=import-outside-toplevel
+        # pylint: disable=import-outside-toplevel, import-error
         # Avoid circular import
         import storage
         import sync
 
-        # pylint: enable=import-outside-toplevel
+        # pylint: enable=import-outside-toplevel, import-error
         storage.write_zarr_group(self, path, fs or fsspec.filesystem('file'),
                                  sync.NoSync(), parallel)
 

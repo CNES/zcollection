@@ -185,6 +185,37 @@ def _asarray(
     return result, fill_value
 
 
+def _new_variable(
+    name: str,
+    data: dask.array.core.Array,
+    dimensions: Sequence[str],
+    attrs: Sequence[Attribute],
+    compressor: numcodecs.abc.Codec | None,
+    fill_value: Any | None,
+    filters: Sequence[numcodecs.abc.Codec] | None,
+) -> Variable:
+    """Create a new variable.
+
+    Args:
+        name: Name of the variable
+        data: Variable data
+        dimensions: Variable dimensions
+        attrs: Variable attributes
+        compressor: Compression codec
+        fill_value: Value to use for uninitialized values
+        filters: Filters to apply before writing data to disk
+    """
+    self = Variable.__new__(Variable)
+    self.array = data
+    self.attrs = attrs
+    self.compressor = compressor
+    self.dimensions = dimensions
+    self.fill_value = fill_value
+    self.filters = filters
+    self.name = name
+    return self
+
+
 class Variable:
     """Variables hold multi-dimensional arrays of data.
 
@@ -357,37 +388,6 @@ class Variable:
                                                        self.fill_value)
         return self
 
-    @staticmethod
-    def _new(
-        name: str,
-        data: dask.array.core.Array,
-        dimensions: Sequence[str],
-        attrs: Sequence[Attribute],
-        compressor: numcodecs.abc.Codec | None,
-        fill_value: Any | None,
-        filters: Sequence[numcodecs.abc.Codec] | None,
-    ) -> Variable:
-        """Create a new variable.
-
-        Args:
-            name: Name of the variable
-            data: Variable data
-            dimensions: Variable dimensions
-            attrs: Variable attributes
-            compressor: Compression codec
-            fill_value: Value to use for uninitialized values
-            filters: Filters to apply before writing data to disk
-        """
-        self = Variable.__new__(Variable)
-        self.array = data
-        self.attrs = attrs
-        self.compressor = compressor
-        self.dimensions = dimensions
-        self.fill_value = fill_value
-        self.filters = filters
-        self.name = name
-        return self
-
     def isel(self, key: tuple[slice, ...]) -> Variable:
         """Return a new variable with data selected along the given dimension
         indices.
@@ -398,9 +398,9 @@ class Variable:
         Returns:
             The new variable
         """
-        return self._new(self.name, self.array[key], self.dimensions,
-                         self.attrs, self.compressor, self.fill_value,
-                         self.filters)
+        return _new_variable(self.name, self.array[key], self.dimensions,
+                             self.attrs, self.compressor, self.fill_value,
+                             self.filters)
 
     @classmethod
     def from_zarr(cls, array: zarr.Array, name: str, dimension: str,
@@ -426,8 +426,8 @@ class Variable:
             name=f'{name}-{uuid.uuid1()}',
             **kwargs,
         )
-        return cls._new(name, data, array.attrs[dimension], attrs,
-                        array.compressor, array.fill_value, array.filters)
+        return _new_variable(name, data, array.attrs[dimension], attrs,
+                             array.compressor, array.fill_value, array.filters)
 
     def duplicate(self, data: Any) -> Variable:
         """Create a new variable from the properties of this instance and the
@@ -458,8 +458,8 @@ class Variable:
         Returns:
             The variable.
         """
-        return self._new(name, self.array, self.dimensions, self.attrs,
-                         self.compressor, self.fill_value, self.filters)
+        return _new_variable(name, self.array, self.dimensions, self.attrs,
+                             self.compressor, self.fill_value, self.filters)
 
     def dimension_index(self) -> Iterator[tuple[str, int]]:
         """Return an iterator over the variable dimensions and their index.
@@ -491,10 +491,10 @@ class Variable:
             raise ValueError('other must be a non-empty sequence')
         try:
             axis = self.dimensions.index(dim)
-            return self._new(
+            return _new_variable(
                 self.name,
                 dask.array.core.concatenate(
-                    [self.array, *[item.array for item in other]], axis=axis),
+                    (self.array, *(item.array for item in other)), axis=axis),
                 self.dimensions,
                 self.attrs,
                 self.compressor,
@@ -505,9 +505,9 @@ class Variable:
             # If the concatenation dimension is not within the dimensions of the
             # variable, then the original variable is returned (i.e.
             # concatenation is not necessary).
-            return self._new(self.name, self.array, self.dimensions,
-                             self.attrs, self.compressor, self.fill_value,
-                             self.filters)
+            return _new_variable(self.name, self.array, self.dimensions,
+                                 self.attrs, self.compressor, self.fill_value,
+                                 self.filters)
 
     def rechunk(self, **kwargs) -> Variable:
         """Rechunk the variable.
@@ -519,9 +519,9 @@ class Variable:
         Returns:
             The variable.
         """
-        return self._new(self.name, self.array.rechunk(**kwargs),
-                         self.dimensions, self.attrs, self.compressor,
-                         self.fill_value, self.filters)
+        return _new_variable(self.name, self.array.rechunk(**kwargs),
+                             self.dimensions, self.attrs, self.compressor,
+                             self.fill_value, self.filters)
 
     def to_xarray(self) -> xarray.Variable:
         """Convert the variable to an xarray.Variable.
@@ -609,7 +609,7 @@ class Variable:
         array = array_func(results, *args, **kwargs)
         if not isinstance(array, dask.array.core.Array):
             array = dask.array.core.from_array(array)
-        return Variable._new(self.name, array, self.dimensions, self.attrs,
+        return _new_variable(self.name, array, self.dimensions, self.attrs,
                              self.compressor, self.fill_value, self.filters)
 
     def __dask_postcompute__(self) -> tuple:
