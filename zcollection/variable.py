@@ -28,6 +28,9 @@ from . import mathematics, meta
 from .meta import Attribute
 from .type_hints import ArrayLike, NDArray, NDMaskedArray
 
+#: The dask array getter used to access the data.
+GETTER = dask.array.core.getter
+
 
 def _dimensions_repr(dimensions: dict[str, int]) -> str:
     """Get the string representation of the dimensions.
@@ -214,6 +217,58 @@ def _new_variable(
     self.filters = filters
     self.name = name
     return self
+
+
+def _blockdims_from_blockshape(
+        shape: tuple[int, ...],
+        chunks: tuple[int, ...]) -> tuple[tuple[int, ...], ...]:
+    """Convert a blockshape to a blockdims tuple."""
+    return tuple(((chunk_item, ) * (shape_item // chunk_item) +
+                  ((shape_item % chunk_item, ) if shape_item %
+                   chunk_item else ()) if shape_item else (0, ))
+                 for shape_item, chunk_item in zip(shape, chunks))
+
+
+def _from_zarr_array(
+    array: zarr.Array,
+    shape: Sequence[int],
+    chunks: Sequence[int],
+    name: str,
+    lock: bool = False,
+    asarray=True,
+    inline_array=True,
+) -> dask.array.core.Array:
+    """Create a dask array from a zarr array.
+
+    Args:
+        array: A zarr array.
+
+    Returns:
+        The dask array.
+    """
+    normalized_chunks = sum(
+        (_blockdims_from_blockshape(
+            (shape_item, ),
+            (chunk_item, )) if not isinstance(chunk_item, (tuple, list)) else
+         (chunk_item, ) for shape_item, chunk_item in zip(shape, chunks)),
+        (),
+    )
+    dsk = dask.array.core.graph_from_arraylike(
+        array,
+        normalized_chunks,
+        shape,
+        name,
+        getitem=GETTER,
+        lock=lock,
+        asarray=asarray,
+        dtype=array.dtype,
+        inline_array=inline_array,
+    )
+    return dask.array.core.Array(dsk,
+                                 name,
+                                 normalized_chunks,
+                                 meta=array,
+                                 dtype=array.dtype)
 
 
 class Variable:
@@ -420,8 +475,9 @@ class Variable:
         """
         attrs = tuple(
             Attribute(k, v) for k, v in array.attrs.items() if k != dimension)
-        data = dask.array.core.from_array(
+        data = _from_zarr_array(
             array,
+            array.shape,
             array.chunks,
             name=f'{name}-{uuid.uuid1()}',
             **kwargs,
