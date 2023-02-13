@@ -25,12 +25,14 @@ UNITS = ('year', 'month', 'day', 'hour', 'minute', 'second')
 DATA_TYPES = ('uint16', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8')
 
 #: Time separation units
-SEPARATORS = dict(year='-',
-                  month='-',
-                  day='T',
-                  hour=':',
-                  minute=':',
-                  second='.')
+SEPARATORS = {
+    'year': '-',
+    'month': '-',
+    'day': 'T',
+    'hour': ':',
+    'minute': ':',
+    'second': '.'
+}
 
 
 class Date(abc.Partitioning):

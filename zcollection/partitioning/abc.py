@@ -295,7 +295,7 @@ class Partitioning(abc.ABC):
         Returns:
             The configuration of the partitioning scheme.
         """
-        config = dict(id=self.ID)
+        config = {'id': self.ID}
         slots = (getattr(_class, '__slots__', ())
                  for _class in reversed(self.__class__.__mro__))
         config.update((attr, getattr(self, attr)) for _class in slots

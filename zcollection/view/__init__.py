@@ -139,11 +139,15 @@ class View:
         fs = json.loads(self.view_ref.fs.to_json())
         with self.fs.open(config, mode='w') as stream:
             json.dump(
-                dict(base_dir=self.base_dir,
-                     filters=_serialize_filters(self.filters),
-                     metadata=self.metadata.get_config(),
-                     view_ref=dict(path=self.view_ref.partition_properties.dir,
-                                   fs=fs)),
+                {
+                    'base_dir': self.base_dir,
+                    'filters': _serialize_filters(self.filters),
+                    'metadata': self.metadata.get_config(),
+                    'view_ref': {
+                        'path': self.view_ref.partition_properties.dir,
+                        'fs': fs,
+                    },
+                },
                 stream,  # type: ignore[arg-type]
                 indent=4)
         self.fs.invalidate_cache(config)

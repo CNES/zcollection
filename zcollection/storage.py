@@ -136,7 +136,7 @@ def write_zarr_variable(
         fs: The file system on which the Zarr dataset is stored.
     """
     name, variable = args
-    kwargs = dict(filters=variable.filters)
+    kwargs = {'filters': variable.filters}
     data = variable.array
 
     chunks = {ix: -1 for ix in range(variable.ndim)}

@@ -162,14 +162,16 @@ class Variable:
         ) if compressor is not None else None
         filters = tuple(item.get_config() for item in self.filters)
 
-        return dict(attrs=sorted(item.get_config() for item in self.attrs),
-                    compressor=compressor,
-                    dimensions=self.dimensions,
-                    dtype=zarr.meta.encode_dtype(self.dtype),
-                    fill_value=zarr.meta.encode_fill_value(
-                        self.fill_value, self.dtype),
-                    filters=filters,
-                    name=self.name)
+        return {
+            'attrs': sorted(item.get_config() for item in self.attrs),
+            'compressor': compressor,
+            'dimensions': self.dimensions,
+            'dtype': zarr.meta.encode_dtype(self.dtype),
+            'fill_value': zarr.meta.encode_fill_value(self.fill_value,
+                                                      self.dtype),
+            'filters': filters,
+            'name': self.name,
+        }
 
     @staticmethod
     def from_config(data: dict[str, Any]) -> Variable:
@@ -262,10 +264,15 @@ class Dataset:
         Returns:
             Dataset configuration.
         """
-        return dict(attrs=sorted(item.get_config() for item in self.attrs),
-                    dimensions=self.dimensions,
-                    variables=tuple(self.variables[name].get_config()
-                                    for name in sorted(self.variables)))
+        return {
+            'attrs':
+            sorted(item.get_config() for item in self.attrs),
+            'dimensions':
+            self.dimensions,
+            'variables':
+            tuple(self.variables[name].get_config()
+                  for name in sorted(self.variables)),
+        }
 
     def add_variable(self, variable: Variable) -> None:
         """Add a variable to the dataset.
