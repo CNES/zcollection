@@ -90,10 +90,8 @@ def simple_delayed(name: str, func: Callable) -> dask_Delayed:
     name = f'{name}-{str(uuid.uuid4())}'
     return dask_Delayed(
         name,
-        dask.highlevelgraph.HighLevelGraph.from_collections(
-            name,
-            {name: func},
-            dependencies={},
-        ),
+        dask.highlevelgraph.HighLevelGraph({name: {
+            name: func
+        }}, {name: set()}),
         None,
     )
