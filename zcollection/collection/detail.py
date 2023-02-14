@@ -371,12 +371,5 @@ def _load_and_apply_indexer(
     partition_scheme, items = args
     partition = join_path(partition_properties.dir,
                           partition_handler.join(partition_scheme, fs.sep))
-
     ds = open_zarr_group(partition, fs, selected_variables)
-    arrays = []
-    _ = {
-        arrays.append(  # type: ignore[func-returns-value]
-            ds.isel({partition_properties.dim: indexer}))
-        for indexer in items
-    }
-    return arrays
+    return [ds.isel({partition_properties.dim: indexer}) for indexer in items]

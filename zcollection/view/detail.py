@@ -190,12 +190,7 @@ def _load_one_dataset(
     # Apply indexing if needed.
     if len(slices):
         dim = view_ref.partition_properties.dim
-        ds_list: list[dataset.Dataset] = []
-        _ = {
-            ds_list.append(  # type: ignore[func-returns-value]
-                ds.isel({dim: indexer}))
-            for indexer in slices
-        }
+        ds_list = [ds.isel({dim: indexer}) for indexer in slices]
         ds = ds_list.pop(0)
         if ds_list:
             ds = ds.concat(ds_list, dim)
