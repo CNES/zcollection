@@ -1,10 +1,14 @@
 Release notes
 =============
 
-xxxx.xx.xx
-----------
-
+2023.2.0
+--------
 * Synchronize the view with the reference collection.
+* Support for Python 3.11.
+* Bug fixes.
+* Optimization of the insertion of new partitions.
+* Copy collection over different file systems.
+* Export Dataset to Zarr group.
 
 2022.12.0/2022.12.1
 -------------------
