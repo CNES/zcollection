@@ -8,8 +8,9 @@ File system tools
 """
 from __future__ import annotations
 
-from typing import Iterator
+from typing import Iterator, Sequence
 import os
+import posixpath
 
 import fsspec
 
@@ -103,7 +104,76 @@ def fs_walk(
         return sorted(sequence) if sort else sequence
 
     dirs = sort_sequence(dirs)
-    yield path, dirs, sort_sequence(files)
+    yield path.rstrip(SEPARATOR), dirs, sort_sequence(files)
 
     for item in sort_sequence(dirs):
         yield from fs_walk(fs, item, sort=sort)
+
+
+def copy_file(
+    source: str,
+    target: str,
+    fs_source: fsspec.AbstractFileSystem,
+    fs_target: fsspec.AbstractFileSystem,
+) -> None:
+    """Copy a file from one location to another.
+
+    Args:
+        source: The name of the source file.
+        target: The name of the target file.
+        fs_source: The file system that the source file is stored on.
+        fs_target: The file system that the target file is stored on.
+    """
+    with fs_source.open(source, 'rb') as source_stream:
+        with fs_target.open(target, 'wb') as target_stream:
+            target_stream.write(source_stream.read())
+
+
+def copy_files(
+    source: Sequence[str],
+    target: str,
+    fs_source: fsspec.AbstractFileSystem,
+    fs_target: fsspec.AbstractFileSystem,
+) -> None:
+    """Copy a list of files from one location to another.
+
+    Args:
+        source: The names of the source files.
+        target: The name of the target directory.
+        fs_source: The file system that the source files are stored on.
+        fs_target: The file system that the target directory is stored on.
+    """
+    tuple(
+        map(
+            lambda path: copy_file(path,
+                                   join_path(target, posixpath.basename(path)),
+                                   fs_source, fs_target), source))
+
+
+def copy_tree(
+    source: str,
+    target: str,
+    fs_source: fsspec.AbstractFileSystem,
+    fs_target: fsspec.AbstractFileSystem,
+) -> None:
+    """Copy a directory tree from one location to another.
+
+    Args:
+        source: The name of the source directory.
+        target: The name of the target directory.
+        fs_source: The file system that the source directory is stored on.
+        fs_target: The file system that the target directory is stored on.
+
+    Raises:
+        ValueError: If the target already exists.
+    """
+    if fs_target.exists(target):
+        raise ValueError(f'Target {target} already exists')
+    fs_target.mkdir(target)
+    for root, _, files in fs_walk(fs_source, source):
+        for name in files:
+            source_path = join_path(root, name)
+            copy_file(
+                source_path,
+                join_path(target, posixpath.relpath(source_path, source)),
+                fs_source, fs_target)

@@ -18,6 +18,20 @@ from .cluster import dask_client, dask_cluster
 
 # pylint: disable=unused-import
 
+#: Test data
+TEXT = '''Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam porta
+turpis dictum, porta tellus eu, convallis mi. Integer at placerat diam. Donec in
+various neque. Morbi sed nisi finibus, mattis velit non, pulvinar metus. Duis
+feugiat diam eget augue posuere, nec aliquam dolor tristique. Aliquam a dolor
+vel ante sagittis dictum vel at dolor. Suspendisse velit dolor, vestibulum eget
+aliquet ut, imperdiet at justo. Nullam sit amet suscipit orci, bibendum sagittis
+orci. Aliquam mattis feugiat rutrum. Vivamus fermentum ex non mauris faucibus
+vehicula. Donec odio lacus, viverra et hendrerit eu, mollis eget mauris. Duis
+suscipit, velit nec finibus ullamcorper, nisi lorem fermentum tellus, ut viverra
+nunc lorem ut odio. Duis eget ligula maximus, venenatis nulla a, commodo dolor.
+Aenean justo sapien, mollis aliquam vestibulum id, suscipit a ligula. Phasellus
+porta arcu erat, elementum faucibus leo auctor vel. Integer vel pharetra leo.'''
+
 
 def test_join_path():
     """Test the join_path function."""
@@ -111,3 +125,92 @@ def test_normalize_path():
     fs = fsspec.filesystem('s3')
     assert fs_utils.normalize_path(fs, '/') == '/'
     assert fs_utils.normalize_path(fs, './foo') == './foo'
+
+
+def test_copy_file(tmpdir):
+    """Test the copy file across different file systems."""
+    fs_source = fsspec.filesystem('file')
+    fs_target = fsspec.filesystem('memory')
+    path = str(tmpdir / 'foo.txt')
+    with fs_source.open(path, mode='w', encoding='utf-8') as stream:
+        stream.write(TEXT)
+    fs_utils.copy_file(path, 'foo.txt', fs_source, fs_target)
+
+    assert fs_target.cat('foo.txt').decode('utf-8') == TEXT
+
+
+def test_copy_files(tmpdir):
+    """Test the copy files across different file systems."""
+    fs_source = fsspec.filesystem('file')
+    fs_target = fsspec.filesystem('memory')
+    paths = [
+        str(tmpdir / item) for item in (
+            'foo.txt',
+            'bar.txt',
+            'baz.txt',
+        )
+    ]
+    for path in paths:
+        with fs_source.open(path, mode='w', encoding='utf-8') as stream:
+            stream.write(TEXT)
+    fs_utils.copy_files(paths, '/', fs_source, fs_target)
+
+    for item in fs_target.ls('/'):
+        assert fs_target.cat(item).decode('utf-8') == TEXT
+
+
+def test_copy_tree(tmpdir):
+    """Test the copy tree across different file systems."""
+    fs_source = fsspec.filesystem('file')
+    fs_target = fsspec.filesystem('memory')
+
+    for ix, item in enumerate([
+        ('year=2014', 'month=5'),
+        ('year=2014', 'month=5', 'day=2'),
+        ('year=2014', 'month=5', 'day=1'),
+        ('year=2014', 'month=5', 'day=3'),
+        ('year=2014', 'month=4'),
+        ('year=2014', 'month=4', 'day=16'),
+        ('year=2014', 'month=4', 'day=24'),
+        ('year=2014', 'month=4', 'day=27'),
+        ('year=2014', 'month=4', 'day=20'),
+        ('year=2014', 'month=4', 'day=29'),
+        ('year=2014', 'month=4', 'day=14'),
+        ('year=2014', 'month=4', 'day=25'),
+        ('year=2014', 'month=4', 'day=19'),
+        ('year=2014', 'month=4', 'day=12'),
+        ('year=2014', 'month=4', 'day=23'),
+        ('year=2014', 'month=4', 'day=17'),
+        ('year=2014', 'month=4', 'day=28'),
+        ('year=2014', 'month=4', 'day=13'),
+        ('year=2014', 'month=4', 'day=21'),
+        ('year=2014', 'month=4', 'day=15'),
+        ('year=2014', 'month=4', 'day=18'),
+        ('year=2014', 'month=4', 'day=26'),
+        ('year=2014', 'month=4', 'day=22'),
+        ('year=2014', 'month=4', 'day=30'),
+    ]):
+        path = fs_utils.join_path(str(tmpdir), *item)
+        fs_source.makedirs(path, exist_ok=False)
+        if 'day' in item[-1]:
+            with fs_source.open(fs_utils.join_path(path, f'file_{ix}.txt'),
+                                mode='w',
+                                encoding='utf-8') as stream:
+                stream.write(TEXT)
+
+    fs_utils.copy_tree(str(tmpdir), '/tree', fs_source, fs_target)
+
+    for root, dirs, files in fs_utils.fs_walk(fs_target, '/tree'):
+        for item in files:
+            assert fs_target.cat(fs_utils.join_path(
+                root, item)).decode('utf-8') == TEXT
+        for item in dirs:
+            parts = item.replace('/tree/', '').split(fs_target.sep)
+            assert parts[0] == 'year=2014'
+            if len(parts) > 1:
+                assert parts[1] in ['month=4', 'month=5']
+            if len(parts) > 2:
+                assert 'day=' in parts[2]
+            if len(parts) > 3:
+                assert 'file_' in parts[3]
+                assert parts[3].endswith('.txt')

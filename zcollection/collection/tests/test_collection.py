@@ -735,3 +735,30 @@ def test_insert_immutable(
     )
     with pytest.raises(ValueError):
         zcollection.add_variable(new_variable)
+
+
+@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+def test_copy_collection(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        arg,
+        request,
+        tmpdir):
+    """Test the dropping of a dataset."""
+    tested_fs = request.getfixturevalue(arg)
+    zcollection = create_test_collection(tested_fs)
+
+    target = str(tmpdir / 'copy')
+    zcopy = zcollection.copy(target, filesystem=fsspec.filesystem('file'))
+
+    ds_before_copy = zcollection.load()
+    ds_after_copy = zcopy.load()
+
+    assert ds_before_copy is not None
+    assert ds_after_copy is not None
+
+    assert numpy.all(ds_before_copy.variables['var1'].values ==
+                     ds_after_copy.variables['var1'].values)
+    assert numpy.all(ds_before_copy.variables['var2'].values ==
+                     ds_after_copy.variables['var2'].values)
+    assert numpy.all(ds_before_copy.variables['var3'].values ==
+                     ds_after_copy.variables['var3'].values)

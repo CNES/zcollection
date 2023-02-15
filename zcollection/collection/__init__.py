@@ -26,6 +26,7 @@ import itertools
 import json
 import logging
 import pathlib
+import posixpath
 import types
 
 import dask.bag.core
@@ -1024,3 +1025,66 @@ class Collection:
             The variables of the collection.
         """
         return variables(self.metadata, selected_variables)
+
+    def copy(
+        self,
+        target: str,
+        *,
+        filters: PartitionFilter | None = None,
+        filesystem: fsspec.AbstractFileSystem | None = None,
+        mode: str = 'w',
+        npartitions: int | None = None,
+        synchronizer: sync.Sync | None = None,
+    ) -> Collection:
+        """Copy the collection to a new location.
+
+        Args:
+            target: The target location.
+            filters: The predicate used to filter the partitions to copy.
+            filesystem: The file system to use. If None, the file system of the
+                collection is used.
+            mode: The mode used to open the collection copied. Default is 'w'.
+            npartitions: The number of partitions top copy in parallel. Default
+                is number of cores.
+            synchronizer: The synchronizer used to synchronize the collection
+                copied. Default is None.
+
+        Returns:
+            The new collection.
+
+        Example:
+            >>> import zcollection
+            >>> collection = zcollection.open_collection(
+            ...     "my_collection", mode="r")
+            >>> collection.copy(target="my_new_collection")
+        """
+        _LOGGER.info('Copying of the collection to %r', target)
+        if filesystem is None:
+            filesystem = fs_utils.get_fs(target)
+        client = dask_utils.get_client()
+        npartitions = npartitions or dask_utils.dask_workers(client,
+                                                             cores_only=True)
+
+        # Sequence of (source, target) to copy split in npartitions
+        args = dask_utils.split_sequence(
+            [(item,
+              fs_utils.join_path(
+                  target, posixpath.relpath(item,
+                                            self.partition_properties.dir)))
+             for item in self.partitions(filters=filters)], npartitions)
+        # Copy the selected partitions
+        client.gather(
+            client.map(
+                lambda source, target: fs_utils.copy_tree(
+                    source, target, self.fs, filesystem), args))
+        # Then the remaining files in the root directory (config, metadata,
+        # etc.)
+        fs_utils.copy_files([
+            item['name']
+            for item in self.fs.listdir(self.partition_properties.dir,
+                                        detail=True) if item['type'] == 'file'
+        ], target, self.fs, filesystem)
+        return Collection.from_config(target,
+                                      mode=mode,
+                                      filesystem=filesystem,
+                                      synchronizer=synchronizer)
