@@ -297,7 +297,7 @@ def _rm(fs: fsspec.AbstractFileSystem, dirname: str) -> None:
             fs.rm(dirname, recursive=True)
             fs.invalidate_cache(dirname)
             if not fs.exists(dirname):
-                break
+                return
         except OSError:
             fs.invalidate_cache(dirname)
         time.sleep(1)
