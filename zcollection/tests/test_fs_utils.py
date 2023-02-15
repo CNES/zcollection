@@ -86,12 +86,12 @@ def test_fs_walk(tmpdir):
 
     fs = fs_utils.get_fs()
     listing1 = []
-    for root, _dirs, files in fs_utils.fs_walk(fs, tmpdir, sort=True):
+    for root, _dirs, files in fs_utils.fs_walk(fs, str(tmpdir), sort=True):
         for item in files:
             listing1.append(fs.sep.join([root, item]))
 
     listing2 = []
-    for root, _dirs, files in fs_utils.fs_walk(fs, tmpdir, sort=False):
+    for root, _dirs, files in fs_utils.fs_walk(fs, str(tmpdir), sort=False):
         for item in files:
             listing2.append(fs.sep.join([root, item]))
 
@@ -141,10 +141,14 @@ def test_copy_file(tmpdir):
 
 def test_copy_files(tmpdir):
     """Test the copy files across different file systems."""
+    source = tmpdir / 'source'
+    target = tmpdir / 'target'
     fs_source = fsspec.filesystem('file')
-    fs_target = fsspec.filesystem('memory')
+    fs_target = fsspec.filesystem('file')
+    fs_source.mkdir(source)
+    fs_target.mkdir(target)
     paths = [
-        str(tmpdir / item) for item in (
+        str(source / item) for item in (
             'foo.txt',
             'bar.txt',
             'baz.txt',
@@ -153,9 +157,9 @@ def test_copy_files(tmpdir):
     for path in paths:
         with fs_source.open(path, mode='w', encoding='utf-8') as stream:
             stream.write(TEXT)
-    fs_utils.copy_files(paths, '/', fs_source, fs_target)
+    fs_utils.copy_files(paths, str(target), fs_source, fs_target)
 
-    for item in fs_target.ls('/'):
+    for item in fs_target.ls(str(target)):
         assert fs_target.cat(item).decode('utf-8') == TEXT
 
 
