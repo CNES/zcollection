@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import Iterator, Sequence
 import os
-import posixpath
 
 import fsspec
 
@@ -146,7 +145,7 @@ def copy_files(
     tuple(
         map(
             lambda path: copy_file(path,
-                                   join_path(target, posixpath.basename(path)),
+                                   join_path(target, os.path.basename(path)),
                                    fs_source, fs_target), source))
 
 
@@ -173,10 +172,9 @@ def copy_tree(
     for root, dirs, files in tuple(fs_walk(fs_source, source)):
         for name in files:
             source_path = join_path(root, name)
-            copy_file(
-                source_path,
-                join_path(target, posixpath.relpath(source_path, source)),
-                fs_source, fs_target)
+            copy_file(source_path,
+                      join_path(target, os.path.relpath(source_path, source)),
+                      fs_source, fs_target)
         for source_path in dirs:
             fs_target.mkdir(
-                join_path(target, posixpath.relpath(source_path, source)))
+                join_path(target, os.path.relpath(source_path, source)))

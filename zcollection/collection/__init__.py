@@ -26,8 +26,8 @@ import io
 import itertools
 import json
 import logging
+import os
 import pathlib
-import posixpath
 import types
 
 import dask.bag.core
@@ -1072,7 +1072,7 @@ class Collection:
                 [(item,
                   fs_utils.join_path(
                       target,
-                      posixpath.relpath(item, self.partition_properties.dir)))
+                      os.path.relpath(item, self.partition_properties.dir)))
                  for item in self.partitions(filters=filters)], npartitions))
         # Copy the selected partitions
         partial = functools.partial(fs_utils.copy_tree,

@@ -6,6 +6,7 @@
 Testing utilities
 =================
 """
+import os
 import pathlib
 import platform
 
@@ -110,17 +111,18 @@ def test_normalize_path():
     if platform.system() == 'Windows':
         # fsspec returns only the drive letter for the root path.
         root = root.replace('\\', '')
-        sep = '\\'
-    else:
-        sep = '/'
 
-    assert fs_utils.normalize_path(fs, '/') == root
-    assert fs_utils.normalize_path(fs, './foo') == str(
-        pathlib.Path('.').resolve() / 'foo')
+    def istrcmp(str1, str2):
+        """Case insensitive string comparison."""
+        return str1.lower() == str2.lower()
+
+    assert istrcmp(fs_utils.normalize_path(fs, '/'), root)
+    assert istrcmp(fs_utils.normalize_path(fs, './foo'),
+                   str(pathlib.Path('.').resolve() / 'foo'))
 
     fs = fsspec.filesystem('memory')
-    assert fs_utils.normalize_path(fs, '/') == sep
-    assert fs_utils.normalize_path(fs, './foo') == f'{sep}foo'
+    assert fs_utils.normalize_path(fs, '/') == os.path.sep
+    assert fs_utils.normalize_path(fs, './foo') == f'{os.path.sep}foo'
 
     fs = fsspec.filesystem('s3')
     assert fs_utils.normalize_path(fs, '/') == '/'
@@ -132,8 +134,8 @@ def test_copy_file(tmpdir):
     fs_source = fsspec.filesystem('file')
     fs_target = fsspec.filesystem('memory')
     path = str(tmpdir / 'foo.txt')
-    with fs_source.open(path, mode='w', encoding='utf-8') as stream:
-        stream.write(TEXT)
+    with fs_source.open(path, mode='wb', encoding='utf-8') as stream:
+        stream.write(TEXT.encode('utf-8'))
     fs_utils.copy_file(path, 'foo.txt', fs_source, fs_target)
 
     assert fs_target.cat('foo.txt').decode('utf-8') == TEXT
@@ -155,8 +157,8 @@ def test_copy_files(tmpdir):
         )
     ]
     for path in paths:
-        with fs_source.open(path, mode='w', encoding='utf-8') as stream:
-            stream.write(TEXT)
+        with fs_source.open(path, mode='wb', encoding='utf-8') as stream:
+            stream.write(TEXT.encode('utf-8'))
     fs_utils.copy_files(paths, str(target), fs_source, fs_target)
 
     for item in fs_target.ls(str(target)):
@@ -198,9 +200,9 @@ def test_copy_tree(tmpdir):
         fs_source.makedirs(path, exist_ok=False)
         if 'day' in item[-1]:
             with fs_source.open(fs_utils.join_path(path, f'file_{ix}.txt'),
-                                mode='w',
+                                mode='wb',
                                 encoding='utf-8') as stream:
-                stream.write(TEXT)
+                stream.write(TEXT.encode('utf-8'))
 
     fs_utils.copy_tree(str(tmpdir), '/tree', fs_source, fs_target)
 
@@ -209,6 +211,7 @@ def test_copy_tree(tmpdir):
             assert fs_target.cat(fs_utils.join_path(
                 root, item)).decode('utf-8') == TEXT
         for item in dirs:
+            item = item.replace('\\', '/')
             parts = item.replace('/tree/', '').split(fs_target.sep)
             assert parts[0] == 'year=2014'
             if len(parts) > 1:
