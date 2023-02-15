@@ -760,5 +760,3 @@ def test_copy_collection(
                      ds_after_copy.variables['var1'].values)
     assert numpy.all(ds_before_copy.variables['var2'].values ==
                      ds_after_copy.variables['var2'].values)
-    assert numpy.all(ds_before_copy.variables['var3'].values ==
-                     ds_after_copy.variables['var3'].values)

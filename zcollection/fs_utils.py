@@ -170,10 +170,13 @@ def copy_tree(
     if fs_target.exists(target):
         raise ValueError(f'Target {target} already exists')
     fs_target.mkdir(target)
-    for root, _, files in fs_walk(fs_source, source):
+    for root, dirs, files in tuple(fs_walk(fs_source, source)):
         for name in files:
             source_path = join_path(root, name)
             copy_file(
                 source_path,
                 join_path(target, posixpath.relpath(source_path, source)),
                 fs_source, fs_target)
+        for source_path in dirs:
+            fs_target.mkdir(
+                join_path(target, posixpath.relpath(source_path, source)))

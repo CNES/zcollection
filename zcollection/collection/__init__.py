@@ -21,6 +21,7 @@ from typing import (
     Union,
 )
 import datetime
+import functools
 import io
 import itertools
 import json
@@ -1066,17 +1067,23 @@ class Collection:
                                                              cores_only=True)
 
         # Sequence of (source, target) to copy split in npartitions
-        args = dask_utils.split_sequence(
-            [(item,
-              fs_utils.join_path(
-                  target, posixpath.relpath(item,
-                                            self.partition_properties.dir)))
-             for item in self.partitions(filters=filters)], npartitions)
+        args = tuple(
+            dask_utils.split_sequence(
+                [(item,
+                  fs_utils.join_path(
+                      target,
+                      posixpath.relpath(item, self.partition_properties.dir)))
+                 for item in self.partitions(filters=filters)], npartitions))
         # Copy the selected partitions
-        client.gather(
-            client.map(
-                lambda source, target: fs_utils.copy_tree(
-                    source, target, self.fs, filesystem), args))
+        partial = functools.partial(fs_utils.copy_tree,
+                                    fs_source=self.fs,
+                                    fs_target=filesystem)
+
+        def worker_task(args: Sequence[tuple[str, str]]) -> None:
+            """Function call on each worker to copy the partitions."""
+            tuple(map(lambda arg: partial(*arg), args))
+
+        client.gather(client.map(worker_task, args))
         # Then the remaining files in the root directory (config, metadata,
         # etc.)
         fs_utils.copy_files([
