@@ -409,6 +409,7 @@ class Indexer:
         columns: QueryDict,
         *,
         logical_op: str | None = None,
+        mask: pyarrow.ChunkedArray | None = None,
         only_partition_keys: bool = True,
     ) -> collection.Indexer:
         """Query the index.
@@ -417,6 +418,7 @@ class Indexer:
             columns: Dictionary of columns to query.
             logical_op: The logical operator to use. Can be "and", "and_not",
                 "invert", "or", "xor". Defaults to "and".
+            mask: An optional mask to apply to the table before querying.
             only_partition_keys: If True, only the partition keys are kept.
 
         Returns:
@@ -432,7 +434,7 @@ class Indexer:
             logical_op += '_'
         function = getattr(pyarrow.compute, logical_op)
 
-        if not set(self._type) & set(columns.keys()):
+        if columns and (not set(self._type) & set(columns.keys())):
             raise ValueError(
                 f'Invalid column names: {", ".join(columns.keys())}')
 
@@ -444,15 +446,19 @@ class Indexer:
 
         table = self._read()
 
+        if mask is not None:
+            table = table.filter(mask)
+
         # pylint: disable=no-member
-        mask = functools.reduce(function, [
-            pyarrow.compute.is_in(table[name],
-                                  value_set=pyarrow.array(
-                                      value, type=self._type[name]))
-            for name, value in values.items()
-        ])
-        # pylint: disable=no-member
-        table = table.filter(mask)
+        if values:
+            mask = functools.reduce(function, [
+                pyarrow.compute.is_in(table[name],
+                                      value_set=pyarrow.array(
+                                          value, type=self._type[name]))
+                for name, value in values.items()
+            ])
+            # pylint: disable=no-member
+            table = table.filter(mask)
 
         # The selected table is sorted by the partitioning keys and the slice.
         table = pyarrow.compute.take(
