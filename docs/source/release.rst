@@ -1,6 +1,10 @@
 Release notes
 =============
 
+2023.3.0
+--------
+* Apply an optional mask before querying an indexer.
+
 2023.2.0
 --------
 * Synchronize the view with the reference collection.
