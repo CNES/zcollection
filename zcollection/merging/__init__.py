@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol
 import random
+import shutil
 
 import fsspec
 import zarr.storage
@@ -59,6 +60,30 @@ class MergeCallable(Protocol):
     #: pylint: enable=too-few-public-methods,duplicate-code
 
 
+def _rename(
+    fs: fsspec.AbstractFileSystem,
+    path1: str,
+    path2: str,
+):
+    """Rename a directory on a file system.
+
+    Args:
+        fs: The file system.
+        path1: The path to rename.
+        path2: The new path.
+    """
+    if isinstance(fs, fsspec.implementations.local.LocalFileSystem):
+        # fspec implementation of the local file system copy the directory
+        # to reaname it. This is not efficient. So we use the shutil
+        # implementation to rename the directory.
+        shutil.rmtree(path2, ignore_errors=True)
+        shutil.move(path1, path2)
+        return
+
+    fs.rm(path1, recursive=True)
+    fs.rename(path2, path1, recursive=True)
+
+
 def _update_fs(
     dirname: str,
     ds: dataset.Dataset,
@@ -91,7 +116,7 @@ def _update_fs(
         raise
 
     # Rename the existing entry on the file system
-    fs.rename(temp, dirname, recursive=True)
+    _rename(fs, temp, dirname)
 
 
 def perform(
