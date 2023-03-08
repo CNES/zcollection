@@ -16,6 +16,7 @@ from .cluster import dask_client, dask_cluster
 # pylint: disable=unused-import
 
 
+@pytest.mark.filterwarnings('ignore:Port \\d+ is already in use.*')
 def test_get_client_with_no_cluster():
     """Test the get_client function with no cluster."""
     with dask_utils.get_client() as client:
