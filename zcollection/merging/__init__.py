@@ -62,26 +62,27 @@ class MergeCallable(Protocol):
 
 def _rename(
     fs: fsspec.AbstractFileSystem,
-    path1: str,
-    path2: str,
+    source: str,
+    dest: str,
 ):
     """Rename a directory on a file system.
 
     Args:
         fs: The file system.
-        path1: The path to rename.
-        path2: The new path.
+        source: The source directory.
+        dest: The destination directory.
     """
     if isinstance(fs, fsspec.implementations.local.LocalFileSystem):
-        # fspec implementation of the local file system copy the directory
-        # to reaname it. This is not efficient. So we use the shutil
+        # fspec implementation of the local file system, copy the source
+        # directory to the destination directory and remove the source
+        # directory. This is not efficient. So we use the shutil
         # implementation to rename the directory.
-        shutil.rmtree(path2, ignore_errors=True)
-        shutil.move(path1, path2)
+        shutil.rmtree(dest, ignore_errors=True)
+        shutil.move(source, dest)
         return
 
-    fs.rm(path1, recursive=True)
-    fs.rename(path2, path1, recursive=True)
+    fs.rm(dest, recursive=True)
+    fs.mv(source, dest, recursive=True)
 
 
 def _update_fs(
