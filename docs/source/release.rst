@@ -1,6 +1,10 @@
 Release notes
 =============
 
+2023.3.1
+--------
+* Fixed a compatibility issue with fspec 2023.3.0.
+
 2023.3.0
 --------
 * Apply an optional mask before querying an indexer.
