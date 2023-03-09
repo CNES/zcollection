@@ -198,18 +198,18 @@ def write_zarr_group(
         parallel: Whether to write the variables in parallel using Dask.
     """
     bag = dask.bag.core.from_sequence(ds.variables.items())
-    futures = dask.distributed.futures_of(
-        bag.map(
-            write_zarr_variable,
-            dirname=dirname,
-            fs=fs,
-        ).persist())
+    bag_map = bag.map(
+        write_zarr_variable,
+        dirname=dirname,
+        fs=fs,
+    )
 
     if parallel:
+        futures = dask.distributed.futures_of(bag_map.persist())
         with dask.distributed.worker_client() as client:
             execute_transaction(client, synchronizer, futures)
     else:
-        dask.base.compute(*futures, scheduler=dask.local.get_sync)
+        bag_map.compute(scheduler=dask.local.get_sync)
     _write_meta(ds, dirname, fs)
 
 
