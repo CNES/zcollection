@@ -85,6 +85,7 @@ def variables(
     """Return the variables defined in the dataset.
 
     Args:
+        metadata: Metadata dataset containing variables information.
         selected_variables: The variables to return. If None, all the
             variables are returned.
 
@@ -166,7 +167,6 @@ def _write_immutable_dataset(ds: dataset.Dataset, axis: str, path: str,
         axis: The partitioning axis.
         path: The path to the immutable dataset.
         fs: The file system that the partition is stored on.
-        synchronizer: The synchronizer to use.
     """
     immutable_dataset = ds.select_variables_by_dims((axis, ), predicate=False)
     assert len(immutable_dataset.variables) != 0, (
@@ -394,6 +394,7 @@ class Collection:
         *,
         merge_callable: merging.MergeCallable | None = None,
         npartitions: int | None = None,
+        validate: bool = False,
     ) -> None:
         """Insert a dataset into the collection.
 
@@ -404,8 +405,9 @@ class Collection:
                 None, the new partitioned data overwrites the existing
                 partitioned data.
             npartitions: The maximum number of partitions to process in
-                parallel. By default, all partitions are processed in parallel
-                in a single task.
+                parallel. By default, partitions are processed one by one.
+            validate: Whether to validate dataset metadata before insertion
+                or not.
 
         .. warning::
 
@@ -431,12 +433,17 @@ class Collection:
             variable = self.metadata.variables[item]
             ds.add_variable(variable)
 
+        if validate and not ds.metadata() == self.metadata:
+            raise ValueError(
+                "Provided dataset's metadata do not match the collection's ones"
+            )
+        ds = ds.set_for_insertion(ds=self.metadata)
         client = dask_utils.get_client()
 
         # If the dataset contains variables that should not be partitioned.
         if self._immutable is not None:
 
-            # On the first call, we store the immutable variables in a
+            # On the first call, we store the immutable variables in
             # a directory located at the root of the collection.
             if not self.fs.exists(self._immutable):
                 _write_immutable_dataset(ds, self.axis, self._immutable,
@@ -455,13 +462,13 @@ class Collection:
                 raise ValueError('The number of partitions must be positive')
             npartitions = len(partitions) // npartitions + 1
 
-        scattared_ds = client.scatter(ds)
+        scattered_ds = client.scatter(ds)
         for sequence in dask_utils.split_sequence(partitions, npartitions):
             futures = [
                 dask_utils.simple_delayed('insert', _insert)(
                     partition,  # type: ignore[arg-type]
                     axis=self.axis,
-                    ds=scattared_ds,
+                    ds=scattered_ds,
                     fs=self.fs,
                     merge_callable=merge_callable,
                     partitioning_properties=self.partition_properties,
@@ -671,7 +678,7 @@ class Collection:
                 To get more information on the predicate, see the
                 documentation of the :meth:`partitions` method.
             partition_size: The length of each bag partition.
-            npartitions: The number of desired bag partitions.
+            npartition: The number of desired bag partitions.
             selected_variables: A list of variables to retain from the
                 collection. If None, all variables are kept.
             **kwargs: The keyword arguments to pass to the function.
@@ -773,7 +780,7 @@ class Collection:
             ...     keys["month"] == 3 and keys["day"] % 2 == 0)
         """
         client = dask_utils.get_client()
-        arrays: list[dataset.Dataset] = []
+        arrays: list[dataset.Dataset]
         if indexer is None:
             selected_partitions = tuple(self.partitions(filters=filters))
             if len(selected_partitions) == 0:
@@ -815,6 +822,7 @@ class Collection:
             array.merge(
                 storage.open_zarr_group(self._immutable, self.fs,
                                         selected_variables))
+        array.fill_attrs(ds=self.metadata)
         return array
 
     # pylint: disable=method-hidden
@@ -844,7 +852,7 @@ class Collection:
                 dataset the selected partition.
             filters: The expression used to filter the partitions to update.
             partition_size: The number of partitions to update in a single
-                batch. By default 1, which is the same as to map the function to
+                batch. By default, 1 which is the same as to map the function to
                 each partition. Otherwise, the function is called on a batch of
                 partitions.
             selected_variables: A list of variables to load from the collection.
@@ -887,10 +895,10 @@ class Collection:
         _LOGGER.info('Updating of the (%s) variable in the collection',
                      ', '.join(repr(item) for item in func_result))
         client = dask_utils.get_client()
-        batchs = dask_utils.split_sequence(
+        batches = dask_utils.split_sequence(
             tuple(self.partitions(filters=filters)), partition_size
             or dask_utils.dask_workers(client, cores_only=True))
-        awaitables = client.map(local_func, tuple(batchs), key=func.__name__)
+        awaitables = client.map(local_func, tuple(batches), key=func.__name__)
         storage.execute_transaction(client, self.synchronizer, awaitables)
 
     def _bag_from_partitions(

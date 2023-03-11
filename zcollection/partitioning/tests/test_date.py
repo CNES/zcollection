@@ -192,7 +192,13 @@ def test_values_must_be_datetime64(
     # pylint: enable=protected-access
 
 
-def test_listing_partition():
+@pytest.mark.parametrize(
+    'start, end, step, path_generator',
+    [(('2000-01-01', 'D'), ('2000-02-01', 'D'), (1, 'D'), lambda item:
+      (f'year={item.year}', f'month={item.month:02d}', f'day={item.day:02d}')),
+     (('2000', 'Y'), ('2005', 'Y'), (1, 'Y'), lambda item:
+      (f'year={item.year}', ))])
+def test_listing_partition(tmpdir, start, end, step, path_generator):
     """Test the listing of the partitions."""
     fs = fsspec.filesystem('memory')
     variables = [
@@ -295,29 +301,27 @@ def test_listing_partition():
         'wind_speed_rad',
         'x_factor',
     ]
-    start = numpy.datetime64('2000-01-01', 'D')
-    end = numpy.datetime64('2000-02-01', 'D')
-    delta = numpy.timedelta64(1, 'D')
-
-    root = '/zcollection'
+    root = f'{tmpdir}/zcollection'
     fs.mkdir(root)
     fs.open(fs.sep.join((root, '.zcollection')), 'w').close()
 
+    partitioning = Date(('dates', ), step[1])
+
+    start = numpy.datetime64(*start)
+    end = numpy.datetime64(*end)
+    step = numpy.timedelta64(*step)
+
     expected = []
-    for date in numpy.arange(start, end, delta):
+    for date in numpy.arange(start, end, step):
         item = date.item()
-        partition = fs.sep.join(
-            (root, f'year={item.year}', f'month={item.month:02d}',
-             f'day={item.day:02d}'))
+        partition = fs.sep.join((root, *path_generator(item)))
         expected.append(partition)
         fs.mkdirs(partition)
 
         _ = {fs.mkdirs(fs.sep.join((partition, item))) for item in variables}
-
         _ = {
             fs.open(fs.sep.join((partition, item)), 'w').close()
             for item in ['.zattrs', '.zgroup', '.zmetadata']
         }
 
-    partitioning = Date(('dates', ), 'D')
     assert expected == list(partitioning.list_partitions(fs, root))

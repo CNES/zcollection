@@ -505,6 +505,23 @@ class Variable:
             raise ValueError('data shape does not match variable dimensions')
         return result
 
+    def set_for_insertion(self) -> Variable:
+        """Create a new variable without any attribute.
+
+        Returns:
+            The variable.
+        """
+        return _new_variable(self.name, self.array, self.dimensions, tuple(),
+                             self.compressor, self.fill_value, self.filters)
+
+    def fill_attrs(self, var: meta.Variable):
+        """Fill the variable attributes using the provided metadata.
+
+        Args:
+            var: Variable's metadata.
+        """
+        self.attrs = var.attrs
+
     def rename(self, name: str) -> Variable:
         """Rename the variable.
 

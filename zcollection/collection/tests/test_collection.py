@@ -543,6 +543,46 @@ def test_insert_failed(
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+def test_insert_validation(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+):
+    """Test the insertion of a dataset with metadata validation."""
+    tested_fs = request.getfixturevalue(arg)
+    ds = next(create_test_dataset_with_fillvalue())
+
+    zcollection = convenience.create_collection(
+        axis='time',
+        ds=ds,
+        partition_handler=partitioning.Date(('time', ), 'M'),
+        partition_base_dir=str(tested_fs.collection),
+        filesystem=tested_fs.fs)
+    zcollection.insert(ds, merge_callable=merging.merge_time_series)
+
+    ds = next(create_test_dataset_with_fillvalue())
+
+    # Inserting a dataset containing valid attributes
+    zcollection.insert(ds, validate=True)
+
+    # Inserting a dataset containing an invalid attributes
+    ds = next(create_test_dataset_with_fillvalue())
+    ds.attrs = (meta.Attribute('invalid', 1), )
+
+    with pytest.raises(ValueError):
+        zcollection.insert(ds, validate=True)
+
+    # Inserting a dataset containing variables with invalid attributes
+    ds = next(create_test_dataset_with_fillvalue())
+
+    for var in ds.variables.values():
+        var.attrs = (meta.Attribute('invalid', 1), )
+
+    with pytest.raises(ValueError):
+        zcollection.insert(ds, validate=True)
+
+
+@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
 def test_map_partition(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
