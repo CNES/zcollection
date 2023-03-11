@@ -193,12 +193,12 @@ def test_values_must_be_datetime64(
 
 
 @pytest.mark.parametrize(
-    "start, end, step, xyz",
+    'start, end, step, path_generator',
     [(('2000-01-01', 'D'), ('2000-02-01', 'D'), (1, 'D'), lambda item:
       (f'year={item.year}', f'month={item.month:02d}', f'day={item.day:02d}')),
      (('2000', 'Y'), ('2005', 'Y'), (1, 'Y'), lambda item:
       (f'year={item.year}', ))])
-def test_listing_partition(tmpdir, start, end, step, xyz):
+def test_listing_partition(tmpdir, start, end, step, path_generator):
     """Test the listing of the partitions."""
     fs = fsspec.filesystem('memory')
     variables = [
@@ -314,7 +314,7 @@ def test_listing_partition(tmpdir, start, end, step, xyz):
     expected = []
     for date in numpy.arange(start, end, step):
         item = date.item()
-        partition = fs.sep.join((root, *xyz(item)))
+        partition = fs.sep.join((root, *path_generator(item)))
         expected.append(partition)
         fs.mkdirs(partition)
 

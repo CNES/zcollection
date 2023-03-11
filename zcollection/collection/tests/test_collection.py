@@ -548,8 +548,7 @@ def test_insert_validation(
     arg,
     request,
 ):
-    """Test the insertion of a dataset with metadata validation.
-    """
+    """Test the insertion of a dataset with metadata validation."""
     tested_fs = request.getfixturevalue(arg)
     ds = next(create_test_dataset_with_fillvalue())
 

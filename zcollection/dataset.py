@@ -358,8 +358,8 @@ class Dataset:
         Args:
             ds: Dataset metadata.
         """
-        self.attrs = ds.attrs
-        [
+        self.attrs = tuple(ds.attrs)
+        _ = [
             var.fill_attrs(ds.variables[name])
             for name, var in self.variables.items()
         ]
