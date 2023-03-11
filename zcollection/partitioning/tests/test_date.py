@@ -8,6 +8,8 @@ Test partitioning by date.
 """
 from typing import Iterator
 import pickle
+import random
+import string
 
 import dask.array.core
 import dask.local
@@ -198,7 +200,7 @@ def test_values_must_be_datetime64(
       (f'year={item.year}', f'month={item.month:02d}', f'day={item.day:02d}')),
      (('2000', 'Y'), ('2005', 'Y'), (1, 'Y'), lambda item:
       (f'year={item.year}', ))])
-def test_listing_partition(tmpdir, start, end, step, path_generator):
+def test_listing_partition(start, end, step, path_generator):
     """Test the listing of the partitions."""
     fs = fsspec.filesystem('memory')
     variables = [
@@ -301,7 +303,7 @@ def test_listing_partition(tmpdir, start, end, step, path_generator):
         'wind_speed_rad',
         'x_factor',
     ]
-    root = f'{tmpdir}/zcollection'
+    root = '/' + ''.join(random.choices(string.ascii_letters, k=10))
     fs.mkdir(root)
     fs.open(fs.sep.join((root, '.zcollection')), 'w').close()
 
