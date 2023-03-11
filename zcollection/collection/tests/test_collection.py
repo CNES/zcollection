@@ -513,10 +513,7 @@ def test_insert_with_missing_variable(
             ds.variables['var1'].fill_value))
 
 
-# For the moment, this test does not work with S3: minio creates a
-# directory for the file "time"; therefore zarr cannot detect an invalid
-# array.
-@pytest.mark.parametrize('arg', ['local_fs'])  # , "s3_fs"])
+@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
 def test_insert_failed(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
@@ -531,14 +528,21 @@ def test_insert_failed(
                                         str(tested_fs.collection),
                                         filesystem=tested_fs.fs)
     partitions = list(zcollection.partitioning.split_dataset(ds, 'time'))
-    one_directory = zcollection.fs.sep.join(
-        (zcollection.partition_properties.dir, ) + partitions[0][0])
-    zcollection.fs.makedirs(one_directory, exist_ok=False)
-    zcollection.fs.touch(zcollection.fs.sep.join((one_directory, 'time')))
 
-    with pytest.raises((KeyError, OSError)):
+    # Create a file in the directory where the dataset should be written. This
+    # should cause the insertion to fail.
+    sep = zcollection.fs.sep
+    one_directory = sep.join((zcollection.partition_properties.dir, ) +
+                             partitions[0][0])
+    zcollection.fs.makedirs(sep.join(one_directory.split(sep)[:-1]))
+    zcollection.fs.touch(one_directory)
+
+    with pytest.raises((OSError, ValueError)):
         zcollection.insert(ds)
 
+    # Because the insert failed, the partition that was supposed to be created
+    # was deleted.
+    assert not zcollection.fs.exists(one_directory)
     zcollection.insert(ds)
 
 
