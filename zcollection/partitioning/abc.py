@@ -141,10 +141,6 @@ def list_partitions(
     if depth == -1:
         return StopIteration()
 
-    if depth == 0:
-        yield from sorted(fs.ls(path, detail=False))
-        return StopIteration()
-
     if root:
         folders = map(
             lambda info: info['name'].rstrip('/'),
@@ -154,12 +150,20 @@ def list_partitions(
                 fs.ls(path, detail=True),
             ),
         )
+        # If we're partitioning at top level (example: by year)
+        if depth == 0:
+            yield from sorted(folders)
+            return StopIteration()
 
         for pathname in sorted(folders):
             yield from list_partitions(fs,
                                        pathname,
                                        depth=depth - 1,
                                        root=False)
+        return StopIteration()
+
+    if depth == 0:
+        yield from sorted(fs.ls(path, detail=False))
         return StopIteration()
 
     for item in sorted(fs.ls(path, detail=False)):

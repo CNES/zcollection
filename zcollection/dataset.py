@@ -269,7 +269,7 @@ class Dataset:
 
     @staticmethod
     def from_xarray(ds: xarray.Dataset) -> Dataset:
-        """Create a new dataset from an xarray dataset.
+        """Create a new dataset from a xarray dataset.
 
         Args:
             ds: Dataset to convert.
@@ -324,6 +324,8 @@ class Dataset:
         their data.
 
         Args:
+            variables: Variables to include (default to all dataset's
+                variables).
             **kwargs: Additional parameters are passed through the function
                 :py:func:`dask.compute`.
 
@@ -335,6 +337,32 @@ class Dataset:
                        for key, value in self.variables.items()
                        if key in variables)
         return dict(dask.base.compute(*arrays, **kwargs))
+
+    def set_for_insertion(self, ds: meta.Dataset) -> Dataset:
+        """Create a new dataset ready to be inserted into a collection.
+
+        Args:
+            ds: Dataset metadata.
+
+        Returns:
+            New dataset.
+        """
+        return Dataset(variables=[
+            var.set_for_insertion() for var in self.variables.values()
+        ])
+
+    def fill_attrs(self, ds: meta.Dataset):
+        """Fill the dataset and its variables attributes using the provided
+        metadata.
+
+        Args:
+            ds: Dataset metadata.
+        """
+        self.attrs = ds.attrs
+        [
+            var.fill_attrs(ds.variables[name])
+            for name, var in self.variables.items()
+        ]
 
     def isel(self, slices: dict[str, Any]) -> Dataset:
         """Return a new dataset with each array indexed along the specified
@@ -391,7 +419,7 @@ class Dataset:
         arrays = tuple(item.array for item in self.variables.values())
         arrays = dask.base.compute(*arrays, **kwargs)
 
-        # Don't use _duplicate here because we because we want to transform
+        # Don't use _duplicate here because we want to transform
         # the numpy arrays computed by dask into dask arrays
         variables = [
             self.variables[k].duplicate(array)
@@ -455,7 +483,6 @@ class Dataset:
         Raises:
             ValueError: If the provided sequence of datasets is empty.
         """
-        variables = []
         if not isinstance(other, Iterable):
             other = [other]
         if not other:
