@@ -14,7 +14,6 @@ import json
 import logging
 
 import dask.array.core
-import dask.bag.core
 import dask.base
 from dask.delayed import Delayed as dask_Delayed
 import dask.distributed
@@ -197,19 +196,18 @@ def write_zarr_group(
         synchronizer: The instance handling access to critical resources.
         parallel: Whether to write the variables in parallel using Dask.
     """
-    bag = dask.bag.core.from_sequence(ds.variables.items())
-    bag_map = bag.map(
-        write_zarr_variable,
-        dirname=dirname,
-        fs=fs,
-    )
-
     if parallel:
-        futures = dask.distributed.futures_of(bag_map.persist())
         with dask.distributed.worker_client() as client:
+            iterables = [(name, client.scatter(variable))
+                         for name, variable in ds.variables.items()]
+            futures = client.map(write_zarr_variable,
+                                 iterables,
+                                 dirname=dirname,
+                                 fs=fs)
             execute_transaction(client, synchronizer, futures)
     else:
-        bag_map.compute(scheduler=dask.local.get_sync)
+        for name, variable in ds.variables.items():
+            write_zarr_variable((name, variable), dirname, fs)
     _write_meta(ds, dirname, fs)
 
 
