@@ -24,7 +24,7 @@ import xarray
 
 from . import meta, variable
 from .compressed_array import CompressedArray
-from .meta import Attribute
+from .meta import Attribute, Dimension
 from .type_hints import ArrayLike, NDArray, NDMaskedArray
 from .variable import (
     Variable,
@@ -105,16 +105,22 @@ class Dataset:
     Attrs:
         variables: Dataset variables
         attrs: Dataset attributes
+        chunks: Chunk size for each dimension.
+        block_size_limit: Maximum size (in bytes) of a
+            block/chunk of variable's data.
 
     Raises:
         ValueError: If the dataset contains variables with the same dimensions
             but with different values.
     """
-    __slots__ = ('dimensions', 'variables', 'attrs')
+    __slots__ = ('dimensions', 'variables', 'attrs', 'chunks',
+                 'block_size_limit')
 
     def __init__(self,
                  variables: Iterable[variable.Variable],
-                 attrs: Sequence[Attribute] | None = None) -> None:
+                 attrs: Sequence[Attribute] | None = None,
+                 chunks: Sequence[Dimension] | None = None,
+                 block_size_limit: int | None = None) -> None:
         #: The list of global attributes on this dataset
         self.attrs = tuple(attrs or [])
         #: Dataset contents as dict of
@@ -137,6 +143,15 @@ class Dataset:
                 raise ValueError(
                     f'variable {var.name} has missing dimensions') from exc
 
+        #: Maximum data chunk size
+        self.block_size_limit = block_size_limit or meta.BLOCK_SIZE_LIMIT
+
+        #: Chunk size for each dimension
+        chunks = chunks or []
+        self.chunks: dict[str,
+                          int | str] = {dim.name: dim.value
+                                        for dim in chunks}
+
     def __len__(self) -> int:
         return len(self.variables)
 
@@ -158,13 +173,15 @@ class Dataset:
         return self.variables[name]
 
     def __getstate__(self) -> tuple[Any, ...]:
-        return self.dimensions, self.variables, self.attrs
+        return (self.dimensions, self.variables, self.attrs, self.chunks,
+                self.block_size_limit)
 
     def __setstate__(
         self, state: tuple[dict[str, int], OrderedDict[str, variable.Variable],
-                           tuple[Attribute, ...]]
+                           tuple[Attribute, ...], dict[str, int | str], int]
     ) -> None:
-        self.dimensions, self.variables, self.attrs = state
+        (self.dimensions, self.variables, self.attrs, self.chunks,
+         self.block_size_limit) = state
 
     @property
     def nbytes(self) -> int:
@@ -174,6 +191,15 @@ class Dataset:
             The total number of bytes in the dataset
         """
         return sum(item.nbytes for item in self.variables.values())
+
+    @property
+    def dims_chunk(self) -> Sequence[Dimension]:
+        """Dimensions chunk size as a tuple.
+
+        Returns:
+            Dimensions associated to their chunk size.
+        """
+        return tuple(Dimension(*item) for item in self.chunks.items())
 
     def add_variable(self,
                      var: meta.Variable,
@@ -250,10 +276,10 @@ class Dataset:
         """
         if isinstance(names, str) or not isinstance(names, Iterable):
             names = [names]
-        return Dataset(
-            [self.variables[name] for name in names],
-            self.attrs,
-        )
+        return Dataset([self.variables[name] for name in names],
+                       self.attrs,
+                       chunks=self.dims_chunk,
+                       block_size_limit=self.block_size_limit)
 
     def metadata(self) -> meta.Dataset:
         """Get the dataset metadata.
@@ -261,11 +287,13 @@ class Dataset:
         Returns:
             Dataset metadata
         """
-        return meta.Dataset(dimensions=tuple(self.dimensions.keys()),
-                            variables=tuple(
-                                item.metadata()
-                                for item in self.variables.values()),
-                            attrs=self.attrs)
+        return meta.Dataset(
+            dimensions=tuple(self.dimensions.keys()),
+            variables=tuple(item.metadata()
+                            for item in self.variables.values()),
+            attrs=self.attrs,
+            chunks=tuple(Dimension(*item) for item in self.chunks.items()),
+            block_size_limit=self.block_size_limit)
 
     @staticmethod
     def from_xarray(ds: xarray.Dataset) -> Dataset:
@@ -298,14 +326,14 @@ class Dataset:
                 for item in ds.attrs.items()))
 
     def to_xarray(self, **kwargs) -> xarray.Dataset:
-        """Convert the dataset to an xarray dataset.
+        """Convert the dataset to a xarray dataset.
 
         Args:
             **kwargs: Additional parameters are passed through the function
                 :py:func:`xarray.conventions.decode_cf_variables`.
 
         Returns:
-            Dataset as an xarray dataset.
+            Dataset as a xarray dataset.
         """
         data_vars = collections.OrderedDict(
             (name, var.to_xarray()) for name, var in self.variables.items())
@@ -347,9 +375,13 @@ class Dataset:
         Returns:
             New dataset.
         """
-        return Dataset(variables=[
-            var.set_for_insertion() for var in self.variables.values()
-        ])
+        return Dataset(
+            variables=[
+                var.set_for_insertion() for var in self.variables.values()
+            ],
+            chunks=ds.chunks,
+            block_size_limit=ds.block_size_limit,
+        )
 
     def fill_attrs(self, ds: meta.Dataset):
         """Fill the dataset and its variables attributes using the provided
@@ -383,7 +415,10 @@ class Dataset:
             var.isel(tuple(slices.get(dim, default) for dim in var.dimensions))
             for var in self.variables.values()
         ]
-        return Dataset(variables=variables, attrs=self.attrs)
+        return Dataset(variables=variables,
+                       attrs=self.attrs,
+                       chunks=self.dims_chunk,
+                       block_size_limit=self.block_size_limit)
 
     def delete(self, indexer: slice | Sequence[int], axis: str) -> Dataset:
         """Return a new dataset without the data selected by the provided
@@ -404,7 +439,10 @@ class Dataset:
                                            var.dimensions.index(axis)))
             for var in self.variables.values()
         ]
-        return Dataset(variables=variables, attrs=self.attrs)
+        return Dataset(variables=variables,
+                       attrs=self.attrs,
+                       chunks=self.dims_chunk,
+                       block_size_limit=self.block_size_limit)
 
     def compute(self, **kwargs) -> Dataset:
         """Compute the dataset variables.
@@ -425,7 +463,10 @@ class Dataset:
             self.variables[k].duplicate(array)
             for k, array in zip(self.variables, arrays)
         ]
-        return Dataset(variables=variables, attrs=self.attrs)
+        return Dataset(variables=variables,
+                       attrs=self.attrs,
+                       chunks=self.dims_chunk,
+                       block_size_limit=self.block_size_limit)
 
     def rechunk(self, **kwargs) -> Dataset:
         """Rechunk the dataset.
@@ -440,7 +481,10 @@ class Dataset:
         .. seealso:: :py:func:`dask.array.rechunk`
         """
         variables = [var.rechunk(**kwargs) for var in self.variables.values()]
-        return Dataset(variables=variables, attrs=self.attrs)
+        return Dataset(variables=variables,
+                       attrs=self.attrs,
+                       chunks=self.dims_chunk,
+                       block_size_limit=self.block_size_limit)
 
     def persist(
         self,
@@ -491,7 +535,10 @@ class Dataset:
             var.concat(tuple(item.variables[name] for item in other), dim)
             for name, var in self.variables.items()
         ]
-        return Dataset(variables=variables, attrs=self.attrs)
+        return Dataset(variables=variables,
+                       attrs=self.attrs,
+                       chunks=self.dims_chunk,
+                       block_size_limit=self.block_size_limit)
 
     def merge(self, other: Dataset) -> None:
         """Merge the provided dataset into this dataset.
@@ -553,7 +600,10 @@ class Dataset:
 
         set_of_dims = set(dims)
         variables = [var for var in self.variables.values() if condition(var)]
-        return Dataset(variables=variables, attrs=self.attrs)
+        return Dataset(variables=variables,
+                       attrs=self.attrs,
+                       chunks=self.dims_chunk,
+                       block_size_limit=self.block_size_limit)
 
     def to_zarr(self,
                 path: str,

@@ -6,12 +6,14 @@
 Testing the storage module.
 ===========================
 """
+import math
 import platform
 import time
 
 import dask.array
 import dask.distributed
 import numpy
+import pytest
 import zarr
 
 from .. import dataset, storage, sync
@@ -117,23 +119,106 @@ def test_write_attrs(
     assert local_fs.exists(str(local_fs.root.joinpath('var', storage.ZATTRS)))
 
 
+@pytest.mark.parametrize('chunks, chunks_expected', [
+    (None, (1024, 1024)),
+    ({
+        'x': -1,
+        'y': -1
+    }, (1024, 1024)),
+    ({
+        'x': -1,
+        'y': 1024
+    }, (1024, 1024)),
+    ({
+        'x': 1024,
+        'y': -1
+    }, (1024, 1024)),
+    ({
+        'x': 'auto',
+        'y': 'auto'
+    }, (1024, 1024)),
+    ({
+        'x': 512,
+        'y': 'auto'
+    }, (512, 1024)),
+    ({
+        'x': 256,
+        'y': 512
+    }, (256, 512)),
+    ({
+        'x': 53,
+        'y': 826
+    }, (53, 826)),
+])
 def test_write_variable(
         local_fs,  # pylint: disable=redefined-outer-name
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
+        chunks,
+        chunks_expected):
     """Test the write_variable function."""
-    var = create_variable((1024, 1024))
-    storage.write_zarr_variable(('var', var), str(local_fs.root), local_fs.fs)
+    dim_size = 1024
+    var = create_variable((dim_size, dim_size))
+    storage.write_zarr_variable(('var', var),
+                                dirname=str(local_fs.root),
+                                fs=local_fs.fs,
+                                chunks=chunks)
     path = str(local_fs.root.joinpath('var'))
     assert local_fs.exists(path)
     mapper = local_fs.get_mapper(path)
     zarray = zarr.open(mapper)
-    assert zarray.shape == (1024, 1024)
+    assert zarray.shape == (dim_size, dim_size)
     assert numpy.all(zarray[...] == 1)
+
+    chunks_number = math.ceil(dim_size / chunks_expected[0]) * math.ceil(
+        dim_size / chunks_expected[1])
+    assert zarray.chunks == chunks_expected
+    assert zarray.nchunks == chunks_number
 
     other = storage.open_zarr_array(zarray, 'var')  # type:ignore
     assert other.metadata() == var.metadata()
     assert numpy.all(other.values == var.values)
+
+
+@pytest.mark.parametrize(
+    'block_size, chunks, blocks_number',
+    [
+        # Everything fit in one block
+        (1048756, None, 1),
+        # x and y are 'locked', only one block
+        (1048756 // 20, {
+            'x': -1,
+            'y': -1
+        }, 1),
+        # Half block size, 2 blocks split along x
+        (1048756 // 2, {
+            'x': 512,
+            'y': 'auto'
+        }, 2),
+        # Half block size, 2 blocks split along y
+        (1048756 // 2, {
+            'x': 1024,
+            'y': 'auto'
+        }, 2),
+    ])
+def test_write_variable_block_size_limit(
+        local_fs,  # pylint: disable=redefined-outer-name
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        block_size,
+        chunks,
+        blocks_number):
+    """Test the write_variable function with different block size limits."""
+    dim_size = 1024
+    var = create_variable((dim_size, dim_size))
+    storage.write_zarr_variable(('var', var),
+                                dirname=str(local_fs.root),
+                                fs=local_fs.fs,
+                                chunks=chunks,
+                                block_size_limit=block_size)
+    path = str(local_fs.root.joinpath('var'))
+    mapper = local_fs.get_mapper(path)
+    zarray = zarr.open(mapper)
+
+    assert zarray.nchunks == blocks_number
 
 
 def test_write_zarr_group(
@@ -159,26 +244,53 @@ def test_write_zarr_group(
     assert other.metadata() == ds.metadata()
 
 
+@pytest.mark.parametrize('chunks, chunks_expected', [
+    (None, (1024, 1024)),
+    ({
+        'x': -1,
+        'y': 1024
+    }, (1024, 1024)),
+    ({
+        'x': 'auto',
+        'y': 'auto'
+    }, (1024, 1024)),
+    ({
+        'x': 512,
+        'y': 'auto'
+    }, (512, 1024)),
+])
 def test_update_zarr_array(
-        local_fs,  # pylint: disable=redefined-outer-name
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    local_fs,  # pylint: disable=redefined-outer-name
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    chunks,
+    chunks_expected,
 ):
     """Test the update_zarr_array function."""
-    var = create_variable((1024, 1024), fill_value=10)
-    storage.write_zarr_variable(('var', var), str(local_fs.root), local_fs.fs)
+    dim_size = 1024
+
+    var = create_variable((dim_size, dim_size), fill_value=10)
+    storage.write_zarr_variable(('var', var),
+                                str(local_fs.root),
+                                local_fs.fs,
+                                chunks=chunks)
     path = str(local_fs.root.joinpath('var'))
-    storage.update_zarr_array(path, dask.array.full((1024, 1024), 2),
+    storage.update_zarr_array(path, dask.array.full((dim_size, dim_size), 2),
                               local_fs.fs)
     mapper = local_fs.get_mapper(path)
     zarray = zarr.open(mapper)
     assert numpy.all(zarray[...] == 2)
-    data = numpy.full((1024, 1024), 2)
+    data = numpy.full((dim_size, dim_size), 2)
     data[:, 0] = 5
     data = numpy.ma.masked_equal(data, 5)
     assert numpy.all(data[:, 0].mask)
     storage.update_zarr_array(path, data, local_fs.fs)
     zarray = zarr.open(mapper)
     assert numpy.all(zarray[:, 0] == 10)
+
+    chunks_number = math.ceil(dim_size / chunks_expected[0]) * math.ceil(
+        dim_size / chunks_expected[1])
+    assert zarray.chunks == chunks_expected
+    assert zarray.nchunks == chunks_number
 
 
 def test_del_zarr_array(
@@ -193,17 +305,54 @@ def test_del_zarr_array(
     assert not local_fs.exists(str(local_fs.root.joinpath('var')))
 
 
+@pytest.mark.parametrize('chunks, chunks_expected', [
+    (None, (1024, 1024)),
+    ({
+        'x': 1024,
+        'y': 1024
+    }, (1024, 1024)),
+    ({
+        'x': -1,
+        'y': -1
+    }, (1024, 1024)),
+    ({
+        'x': 512,
+        'y': 256
+    }, (512, 256)),
+    ({
+        'x': -1,
+        'y': 128
+    }, (1024, 128)),
+])
 def test_add_zarr_array(
-        local_fs,  # pylint: disable=redefined-outer-name
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    local_fs,  # pylint: disable=redefined-outer-name
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    chunks,
+    chunks_expected,
 ):
     """Test the add_zarr_array function."""
-    var = create_variable((1024, 1024), fill_value=10)
+    dim_size = 1024
+    var = create_variable((dim_size, dim_size), fill_value=10)
     root = str(local_fs.root)
     var.name = 'var1'
-    storage.write_zarr_variable(('var1', var), root, local_fs.fs)
+    storage.write_zarr_variable(('var1', var),
+                                root,
+                                local_fs.fs,
+                                chunks=chunks)
     var.name = 'var2'
-    storage.add_zarr_array(root, var.metadata(), 'var1', local_fs.fs)
+    storage.add_zarr_array(root,
+                           var.metadata(),
+                           'var1',
+                           local_fs.fs,
+                           chunks=chunks)
     mapper = local_fs.get_mapper(root)
     zarray = zarr.open(mapper)
     assert numpy.all(zarray['var2'][...] == 10)
+
+    chunks_number = math.ceil(dim_size / chunks_expected[0]) * math.ceil(
+        dim_size / chunks_expected[1])
+
+    for var in ['var1', 'var2']:
+        var_array = zarray[var]
+        assert var_array.chunks == chunks_expected
+        assert var_array.nchunks == chunks_number

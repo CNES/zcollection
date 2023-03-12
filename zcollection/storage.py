@@ -26,9 +26,6 @@ from . import dataset, meta, sync
 from .fs_utils import join_path
 from .type_hints import ArrayLike
 
-#: Block size limit used with dask arrays. (128 MiB)
-BLOCK_SIZE_LIMIT = 134217728
-
 #: Name of the attribute storing the names of the dimensions of an array.
 DIMENSIONS = '_ARRAY_DIMENSIONS'
 
@@ -125,6 +122,8 @@ def write_zarr_variable(
     args: tuple[str, dataset.Variable],
     dirname: str,
     fs: fsspec.AbstractFileSystem,
+    chunks: dict[str, int | str] | None = None,
+    block_size_limit: int | None = None,
 ) -> None:
     """Write a variable to a Zarr dataset.
 
@@ -134,15 +133,25 @@ def write_zarr_variable(
             - The variable to write.
         dirname: The target directory.
         fs: The file system on which the Zarr dataset is stored.
+        chunks: Chunk size for each dimension.
+        block_size_limit: Maximum size (in bytes) of a block/chunk.
     """
     name, variable = args
     kwargs = {'filters': variable.filters}
     data = variable.array
 
-    chunks = {ix: -1 for ix in range(variable.ndim)}
+    block_size_limit = block_size_limit or meta.BLOCK_SIZE_LIMIT
+    var_chunks: dict[int, int | str]
+    if chunks is None:
+        var_chunks = {ix: -1 for ix in range(variable.ndim)}
+    else:
+        var_chunks = {
+            ix: chunks.get(dim, -1)
+            for ix, dim in enumerate(variable.dimensions)
+        }
     data = data.rechunk(
-        chunks,  # type: ignore[arg-type]
-        block_size_limit=BLOCK_SIZE_LIMIT,
+        var_chunks,  # type: ignore[arg-type]
+        block_size_limit=block_size_limit,
     )
 
     _to_zarr(array=data,
@@ -203,11 +212,17 @@ def write_zarr_group(
             futures = client.map(write_zarr_variable,
                                  iterables,
                                  dirname=dirname,
-                                 fs=fs)
+                                 fs=fs,
+                                 chunks=ds.chunks,
+                                 block_size_limit=ds.block_size_limit)
             execute_transaction(client, synchronizer, futures)
     else:
         for name, variable in ds.variables.items():
-            write_zarr_variable((name, variable), dirname, fs)
+            write_zarr_variable((name, variable),
+                                dirname,
+                                fs,
+                                chunks=ds.chunks,
+                                block_size_limit=ds.block_size_limit)
     _write_meta(ds, dirname, fs)
 
 
@@ -311,6 +326,7 @@ def add_zarr_array(
     variable: meta.Variable,
     template: str,
     fs: fsspec.AbstractFileSystem,
+    chunks: dict[str, int | str] | None = None,
 ) -> None:
     """Add a variable to a Zarr dataset.
 
@@ -319,14 +335,23 @@ def add_zarr_array(
         variable: The variable to add.
         template: The name of the template variable.
         fs: The file system that the dataset is stored on.
+        chunks: Chunk size for each dimension.
     """
     _LOGGER.debug('Adding variable %r to Zarr dataset %r', variable.name,
                   dirname)
     shape = zarr.open(fs.get_mapper(join_path(dirname, template))).shape
+
+    if chunks is None:
+        var_chunks = shape
+    else:
+        var_chunks = tuple(
+            chunks.get(dim, shape[ix])
+            for ix, dim in enumerate(variable.dimensions))
+
     store = fs.get_mapper(join_path(dirname, variable.name))
     zarr.create(
         shape,
-        chunks=True,
+        chunks=var_chunks,
         dtype=variable.dtype,
         compressor=variable.compressor,  # type: ignore[arg-type]
         fill_value=variable.fill_value,  # type: ignore[arg-type]

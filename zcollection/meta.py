@@ -18,6 +18,9 @@ import zarr.meta
 
 from .type_hints import DTypeLike
 
+#: Block size limit used with dask arrays. (128 MiB)
+BLOCK_SIZE_LIMIT = 134217728
+
 
 class Pair(abc.ABC):
     """Handle pair key/value.
@@ -211,13 +214,19 @@ class Dataset:
         dimensions: dimensions of the dataset
         variables: variables of the dataset
         attrs: attributes of the dataset
+        chunks: chunk size for each dimension.
+        block_size_limit: maximum size (in bytes) of a
+            block/chunk of variable's data.
     """
-    __slots__ = ('dimensions', 'variables', 'attrs')
+    __slots__ = ('dimensions', 'variables', 'attrs', 'chunks',
+                 'block_size_limit')
 
     def __init__(self,
                  dimensions: Sequence[str],
                  variables: Sequence[Variable],
-                 attrs: Sequence[Attribute] | None = None) -> None:
+                 attrs: Sequence[Attribute] | None = None,
+                 chunks: Sequence[Dimension] | None = None,
+                 block_size_limit: int | None = None) -> None:
         #: Dimensions of the dataset.
         self.dimensions = tuple(dimensions)
 
@@ -226,6 +235,12 @@ class Dataset:
 
         #: Attributes of the dataset.
         self.attrs = attrs or []
+
+        #: Maximum data chunk size
+        self.block_size_limit = block_size_limit or BLOCK_SIZE_LIMIT
+
+        #: Chunk size for each dimension
+        self.chunks = chunks or []
 
     def select_variables(
         self,
@@ -272,6 +287,10 @@ class Dataset:
             'variables':
             tuple(self.variables[name].get_config()
                   for name in sorted(self.variables)),
+            'chunks':
+            sorted(item.get_config() for item in self.chunks),
+            'block_size_limit':
+            self.block_size_limit
         }
 
     def add_variable(self, variable: Variable) -> None:
@@ -314,6 +333,10 @@ class Dataset:
             variables=tuple(
                 Variable.from_config(item) for item in data['variables']),
             attrs=tuple(Attribute.from_config(item) for item in data['attrs']),
+            chunks=tuple(
+                Dimension.from_config(item)
+                for item in data.get('chunks', [])),
+            block_size_limit=data.get('block_size_limit'),
         )
 
     def search_same_dimensions_as(self, variable: Variable) -> Variable:

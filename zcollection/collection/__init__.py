@@ -991,10 +991,11 @@ class Collection:
         self._write_config()
 
         template = self.metadata.search_same_dimensions_as(variable)
+        chunks = {dim.name: dim.value for dim in self.metadata.chunks}
         try:
             bag = self._bag_from_partitions()
-            bag.map(storage.add_zarr_array, variable, template.name,
-                    self.fs).compute()
+            bag.map(storage.add_zarr_array, variable, template.name, self.fs,
+                    chunks).compute()
         except Exception:
             self.drop_variable(variable.name)
             raise
