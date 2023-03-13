@@ -8,10 +8,12 @@ Test of the collections
 """
 from __future__ import annotations
 
+import concurrent.futures
 import datetime
 import io
 
 import dask.array.core
+import dask.distributed
 import fsspec
 import numpy
 import pytest
@@ -25,6 +27,7 @@ from ... import (
     meta,
     partitioning,
     storage,
+    sync,
 )
 # pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster
@@ -97,6 +100,7 @@ def test_insert(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
     request,
+    tmpdir,
 ):
     """Test the insertion of a dataset."""
     tested_fs = request.getfixturevalue(arg)
@@ -106,7 +110,9 @@ def test_insert(
                                         ds.metadata(),
                                         partitioning.Date(('time', ), 'D'),
                                         str(tested_fs.collection),
-                                        filesystem=tested_fs.fs)
+                                        filesystem=tested_fs.fs,
+                                        synchronizer=sync.ProcessSync(
+                                            str(tmpdir / 'lock.lck')))
 
     indices = numpy.arange(0, len(datasets))
     numpy.random.shuffle(indices)
@@ -804,3 +810,58 @@ def test_copy_collection(
                      ds_after_copy.variables['var1'].values)
     assert numpy.all(ds_before_copy.variables['var2'].values ==
                      ds_after_copy.variables['var2'].values)
+
+
+def _insert(ds: dataset.Dataset, base_dir: str, lock_file: str,
+            scheduler_file: str):
+    client = dask.distributed.Client(scheduler_file=scheduler_file)
+    zcollection = collection.Collection.from_config(
+        base_dir, mode='w', synchronizer=sync.ProcessSync(lock_file))
+    zcollection.insert(ds, merge_callable=merging.merge_time_series)
+
+
+# pylint: disable=too-many-statements
+def test_concurrent_insert(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    tmpdir,
+):
+    """Test the insertion of a dataset."""
+    fs = fsspec.filesystem('file')
+    datasets = list(create_test_dataset())
+    ds = datasets[0]
+    lock_file = str(tmpdir / 'lock.lck')
+    synchronizer = sync.ProcessSync(lock_file)
+    base_dir = str(tmpdir / 'test')
+    zcollection = collection.Collection('time',
+                                        ds.metadata(),
+                                        partitioning.Date(('time', ), 'D'),
+                                        base_dir,
+                                        filesystem=fs,
+                                        synchronizer=synchronizer)
+
+    pool = concurrent.futures.ProcessPoolExecutor(max_workers=8)
+    futures = []
+
+    assert zcollection.is_locked() is False
+
+    indices = numpy.arange(0, len(datasets))
+    numpy.random.shuffle(indices)
+    for ix in indices:
+        futures.append(
+            pool.submit(_insert, datasets[ix], base_dir, lock_file,
+                        dask_client.scheduler_file))
+
+    def update(ds: dataset.Dataset, shift: int = 3):
+        """Update function used for this test."""
+        return dict(var2=ds.variables['var1'].values * -1 + shift)
+
+    launch_update = True
+    for item in concurrent.futures.as_completed(futures):
+        if launch_update:
+            zcollection.update(update)  # type: ignore
+            launch_update = False
+
+    data = zcollection.load()
+    assert data is not None
+    values = data.variables['time'].values
+    assert numpy.all(values == numpy.arange(START_DATE, END_DATE, DELTA))

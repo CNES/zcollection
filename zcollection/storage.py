@@ -46,6 +46,7 @@ def execute_transaction(
     client: dask.distributed.Client,
     synchronizer: sync.Sync,
     futures: Sequence[dask.distributed.Future | dask_Delayed],
+    **kwargs: Any,
 ) -> Any:
     """Execute a transaction in the collection.
 
@@ -53,6 +54,7 @@ def execute_transaction(
         client: The Dask client.
         synchronizer: The instance handling access to critical resources.
         futures: Lazy tasks to be done.
+        kwargs: Keyword arguments to pass to :func:`dask.distributed.compute`.
 
     Returns:
         The result of the transaction.
@@ -62,7 +64,7 @@ def execute_transaction(
     awaitables = []
     try:
         with synchronizer:
-            awaitables = client.compute(futures)
+            awaitables = client.compute(futures, **kwargs)
             return client.gather(awaitables)
     except:  # noqa: E722
         # Before throwing the exception, we wait until all future scheduled
