@@ -911,8 +911,9 @@ class Collection:
         batches = dask_utils.split_sequence(
             tuple(self.partitions(filters=filters)), partition_size
             or dask_utils.dask_workers(client, cores_only=True))
-        awaitables = client.map(local_func, tuple(batches), key=func.__name__)
-        storage.execute_transaction(client, self.synchronizer, awaitables)
+        storage.execute_transaction(
+            client, self.synchronizer,
+            client.map(local_func, tuple(batches), key=func.__name__))
 
     def _bag_from_partitions(
         self,
@@ -962,8 +963,11 @@ class Collection:
                 raise ValueError(
                     f'The variable {variable!r} is part of the immutable '
                     'dataset.')
+        client = dask_utils.get_client()
         bag = self._bag_from_partitions()
-        bag.map(storage.del_zarr_array, variable, self.fs).compute()
+        awaitables = dask.distributed.futures_of(
+            bag.map(storage.del_zarr_array, variable, self.fs).persist())
+        storage.execute_transaction(client, self.synchronizer, awaitables)
         del self.metadata.variables[variable]
         self._write_config()
 
@@ -1008,8 +1012,9 @@ class Collection:
         template = self.metadata.search_same_dimensions_as(variable)
         try:
             bag = self._bag_from_partitions()
-            futures = bag.map(storage.add_zarr_array, variable, template.name,
-                              self.fs).persist()
+            futures = dask.distributed.futures_of(
+                bag.map(storage.add_zarr_array, variable, template.name,
+                        self.fs).persist())
             storage.execute_transaction(client, self.synchronizer, futures)
         except Exception:
             self.drop_variable(variable.name)
