@@ -32,6 +32,9 @@ class ThrowError(sync.Sync):
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         ...
 
+    def is_locked(self) -> bool:
+        return False
+
 
 def test_update_fs(
         dask_client,  # pylint: disable=redefined-outer-name

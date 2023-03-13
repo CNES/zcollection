@@ -158,8 +158,13 @@ def _immutable_path(
             (partition_properties.dim, ), predicate=False) else None
 
 
-def _write_immutable_dataset(ds: dataset.Dataset, axis: str, path: str,
-                             fs: fsspec.AbstractFileSystem) -> None:
+def _write_immutable_dataset(
+    ds: dataset.Dataset,
+    axis: str,
+    path: str,
+    fs: fsspec.AbstractFileSystem,
+    synchronizer: sync.Sync,
+) -> None:
     """Write the immutable dataset.
 
     Args:
@@ -176,7 +181,7 @@ def _write_immutable_dataset(ds: dataset.Dataset, axis: str, path: str,
     storage.write_zarr_group(immutable_dataset,
                              path,
                              fs,
-                             sync.NoSync(),
+                             synchronizer,
                              parallel=False)
 
 
@@ -329,6 +334,10 @@ class Collection:
         """Return True if the collection is read-only."""
         return self.mode == 'r'
 
+    def is_locked(self) -> bool:
+        """Return True if the collection is locked."""
+        return self.synchronizer.is_locked()
+
     @classmethod
     def from_config(
         cls,
@@ -447,7 +456,7 @@ class Collection:
             # a directory located at the root of the collection.
             if not self.fs.exists(self._immutable):
                 _write_immutable_dataset(ds, self.axis, self._immutable,
-                                         self.fs)
+                                         self.fs, self.synchronizer)
 
             # Remove the variables that should not be partitioned.
             ds = ds.select_variables_by_dims((self.axis, ))
@@ -474,7 +483,10 @@ class Collection:
                     partitioning_properties=self.partition_properties,
                 ) for partition in sequence
             ]
-            client.compute(futures, sync=True)
+            storage.execute_transaction(client,
+                                        self.synchronizer,
+                                        futures,
+                                        sync=True)
 
     def _relative_path(self, path: str) -> str:
         """Return the relative path to the collection.
