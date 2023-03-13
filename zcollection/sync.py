@@ -6,6 +6,7 @@
 Synchronization of concurrent accesses
 ======================================
 """
+from typing import Callable
 import abc
 import threading
 
@@ -61,6 +62,9 @@ class ProcessSync(Sync):
             self.lock.release()
         except threading.ThreadError:
             pass
+
+    def __reduce__(self) -> str | tuple[Callable, tuple[str]]:
+        return (ProcessSync, (self.lock.path, ))
 
     def is_locked(self) -> bool:
         """Returns True if the lock is acquired, False otherwise."""
