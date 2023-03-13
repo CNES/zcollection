@@ -886,11 +886,12 @@ class Collection:
             one_partition = next(self.partitions(filters=filters))
         except StopIteration:
             return
-        func_result = try_infer_callable(
-            func,
-            storage.open_zarr_group(one_partition, self.fs,
-                                    selected_variables),
-            self.partition_properties.dim, *args, **kwargs)
+        with self.synchronizer:
+            ds = storage.open_zarr_group(one_partition, self.fs,
+                                         selected_variables)
+        func_result = try_infer_callable(func, ds,
+                                         self.partition_properties.dim, *args,
+                                         **kwargs)
         unknown_variables = set(func_result) - set(
             self.metadata.variables.keys())
         if len(unknown_variables):
@@ -1002,12 +1003,15 @@ class Collection:
         self.metadata.add_variable(variable)
         self._write_config()
 
+        client = dask_utils.get_client()
+
         template = self.metadata.search_same_dimensions_as(variable)
         chunks = {dim.name: dim.value for dim in self.metadata.chunks}
         try:
             bag = self._bag_from_partitions()
-            bag.map(storage.add_zarr_array, variable, template.name, self.fs,
-                    chunks).compute()
+            futures = bag.map(storage.add_zarr_array, variable, template.name,
+                              self.fs, chunks).persist()
+            storage.execute_transaction(client, self.synchronizer, futures)
         except Exception:
             self.drop_variable(variable.name)
             raise
