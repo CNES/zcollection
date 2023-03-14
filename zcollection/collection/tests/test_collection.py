@@ -846,10 +846,10 @@ def test_concurrent_insert(
 
     indices = numpy.arange(0, len(datasets))
     numpy.random.shuffle(indices)
-    for ix in indices:
-        futures.append(
-            pool.submit(_insert, datasets[ix], base_dir, lock_file,
-                        dask_client.scheduler_file))
+    futures = [
+        pool.submit(_insert, datasets[ix], base_dir, lock_file,
+                    dask_client.scheduler_file) for ix in indices
+    ]
 
     def update(ds: dataset.Dataset, shift: int = 3):
         """Update function used for this test."""

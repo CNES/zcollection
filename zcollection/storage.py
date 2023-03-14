@@ -243,7 +243,7 @@ def open_zarr_group(
     """
     _LOGGER.debug('Opening Zarr group %r', dirname)
     store: zarr.Group = zarr.open_consolidated(  # type: ignore[arg-type]
-        fs.get_mapper(dirname), )
+        fs.get_mapper(dirname), mode='r')
     # Ignore unknown variables to retain.
     selected_variables = set(selected_variables) & set(
         store) if selected_variables is not None else set(store)

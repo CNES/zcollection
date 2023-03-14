@@ -503,12 +503,15 @@ class Collection:
     def partitions(
         self,
         *,
+        lock: bool = False,
         filters: PartitionFilter = None,
         relative: bool = False,
     ) -> Iterator[str]:
         """List the partitions of the collection.
 
         Args:
+            lock: Whether to lock the collection or not to avoid listing
+                partitions while the collection is being modified.
             filters: The predicate used to filter the partitions to load. If
                 the predicate is a string, it is a valid python expression to
                 filter the partitions, using the partitioning scheme as
@@ -537,7 +540,14 @@ class Collection:
         base_dir = self.partition_properties.dir
         sep = self.fs.sep
 
-        for item in self.partitioning.list_partitions(self.fs, base_dir):
+        if lock:
+            with self.synchronizer:
+                partitions: Iterable[str] = tuple(
+                    self.partitioning.list_partitions(self.fs, base_dir))
+        else:
+            partitions = self.partitioning.list_partitions(self.fs, base_dir)
+
+        for item in partitions:
             if item == self._immutable:
                 continue
             # Filtering on partition names
@@ -571,7 +581,7 @@ class Collection:
         """
         now = datetime.datetime.now()
         client = dask_utils.get_client()
-        folders = list(self.partitions(filters=filters))
+        folders = list(self.partitions(filters=filters, lock=True))
 
         def is_created_before(path: str) -> bool:
             created = self.fs.created(path)
@@ -908,9 +918,11 @@ class Collection:
         _LOGGER.info('Updating of the (%s) variable in the collection',
                      ', '.join(repr(item) for item in func_result))
         client = dask_utils.get_client()
+
         batches = dask_utils.split_sequence(
-            tuple(self.partitions(filters=filters)), partition_size
+            tuple(self.partitions(filters=filters, lock=True)), partition_size
             or dask_utils.dask_workers(client, cores_only=True))
+
         storage.execute_transaction(
             client, self.synchronizer,
             client.map(local_func, tuple(batches), key=func.__name__))
@@ -918,16 +930,19 @@ class Collection:
     def _bag_from_partitions(
         self,
         filters: PartitionFilter | None = None,
+        **kwargs,
     ) -> dask.bag.core.Bag:
         """Return a dask bag from the partitions.
 
         Args:
             filters: The predicate used to filter the partitions to load.
+            kwargs: The keyword arguments to pass to the method
+                :meth:`partitions`.
 
         Returns:
             The dask bag.
         """
-        partitions = [*self.partitions(filters=filters)]
+        partitions = [*self.partitions(filters=filters, **kwargs)]
         return dask.bag.core.from_sequence(seq=partitions,
                                            npartitions=len(partitions))
 
@@ -964,7 +979,7 @@ class Collection:
                     f'The variable {variable!r} is part of the immutable '
                     'dataset.')
         client = dask_utils.get_client()
-        bag = self._bag_from_partitions()
+        bag = self._bag_from_partitions(lock=True)
         awaitables = dask.distributed.futures_of(
             bag.map(storage.del_zarr_array, variable, self.fs).persist())
         storage.execute_transaction(client, self.synchronizer, awaitables)
@@ -1011,7 +1026,7 @@ class Collection:
 
         template = self.metadata.search_same_dimensions_as(variable)
         try:
-            bag = self._bag_from_partitions()
+            bag = self._bag_from_partitions(lock=True)
             futures = dask.distributed.futures_of(
                 bag.map(storage.add_zarr_array, variable, template.name,
                         self.fs).persist())
