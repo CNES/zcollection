@@ -922,7 +922,6 @@ class Collection:
         batches = dask_utils.split_sequence(
             tuple(self.partitions(filters=filters, lock=True)), partition_size
             or dask_utils.dask_workers(client, cores_only=True))
-
         storage.execute_transaction(
             client, self.synchronizer,
             client.map(local_func, tuple(batches), key=func.__name__))
@@ -1025,11 +1024,12 @@ class Collection:
         client = dask_utils.get_client()
 
         template = self.metadata.search_same_dimensions_as(variable)
+        chunks = {dim.name: dim.value for dim in self.metadata.chunks}
         try:
             bag = self._bag_from_partitions(lock=True)
             futures = dask.distributed.futures_of(
                 bag.map(storage.add_zarr_array, variable, template.name,
-                        self.fs).persist())
+                        self.fs, chunks).persist())
             storage.execute_transaction(client, self.synchronizer, futures)
         except Exception:
             self.drop_variable(variable.name)
