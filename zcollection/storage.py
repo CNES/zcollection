@@ -142,15 +142,16 @@ def write_zarr_variable(
     kwargs = {'filters': variable.filters}
     data = variable.array
 
+    # If the user has not specified a chunk size, we use the default one.
+    # Otherwise, we use the user's choice.
     block_size_limit = block_size_limit or meta.BLOCK_SIZE_LIMIT
-    var_chunks: dict[int, int | str]
-    if chunks is None:
-        var_chunks = {ix: -1 for ix in range(variable.ndim)}
-    else:
-        var_chunks = {
-            ix: chunks.get(dim, -1)
-            for ix, dim in enumerate(variable.dimensions)
-        }
+    var_chunks: dict[int, int | str] = {
+        ix: -1
+        for ix in range(variable.ndim)
+    } if chunks is None else {
+        ix: chunks.get(dim, -1)
+        for ix, dim in enumerate(variable.dimensions)
+    }
     data = data.rechunk(
         var_chunks,  # type: ignore[arg-type]
         block_size_limit=block_size_limit,
@@ -258,7 +259,7 @@ def open_zarr_group(
     """
     _LOGGER.debug('Opening Zarr group %r', dirname)
     store: zarr.Group = zarr.open_consolidated(  # type: ignore[arg-type]
-        fs.get_mapper(dirname), )
+        fs.get_mapper(dirname), mode='r')
     # Ignore unknown variables to retain.
     selected_variables = set(selected_variables) & set(
         store) if selected_variables is not None else set(store)
@@ -343,12 +344,9 @@ def add_zarr_array(
                   dirname)
     shape = zarr.open(fs.get_mapper(join_path(dirname, template))).shape
 
-    if chunks is None:
-        var_chunks = shape
-    else:
-        var_chunks = tuple(
-            chunks.get(dim, shape[ix])
-            for ix, dim in enumerate(variable.dimensions))
+    var_chunks = shape if chunks is None else tuple(
+        chunks.get(dim, shape[ix])
+        for ix, dim in enumerate(variable.dimensions))
 
     store = fs.get_mapper(join_path(dirname, variable.name))
     zarr.create(
