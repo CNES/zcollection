@@ -9,6 +9,7 @@ View on a reference collection.
 from __future__ import annotations
 
 from typing import Any, ClassVar, Iterable, Iterator
+import copy
 import json
 import logging
 import pathlib
@@ -384,6 +385,9 @@ class View:
             if arrays:
                 array = array.concat(arrays,
                                      self.view_ref.partition_properties.dim)
+            metadata: meta.Dataset = copy.deepcopy(self.view_ref.metadata)
+            metadata.variables.update(self.metadata.variables.items())
+            array.fill_attrs(metadata)
             return array
         return None
 

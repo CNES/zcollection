@@ -82,6 +82,10 @@ def test_view(
     ds = instance.load(selected_variables=('var3', ))
     assert ds is not None
     assert tuple(ds.variables) == ('var3', )
+    assert 'var3' in ds.metadata().variables.keys()
+
+    # The metadata of the reference collection is not modified.
+    assert 'var3' not in instance.view_ref.metadata.variables.keys()
 
     # Loading a non existing variable.
     ds = instance.load(selected_variables=('var55', ))
