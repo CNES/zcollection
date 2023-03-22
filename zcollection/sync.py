@@ -29,6 +29,7 @@ class Sync(abc.ABC):  # pragma: no cover
 
     @abc.abstractmethod
     def is_locked(self) -> bool:
+        """Returns True if the lock is acquired, False otherwise."""
         ...
 
 
@@ -65,8 +66,8 @@ class ProcessSync(Sync):
         except threading.ThreadError:
             pass
 
-    def __reduce__(self) -> str | tuple[Callable, tuple[str]]:
-        return (ProcessSync, (self.lock.path, ))
+    def __reduce__(self) -> tuple[Callable, tuple[str]]:
+        return (ProcessSync, (str(self.lock.path), ))
 
     def is_locked(self) -> bool:
         """Returns True if the lock is acquired, False otherwise."""
