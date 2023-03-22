@@ -32,6 +32,20 @@ from .type_hints import ArrayLike, NDArray, NDMaskedArray
 GETTER = dask.array.core.getter
 
 
+class ModifiedVariableError(RuntimeError):
+    """Raised when a variable has been modified since is was initialized."""
+
+    def __str__(self) -> str:
+        """Get the string representation of the exception.
+
+        Returns:
+            The string representation of the exception.
+        """
+        return ('You tried to access the data of a variable that has been '
+                'modified since its initialization. Try to re-load the '
+                'dataset.')
+
+
 def _dimensions_repr(dimensions: dict[str, int]) -> str:
     """Get the string representation of the dimensions.
 
@@ -427,7 +441,15 @@ class Variable:
             **kwargs: Keyword arguments passed to
                 :meth:`dask.array.Array.compute`.
         """
-        (values, ) = dask.base.compute(self.array, traverse=False, **kwargs)
+        try:
+            (values, ) = dask.base.compute(self.array,
+                                           traverse=False,
+                                           **kwargs)
+        except ValueError as exc:
+            msg = str(exc)
+            if 'cannot reshape' in msg or 'buffer too small' in msg:
+                raise ModifiedVariableError() from exc
+            raise
         return values if self.fill_value is None else numpy.ma.masked_equal(
             values, self.fill_value)
 

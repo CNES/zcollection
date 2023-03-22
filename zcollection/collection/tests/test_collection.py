@@ -28,6 +28,7 @@ from ... import (
     partitioning,
     storage,
     sync,
+    variable,
 )
 # pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster
@@ -865,3 +866,56 @@ def test_concurrent_insert(
     assert data is not None
     values = data.variables['time'].values
     assert numpy.all(values == numpy.arange(START_DATE, END_DATE, DELTA))
+
+
+def test_partition_modified(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        tmpdir):
+    """Test the loading of a variable that has been modified since its
+    creation."""
+    fs = fsspec.filesystem('file')
+    datasets = list(create_test_dataset())
+    ds = datasets[0]
+    base_dir = str(tmpdir / 'test')
+    zcollection = collection.Collection('time',
+                                        ds.metadata(),
+                                        partitioning.Date(('time', ), 'D'),
+                                        base_dir,
+                                        filesystem=fs)
+    zcollection.insert(ds)
+
+    last_month = zcollection.load(filters=lambda keys: keys['year'] == 2000 and
+                                  keys['month'] == 1 and keys['day'] == 16)
+    assert last_month is not None
+
+    ds = zcollection.load()
+    assert ds is not None
+
+    def new_shape(
+        var: variable.Variable,
+        selected_dim: str,
+        new_size: int,
+    ) -> tuple[int, ...]:
+        """Compute the new shape of a variable."""
+        return tuple(new_size if dim == selected_dim else size
+                     for dim, size in zip(var.dimensions, var.shape))
+
+    dim, size = 'num_lines', last_month.dimensions['num_lines'] * 25
+    last_month = dataset.Dataset([
+        variable.Variable(
+            name,
+            numpy.resize(var.array.compute(), new_shape(var, dim, size)),
+            var.dimensions,
+            var.attrs,
+            var.compressor,
+            var.fill_value,
+            var.filters,
+        ) for name, var in last_month.variables.items()
+    ])
+    zcollection.insert(last_month)
+
+    with pytest.raises(RuntimeError, match='Try to re-load'):
+        _ = ds['var2'].values
+
+    with pytest.raises(RuntimeError, match='Try to re-load'):
+        _ = ds['time'].values
