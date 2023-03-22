@@ -30,7 +30,6 @@ class Sync(abc.ABC):  # pragma: no cover
     @abc.abstractmethod
     def is_locked(self) -> bool:
         """Returns True if the lock is acquired, False otherwise."""
-        ...
 
 
 class NoSync(Sync):
