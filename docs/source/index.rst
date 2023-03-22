@@ -1,7 +1,7 @@
 ZCollection
 ===========
 
-This project is a Python library allowing to manipulate data splited into a
+This project is a Python library manipulating data split into a
 :py:class:`collection <zcollection.collection.Collection>` of groups stored in
 `Zarr format <https://zarr.readthedocs.io/en/stable/>`_.
 
