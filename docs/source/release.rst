@@ -1,6 +1,14 @@
 Release notes
 =============
 
+2023.3.2
+--------
+* Writing a partition with many variables is slow.
+* Writing metadata only in the collection's configuration.
+* Adding an inter-process lock
+* If a variable has been modified since its initialization, the library throws a
+  specific exception to warn the user.
+
 2023.3.1
 --------
 * Fixed a compatibility issue with fspec 2023.3.0.
