@@ -206,6 +206,15 @@ class Variable:
             filters,
         )
 
+    def set_for_insertion(self) -> Variable:
+        """Create a new variable without any attribute.
+
+        Returns:
+            The variable.
+        """
+        return Variable(self.name, self.dtype, self.dimensions, None,
+                        self.compressor, self.fill_value, self.filters)
+
 
 class Dataset:
     """Handle the metadata of a dataset.

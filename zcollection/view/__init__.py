@@ -269,6 +269,13 @@ class View:
 
         args = filter(lambda item: item[0] in existing_partitions,
                       self.view_ref.iterate_on_records(relative=True))
+
+        # Remove the attribute from the variable. The attribute will be added
+        # from the view metadata.
+        # Remove the attribute from the variable. The attribute will be added
+        # from the collection metadata.
+        variable = variable.set_for_insertion()
+
         try:
             storage.execute_transaction(
                 client, self.synchronizer,

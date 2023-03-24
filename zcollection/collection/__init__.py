@@ -1021,6 +1021,10 @@ class Collection:
         self.metadata.add_variable(variable)
         self._write_config()
 
+        # Remove the attribute from the variable. The attribute will be added
+        # from the collection metadata.
+        variable = variable.set_for_insertion()
+
         client = dask_utils.get_client()
 
         template = self.metadata.search_same_dimensions_as(variable)
