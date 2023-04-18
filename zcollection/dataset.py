@@ -22,18 +22,11 @@ import dask.threaded
 import fsspec
 import xarray
 
-from . import meta, variable
+from . import meta, representation, variable
 from .compressed_array import CompressedArray
 from .meta import Attribute, Dimension
 from .type_hints import ArrayLike, NDArray, NDMaskedArray
-from .variable import (
-    Variable,
-    _attributes_repr,
-    _calculate_column_width,
-    _dimensions_repr,
-    _new_variable,
-    _pretty_print,
-)
+from .variable import Variable
 
 
 def _dask_repr(array: dask.array.core.Array) -> str:
@@ -59,7 +52,7 @@ def _dataset_repr(ds: Dataset) -> str:
         The string representation of the dataset.
     """
     # Dimensions
-    dims_str = _dimensions_repr(ds.dimensions)
+    dims_str = representation.dimensions(ds.dimensions)
     lines = [
         f'<{ds.__module__}.{ds.__class__.__name__}>',
         f'  Dimensions: {dims_str}', 'Data variables:'
@@ -68,15 +61,17 @@ def _dataset_repr(ds: Dataset) -> str:
     if len(ds.variables) == 0:
         lines.append('    <empty>')
     else:
-        width = _calculate_column_width(ds.variables)
+        width = representation.calculate_column_width(ds.variables)
         for name, var in ds.variables.items():
             dims_str = f"({', '.join(map(str, var.dimensions))} "
             name_str = f'    {name:<{width}s} {dims_str} {var.dtype}'
-            lines.append(_pretty_print(f'{name_str}: {_dask_repr(var.array)}'))
+            lines.append(
+                representation.pretty_print(
+                    f'{name_str}: {_dask_repr(var.tableau)}'))
     # Attributes
     if len(ds.attrs):
         lines.append('  Attributes:')
-        lines += _attributes_repr(ds.attrs)
+        lines += representation.attributes(ds.attrs)
 
     return '\n'.join(lines)
 
