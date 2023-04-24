@@ -152,7 +152,7 @@ def resize(ds: zcollection.Dataset, dim: str,
                      for dim, size in zip(var.dimensions, var.shape))
 
     return zcollection.Dataset([
-        zcollection.Variable(
+        zcollection.DelayedArray(
             name,
             numpy.resize(var.array.compute(), new_shape(var, dim, size)),
             var.dimensions,

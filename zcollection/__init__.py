@@ -26,17 +26,19 @@ from .convenience import (
 )
 from .dataset import Dataset
 from .meta import Attribute
-from .variable import Variable
+from .variable import Array, DelayedArray, Variable
 from .version import __version__
 from .view import View, ViewReference
 
 __all__ = [
     '__version__',
+    'Array',
     'Attribute',
     'Collection',
     'create_collection',
     'create_view',
     'Dataset',
+    'DelayedArray',
     'Indexer',
     'MapCallable',
     'merging',

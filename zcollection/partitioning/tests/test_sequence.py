@@ -126,9 +126,11 @@ def test_multiple_sequence(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
     """Test the creation of a sequence with multiple variables."""
-    arrays = dict(_a=numpy.array([], dtype='i8'),
-                  _b=numpy.array([], dtype='i8'),
-                  _c=numpy.array([], dtype='i8'))
+    arrays = {
+        '_a': numpy.array([], dtype='i8'),
+        '_b': numpy.array([], dtype='i8'),
+        '_c': numpy.array([], dtype='i8')
+    }
     for _a in range(5):
         for _b in range(5):
             arrays['_a'] = numpy.concatenate(
@@ -138,13 +140,15 @@ def test_multiple_sequence(
             arrays['_c'] = numpy.concatenate(
                 (arrays['_c'], numpy.arange(5, dtype='i8')))
     partitioning = Sequence(('_a', '_b', '_c'))
-    variables: dict[str, dask.array.core.Array] = dict(
-        _a=dask.array.core.from_array(arrays['_a'],
-                                      chunks=(10, )),  # type: ignore[arg-type]
-        _b=dask.array.core.from_array(arrays['_b'],
-                                      chunks=(10, )),  # type: ignore[arg-type]
-        _c=dask.array.core.from_array(arrays['_c'],
-                                      chunks=(10, )))  # type: ignore[arg-type]
+    variables: dict[str, dask.array.core.Array] = {
+        '_a':
+        dask.array.core.from_array(arrays['_a'],
+                                   chunks=(10, )),  # type: ignore[arg-type]
+        '_b':
+        dask.array.core.from_array(arrays['_b'],
+                                   chunks=(10, )),  # type: ignore[arg-type]
+        '_c': dask.array.core.from_array(arrays['_c'], chunks=(10, ))
+    }  # type: ignore[arg-type]
     _a = 0
     _b = 0
     _c = 0
