@@ -14,20 +14,32 @@ import numpy
 import pytest
 import zarr
 
-from .. import meta, variable
+from .. import delayed_array
+from ... import meta
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_client, dask_cluster
+from ...tests.cluster import dask_client, dask_cluster
 
 # pylint enable=unused-import
 
+# def test_maybe_truncate():
+#     """Test the truncation of a string to a given length."""
+#     data = list(range(1000))
+#     # pylint: disable=protected-access
+#     assert variable._maybe_truncate(data, 10) == '[0, 1, ...'
+#     assert variable._maybe_truncate(data, len(str(data))) == str(data)
+#     # pylint: enable=protected-access
 
-def test_maybe_truncate():
-    """Test the truncation of a string to a given length."""
-    data = list(range(1000))
-    # pylint: disable=protected-access
-    assert variable._maybe_truncate(data, 10) == '[0, 1, ...'
-    assert variable._maybe_truncate(data, len(str(data))) == str(data)
-    # pylint: enable=protected-access
+
+def create_test_variable(name='var1', fill_value=0):
+    """Create a test variable."""
+    return delayed_array.DelayedArray(
+        name=name,
+        data=numpy.arange(10, dtype='int64').reshape(5, 2),
+        dimensions=('x', 'y'),
+        attrs=(meta.Attribute(name='attr', value=1), ),
+        compressor=zarr.Blosc(cname='zstd', clevel=1),
+        fill_value=fill_value,
+        filters=(zarr.Delta('int64', 'int32'), zarr.Delta('int32', 'int32')))
 
 
 def test_variable_masked_array(
@@ -49,66 +61,39 @@ def test_variable_masked_array(
     assert var2.ndim == var.ndim
 
 
-def test_variable_not_equal():
-    """Test if two values are different."""
-    assert variable._not_equal(1, 2) is True
-    assert variable._not_equal(1, 1) is False
-    assert variable._not_equal(1, '1') is True
-    assert variable._not_equal(1, numpy.nan) is True
-    assert variable._not_equal(numpy.nan, numpy.nan) is False
-    assert variable._not_equal(numpy.nan, 1) is True
-    assert variable._not_equal(numpy.datetime64('NaT'),
-                               numpy.datetime64('NaT')) is False
-    assert variable._not_equal(numpy.datetime64('NaT'), 1) is True
-
-
 def test_variable_as_asarray(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
     """Test converting array like to a dask array."""
     arr = numpy.arange(10)
-    da, fill_value = variable._asarray(arr)
+    da, fill_value = delayed_array._asarray(arr)
     assert isinstance(da, dask.array.core.Array)
     assert fill_value is None
 
     arr = numpy.ma.masked_equal(arr, 5)
-    da, fill_value = variable._asarray(arr)
+    da, fill_value = delayed_array._asarray(arr)
     assert isinstance(da, dask.array.core.Array)
     assert fill_value == 5
 
-    da, fill_value = variable._asarray(dask.array.ma.masked_equal(arr, 5))
+    da, fill_value = delayed_array._asarray(dask.array.ma.masked_equal(arr, 5))
     assert isinstance(da, dask.array.core.Array)
     assert fill_value == 5
 
     with pytest.raises(ValueError):
-        variable._asarray(numpy.ma.masked_equal(arr, 5), fill_value=6)
+        delayed_array._asarray(numpy.ma.masked_equal(arr, 5), fill_value=6)
 
     with pytest.raises(ValueError):
-        variable._asarray(numpy.ma.masked_equal(
+        delayed_array._asarray(numpy.ma.masked_equal(
             numpy.arange(numpy.datetime64(0, 'Y'),
                          numpy.datetime64(10, 'Y'),
                          dtype='M8[Y]'), numpy.datetime64(5, 'Y')),
-                          fill_value=numpy.datetime64('NaT'))
+                               fill_value=numpy.datetime64('NaT'))
 
-    da = variable._asarray(numpy.ma.masked_equal(
+    da = delayed_array._asarray(numpy.ma.masked_equal(
         numpy.arange(numpy.datetime64(0, 'Y'),
                      numpy.datetime64(10, 'Y'),
                      dtype='M8[Y]'), numpy.datetime64('NaT')),
-                           fill_value=numpy.datetime64('NaT'))
-
-
-def create_test_variable(name='var1', fill_value=0):
-    """Create a test variable."""
-    return variable.Variable(name=name,
-                             data=numpy.arange(10,
-                                               dtype='int64').reshape(5, 2),
-                             dimensions=('x', 'y'),
-                             attrs=(variable.Attribute(name='attr',
-                                                       value=1), ),
-                             compressor=zarr.Blosc(cname='zstd', clevel=1),
-                             fill_value=fill_value,
-                             filters=(zarr.Delta('int64', 'int32'),
-                                      zarr.Delta('int32', 'int32')))
+                                fill_value=numpy.datetime64('NaT'))
 
 
 def test_variable(
@@ -120,7 +105,7 @@ def test_variable(
     assert var.dtype == numpy.dtype('int64')
     assert var.shape == (5, 2)
     assert var.dimensions == ('x', 'y')
-    assert var.attrs == (variable.Attribute(name='attr', value=1), )
+    assert var.attrs == (meta.Attribute(name='attr', value=1), )
     assert var.compressor.cname == 'zstd'  # type: ignore
     assert var.compressor.clevel == 1  # type: ignore
     assert var.fill_value == 0
@@ -142,7 +127,7 @@ def test_variable(
     assert other.dtype == numpy.dtype('int64')
     assert other.shape == (5, 2)
     assert other.dimensions == ('x', 'y')
-    assert other.attrs == (variable.Attribute(name='attr', value=1), )
+    assert other.attrs == (meta.Attribute(name='attr', value=1), )
     assert other.compressor.cname == 'zstd'  # type: ignore
     assert other.compressor.clevel == 1  # type: ignore
     assert other.fill_value == 0
@@ -184,7 +169,7 @@ def test_variable_duplicate(
     assert other.dtype == numpy.dtype('int64')
     assert other.shape == (5, 2)
     assert other.dimensions == ('x', 'y')
-    assert other.attrs == (variable.Attribute(name='attr', value=1), )
+    assert other.attrs == (meta.Attribute(name='attr', value=1), )
     assert other.compressor.cname == 'zstd'  # type: ignore
     assert other.compressor.clevel == 1  # type: ignore
     assert other.fill_value == 0
@@ -228,11 +213,11 @@ def test_variable_datetime64_to_xarray(
         numpy.datetime64('2000-02-01', 'ms'),
         numpy.timedelta64('1', 'h'),
     )
-    var = variable.Variable(
+    var = delayed_array.DelayedArray(
         name='time',
         data=dates,
         dimensions=('num_lines', ),
-        attrs=(variable.Attribute(name='attr', value=1), ),
+        attrs=(meta.Attribute(name='attr', value=1), ),
         compressor=zarr.Blosc(),
         filters=(zarr.Delta('int64', 'int64'), ),
     )
@@ -253,11 +238,11 @@ def test_variable_timedelta64_to_xarray(
             numpy.timedelta64('1', 'h'),
         ))
 
-    var = variable.Variable(
+    var = delayed_array.DelayedArray(
         name='timedelta',
         data=delta,
         dimensions=('num_lines', ),
-        attrs=(variable.Attribute(name='attr', value=1), ),
+        attrs=(meta.Attribute(name='attr', value=1), ),
         compressor=zarr.Blosc(),
         filters=(zarr.Delta('int64', 'int64'), ),
     )
@@ -272,15 +257,15 @@ def test_variable_dimension_less(
 ):
     """Concatenate two dimensionless variables."""
     data = numpy.array([0, 1], dtype=numpy.int32)
-    args = ('nv', data, ('nv', ), (variable.Attribute('comment', 'vertex'),
-                                   variable.Attribute('units', '1')))
-    n_vertex = variable.Variable(*args)
+    args = ('nv', data, ('nv', ), (meta.Attribute('comment', 'vertex'),
+                                   meta.Attribute('units', '1')))
+    n_vertex = delayed_array.DelayedArray(*args)
     assert n_vertex.fill_value is None
     metadata = n_vertex.metadata()
     assert metadata.fill_value is None
     assert meta.Variable.from_config(metadata.get_config()) == metadata
 
-    other = variable.Variable(*args)
+    other = delayed_array.DelayedArray(*args)
 
     concatenated = n_vertex.concat((other, ), 'time')
     assert numpy.all(concatenated.values == n_vertex.values)

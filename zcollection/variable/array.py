@@ -3,13 +3,12 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Delayed access to the chunked array.
-====================================
+Direct access to the chunked array.
+===================================
 """
 from __future__ import annotations
 
-from typing import Any, Mapping, MutableMapping, Sequence
-import uuid
+from typing import Any, Sequence
 
 import dask.array.core
 import dask.array.creation
@@ -22,14 +21,14 @@ import zarr
 
 from ..meta import Attribute
 from ..type_hints import ArrayLike, NDArray, NDMaskedArray
-from .abc import ModifiedVariableError, Variable, from_zarr_array, not_equal
+from .abc import Variable, not_equal
 
 
 def _asarray(
     arr: ArrayLike[Any],
     fill_value: Any | None = None,
-) -> tuple[dask.array.core.Array, Any]:
-    """Convert an array-like object to a dask array.
+) -> tuple[NDArray, Any]:
+    """Convert an array-like object to a numpy array.
 
     Args:
         arr: An array-like object.
@@ -40,26 +39,25 @@ def _asarray(
         with masked data replaced by its fill value and the fill value of the
         offered masked array. Otherwise, the provided array and fill value.
     """
-    result = dask.array.core.asarray(arr)  # type: dask.array.core.Array
-    _meta = result._meta  # pylint: disable=protected-access
-    if isinstance(_meta, numpy.ma.MaskedArray):
-        if fill_value is not None and not_equal(fill_value, _meta.fill_value):
+    result = numpy.asanyarray(arr)
+    if isinstance(result, numpy.ma.MaskedArray):
+        if fill_value is not None and not_equal(fill_value, result.fill_value):
             raise ValueError(
                 f'The fill value {fill_value!r} does not match the fill value '
-                f'{_meta.fill_value!r} of the array.')
-        return dask.array.ma.filled(result, _meta.fill_value), _meta.fill_value
+                f'{result.fill_value!r} of the array.')
+        return numpy.ma.filled(result, result.fill_value), result.fill_value
     return result, fill_value
 
 
-def new_delayed_array(
+def new_array(
     name: str,
-    data: dask.array.core.Array,
+    data: NDArray,
     dimensions: Sequence[str],
     attrs: Sequence[Attribute],
     compressor: numcodecs.abc.Codec | None,
     fill_value: Any | None,
     filters: Sequence[numcodecs.abc.Codec] | None,
-) -> DelayedArray:
+) -> Array:
     """Create a new variable.
 
     Args:
@@ -71,7 +69,7 @@ def new_delayed_array(
         fill_value: Value to use for uninitialized values
         filters: Filters to apply before writing data to disk
     """
-    self = DelayedArray.__new__(DelayedArray)
+    self = Array.__new__(Array)
     self.array = data
     self.attrs = attrs
     self.compressor = compressor
@@ -82,7 +80,7 @@ def new_delayed_array(
     return self
 
 
-class DelayedArray(Variable):
+class Array(Variable):
     """Access to the chunked data using Dask arrays.
 
     Args:
@@ -127,14 +125,8 @@ class DelayedArray(Variable):
 
             :meth:`Variable.array`
         """
-        # If the fill value is None, or if the dask array already holds a
-        # masked array, return the underlying array.
-        # pylint: disable=protected-access
-        # No other way to check if the dask array is a masked array.
-        if (self.fill_value is None
-                or isinstance(self.array._meta, numpy.ma.MaskedArray)):
-            return self.array
-        # pylint: enable=protected-access
+        if self.fill_value is None:
+            return dask.array.core.from_array(self.array)
         return dask.array.ma.masked_equal(self.array, self.fill_value)
 
     @data.setter
@@ -169,7 +161,8 @@ class DelayedArray(Variable):
         Returns:
             The variable data
         """
-        return self.compute()
+        return self.array if self.fill_value is None else numpy.ma.masked_equal(
+            self.array, self.fill_value)
 
     @property
     def dtype(self) -> numpy.dtype:
@@ -181,7 +174,7 @@ class DelayedArray(Variable):
         """Return the shape of the variable."""
         return self.array.shape
 
-    def persist(self, **kwargs) -> DelayedArray:
+    def persist(self, **kwargs) -> Array:
         """Persist the variable data into memory.
 
         Args:
@@ -191,7 +184,6 @@ class DelayedArray(Variable):
         Returns:
             The variable
         """
-        self.array = dask.base.persist(self.array, **kwargs)  # type: ignore
         return self
 
     def compute(self, **kwargs) -> NDArray | NDMaskedArray:
@@ -206,19 +198,9 @@ class DelayedArray(Variable):
             **kwargs: Keyword arguments passed to
                 :meth:`dask.array.Array.compute`.
         """
-        try:
-            (values, ) = dask.base.compute(self.array,
-                                           traverse=False,
-                                           **kwargs)
-        except ValueError as exc:
-            msg = str(exc)
-            if 'cannot reshape' in msg or 'buffer too small' in msg:
-                raise ModifiedVariableError() from exc
-            raise
-        return values if self.fill_value is None else numpy.ma.masked_equal(
-            values, self.fill_value)
+        return self.values
 
-    def fill(self) -> DelayedArray:
+    def fill(self) -> Array:
         """Fill the variable with the fill value. If the variable has no fill
         value, this method does nothing.
 
@@ -226,11 +208,10 @@ class DelayedArray(Variable):
             The variable.
         """
         if self.fill_value is not None:
-            self.array = dask.array.creation.full_like(self.array,
-                                                       self.fill_value)
+            self.array = numpy.full_like(self.array, self.fill_value)
         return self
 
-    def duplicate(self, data: Any) -> DelayedArray:
+    def duplicate(self, data: Any) -> Array:
         """Create a new variable from the properties of this instance and the
         data provided.
 
@@ -244,15 +225,15 @@ class DelayedArray(Variable):
             ValueError: If the shape of the data does not match the shape of
                 the stored data.
         """
-        result = DelayedArray(self.name, data, self.dimensions, self.attrs,
-                              self.compressor, self.fill_value, self.filters)
+        result = Array(self.name, data, self.dimensions, self.attrs,
+                       self.compressor, self.fill_value, self.filters)
         if len(result.shape) != len(self.dimensions):
             raise ValueError('data shape does not match variable dimensions')
         return result
 
     @classmethod
     def from_zarr(cls, array: zarr.Array, name: str, dimension: str,
-                  **kwargs) -> DelayedArray:
+                  **kwargs) -> Array:
         """Create a new variable from a zarr array.
 
         Args:
@@ -268,19 +249,10 @@ class DelayedArray(Variable):
         """
         attrs = tuple(
             Attribute(k, v) for k, v in array.attrs.items() if k != dimension)
-        data = from_zarr_array(
-            array,
-            array.shape,
-            array.chunks,
-            name=f'{name}-{uuid.uuid1()}',
-            **kwargs,
-        )
-        return new_delayed_array(name, data, array.attrs[dimension], attrs,
-                                 array.compressor, array.fill_value,
-                                 array.filters)
+        return new_array(name, array[...], array.attrs[dimension], attrs,
+                         array.compressor, array.fill_value, array.filters)
 
-    def concat(self, other: DelayedArray | Sequence[DelayedArray],
-               dim: str) -> DelayedArray:
+    def concat(self, other: Array | Sequence[Array], dim: str) -> Array:
         """Concatenate this variable with another variable or a list of
         variables along a dimension.
 
@@ -301,9 +273,9 @@ class DelayedArray(Variable):
             raise ValueError('other must be a non-empty sequence')
         try:
             axis = self.dimensions.index(dim)
-            return new_delayed_array(
+            return new_array(
                 self.name,
-                dask.array.core.concatenate(
+                numpy.concatenate(
                     (self.array, *(item.array for item in other)), axis=axis),
                 self.dimensions,
                 self.attrs,
@@ -315,9 +287,9 @@ class DelayedArray(Variable):
             # If the concatenation dimension is not within the dimensions of the
             # variable, then the original variable is returned (i.e.
             # concatenation is not necessary).
-            return new_delayed_array(self.name, self.array, self.dimensions,
-                                     self.attrs, self.compressor,
-                                     self.fill_value, self.filters)
+            return new_array(self.name, self.array, self.dimensions,
+                             self.attrs, self.compressor, self.fill_value,
+                             self.filters)
 
     def __getitem__(self, key: Any) -> Any:
         """Get a slice of the variable.
@@ -327,9 +299,9 @@ class DelayedArray(Variable):
         Returns:
             The variable slice.
         """
-        return self.data[key]
+        return self.array[key]
 
-    def isel(self, key: tuple[slice, ...]) -> DelayedArray:
+    def isel(self, key: tuple[slice, ...]) -> Array:
         """Return a new variable with data selected along the given dimension
         indices.
 
@@ -339,21 +311,20 @@ class DelayedArray(Variable):
         Returns:
             The new variable
         """
-        return new_delayed_array(self.name, self.array[key], self.dimensions,
-                                 self.attrs, self.compressor, self.fill_value,
-                                 self.filters)
+        return new_array(self.name, self.array[key], self.dimensions,
+                         self.attrs, self.compressor, self.fill_value,
+                         self.filters)
 
-    def set_for_insertion(self) -> DelayedArray:
+    def set_for_insertion(self) -> Array:
         """Create a new variable without any attribute.
 
         Returns:
             The variable.
         """
-        return new_delayed_array(self.name, self.array, self.dimensions,
-                                 tuple(), self.compressor, self.fill_value,
-                                 self.filters)
+        return new_array(self.name, self.array, self.dimensions, tuple(),
+                         self.compressor, self.fill_value, self.filters)
 
-    def rename(self, name: str) -> DelayedArray:
+    def rename(self, name: str) -> Array:
         """Rename the variable.
 
         Args:
@@ -362,11 +333,10 @@ class DelayedArray(Variable):
         Returns:
             The variable.
         """
-        return new_delayed_array(name, self.array, self.dimensions, self.attrs,
-                                 self.compressor, self.fill_value,
-                                 self.filters)
+        return new_array(name, self.array, self.dimensions, self.attrs,
+                         self.compressor, self.fill_value, self.filters)
 
-    def rechunk(self, **kwargs) -> DelayedArray:
+    def rechunk(self, **kwargs) -> Array:
         """Rechunk the variable.
 
         Args:
@@ -376,9 +346,7 @@ class DelayedArray(Variable):
         Returns:
             The variable.
         """
-        return new_delayed_array(self.name, self.array.rechunk(**kwargs),
-                                 self.dimensions, self.attrs, self.compressor,
-                                 self.fill_value, self.filters)
+        return self
 
     def to_dask_array(self):
         """Return the underlying dask array.
@@ -391,56 +359,3 @@ class DelayedArray(Variable):
             :func:`dask.array.asarray`
         """
         return self.data
-
-    def __dask_graph__(self) -> Mapping | None:
-        """Return the dask Graph."""
-        return self.data.__dask_graph__()
-
-    def __dask_keys__(self) -> list:
-        """Return the output keys for the Dask graph."""
-        return self.data.__dask_keys__()
-
-    def __dask_layers__(self) -> tuple:
-        """Return the layers for the Dask graph."""
-        return self.data.__dask_layers__()
-
-    def __dask_tokenize__(self):
-        """Return the token for the Dask graph."""
-        return dask.base.normalize_token(
-            (type(self), self.name, self.data, self.dimensions, self.attrs,
-             self.fill_value))
-
-    @staticmethod
-    def __dask_optimize__(dsk: MutableMapping, keys: list,
-                          **kwargs) -> MutableMapping:
-        """Returns whether the Dask graph can be optimized.
-
-        .. seealso::
-            :meth:`dask.array.Array.__dask_optimize__`
-        """
-        return dask.array.core.Array.__dask_optimize__(dsk, keys, **kwargs)
-
-    #: The default scheduler get to use for this object.
-    __dask_scheduler__ = staticmethod(dask.threaded.get)
-
-    def _dask_finalize(self, results, array_func, *args,
-                       **kwargs) -> DelayedArray:
-        """Finalize the computation of the variable."""
-        array = array_func(results, *args, **kwargs)
-        if not isinstance(array, dask.array.core.Array):
-            array = dask.array.core.from_array(array)
-        return new_delayed_array(self.name, array, self.dimensions, self.attrs,
-                                 self.compressor, self.fill_value,
-                                 self.filters)
-
-    def __dask_postcompute__(self) -> tuple:
-        """Return the finalizer and extra arguments to convert the computed
-        results into their in-memory representation."""
-        array_func, array_args = self.data.__dask_postcompute__()
-        return self._dask_finalize, (array_func, ) + array_args
-
-    def __dask_postpersist__(self) -> tuple:
-        """Return the rebuilder and extra arguments to rebuild an equivalent
-        Dask collection from a persisted or rebuilt graph."""
-        array_func, array_args = self.data.__dask_postpersist__()
-        return self._dask_finalize, (array_func, ) + array_args

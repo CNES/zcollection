@@ -699,7 +699,7 @@ def test_insert_immutable(
 
     ds = dataset.Dataset(
         [
-            dataset.Variable(
+            dataset.DelayedArray(
                 'time',
                 make_dask_array(  # type: ignore
                     numpy.arange(numpy.datetime64('2000-01-01'),
@@ -707,17 +707,17 @@ def test_insert_immutable(
                                  numpy.timedelta64(1, 'D'))),
                 ('time', ),
             ),
-            dataset.Variable(
+            dataset.DelayedArray(
                 'lon',
                 make_dask_array(numpy.arange(0, 360, 1)),  # type: ignore
                 ('lon', ),
             ),
-            dataset.Variable(
+            dataset.DelayedArray(
                 'lat',
                 make_dask_array(numpy.arange(-90, 90, 1)),  # type: ignore
                 ('lat', ),
             ),
-            dataset.Variable(
+            dataset.DelayedArray(
                 'grid',
                 make_dask_array(
                     numpy.random.rand(  # type: ignore
@@ -902,7 +902,7 @@ def test_partition_modified(
 
     dim, size = 'num_lines', last_month.dimensions['num_lines'] * 25
     last_month = dataset.Dataset([
-        variable.Variable(
+        variable.DelayedArray(
             name,
             numpy.resize(var.array.compute(), new_shape(var, dim, size)),
             var.dimensions,

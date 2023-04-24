@@ -133,6 +133,7 @@ def _drop_zarr_zarr(partition: str,
 def _load_one_dataset(
     args: tuple[tuple[tuple[str, int], ...], list[slice]],
     base_dir: str,
+    delayed: bool,
     fs: fsspec.AbstractFileSystem,
     selected_variables: Iterable[str] | None,
     view_ref: collection.Collection,
@@ -144,6 +145,7 @@ def _load_one_dataset(
     Args:
         args: tuple containing the partition's keys and its indexer.
         base_dir: Base directory of the view.
+        delayed: If True, variables are stored as dask arrays.
         fs: The file system used to access the variables in the view.
         selected_variables: The list of variable to retain from the view
             reference.
@@ -155,9 +157,11 @@ def _load_one_dataset(
     """
     partition_scheme, slices = args
     partition = view_ref.partitioning.join(partition_scheme, fs.sep)
-    ds = open_zarr_group(
-        join_path(view_ref.partition_properties.dir, partition), view_ref.fs,
-        selected_variables)
+    ds = open_zarr_group(join_path(view_ref.partition_properties.dir,
+                                   partition),
+                         view_ref.fs,
+                         selected_variables=selected_variables,
+                         delayed=delayed)
     if ds is None:
         return None
 
@@ -172,19 +176,22 @@ def _load_one_dataset(
                                                 variable)),
                         mode='r',
                     ),
-                    variable) for variable in variables
+                    variable,
+                    delayed) for variable in variables
             ],
             ds.attrs), partition
 
     _ = {
-        ds.add_variable(item.metadata(), item.array)  # type: ignore[arg-type]
+        ds.add_variable(  # type: ignore[arg-type,func-returns-value]
+            item.metadata(), item.array)
         for item in (
             open_zarr_array(
                 zarr.open(  # type: ignore[arg-type]
                     fs.get_mapper(join_path(base_dir, partition, variable)),
                     mode='r',
                 ),
-                variable) for variable in variables)
+                variable,
+                delayed) for variable in variables)
     }
 
     # Apply indexing if needed.
@@ -241,6 +248,7 @@ def _load_datasets_list(
         _load_one_dataset,
         arguments,
         base_dir=base_dir,
+        delayed=True,
         fs=fs,
         selected_variables=view_ref.metadata.select_variables(
             keep_variables=selected_variables),

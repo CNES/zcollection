@@ -48,7 +48,6 @@ def dask_cluster(pytestconfig, tmpdir_factory, scope='session'):
 
     def teardown():
         """Stop the cluster and remove the scheduler file."""
-        cluster.close()
         if scheduler_file.exists():
             scheduler_file.remove()
 

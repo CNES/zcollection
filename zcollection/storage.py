@@ -229,23 +229,29 @@ def write_zarr_group(
     _write_meta(ds, dirname, fs)
 
 
-def open_zarr_array(array: zarr.Array, name: str) -> dataset.Variable:
+def open_zarr_array(array: zarr.Array,
+                    name: str,
+                    delayed: bool = True) -> dataset.Variable:
     """Open a Zarr array as a Dask array.
 
     Args:
         array: The Zarr array to open.
         name: The name of the variable.
+        delayed: Whether to open the array lazily.
 
     Returns:
         The variable.
     """
-    return dataset.Variable.from_zarr(array, name, DIMENSIONS)
+    if delayed:
+        return dataset.DelayedArray.from_zarr(array, name, DIMENSIONS)
+    return dataset.Array.from_zarr(array, name, DIMENSIONS)
 
 
-def open_zarr_group(
-        dirname,
-        fs: fsspec.AbstractFileSystem,
-        selected_variables: Iterable[str] | None = None) -> dataset.Dataset:
+def open_zarr_group(dirname,
+                    fs: fsspec.AbstractFileSystem,
+                    *,
+                    selected_variables: Iterable[str] | None = None,
+                    delayed: bool = True) -> dataset.Dataset:
     """Open a Zarr group stored in a partition.
 
     Args:
@@ -253,6 +259,7 @@ def open_zarr_group(
         fs: The file system that the partition is stored on.
         selected_variables: The list of variables to retain from the Zarr
             group. If None, all variables are selected.
+        delayed: Whether to open the variables lazily.
 
     Returns:
         The zarr group stored in the partition.
@@ -264,13 +271,16 @@ def open_zarr_group(
     selected_variables = set(selected_variables) & set(
         store) if selected_variables is not None else set(store)
     variables = [
-        open_zarr_array(store[name], name)  # type: ignore[arg-type]
-        for name in selected_variables
+        open_zarr_array(
+            store[name],  # type: ignore[arg-type]
+            name,
+            delayed=delayed) for name in selected_variables
     ]
 
     return dataset.Dataset(
         variables=variables,
-        attrs=tuple(dataset.Attribute(*item) for item in store.attrs.items()))
+        attrs=tuple(dataset.Attribute(*item) for item in store.attrs.items()),
+        delayed=delayed)
 
 
 def update_zarr_array(

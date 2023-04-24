@@ -14,29 +14,31 @@ import numpy
 import pytest
 import zarr
 
-from .. import delayed_array
 from ... import meta
 # pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster
+from ..array import Array, _asarray
 
 # pylint enable=unused-import
 
-# def test_maybe_truncate():
-#     """Test the truncation of a string to a given length."""
-#     data = list(range(1000))
-#     # pylint: disable=protected-access
-#     assert variable._maybe_truncate(data, 10) == '[0, 1, ...'
-#     assert variable._maybe_truncate(data, len(str(data))) == str(data)
-#     # pylint: enable=protected-access
+
+def create_test_variable(name='var1', fill_value=0):
+    """Create a test variable."""
+    return Array(name=name,
+                 data=numpy.arange(10, dtype='int64').reshape(5, 2),
+                 dimensions=('x', 'y'),
+                 attrs=(meta.Attribute(name='attr', value=1), ),
+                 compressor=zarr.Blosc(cname='zstd', clevel=1),
+                 fill_value=fill_value,
+                 filters=(zarr.Delta('int64',
+                                     'int32'), zarr.Delta('int32', 'int32')))
 
 
-def test_variable_masked_array(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
+def test_variable_masked_array():
     """Test masked array."""
     var = create_test_variable()
     var2 = var.rename('var2')
-    assert var2.tableau is var.tableau
+    assert var2.array is var.array
     assert var2.name == 'var2'
     assert var2.dimensions == var.dimensions
     assert var2.attrs == var.attrs
@@ -49,64 +51,31 @@ def test_variable_masked_array(
     assert var2.ndim == var.ndim
 
 
-def test_variable_not_equal():
-    """Test if two values are different."""
-    assert delayed_array._not_equal(1, 2) is True
-    assert delayed_array._not_equal(1, 1) is False
-    assert delayed_array._not_equal(1, '1') is True
-    assert delayed_array._not_equal(1, numpy.nan) is True
-    assert delayed_array._not_equal(numpy.nan, numpy.nan) is False
-    assert delayed_array._not_equal(numpy.nan, 1) is True
-    assert delayed_array._not_equal(numpy.datetime64('NaT'),
-                                    numpy.datetime64('NaT')) is False
-    assert delayed_array._not_equal(numpy.datetime64('NaT'), 1) is True
-
-
-def test_variable_as_asarray(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
+def test_variable_as_asarray():
     """Test converting array like to a dask array."""
     arr = numpy.arange(10)
-    da, fill_value = delayed_array._asarray(arr)
-    assert isinstance(da, dask.array.core.Array)
+    as_arr, fill_value = _asarray(arr)
+    assert isinstance(as_arr, numpy.ndarray)
     assert fill_value is None
 
     arr = numpy.ma.masked_equal(arr, 5)
-    da, fill_value = delayed_array._asarray(arr)
-    assert isinstance(da, dask.array.core.Array)
+    as_arr, fill_value = _asarray(arr)
+    assert isinstance(as_arr, numpy.ndarray)
     assert fill_value == 5
 
-    da, fill_value = delayed_array._asarray(dask.array.ma.masked_equal(arr, 5))
-    assert isinstance(da, dask.array.core.Array)
+    as_arr, fill_value = _asarray(numpy.ma.masked_equal(arr, 5))
+    assert isinstance(as_arr, numpy.ndarray)
     assert fill_value == 5
 
     with pytest.raises(ValueError):
-        delayed_array._asarray(numpy.ma.masked_equal(arr, 5), fill_value=6)
+        _asarray(numpy.ma.masked_equal(arr, 5), fill_value=6)
 
     with pytest.raises(ValueError):
-        delayed_array._asarray(numpy.ma.masked_equal(
+        _asarray(numpy.ma.masked_equal(
             numpy.arange(numpy.datetime64(0, 'Y'),
                          numpy.datetime64(10, 'Y'),
                          dtype='M8[Y]'), numpy.datetime64(5, 'Y')),
-                               fill_value=numpy.datetime64('NaT'))
-
-    da = delayed_array._asarray(numpy.ma.masked_equal(
-        numpy.arange(numpy.datetime64(0, 'Y'),
-                     numpy.datetime64(10, 'Y'),
-                     dtype='M8[Y]'), numpy.datetime64('NaT')),
-                                fill_value=numpy.datetime64('NaT'))
-
-
-def create_test_variable(name='var1', fill_value=0):
-    """Create a test variable."""
-    return delayed_array.DelayedArray(
-        name=name,
-        data=numpy.arange(10, dtype='int64').reshape(5, 2),
-        dimensions=('x', 'y'),
-        attrs=(meta.Attribute(name='attr', value=1), ),
-        compressor=zarr.Blosc(cname='zstd', clevel=1),
-        fill_value=fill_value,
-        filters=(zarr.Delta('int64', 'int32'), zarr.Delta('int32', 'int32')))
+                 fill_value=numpy.datetime64('NaT'))
 
 
 def test_variable(
@@ -177,7 +146,7 @@ def test_variable_duplicate(
 ):
     """Test of the duplication of variables."""
     var = create_test_variable()
-    other = var.duplicate(var.tableau * 2)
+    other = var.duplicate(var.array * 2)
     assert other.name == 'var1'
     assert other.dtype == numpy.dtype('int64')
     assert other.shape == (5, 2)
@@ -226,7 +195,7 @@ def test_variable_datetime64_to_xarray(
         numpy.datetime64('2000-02-01', 'ms'),
         numpy.timedelta64('1', 'h'),
     )
-    var = delayed_array.DelayedArray(
+    var = Array(
         name='time',
         data=dates,
         dimensions=('num_lines', ),
@@ -240,9 +209,7 @@ def test_variable_datetime64_to_xarray(
     assert xr_var.dtype == 'datetime64[ns]'
 
 
-def test_variable_timedelta64_to_xarray(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
+def test_variable_timedelta64_to_xarray():
     """Test conversion to xarray."""
     delta = numpy.diff(
         numpy.arange(
@@ -251,7 +218,7 @@ def test_variable_timedelta64_to_xarray(
             numpy.timedelta64('1', 'h'),
         ))
 
-    var = delayed_array.DelayedArray(
+    var = Array(
         name='timedelta',
         data=delta,
         dimensions=('num_lines', ),
@@ -265,44 +232,38 @@ def test_variable_timedelta64_to_xarray(
     assert xr_var.dtype.kind == 'm'
 
 
-def test_variable_dimension_less(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
+def test_variable_dimension_less():
     """Concatenate two dimensionless variables."""
     data = numpy.array([0, 1], dtype=numpy.int32)
     args = ('nv', data, ('nv', ), (meta.Attribute('comment', 'vertex'),
                                    meta.Attribute('units', '1')))
-    n_vertex = delayed_array.DelayedArray(*args)
+    n_vertex = Array(*args)
     assert n_vertex.fill_value is None
     metadata = n_vertex.metadata()
     assert metadata.fill_value is None
     assert meta.Variable.from_config(metadata.get_config()) == metadata
 
-    other = delayed_array.DelayedArray(*args)
+    other = Array(*args)
 
     concatenated = n_vertex.concat((other, ), 'time')
     assert numpy.all(concatenated.values == n_vertex.values)
     assert concatenated.metadata() == n_vertex.metadata()
 
 
-def test_variable_getitem(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
+def test_variable_getitem():
     var = create_test_variable()
     values = var.values
-    result = var[0].compute()
+    result = var[0]
     assert numpy.all(result == values[0])
-    result = var[0:2].compute()
+    result = var[0:2]
     assert numpy.all(result == values[0:2])
-    result = var[0:2, 0].compute()
+    result = var[0:2, 0]
     assert numpy.all(result == values[0:2, 0])
-    result = var[0:2, 0:2].compute()
+    result = var[0:2, 0:2]
     assert numpy.all(result == values[0:2, 0:2])
 
 
-def test_variable_fill(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
+def test_variable_fill():
     """Test filling of variables."""
     var = create_test_variable()
     assert not var.values.all() is numpy.ma.masked

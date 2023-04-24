@@ -335,6 +335,7 @@ class View:
         filters: collection.PartitionFilter = None,
         indexer: collection.Indexer | None = None,
         selected_variables: Iterable[str] | None = None,
+        delayed: bool = True,
     ) -> dataset.Dataset | None:
         """Load the view.
 
@@ -346,6 +347,7 @@ class View:
             indexer: The indexer to apply.
             selected_variables: A list of variables to retain from the view.
                 If None, all variables are loaded.
+            delayed: If True, the variables are handled as dask arrays.
 
         Returns:
             The dataset.
@@ -373,11 +375,13 @@ class View:
             _load_one_dataset,
             arguments,
             base_dir=self.base_dir,
+            delayed=delayed,
             fs=self.fs,
             selected_variables=self.view_ref.metadata.select_variables(
                 selected_variables),
             view_ref=client.scatter(self.view_ref),
-            variables=self.metadata.select_variables(selected_variables))
+            variables=self.metadata.select_variables(selected_variables),
+        )
 
         # The load function returns the path to the partitions and the loaded
         # datasets. Only the loaded datasets are retrieved here and filter None
@@ -432,6 +436,7 @@ class View:
             selected_variables: A list of variables to retain from the view.
                 If None, all variables are loaded. Useful to load only a
                 subset of the view.
+            delayed: If True, the variables are handled as dask arrays.
             args: The positional arguments to pass to the function.
             kwargs: The keyword arguments to pass to the function.
 

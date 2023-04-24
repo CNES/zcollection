@@ -45,6 +45,36 @@ class ModifiedVariableError(RuntimeError):
                 'dataset.')
 
 
+def not_equal(first: Any, second: Any) -> bool:
+    """Check if two objects are not equal.
+
+    Args:
+        first: The first object.
+        second: The second object.
+
+    Returns:
+        True if the two objects are different, False otherwise.
+    """
+
+    def _is_not_a_number(number: Any) -> bool:
+        """Check if a number is NaN or NaT."""
+        # pylint: disable=comparison-with-itself
+        return not number == number and number != number
+        # pylint: enable=comparison-with-itself
+
+    #: pylint: disable=unidiomatic-typecheck
+    if type(first) != type(second):
+        return True
+    #: pylint: enable=unidiomatic-typecheck
+    if _is_not_a_number(first) and _is_not_a_number(second):
+        return False
+    if first is None and second is None:
+        return False
+    if first == second:
+        return False
+    return True
+
+
 def _variable_repr(var: Variable) -> str:
     """Get the string representation of a variable.
 
@@ -139,7 +169,7 @@ class Variable:
         fill_value: Value to use for uninitialized values
         filters: Filters to apply before writing data to disk
     """
-    __slots__ = ('tableau', 'attrs', 'compressor', 'dimensions', 'fill_value',
+    __slots__ = ('array', 'attrs', 'compressor', 'dimensions', 'fill_value',
                  'filters', 'name')
 
     def __init__(self,
@@ -153,7 +183,7 @@ class Variable:
         #: Variable name
         self.name = name
         #: Variable data as a dask array.
-        self.tableau: Any = data
+        self.array: Any = data
         #: Variable dimensions
         self.dimensions = dimensions
         #: Variable attributes
@@ -164,11 +194,6 @@ class Variable:
         self.fill_value = fill_value
         #: Filters to apply before writing data to disk
         self.filters = filters
-
-    @property
-    @abc.abstractmethod
-    def TABLEAU(self) -> dask.array.core.Array:
-        """Variable data as a dask array."""
 
     @property
     @abc.abstractmethod

@@ -21,12 +21,21 @@ import dask.base
 import dask.threaded
 import fsspec
 import xarray
+import xarray.conventions
 
-from . import meta, representation, variable
+from . import meta, representation
 from .compressed_array import CompressedArray
 from .meta import Attribute, Dimension
 from .type_hints import ArrayLike, NDArray, NDMaskedArray
-from .variable import Variable
+from .variable import (
+    Array,
+    DelayedArray,
+    Variable,
+    new_array,
+    new_delayed_array,
+)
+
+__all__ = ['Variable', 'Array', 'DelayedArray', 'Dataset']
 
 
 def _dask_repr(array: dask.array.core.Array) -> str:
@@ -67,7 +76,7 @@ def _dataset_repr(ds: Dataset) -> str:
             name_str = f'    {name:<{width}s} {dims_str} {var.dtype}'
             lines.append(
                 representation.pretty_print(
-                    f'{name_str}: {_dask_repr(var.tableau)}'))
+                    f'{name_str}: {_dask_repr(var.data)}'))
     # Attributes
     if len(ds.attrs):
         lines.append('  Attributes:')
@@ -76,8 +85,8 @@ def _dataset_repr(ds: Dataset) -> str:
     return '\n'.join(lines)
 
 
-def _duplicate(var: variable.Variable,
-               data: dask.array.core.Array) -> variable.Variable:
+def _duplicate_delayed_array(var: DelayedArray,
+                             data: dask.array.core.Array) -> DelayedArray:
     """Duplicate the variable with a new data.
 
     Args:
@@ -87,11 +96,22 @@ def _duplicate(var: variable.Variable,
     Returns:
         The duplicated variable
     """
-    # pylint: disable=protected-access
-    # _new is a protected member of this class
-    return _new_variable(var.name, data, var.dimensions, var.attrs,
-                         var.compressor, var.fill_value, var.filters)
-    # pylint: enable=protected-access
+    return new_delayed_array(var.name, data, var.dimensions, var.attrs,
+                             var.compressor, var.fill_value, var.filters)
+
+
+def _duplicate_array(var: Array, data: NDArray) -> Array:
+    """Duplicate the variable with a new data.
+
+    Args:
+        var: Variable to duplicate.
+        data: The new data to use
+
+    Returns:
+        The duplicated variable
+    """
+    return new_array(var.name, data, var.dimensions, var.attrs, var.compressor,
+                     var.fill_value, var.filters)
 
 
 class Dataset:
@@ -109,13 +129,14 @@ class Dataset:
             but with different values.
     """
     __slots__ = ('dimensions', 'variables', 'attrs', 'chunks',
-                 'block_size_limit')
+                 'block_size_limit', 'delayed')
 
     def __init__(self,
-                 variables: Iterable[variable.Variable],
+                 variables: Iterable[Variable],
                  attrs: Sequence[Attribute] | None = None,
                  chunks: Sequence[Dimension] | None = None,
-                 block_size_limit: int | None = None) -> None:
+                 block_size_limit: int | None = None,
+                 delayed: bool | None = None) -> None:
         #: The list of global attributes on this dataset
         self.attrs = tuple(attrs or [])
         #: Dataset contents as dict of
@@ -126,6 +147,12 @@ class Dataset:
         self.dimensions: dict[str, int] = {}
 
         for var in self.variables.values():
+            if delayed is None:
+                delayed = isinstance(var, DelayedArray)
+            elif delayed != isinstance(var, DelayedArray):
+                raise ValueError(
+                    'the dataset contains both delayed and non-delayed '
+                    'variables')
             try:
                 for ix, dim in enumerate(var.dimensions):
                     if dim not in self.dimensions:
@@ -142,10 +169,13 @@ class Dataset:
         self.block_size_limit = block_size_limit or meta.BLOCK_SIZE_LIMIT
 
         #: Chunk size for each dimension
-        chunks = chunks or []
-        self.chunks: dict[str,
-                          int | str] = {dim.name: dim.value
-                                        for dim in chunks}
+        self.chunks: dict[str, int | str] = {
+            dim.name: dim.value
+            for dim in chunks or []
+        }
+
+        #: The type of variables in the dataset
+        self.delayed = delayed if delayed is not None else True
 
     def __len__(self) -> int:
         return len(self.variables)
@@ -153,7 +183,7 @@ class Dataset:
     def __bool__(self) -> bool:
         return bool(self.variables)
 
-    def __getitem__(self, name: str) -> variable.Variable:
+    def __getitem__(self, name: str) -> Variable:
         """Return a variable from the dataset.
 
         Args:
@@ -169,14 +199,15 @@ class Dataset:
 
     def __getstate__(self) -> tuple[Any, ...]:
         return (self.dimensions, self.variables, self.attrs, self.chunks,
-                self.block_size_limit)
+                self.block_size_limit, self.delayed)
 
     def __setstate__(
-        self, state: tuple[dict[str, int], OrderedDict[str, variable.Variable],
-                           tuple[Attribute, ...], dict[str, int | str], int]
+        self, state: tuple[dict[str, int], OrderedDict[str, Variable],
+                           tuple[Attribute, ...], dict[str,
+                                                       int | str], int, bool]
     ) -> None:
         (self.dimensions, self.variables, self.attrs, self.chunks,
-         self.block_size_limit) = state
+         self.block_size_limit, self.delayed) = state
 
     @property
     def nbytes(self) -> int:
@@ -199,7 +230,7 @@ class Dataset:
     def add_variable(self,
                      var: meta.Variable,
                      /,
-                     data: ArrayLike[Any] | None = None):
+                     data: ArrayLike[Any] | None = None) -> None:
         """Add a variable to the dataset.
 
         Args:
@@ -226,7 +257,7 @@ class Dataset:
                         f'Conflicting sizes for dimension {dim!r}: '
                         f'length {self.dimensions[dim]} on the data but length '
                         f'{size} defined in dataset.')
-        self.variables[var.name] = Variable(
+        self.variables[var.name] = (DelayedArray if self.delayed else Array)(
             var.name,
             data,  # type: ignore[arg-type]
             var.dimensions,
@@ -291,17 +322,20 @@ class Dataset:
             block_size_limit=self.block_size_limit)
 
     @staticmethod
-    def from_xarray(ds: xarray.Dataset) -> Dataset:
+    def from_xarray(ds: xarray.Dataset, delayed: bool = True) -> Dataset:
         """Create a new dataset from a xarray dataset.
 
         Args:
             ds: Dataset to convert.
+            delayed: If True, the data will be wrapped in a dask array. If
+                False, the data will be handled as a numpy array.
 
         Returns:
             New dataset.
         """
+        handler = DelayedArray if delayed else Array
         variables = [
-            Variable(
+            handler(
                 name,  # type: ignore[arg-type]
                 array.data,  # type: ignore[arg-type]
                 tuple(array.dims),  # type: ignore[arg-type]
@@ -318,7 +352,9 @@ class Dataset:
             variables=variables,
             attrs=tuple(
                 Attribute(*item)  # type: ignore[arg-type]
-                for item in ds.attrs.items()))
+                for item in ds.attrs.items()),
+            delayed=delayed,
+        )
 
     def to_xarray(self, **kwargs) -> xarray.Dataset:
         """Convert the dataset to a xarray dataset.
@@ -356,10 +392,14 @@ class Dataset:
             Dictionary of variables.
         """
         variables = variables or tuple(self.variables.keys())
-        arrays = tuple((key, value.data)
-                       for key, value in self.variables.items()
-                       if key in variables)
-        return dict(dask.base.compute(*arrays, **kwargs))
+        if self.delayed:
+            arrays = tuple((key, value.data)
+                           for key, value in self.variables.items()
+                           if key in variables)
+            return dict(dask.base.compute(*arrays, **kwargs))
+        return dict(
+            tuple((key, value.values) for key, value in self.variables.items()
+                  if key in variables))
 
     def set_for_insertion(self, ds: meta.Dataset) -> Dataset:
         """Create a new dataset ready to be inserted into a collection.
@@ -378,7 +418,7 @@ class Dataset:
             block_size_limit=ds.block_size_limit,
         )
 
-    def fill_attrs(self, ds: meta.Dataset):
+    def fill_attrs(self, ds: meta.Dataset) -> None:
         """Fill the dataset and its variables attributes using the provided
         metadata.
 
@@ -386,10 +426,9 @@ class Dataset:
             ds: Dataset metadata.
         """
         self.attrs = tuple(ds.attrs)
-        _ = [
-            var.fill_attrs(ds.variables[name])
-            for name, var in self.variables.items()
-        ]
+        tuple(
+            map(lambda var: var.fill_attrs(ds.variables[var.name]),
+                self.variables.values()))
 
     def isel(self, slices: dict[str, Any]) -> Dataset:
         """Return a new dataset with each array indexed along the specified
@@ -427,17 +466,35 @@ class Dataset:
         Returns:
             New dataset.
         """
-        variables = [
-            _duplicate(
-                var,
-                dask.array.routines.delete(var.array, indexer,
-                                           var.dimensions.index(axis)))
-            for var in self.variables.values()
-        ]
+        variables: list[Any]
+        if self.delayed:
+            variables = [
+                _duplicate_delayed_array(
+                    var,  # type: ignore[arg-type]
+                    dask.array.routines.delete(var.array, indexer,
+                                               var.dimensions.index(axis)))
+                for var in self.variables.values()
+            ]
+        else:
+
+            def array_delete(array, indexer, axis):
+                """Delete the elements of an array along a given axis."""
+                slices = [slice(None)] * array.ndim
+                slices[axis] = indexer
+                return array[slices]
+
+            variables = [
+                _duplicate_array(
+                    var,  # type: ignore[arg-type]
+                    array_delete(var.array, indexer,
+                                 var.dimensions.index(axis)))
+                for var in self.variables.values()
+            ]
         return Dataset(variables=variables,
                        attrs=self.attrs,
                        chunks=self.dims_chunk,
-                       block_size_limit=self.block_size_limit)
+                       block_size_limit=self.block_size_limit,
+                       delayed=self.delayed)
 
     def compute(self, **kwargs) -> Dataset:
         """Compute the dataset variables.
@@ -449,6 +506,9 @@ class Dataset:
         Returns:
             New dataset.
         """
+        if not self.delayed:
+            return self
+
         arrays = tuple(item.array for item in self.variables.values())
         arrays = dask.base.compute(*arrays, **kwargs)
 
@@ -475,6 +535,8 @@ class Dataset:
 
         .. seealso:: :py:func:`dask.array.rechunk`
         """
+        if not self.delayed:
+            return self
         variables = [var.rechunk(**kwargs) for var in self.variables.values()]
         return Dataset(variables=variables,
                        attrs=self.attrs,
@@ -497,6 +559,8 @@ class Dataset:
         Returns:
             The dataset with the variables persisted into memory.
         """
+        if not self.delayed:
+            return self
         if compress:
             for var in self.variables.values():
                 var.array = var.array.map_blocks(CompressedArray,
@@ -526,6 +590,8 @@ class Dataset:
             other = [other]
         if not other:
             raise ValueError('cannot concatenate an empty sequence')
+        if not all(item.delayed == self.delayed for item in other):
+            raise ValueError('cannot concatenate delayed and non-delayed data')
         variables = [
             var.concat(tuple(item.variables[name] for item in other), dim)
             for name, var in self.variables.items()
@@ -533,7 +599,8 @@ class Dataset:
         return Dataset(variables=variables,
                        attrs=self.attrs,
                        chunks=self.dims_chunk,
-                       block_size_limit=self.block_size_limit)
+                       block_size_limit=self.block_size_limit,
+                       delayed=self.delayed)
 
     def merge(self, other: Dataset) -> None:
         """Merge the provided dataset into this dataset.
@@ -541,6 +608,9 @@ class Dataset:
         Args:
             other: Dataset to merge into this dataset.
         """
+        if self.delayed != other.delayed:
+            raise ValueError('cannot merge delayed and non-delayed data')
+
         # Merge the variables
         for name, var in other.variables.items():
 
@@ -582,11 +652,11 @@ class Dataset:
             New dataset or None if no variables match the predicate.
         """
 
-        def _predicate_for_dimension_less(var: variable.Variable) -> bool:
+        def _predicate_for_dimension_less(var: Variable) -> bool:
             """Return true if the variable is selected by the predicate."""
             return (len(var.dimensions) == 0) == predicate
 
-        def _predicate_for_dimension(var: variable.Variable) -> bool:
+        def _predicate_for_dimension(var: Variable) -> bool:
             """Return true if the variable is selected by the predicate."""
             return bool(set(var.dimensions) & set_of_dims) == predicate
 
@@ -611,6 +681,8 @@ class Dataset:
             fs: Filesystem to use.
             parallel: If true, write the data in parallel.
         """
+        if not self.delayed:
+            raise ValueError('cannot write a non-delayed dataset to Zarr')
         # pylint: disable=import-outside-toplevel, import-error
         # Avoid circular import
         import storage
@@ -627,8 +699,7 @@ class Dataset:
         return _dataset_repr(self)
 
 
-def get_variable_metadata(
-        var: variable.Variable | meta.Variable) -> meta.Variable:
+def get_variable_metadata(var: Variable | meta.Variable) -> meta.Variable:
     """Get the variable metadata.
 
     Args:

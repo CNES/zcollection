@@ -94,7 +94,7 @@ def variables(
     """
     selected_variables = selected_variables or metadata.variables.keys()
     return tuple(
-        dataset.Variable(
+        dataset.DelayedArray(
             v.name, numpy.ndarray((0, ) * len(v.dimensions), v.dtype),
             v.dimensions, v.attrs, v.compressor, v.fill_value, v.filters)
         for k, v in metadata.variables.items() if k in selected_variables)
@@ -611,6 +611,7 @@ class Collection:
         partition_size: int | None = None,
         npartitions: int | None = None,
         selected_variables: Sequence[str] | None = None,
+        delayed: bool = True,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the collection.
@@ -625,6 +626,7 @@ class Collection:
             npartitions: The number of desired bag partitions.
             selected_variables: A list of variables to retain from the
                 collection. If None, all variables are kept.
+            delayed: Whether to load the data lazily or not.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
@@ -644,6 +646,7 @@ class Collection:
             partition: str,
             func: PartitionCallable,
             selected_variables: Sequence[str] | None,
+            delayed: bool,
             *args,
             **kwargs,
         ) -> tuple[tuple[tuple[str, int], ...], Any]:
@@ -661,7 +664,7 @@ class Collection:
                 The result of the function.
             """
             ds = _load_dataset(self.fs, self._immutable, partition,
-                               selected_variables)
+                               selected_variables, delayed)
             return self.partitioning.parse(partition), func(
                 ds, *args, **kwargs)
 
@@ -671,7 +674,8 @@ class Collection:
         bag = dask.bag.core.from_sequence(self.partitions(filters=filters),
                                           partition_size=partition_size,
                                           npartitions=npartitions)
-        return bag.map(_wrap, func, selected_variables, *args, **kwargs)
+        return bag.map(_wrap, func, selected_variables, delayed, *args,
+                       **kwargs)
         # pylint: enable=duplicate-code
 
     def map_overlap(
@@ -683,6 +687,7 @@ class Collection:
         partition_size: int | None = None,
         npartition: int | None = None,
         selected_variables: Sequence[str] | None = None,
+        delayed: bool = True,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the collection with some
@@ -703,6 +708,7 @@ class Collection:
             npartition: The number of desired bag partitions.
             selected_variables: A list of variables to retain from the
                 collection. If None, all variables are kept.
+            delayed: Whether to load the data lazily or not.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
@@ -729,6 +735,7 @@ class Collection:
             partitions: tuple[str, ...],
             selected_variables: Sequence[str] | None,
             depth: int,
+            delayed: bool,
             *args,
             **kwargs,
         ) -> tuple[tuple[tuple[str, int], ...], Any]:
@@ -749,7 +756,7 @@ class Collection:
             """
             ds, indices = _load_dataset_with_overlap(
                 depth, self.partition_properties.dim, self.fs, self._immutable,
-                partition, partitions, selected_variables)
+                partition, partitions, selected_variables, delayed)
 
             if add_partition_info:
                 kwargs = kwargs.copy()
@@ -765,7 +772,7 @@ class Collection:
                                           partition_size=partition_size,
                                           npartitions=npartition)
         return bag.map(_wrap, func, partitions, selected_variables, depth,
-                       *args, **kwargs)
+                       delayed, *args, **kwargs)
 
     def load(
         self,
@@ -773,6 +780,7 @@ class Collection:
         filters: PartitionFilter = None,
         indexer: Indexer | None = None,
         selected_variables: Iterable[str] | None = None,
+        delayed: bool = True,
     ) -> dataset.Dataset | None:
         """Load the selected partitions.
 
@@ -783,6 +791,9 @@ class Collection:
             indexer: The indexer to apply.
             selected_variables: A list of variables to retain from the
                 collection. If None, all variables are kept.
+            delayed: If True, the variables are not loaded immediately but
+                handled as delayed arrays, otherwise the variables are loaded
+                immediately.
 
         Returns:
             The dataset containing the selected partitions.
@@ -815,7 +826,8 @@ class Collection:
                 npartitions=dask_utils.dask_workers(client, cores_only=True))
             arrays = bag.map(storage.open_zarr_group,
                              fs=self.fs,
-                             selected_variables=selected_variables).compute()
+                             selected_variables=selected_variables,
+                             delayed=delayed).compute()
         else:
             # Build the indexer arguments.
             args = tuple(build_indexer_args(self, filters, indexer))
@@ -835,6 +847,7 @@ class Collection:
                         partition_handler=self.partitioning,
                         partition_properties=self.partition_properties,
                         selected_variables=selected_variables,
+                        delayed=delayed,
                     ).compute()))
 
         array = arrays.pop(0)
@@ -842,8 +855,10 @@ class Collection:
             array = array.concat(arrays, self.partition_properties.dim)
         if self._immutable:
             array.merge(
-                storage.open_zarr_group(self._immutable, self.fs,
-                                        selected_variables))
+                storage.open_zarr_group(self._immutable,
+                                        self.fs,
+                                        selected_variables=selected_variables,
+                                        delayed=delayed))
         array.fill_attrs(ds=self.metadata)
         return array
 
@@ -857,6 +872,7 @@ class Collection:
         filters: PartitionFilter | None = None,
         partition_size: int | None = None,
         selected_variables: Iterable[str] | None = None,
+        delayed: bool = True,
         **kwargs,
     ) -> None:
         # pylint: disable=method-hidden
@@ -879,6 +895,8 @@ class Collection:
                 partitions.
             selected_variables: A list of variables to load from the collection.
                 If None, all variables are loaded.
+            delayed: If True, the variables are not loaded immediately but
+                handled as delayed arrays, otherwise the variables are loaded.
             **kwargs: The keyword arguments to pass to the function.
 
         Example:
@@ -897,8 +915,10 @@ class Collection:
         except StopIteration:
             return
         with self.synchronizer:
-            ds = storage.open_zarr_group(one_partition, self.fs,
-                                         selected_variables)
+            ds = storage.open_zarr_group(one_partition,
+                                         self.fs,
+                                         selected_variables=selected_variables,
+                                         delayed=delayed)
         func_result = try_infer_callable(func, ds,
                                          self.partition_properties.dim, *args,
                                          **kwargs)
@@ -909,11 +929,12 @@ class Collection:
 
         if depth == 0:
             local_func = _wrap_update_func(func, self.fs, self._immutable,
-                                           selected_variables, *args, **kwargs)
+                                           selected_variables, delayed, *args,
+                                           **kwargs)
         else:
             local_func = _wrap_update_func_with_overlap(
                 depth, self.partition_properties.dim, func, self.fs,
-                self._immutable, selected_variables, *args, **kwargs)
+                self._immutable, selected_variables, delayed, *args, **kwargs)
 
         _LOGGER.info('Updating of the (%s) variable in the collection',
                      ', '.join(repr(item) for item in func_result))

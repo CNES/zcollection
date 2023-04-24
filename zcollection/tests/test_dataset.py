@@ -14,10 +14,10 @@ import xarray
 import zarr
 
 from .. import dataset, meta
+# pylint enable=unused-import
+from ..variable.tests.test_delayed_array import create_test_variable
 # pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster
-# pylint enable=unused-import
-from .test_variable import create_test_variable
 
 
 def create_test_dataset():
@@ -72,23 +72,24 @@ def test_dataset_dimensions_conflict(
     """Test dataset creation with dimensions conflict."""
     with pytest.raises(ValueError):
         dataset.Dataset([
-            dataset.Variable(name='var1',
-                             data=numpy.arange(10,
-                                               dtype='int64').reshape(5, 2),
-                             dimensions=('x', 'y'),
-                             attrs=(dataset.Attribute(name='attr', value=1), ),
-                             compressor=zarr.Blosc(cname='zstd', clevel=1),
-                             fill_value=0,
-                             filters=(zarr.Delta('int64', 'int32'),
-                                      zarr.Delta('int32', 'int32'))),
-            dataset.Variable(name='var2',
-                             data=numpy.arange(20, dtype='int64'),
-                             dimensions=('x'),
-                             attrs=(dataset.Attribute(name='attr', value=1), ),
-                             compressor=zarr.Blosc(cname='zstd', clevel=1),
-                             fill_value=0,
-                             filters=(zarr.Delta('int64', 'int32'),
-                                      zarr.Delta('int32', 'int32'))),
+            dataset.DelayedArray(
+                name='var1',
+                data=numpy.arange(10, dtype='int64').reshape(5, 2),
+                dimensions=('x', 'y'),
+                attrs=(dataset.Attribute(name='attr', value=1), ),
+                compressor=zarr.Blosc(cname='zstd', clevel=1),
+                fill_value=0,
+                filters=(zarr.Delta('int64',
+                                    'int32'), zarr.Delta('int32', 'int32'))),
+            dataset.DelayedArray(name='var2',
+                                 data=numpy.arange(20, dtype='int64'),
+                                 dimensions=('x'),
+                                 attrs=(dataset.Attribute(name='attr',
+                                                          value=1), ),
+                                 compressor=zarr.Blosc(cname='zstd', clevel=1),
+                                 fill_value=0,
+                                 filters=(zarr.Delta('int64', 'int32'),
+                                          zarr.Delta('int32', 'int32'))),
         ])
 
 
@@ -321,17 +322,17 @@ def test_dataset_merge(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
     template = dataset.Dataset([
-        dataset.Variable('var1', numpy.empty(10), ('x', ), ()),
-        dataset.Variable('var2', numpy.empty(10), ('x', ), ()),
-        dataset.Variable('var3', numpy.empty((10, 10)), ('x', 'y'), ()),
-        dataset.Variable('var4', numpy.empty((10, 10)), ('x', 'y'), ()),
+        dataset.DelayedArray('var1', numpy.empty(10), ('x', ), ()),
+        dataset.DelayedArray('var2', numpy.empty(10), ('x', ), ()),
+        dataset.DelayedArray('var3', numpy.empty((10, 10)), ('x', 'y'), ()),
+        dataset.DelayedArray('var4', numpy.empty((10, 10)), ('x', 'y'), ()),
     ], [dataset.Attribute('attr1', 1),
         dataset.Attribute('attr2', 2)])
     ds2 = dataset.Dataset([
-        dataset.Variable('var5', numpy.empty(10), ('x', ), ()),
-        dataset.Variable('var6', numpy.empty(10), ('x', ), ()),
-        dataset.Variable('var7', numpy.empty((10, 10)), ('x', 'y'), ()),
-        dataset.Variable('var8', numpy.empty((10, 10)), ('x', 'y'), ()),
+        dataset.DelayedArray('var5', numpy.empty(10), ('x', ), ()),
+        dataset.DelayedArray('var6', numpy.empty(10), ('x', ), ()),
+        dataset.DelayedArray('var7', numpy.empty((10, 10)), ('x', 'y'), ()),
+        dataset.DelayedArray('var8', numpy.empty((10, 10)), ('x', 'y'), ()),
     ], [dataset.Attribute('attr3', 3),
         dataset.Attribute('attr4', 4)])
     ds1 = pickle.loads(pickle.dumps(template))
@@ -354,8 +355,8 @@ def test_dataset_merge(
                                            3), dataset.Attribute('attr4', 4))
 
     ds2 = dataset.Dataset([
-        dataset.Variable('var5', numpy.empty(10), ('a', ), ()),
-        dataset.Variable('var6', numpy.empty((10, 10)), ('a', 'b'), ()),
+        dataset.DelayedArray('var5', numpy.empty(10), ('a', ), ()),
+        dataset.DelayedArray('var6', numpy.empty((10, 10)), ('a', 'b'), ()),
     ], [dataset.Attribute('attr3', 3),
         dataset.Attribute('attr4', 4)])
     ds1 = pickle.loads(pickle.dumps(template))
@@ -371,7 +372,7 @@ def test_dataset_merge(
     assert ds1.variables['var6'].shape == (10, 10)
 
     ds2 = dataset.Dataset([
-        dataset.Variable('var5', numpy.empty(10), ('z', ), ()),
+        dataset.DelayedArray('var5', numpy.empty(10), ('z', ), ()),
     ], [dataset.Attribute('attr3', 3),
         dataset.Attribute('attr4', 4)])
     ds1 = pickle.loads(pickle.dumps(template))
@@ -385,7 +386,7 @@ def test_dataset_merge(
     assert ds1.variables['var5'].shape == (10, )
 
     ds2 = dataset.Dataset([
-        dataset.Variable('var1', numpy.empty(10), ('x', ), ()),
+        dataset.DelayedArray('var1', numpy.empty(10), ('x', ), ()),
     ], [dataset.Attribute('attr1', 1),
         dataset.Attribute('attr2', 2)])
     ds1 = pickle.loads(pickle.dumps(template))
@@ -393,7 +394,7 @@ def test_dataset_merge(
         ds1.merge(ds2)
 
     ds2 = dataset.Dataset([
-        dataset.Variable('var5', numpy.empty(20), ('x', ), ()),
+        dataset.DelayedArray('var5', numpy.empty(20), ('x', ), ()),
     ], [dataset.Attribute('attr3', 3),
         dataset.Attribute('attr4', 4)])
     ds1 = pickle.loads(pickle.dumps(template))
@@ -405,13 +406,13 @@ def test_dataset_select_variables_by_dims(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
 ):
     ds = dataset.Dataset([
-        dataset.Variable('var1', numpy.empty(10), ('x', ), ()),
-        dataset.Variable('var2', numpy.empty(10), ('y', ), ()),
-        dataset.Variable('var3', numpy.empty((10, 10)), ('x', 'y'), ()),
-        dataset.Variable('var4', numpy.empty(20), ('a', ), ()),
-        dataset.Variable('var5', numpy.empty(20), ('b', ), ()),
-        dataset.Variable('var6', numpy.empty((20, 20)), ('a', 'b'), ()),
-        dataset.Variable('var7', numpy.int64(1), (), ()),
+        dataset.DelayedArray('var1', numpy.empty(10), ('x', ), ()),
+        dataset.DelayedArray('var2', numpy.empty(10), ('y', ), ()),
+        dataset.DelayedArray('var3', numpy.empty((10, 10)), ('x', 'y'), ()),
+        dataset.DelayedArray('var4', numpy.empty(20), ('a', ), ()),
+        dataset.DelayedArray('var5', numpy.empty(20), ('b', ), ()),
+        dataset.DelayedArray('var6', numpy.empty((20, 20)), ('a', 'b'), ()),
+        dataset.DelayedArray('var7', numpy.int64(1), (), ()),
     ], [
         dataset.Attribute('attr1', 1),
     ])

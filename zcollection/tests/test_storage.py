@@ -10,7 +10,7 @@ import math
 import platform
 import time
 
-import dask.array
+import dask.array.wrap
 import dask.distributed
 import numpy
 import pytest
@@ -68,15 +68,15 @@ def create_variable(shape, fill_value=None):
     data = numpy.ones(shape, dtype='uint8')
     if fill_value is not None:
         data[:, 0] = fill_value
-    return dataset.Variable(name='var',
-                            data=data,
-                            dimensions=('x', 'y'),
-                            fill_value=fill_value,
-                            attrs=[
-                                dataset.Attribute('a', 1),
-                                dataset.Attribute('b', 2),
-                                dataset.Attribute('long_name', 'long name')
-                            ])
+    return dataset.DelayedArray(name='var',
+                                data=data,
+                                dimensions=('x', 'y'),
+                                fill_value=fill_value,
+                                attrs=[
+                                    dataset.Attribute('a', 1),
+                                    dataset.Attribute('b', 2),
+                                    dataset.Attribute('long_name', 'long name')
+                                ])
 
 
 def create_dataset(shape):
@@ -274,7 +274,8 @@ def test_update_zarr_array(
                                 local_fs.fs,
                                 chunks=chunks)
     path = str(local_fs.root.joinpath('var'))
-    storage.update_zarr_array(path, dask.array.full((dim_size, dim_size), 2),
+    storage.update_zarr_array(path,
+                              dask.array.wrap.full((dim_size, dim_size), 2),
                               local_fs.fs)
     mapper = local_fs.get_mapper(path)
     zarray = zarr.open(mapper)
