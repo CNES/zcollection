@@ -8,12 +8,13 @@ import operator
 
 
 def prod(iterable: Iterable) -> int:
-    """Get the product of an iterable.
+    """Return the product of all elements in the given iterable.
 
     Args:
-        iterable: An iterable.
+        iterable: An iterable containing numeric values.
 
     Returns:
-        The product of the iterable.
+        The product of all elements in the iterable. If the iterable is empty,
+        returns 1.
     """
     return functools.reduce(operator.mul, iterable, 1)

@@ -14,7 +14,7 @@ import numpy
 
 import zcollection
 import zcollection.indexing
-import zcollection.tests.data
+import zcollection.partitioning.tests.data
 
 # %%
 # Initialization of the environment
@@ -32,18 +32,18 @@ client = dask.distributed.Client(cluster)
 #
 # For this latest example, we will index another data set. This one contains
 # measurements of a fictitious satellite on several half-orbits.
-ds = zcollection.Dataset.from_xarray(
-    zcollection.tests.data.create_test_sequence(5, 20, 10))
-ds
+zds: zcollection.Dataset = zcollection.Dataset.from_xarray(
+    zcollection.partitioning.tests.data.create_test_sequence(5, 20, 10))
+print(zds)
 
 # %%
-collection = zcollection.create_collection(
+collection: zcollection.Collection = zcollection.create_collection(
     'time',
-    ds,
+    zds,
     zcollection.partitioning.Date(('time', ), 'M'),
     partition_base_dir='/one_other_collection',
     filesystem=fs)
-collection.insert(ds, merge_callable=zcollection.merging.merge_time_series)
+collection.insert(zds, merge_callable=zcollection.merging.merge_time_series)
 
 # %%
 # Here we have created a collection partitioned by month.
@@ -87,7 +87,7 @@ def split_half_orbit(
 # Now we will compute these constant parts from a dataset contained in a
 # partition.
 def _half_orbit(
-    ds: zcollection.Dataset,
+    zds: zcollection.Dataset,
     *args,
     **kwargs,
 ) -> numpy.ndarray:
@@ -100,8 +100,8 @@ def _half_orbit(
     """
     pass_number_varname = kwargs.pop('pass_number', 'pass_number')
     cycle_number_varname = kwargs.pop('cycle_number', 'cycle_number')
-    pass_number = ds.variables[pass_number_varname].values
-    cycle_number = ds.variables[cycle_number_varname].values
+    pass_number = zds.variables[pass_number_varname].values
+    cycle_number = zds.variables[cycle_number_varname].values
 
     generator = ((
         i0,
@@ -141,7 +141,7 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
     def create(
         cls,
         path: Union[pathlib.Path, str],
-        ds: zcollection.Collection,
+        zds: zcollection.Collection,
         filesystem: Optional[fsspec.AbstractFileSystem] = None,
         **kwargs,
     ) -> 'HalfOrbitIndexer':
@@ -155,13 +155,13 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
             The created index.
         """
         return super()._create(path,
-                               ds,
+                               zds,
                                meta=dict(attribute=b'value'),
                                filesystem=filesystem)  # type: ignore
 
     def update(
         self,
-        ds: zcollection.Collection,
+        zds: zcollection.Collection,
         partition_size: Optional[int] = None,
         npartitions: Optional[int] = None,
         **kwargs,
@@ -177,7 +177,8 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
             pass_number: The name of the pass number variable stored in the
                 collection. Defaults to "pass_number".
         """
-        super()._update(ds, _half_orbit, partition_size, npartitions, **kwargs)
+        super()._update(zds, _half_orbit, partition_size, npartitions,
+                        **kwargs)
 
 
 # %%
@@ -185,7 +186,9 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
 # ---------------
 #
 # Now we can create our index and fill it.
-indexer = HalfOrbitIndexer.create('/index.parquet', collection, filesystem=fs)
+indexer: HalfOrbitIndexer = HalfOrbitIndexer.create('/index.parquet',
+                                                    collection,
+                                                    filesystem=fs)
 indexer.update(collection)
 
 # The following command allows us to view the information stored in our index:
@@ -195,9 +198,12 @@ indexer.table.to_pandas()
 
 # %%
 # This index can now be used to load a part of a collection.
-selection = collection.load(indexer=indexer.query(dict(pass_number=[1, 2])))
+selection: zcollection.Dataset | None = collection.load(
+    indexer=indexer.query(dict(pass_number=[1, 2])),
+    delayed=False,
+)
 assert selection is not None
-selection.to_xarray().compute()
+selection.to_xarray()
 
 # %%
 # Close the local cluster to avoid printing warning messages in the other

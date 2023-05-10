@@ -8,7 +8,7 @@ File system tools
 """
 from __future__ import annotations
 
-from typing import Iterator, Sequence
+from typing import Any, Iterator, Sequence
 import os
 
 import fsspec
@@ -80,9 +80,12 @@ def fs_walk(
     Returns:
         Iterator of (path, directories, files).
     """
+    dirs: list[str]
+    files: list[str]
+
     dirs, files = [], []
     try:
-        listing = fs.ls(path, detail=True)
+        listing: list[dict[str, Any]] = fs.ls(path, detail=True)
     except (FileNotFoundError, OSError):
         yield '', [], []
         return
@@ -90,22 +93,22 @@ def fs_walk(
     for info in listing:
         # each info name must be at least [path]/part , but here
         # we check also for names like [path]/part/
-        pathname = info['name'].rstrip(SEPARATOR)
-        name = pathname.rsplit(SEPARATOR, 1)[-1]
+        pathname: str = info['name'].rstrip(SEPARATOR)
+        name: str = pathname.rsplit(SEPARATOR, 1)[-1]
         if info['type'] == 'directory' and pathname != path:
             # do not include "self" path
             dirs.append(pathname)
         else:
             files.append(name)
 
-    def sort_sequence(sequence):
+    def sort_sequence(sequence: list[str]) -> list[str]:
         """Sort the sequence if the user wishes."""
-        return sorted(sequence) if sort else sequence
+        return list(sorted(sequence)) if sort else sequence
 
     dirs = sort_sequence(dirs)
     yield path.rstrip(SEPARATOR), dirs, sort_sequence(files)
 
-    for item in sort_sequence(dirs):
+    for item in dirs:
         yield from fs_walk(fs, item, sort=sort)
 
 
@@ -125,7 +128,7 @@ def copy_file(
     """
     with fs_source.open(source, 'rb') as source_stream:
         with fs_target.open(target, 'wb') as target_stream:
-            target_stream.write(source_stream.read())
+            target_stream.write(source_stream.read())  # type: ignore[arg-type]
 
 
 def copy_files(
@@ -171,7 +174,7 @@ def copy_tree(
     fs_target.mkdir(target)
     for root, dirs, files in tuple(fs_walk(fs_source, source)):
         for name in files:
-            source_path = join_path(root, name)
+            source_path: str = join_path(root, name)
             copy_file(source_path,
                       join_path(target, os.path.relpath(source_path, source)),
                       fs_source, fs_target)

@@ -1,3 +1,7 @@
+# Copyright (c) 2023 CNES
+#
+# All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
 """
 Implementation details.
 =======================
@@ -9,6 +13,7 @@ import dataclasses
 import sys
 import time
 import traceback
+import types
 
 import dask.utils
 import fsspec
@@ -17,7 +22,11 @@ import zarr.storage
 from .. import dataset, merging, partitioning, sync
 from ..fs_utils import join_path
 from ..storage import open_zarr_group, update_zarr_array, write_zarr_group
+from ..type_hints import ArrayLike
 from .callable_objects import UpdateCallable, WrappedPartitionCallable
+
+#: Partition's type.
+PartitionSlice = tuple[tuple[str, ...], dict[str, slice]]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -41,14 +50,14 @@ def _get_slices(variable: dataset.Variable, dim: str,
     Returns:
         The slices
     """
-    slices = [slice(None)] * len(variable.dimensions)
+    slices: list[slice] = [slice(None)] * len(variable.dimensions)
     slices[variable.dimensions.index(dim)] = indices
     return tuple(slices)
 
 
-def try_infer_callable(
+def _try_infer_callable(
     func: Callable,
-    ds: dataset.Dataset,
+    zds: dataset.Dataset,
     dim: str,
     *args,
     **kwargs,
@@ -57,7 +66,7 @@ def try_infer_callable(
 
     Args:
         func: Function to call.
-        ds: Dataset to pass to the function.
+        zds: Dataset to pass to the function.
         dim: Name of the partitioning dimension.
         *args: Positional arguments to pass to the function.
         **kwargs: Keyword arguments to pass to the function.
@@ -65,14 +74,18 @@ def try_infer_callable(
     Returns:
         The result of the function.
     """
-    partition_info = dim, slice(0, ds.dimensions[dim])
+    partition_info: tuple[str, slice]
+    partition_info = dim, slice(0, zds.dimensions[dim])
     try:
         if dask.utils.has_keyword(func, 'partition_info'):
-            return func(ds, *args, partition_info=partition_info, **kwargs)
-        return func(ds, *args, **kwargs)
+            return func(zds, *args, partition_info=partition_info, **kwargs)
+        return func(zds, *args, **kwargs)
     except Exception as exc:
+        exc_type: type[BaseException] | None
+        exc_traceback: types.TracebackType | None
+        exc_value: BaseException | None
         exc_type, exc_value, exc_traceback = sys.exc_info()
-        execution_tb = ''.join(traceback.format_tb(exc_traceback))
+        execution_tb: str = ''.join(traceback.format_tb(exc_traceback))
         raise RuntimeError(
             f'An error occurred while applying the function {func} with '
             f'the arguments {args} and {kwargs} to the partition. The '
@@ -80,15 +93,21 @@ def try_infer_callable(
             f'is: {execution_tb}') from exc
 
 
-def update_with_overlap(func: UpdateCallable, ds: dataset.Dataset,
-                        indices: slice, dim: str,
-                        fs: fsspec.AbstractFileSystem, path: str, *args,
-                        **kwargs) -> None:
+def _update_with_overlap(
+    *args,
+    func: UpdateCallable,
+    zds: dataset.Dataset,
+    indices: slice,
+    dim: str,
+    fs: fsspec.AbstractFileSystem,
+    path: str,
+    **kwargs,
+) -> None:
     """Update a partition with overlap.
 
     Args:
         func: Function to apply to update each partition.
-        ds: Dataset to update.
+        zds: Dataset to update.
         indices: Indices of the partition to update.
         dim: Name of the partitioning dimension.
         fs: File system on which the Zarr dataset is stored.
@@ -99,12 +118,13 @@ def update_with_overlap(func: UpdateCallable, ds: dataset.Dataset,
     Returns:
         The updated variables.
     """
-    dictionary = (func(ds, *args, partition_info=(dim, indices), **kwargs)
-                  if dask.utils.has_keyword(func, 'partition_info') else func(
-                      ds, *args, **kwargs))
+    dictionary: dict[str, ArrayLike] = (func(
+        zds, *args, partition_info=(dim, indices), **
+        kwargs) if dask.utils.has_keyword(func, 'partition_info') else func(
+            zds, *args, **kwargs))
 
     for varname, array in dictionary.items():
-        slices = _get_slices(ds[varname], dim, indices)
+        slices: tuple[slice, ...] = _get_slices(zds[varname], dim, indices)
         update_zarr_array(
             dirname=join_path(path, varname),
             array=array[slices],  # type: ignore[index]
@@ -113,38 +133,38 @@ def update_with_overlap(func: UpdateCallable, ds: dataset.Dataset,
 
 
 def _load_dataset(
+    delayed: bool,
     fs: fsspec.AbstractFileSystem,
     immutable: str | None,
     partition: str,
     selected_variables: Iterable[str] | None,
-    delayed: bool,
-):
+) -> dataset.Dataset:
     """Load a dataset from a partition.
 
     Args:
+        delayed: Whether to load the dataset lazily.
         fs: File system on which the Zarr dataset is stored.
         immutable: Name of the immutable directory.
         partition: Name of the partition.
         selected_variables: Name of the variables to load from the dataset.
-        delayed: Whether to load the dataset lazily.
 
     Returns:
         The loaded dataset.
     """
-    ds = open_zarr_group(partition,
-                         fs,
-                         selected_variables=selected_variables,
-                         delayed=delayed)
+    zds: dataset.Dataset = open_zarr_group(
+        partition, fs, delayed=delayed, selected_variables=selected_variables)
     if immutable:
-        ds.merge(
+        zds.merge(
             open_zarr_group(immutable,
                             fs,
-                            selected_variables=selected_variables,
-                            delayed=delayed))
-    return ds
+                            delayed=delayed,
+                            selected_variables=selected_variables))
+    return zds
 
 
 def _load_dataset_with_overlap(
+    *,
+    delayed: bool,
     depth: int,
     dim: str,
     fs: fsspec.AbstractFileSystem,
@@ -152,11 +172,11 @@ def _load_dataset_with_overlap(
     partition: str,
     partitions: Sequence[str],
     selected_variables: Iterable[str] | None,
-    delayed: bool,
 ) -> tuple[dataset.Dataset, slice]:
     """Load a dataset from a partition with overlap.
 
     Args:
+        delayed: Whether to load the dataset lazily.
         depth: Depth of the overlap.
         dim: Name of the partitioning dimension.
         fs: File system on which the Zarr dataset is stored.
@@ -164,7 +184,6 @@ def _load_dataset_with_overlap(
         partition: Name of the partition.
         partitions: List of all partitions.
         selected_variables: Name of the variables to load from the dataset.
-        delayed: Whether to load the dataset lazily.
 
     Returns:
         The loaded dataset and the slice to select the data without the
@@ -178,66 +197,67 @@ def _load_dataset_with_overlap(
         """Compute the slice of the selected dataset (without overlap)."""
         start = 0
         indices = slice(0, 0, None)
-        for ix, ds in enumerate(groups):
-            size = ds.dimensions[dim]
+        for idx, zds in enumerate(groups):
+            size: int = zds.dimensions[dim]
             indices = slice(start, start + size, None)
-            if partition == selected_partitions[ix]:
+            if partition == selected_partitions[idx]:
                 break
             start += size
         return indices
 
-    where = partitions.index(partition)
+    where: int = partitions.index(partition)
 
     # Search for the overlapping partitions
-    selected_partitions = [
+    selected_partitions: list[str] = [
         partitions[ix] for ix in range(where - depth, where + depth + 1)
         if 0 <= ix < len(partitions)
     ]
 
     # Load the datasets for each selected partition.
-    groups = [
+    groups: list[dataset.Dataset] = [
         open_zarr_group(partition,
                         fs,
-                        selected_variables=selected_variables,
-                        delayed=delayed) for partition in selected_partitions
+                        delayed=delayed,
+                        selected_variables=selected_variables)
+        for partition in selected_partitions
     ]
 
     # Compute the slice of the given partition.
-    indices = calculate_slice(groups, selected_partitions)
+    indices: slice = calculate_slice(groups, selected_partitions)
 
     # Build the dataset for the selected partitions.
-    ds = groups.pop(0)
+    zds: dataset.Dataset = groups.pop(0)
     if groups:
-        ds = ds.concat(groups, dim)
+        zds = zds.concat(groups, dim)
 
     if immutable:
-        ds.merge(
+        zds.merge(
             open_zarr_group(partition,
                             fs,
-                            selected_variables=selected_variables,
-                            delayed=delayed))
-    return ds, indices
+                            delayed=delayed,
+                            selected_variables=selected_variables))
+    return zds, indices
 
 
 def _wrap_update_func(
+    *args,
+    delayed: bool,
     func: UpdateCallable,
     fs: fsspec.AbstractFileSystem,
     immutable: str | None,
     selected_variables: Iterable[str] | None,
-    delayed: bool,
-    *args,
     **kwargs,
 ) -> WrappedPartitionCallable:
     """Wrap an update function taking a partition's dataset as input and
     returning variable's values as a numpy array.
 
     Args:
+        delayed: Whether to load the dataset lazily.
         func: Function to apply to update each partition.
         fs: File system on which the Zarr dataset is stored.
         immutable: Name of the immutable directory.
         selected_variables: Name of the variables to load from the dataset.
             If None, all variables are loaded.
-        delayed: If True, the function is wrapped with dask.delayed.
         *args: Positional arguments to pass to the function.
         **kwargs: Keyword arguments to pass to the function.
 
@@ -250,9 +270,9 @@ def _wrap_update_func(
     def wrap_function(partitions: Iterable[str]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
-            ds = _load_dataset(fs, immutable, partition, selected_variables,
-                               delayed)
-            dictionary = func(ds, *args, **kwargs)
+            zds: dataset.Dataset = _load_dataset(delayed, fs, immutable,
+                                                 partition, selected_variables)
+            dictionary: dict[str, ArrayLike] = func(zds, *args, **kwargs)
             tuple(
                 update_zarr_array(  # type: ignore[func-returns-value]
                     dirname=join_path(partition, varname),
@@ -264,25 +284,25 @@ def _wrap_update_func(
 
 
 def _wrap_update_func_with_overlap(
+    *args,
+    delayed: bool,
     depth: int,
     dim: str,
     func: UpdateCallable,
     fs: fsspec.AbstractFileSystem,
     immutable: str | None,
     selected_variables: Iterable[str] | None,
-    delayed: bool,
-    *args,
     **kwargs,
 ) -> WrappedPartitionCallable:
     """Wrap an update function taking a partition's dataset as input and
     returning variable's values as a numpy array.
 
     Args:
+        delayed: Whether to load the dataset lazily.
         func: Function to apply to update each partition.
         fs: File system on which the Zarr dataset is stored.
         selected_variables: Name of the variables to load from the dataset.
             If None, all variables are loaded.
-        delayed: If True, the function is wrapped with dask.delayed.
         *args: Positional arguments to pass to the function.
         **kwargs: Keyword arguments to pass to the function.
 
@@ -297,12 +317,30 @@ def _wrap_update_func_with_overlap(
     def wrap_function(partitions: Sequence[str]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
-            ds, indices = _load_dataset_with_overlap(depth, dim, fs, immutable,
-                                                     partition, partitions,
-                                                     selected_variables,
-                                                     delayed)
-            update_with_overlap(func, ds, indices, dim, fs, partition, *args,
-                                **kwargs)
+
+            # pylint: disable=duplicate-code
+            # False positive with the method Collection.map_overlap
+            zds: dataset.Dataset
+            indices: slice
+            zds, indices = _load_dataset_with_overlap(
+                delayed=delayed,
+                depth=depth,
+                dim=dim,
+                fs=fs,
+                immutable=immutable,
+                partition=partition,
+                partitions=partitions,
+                selected_variables=selected_variables)
+            # pylint: enable=duplicate-code
+
+            _update_with_overlap(*args,
+                                 func=func,
+                                 zds=zds,
+                                 indices=indices,
+                                 dim=dim,
+                                 fs=fs,
+                                 path=partition,
+                                 **kwargs)
 
     return wrap_function
 
@@ -328,9 +366,10 @@ def _rm(fs: fsspec.AbstractFileSystem, dirname: str) -> None:
 
 
 def _insert(
-    args: tuple[tuple[str, ...], dict[str, slice]],
+    *,
+    args: PartitionSlice,
     axis: str,
-    ds: dataset.Dataset,
+    zds: dataset.Dataset,
     fs: fsspec.AbstractFileSystem,
     merge_callable: merging.MergeCallable | None,
     partitioning_properties: PartitioningProperties,
@@ -340,21 +379,29 @@ def _insert(
     Args:
         args: Tuple containing the partition's name and its slice.
         axis: The axis to merge on.
-        ds: The dataset to process.
+        zds: The dataset to process.
         fs: The file system that the partition is stored on.
         merge_callable: The merge callable.
         partitioning_properties: The partitioning properties.
     """
+    partition: tuple[str, ...]
+    indexer: dict[str, slice]
+
     partition, indexer = args
-    dirname = join_path(*((partitioning_properties.dir, ) + partition))
+    dirname: str = join_path(*((partitioning_properties.dir, ) + partition))
 
     # If the consolidated zarr metadata does not exist, we consider the
     # partition as empty.
     if fs.exists(join_path(dirname, '.zmetadata')):
         # The current partition already exists, so we need to merge
         # the dataset.
-        merging.perform(ds.isel(indexer), dirname, axis, fs,
-                        partitioning_properties.dim, merge_callable)
+        merging.perform(zds.isel(indexer),
+                        dirname,
+                        axis,
+                        fs,
+                        partitioning_properties.dim,
+                        delayed=zds.delayed,
+                        merge_callable=merge_callable)
         return
 
     # The current partition does not exist, so we need to create
@@ -363,7 +410,7 @@ def _insert(
         zarr.storage.init_group(store=fs.get_mapper(dirname))
 
         # The synchronization is done by the caller.
-        write_zarr_group(ds.isel(indexer), dirname, fs, sync.NoSync())
+        write_zarr_group(zds.isel(indexer), dirname, fs, sync.NoSync())
     except:  # noqa: E722
         # If the construction of the new dataset fails, the created
         # partition is deleted, to guarantee the integrity of the
@@ -374,11 +421,12 @@ def _insert(
 
 def _load_and_apply_indexer(
     args: tuple[tuple[tuple[str, int], ...], list[slice]],
+    *,
+    delayed: bool,
     fs: fsspec.AbstractFileSystem,
     partition_handler: partitioning.Partitioning,
     partition_properties: PartitioningProperties,
     selected_variables: Iterable[str] | None,
-    delayed: bool,
 ) -> list[dataset.Dataset]:
     """Load a partition and apply its indexer.
 
@@ -388,16 +436,18 @@ def _load_and_apply_indexer(
         partition_handler: The partitioning handler.
         partition_properties: The partitioning properties.
         selected_variable: The selected variables to load.
-        delayed: Whether to load the dataset lazily.
 
     Returns:
         The list of loaded datasets.
     """
+    items: list[slice]
+    partition_scheme: tuple[tuple[str, int], ...]
+
     partition_scheme, items = args
-    partition = join_path(partition_properties.dir,
-                          partition_handler.join(partition_scheme, fs.sep))
-    ds = open_zarr_group(partition,
-                         fs,
-                         selected_variables=selected_variables,
-                         delayed=delayed)
-    return [ds.isel({partition_properties.dim: indexer}) for indexer in items]
+    partition: str = join_path(
+        partition_properties.dir,
+        partition_handler.join(partition_scheme, fs.sep))
+    zds: dataset.Dataset = open_zarr_group(
+        partition, fs, delayed=delayed, selected_variables=selected_variables)
+    return list(
+        zds.isel({partition_properties.dim: indexer}) for indexer in items)

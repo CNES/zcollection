@@ -3,18 +3,19 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Delayed access to the chunked array.
-====================================
+Delayed variable arrays.
+========================
 """
 from __future__ import annotations
 
-from typing import Any, Mapping, MutableMapping, Sequence
+from typing import Any, Callable, Mapping, MutableMapping, Sequence
 import uuid
 
 import dask.array.core
 import dask.array.creation
 import dask.array.ma
 import dask.base
+import dask.highlevelgraph
 import dask.threaded
 import numcodecs.abc
 import numpy
@@ -22,11 +23,78 @@ import zarr
 
 from ..meta import Attribute
 from ..type_hints import ArrayLike, NDArray, NDMaskedArray
-from .abc import ModifiedVariableError, Variable, from_zarr_array, not_equal
+from .abc import Variable, concat, new_variable, not_equal
+
+#: The dask array getter used to access the data.
+GETTER: Callable = dask.array.core.getter
 
 
-def _asarray(
-    arr: ArrayLike[Any],
+def _blockdims_from_blockshape(
+        shape: tuple[int, ...],
+        chunks: tuple[int, ...]) -> tuple[tuple[int, ...], ...]:
+    """Convert a blockshape to a blockdims tuple."""
+    return tuple(((chunk_item, ) * (shape_item // chunk_item) +
+                  ((shape_item % chunk_item, ) if shape_item %
+                   chunk_item else ()) if shape_item else (0, ))
+                 for shape_item, chunk_item in zip(shape, chunks))
+
+
+def from_zarr_array(
+    array: zarr.Array,
+    shape: Sequence[int],
+    chunks: Sequence[int],
+    name: str,
+    *,
+    lock: bool = False,
+    asarray=True,
+    inline_array=True,
+) -> dask.array.core.Array:
+    """Convert a Zarr array to a Dask array with the specified shape and
+    chunks.
+
+    Args:
+        array: The Zarr array to convert.
+        shape: The desired shape of the resulting Dask array.
+        chunks: The desired chunk shape of the resulting Dask array.
+        name: The name of the resulting Dask array.
+        lock: Whether to use a lock to protect the underlying data store.
+        asarray: Whether to return the resulting Dask array as an array.
+        inline_array: Whether to inline the resulting array data in the tasks.
+
+    Returns:
+        A Dask array equivalent to the provided Zarr array.
+    """
+    dsk: dask.highlevelgraph.HighLevelGraph
+    normalized_chunks: tuple[tuple[int, ...], ...]
+
+    normalized_chunks = sum(  # type: ignore[return-value]
+        (_blockdims_from_blockshape(
+            (shape_item, ),
+            (chunk_item, )) if not isinstance(chunk_item, (tuple, list)) else
+         (chunk_item, ) for shape_item, chunk_item in zip(shape, chunks)),
+        (),
+    )
+    dsk = dask.array.core.graph_from_arraylike(
+        array,
+        normalized_chunks,
+        shape,
+        name,
+        getitem=GETTER,
+        lock=lock,
+        asarray=asarray,
+        dtype=array.dtype,
+        inline_array=inline_array,
+    )
+    return dask.array.core.Array(dsk,
+                                 name,
+                                 normalized_chunks,
+                                 meta=array,
+                                 dtype=array.dtype)
+
+
+def _as_dask_array(
+    arr: Any,
+    *,
     fill_value: Any | None = None,
 ) -> tuple[dask.array.core.Array, Any]:
     """Convert an array-like object to a dask array.
@@ -40,8 +108,8 @@ def _asarray(
         with masked data replaced by its fill value and the fill value of the
         offered masked array. Otherwise, the provided array and fill value.
     """
-    result = dask.array.core.asarray(arr)  # type: dask.array.core.Array
-    _meta = result._meta  # pylint: disable=protected-access
+    result: dask.array.core.Array = dask.array.core.asarray(arr)
+    _meta: Any = result._meta  # pylint: disable=protected-access
     if isinstance(_meta, numpy.ma.MaskedArray):
         if fill_value is not None and not_equal(fill_value, _meta.fill_value):
             raise ValueError(
@@ -51,35 +119,18 @@ def _asarray(
     return result, fill_value
 
 
-def new_delayed_array(
-    name: str,
-    data: dask.array.core.Array,
-    dimensions: Sequence[str],
-    attrs: Sequence[Attribute],
-    compressor: numcodecs.abc.Codec | None,
-    fill_value: Any | None,
-    filters: Sequence[numcodecs.abc.Codec] | None,
-) -> DelayedArray:
-    """Create a new variable.
+class ModifiedVariableError(RuntimeError):
+    """Raised when a variable has been modified since is was initialized."""
 
-    Args:
-        name: Name of the variable
-        data: Variable data
-        dimensions: Variable dimensions
-        attrs: Variable attributes
-        compressor: Compression codec
-        fill_value: Value to use for uninitialized values
-        filters: Filters to apply before writing data to disk
-    """
-    self = DelayedArray.__new__(DelayedArray)
-    self.array = data
-    self.attrs = attrs
-    self.compressor = compressor
-    self.dimensions = dimensions
-    self.fill_value = fill_value
-    self.filters = filters
-    self.name = name
-    return self
+    def __str__(self) -> str:
+        """Get the string representation of the exception.
+
+        Returns:
+            The string representation of the exception.
+        """
+        return ('You tried to access the data of a variable that has been '
+                'modified since its initialization. Try to re-load the '
+                'dataset.')
 
 
 class DelayedArray(Variable):
@@ -99,11 +150,16 @@ class DelayedArray(Variable):
                  name: str,
                  data: ArrayLike[Any],
                  dimensions: Sequence[str],
+                 *,
                  attrs: Sequence[Attribute] | None = None,
                  compressor: numcodecs.abc.Codec | None = None,
                  fill_value: Any | None = None,
                  filters: Sequence[numcodecs.abc.Codec] | None = None) -> None:
-        array, fill_value = _asarray(data, fill_value)
+        array: dask.array.core.Array
+        array, fill_value = _as_dask_array(data, fill_value=fill_value)
+        # pylint: disable=duplicate-code
+        # The code is not duplicated, we need to call the parent constructor,
+        # but pylint does not understand that.
         super().__init__(
             name,
             array,
@@ -113,6 +169,7 @@ class DelayedArray(Variable):
             fill_value=fill_value,
             filters=filters,
         )
+        # pylint: enable=duplicate-code
 
     @property
     def data(self) -> dask.array.core.Array:
@@ -137,26 +194,6 @@ class DelayedArray(Variable):
         # pylint: enable=protected-access
         return dask.array.ma.masked_equal(self.array, self.fill_value)
 
-    @data.setter
-    def data(self, data: Any) -> None:
-        """Defines the underlying dask array. If the data provided is a masked
-        array, it's converted to an array, where the masked values are replaced
-        by its fill value, and its fill value becomes the new fill value of
-        this instance. Otherwise, the underlying array is defined as the new
-        data and the fill value is set to None.
-
-        Args:
-            data: The new data to use
-
-        Raises:
-            ValueError: If the shape of the data does not match the shape of
-                the stored data.
-        """
-        data, fill_value = _asarray(data, self.fill_value)
-        if len(data.shape) != len(self.dimensions):
-            raise ValueError('data shape does not match variable dimensions')
-        self.array, self.fill_value = data, fill_value
-
     @property
     def values(self) -> NDArray | NDMaskedArray:
         """Return the variable data as a numpy array.
@@ -171,15 +208,25 @@ class DelayedArray(Variable):
         """
         return self.compute()
 
-    @property
-    def dtype(self) -> numpy.dtype:
-        """Return the dtype of the underlying array."""
-        return self.array.dtype
+    @values.setter
+    def values(self, data: ArrayLike[Any]) -> None:
+        """Defines the underlying dask array. If the data provided is a masked
+        array, it's converted to an array, where the masked values are replaced
+        by its fill value, and its fill value becomes the new fill value of
+        this instance. Otherwise, the underlying array is defined as the new
+        data and the fill value is set to None.
 
-    @property
-    def shape(self) -> tuple[int, ...]:
-        """Return the shape of the variable."""
-        return self.array.shape
+        Args:
+            data: The new data to use
+
+        Raises:
+            ValueError: If the shape of the data does not match the shape of
+                the stored data.
+        """
+        if len(data.shape) != len(self.dimensions):
+            raise ValueError('data shape does not match variable dimensions')
+        self.array, self.fill_value = _as_dask_array(
+            data, fill_value=self.fill_value)
 
     def persist(self, **kwargs) -> DelayedArray:
         """Persist the variable data into memory.
@@ -191,7 +238,7 @@ class DelayedArray(Variable):
         Returns:
             The variable
         """
-        self.array = dask.base.persist(self.array, **kwargs)  # type: ignore
+        self.array = dask.base.persist(self.array, **kwargs)
         return self
 
     def compute(self, **kwargs) -> NDArray | NDMaskedArray:
@@ -207,9 +254,8 @@ class DelayedArray(Variable):
                 :meth:`dask.array.Array.compute`.
         """
         try:
-            (values, ) = dask.base.compute(self.array,
-                                           traverse=False,
-                                           **kwargs)
+            values: NDArray
+            values, = dask.base.compute(self.array, traverse=False, **kwargs)
         except ValueError as exc:
             msg = str(exc)
             if 'cannot reshape' in msg or 'buffer too small' in msg:
@@ -230,26 +276,6 @@ class DelayedArray(Variable):
                                                        self.fill_value)
         return self
 
-    def duplicate(self, data: Any) -> DelayedArray:
-        """Create a new variable from the properties of this instance and the
-        data provided.
-
-        Args:
-            data: Variable data.
-
-        Returns:
-            New variable.
-
-        Raises:
-            ValueError: If the shape of the data does not match the shape of
-                the stored data.
-        """
-        result = DelayedArray(self.name, data, self.dimensions, self.attrs,
-                              self.compressor, self.fill_value, self.filters)
-        if len(result.shape) != len(self.dimensions):
-            raise ValueError('data shape does not match variable dimensions')
-        return result
-
     @classmethod
     def from_zarr(cls, array: zarr.Array, name: str, dimension: str,
                   **kwargs) -> DelayedArray:
@@ -268,16 +294,25 @@ class DelayedArray(Variable):
         """
         attrs = tuple(
             Attribute(k, v) for k, v in array.attrs.items() if k != dimension)
-        data = from_zarr_array(
+        data: dask.array.core.Array = from_zarr_array(
             array,
             array.shape,
             array.chunks,
             name=f'{name}-{uuid.uuid1()}',
             **kwargs,
         )
-        return new_delayed_array(name, data, array.attrs[dimension], attrs,
-                                 array.compressor, array.fill_value,
-                                 array.filters)
+        # pylint: disable=duplicate-code
+        # This call is similar to the one in array.py but it's not the same
+        # behaviour.
+        return new_variable(cls,
+                            name=name,
+                            array=data,
+                            dimensions=array.attrs[dimension],
+                            attrs=attrs,
+                            compressor=array.compressor,
+                            fill_value=array.fill_value,
+                            filters=tuple(array.filters or ()))
+        # pylint: enable=duplicate-code
 
     def concat(self, other: DelayedArray | Sequence[DelayedArray],
                dim: str) -> DelayedArray:
@@ -295,29 +330,7 @@ class DelayedArray(Variable):
         Raises:
             ValueError: if the variables provided is an empty sequence.
         """
-        if not isinstance(other, Sequence):
-            other = [other]
-        if not other:
-            raise ValueError('other must be a non-empty sequence')
-        try:
-            axis = self.dimensions.index(dim)
-            return new_delayed_array(
-                self.name,
-                dask.array.core.concatenate(
-                    (self.array, *(item.array for item in other)), axis=axis),
-                self.dimensions,
-                self.attrs,
-                self.compressor,
-                self.fill_value,
-                self.filters,
-            )
-        except ValueError:
-            # If the concatenation dimension is not within the dimensions of the
-            # variable, then the original variable is returned (i.e.
-            # concatenation is not necessary).
-            return new_delayed_array(self.name, self.array, self.dimensions,
-                                     self.attrs, self.compressor,
-                                     self.fill_value, self.filters)
+        return concat(self, other, dask.array.core.concatenate, dim)
 
     def __getitem__(self, key: Any) -> Any:
         """Get a slice of the variable.
@@ -329,43 +342,6 @@ class DelayedArray(Variable):
         """
         return self.data[key]
 
-    def isel(self, key: tuple[slice, ...]) -> DelayedArray:
-        """Return a new variable with data selected along the given dimension
-        indices.
-
-        Args:
-            key: Dimension indices to select
-
-        Returns:
-            The new variable
-        """
-        return new_delayed_array(self.name, self.array[key], self.dimensions,
-                                 self.attrs, self.compressor, self.fill_value,
-                                 self.filters)
-
-    def set_for_insertion(self) -> DelayedArray:
-        """Create a new variable without any attribute.
-
-        Returns:
-            The variable.
-        """
-        return new_delayed_array(self.name, self.array, self.dimensions,
-                                 tuple(), self.compressor, self.fill_value,
-                                 self.filters)
-
-    def rename(self, name: str) -> DelayedArray:
-        """Rename the variable.
-
-        Args:
-            name: New variable name.
-
-        Returns:
-            The variable.
-        """
-        return new_delayed_array(name, self.array, self.dimensions, self.attrs,
-                                 self.compressor, self.fill_value,
-                                 self.filters)
-
     def rechunk(self, **kwargs) -> DelayedArray:
         """Rechunk the variable.
 
@@ -376,9 +352,17 @@ class DelayedArray(Variable):
         Returns:
             The variable.
         """
-        return new_delayed_array(self.name, self.array.rechunk(**kwargs),
-                                 self.dimensions, self.attrs, self.compressor,
-                                 self.fill_value, self.filters)
+        # pylint: disable=duplicate-code
+        # False positive with the method concat.
+        return new_variable(type(self),
+                            name=self.name,
+                            array=self.array.rechunk(**kwargs),
+                            dimensions=self.dimensions,
+                            attrs=self.attrs,
+                            compressor=self.compressor,
+                            fill_value=self.fill_value,
+                            filters=self.filters)
+        # pylint: enable=duplicate-code
 
     def to_dask_array(self):
         """Return the underlying dask array.
@@ -404,7 +388,7 @@ class DelayedArray(Variable):
         """Return the layers for the Dask graph."""
         return self.data.__dask_layers__()
 
-    def __dask_tokenize__(self):
+    def __dask_tokenize__(self) -> Any:
         """Return the token for the Dask graph."""
         return dask.base.normalize_token(
             (type(self), self.name, self.data, self.dimensions, self.attrs,
@@ -426,21 +410,35 @@ class DelayedArray(Variable):
     def _dask_finalize(self, results, array_func, *args,
                        **kwargs) -> DelayedArray:
         """Finalize the computation of the variable."""
-        array = array_func(results, *args, **kwargs)
+        array: Any = array_func(results, *args, **kwargs)
         if not isinstance(array, dask.array.core.Array):
             array = dask.array.core.from_array(array)
-        return new_delayed_array(self.name, array, self.dimensions, self.attrs,
-                                 self.compressor, self.fill_value,
-                                 self.filters)
+        # pylint: disable=duplicate-code
+        # False positive with the method metadata defined in the base class.
+        return new_variable(type(self),
+                            name=self.name,
+                            array=array,
+                            dimensions=self.dimensions,
+                            attrs=self.attrs,
+                            compressor=self.compressor,
+                            fill_value=self.fill_value,
+                            filters=self.filters)
+        # pylint: enable=duplicate-code
 
     def __dask_postcompute__(self) -> tuple:
         """Return the finalizer and extra arguments to convert the computed
         results into their in-memory representation."""
+        array_func: Callable
+        array_args: tuple
+
         array_func, array_args = self.data.__dask_postcompute__()
         return self._dask_finalize, (array_func, ) + array_args
 
     def __dask_postpersist__(self) -> tuple:
         """Return the rebuilder and extra arguments to rebuild an equivalent
         Dask collection from a persisted or rebuilt graph."""
+        array_func: Callable
+        array_args: tuple
+
         array_func, array_args = self.data.__dask_postpersist__()
         return self._dask_finalize, (array_func, ) + array_args

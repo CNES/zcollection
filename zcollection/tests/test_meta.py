@@ -6,6 +6,9 @@
 Metadata testing.
 =================
 """
+from __future__ import annotations
+
+from typing import Any
 import json
 import pathlib
 import pickle
@@ -17,7 +20,7 @@ import zarr.codecs
 from .. import meta
 
 
-def test_attribute():
+def test_attribute() -> None:
     """Test attribute creation."""
     att = meta.Attribute('a', 23.4)
     assert isinstance(att, meta.Attribute)
@@ -39,7 +42,7 @@ def test_attribute():
     # pylint: enable=comparison-with-itself
 
 
-def test_dimension():
+def test_dimension() -> None:
     """Test dimension creation."""
     dim = meta.Dimension('a', 12)
     assert isinstance(dim, meta.Dimension)
@@ -54,13 +57,13 @@ def test_dimension():
                       meta.Dimension)
 
 
-def test_variable():
+def test_variable() -> None:
     """Test variable creation."""
     var = meta.Variable('a',
-                        numpy.dtype('int16'), ('a', ),
-                        (meta.Attribute('x', 12), ),
-                        zarr.codecs.Zlib(),
-                        0,
+                        numpy.dtype('int16'),
+                        dimensions=('a', ),
+                        attrs=(meta.Attribute('x', 12), ),
+                        compressor=zarr.codecs.Zlib(),
                         filters=(zarr.codecs.Delta(numpy.float64, numpy.int16),
                                  zarr.codecs.FixedScaleOffset(
                                      0, 1, numpy.int16)))
@@ -69,22 +72,22 @@ def test_variable():
     # pylint: disable=comparison-with-itself
     assert var == var
     assert (var == 2) is False
-    other = meta.Variable.from_config(var.get_config())
+    other: meta.Variable = meta.Variable.from_config(var.get_config())
     assert var == other
     other.name = 'x'
     assert var != other
     # pylint: enable=comparison-with-itself
 
 
-def test_dataset():
+def test_dataset() -> None:
     """Test dataset creation."""
-    root = pathlib.Path(__file__).parent
+    root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
-        first = json.load(stream)
+        first: dict[str, Any] = json.load(stream)
     with root.joinpath('second_dataset.json').open(encoding='utf-8') as stream:
-        second = json.load(stream)
-    ds = meta.Dataset.from_config(first)
-    other = meta.Dataset.from_config(second)
+        second: dict[str, Any] = json.load(stream)
+    ds: meta.Dataset = meta.Dataset.from_config(first)
+    other: meta.Dataset = meta.Dataset.from_config(second)
     assert ds == other
     assert (ds == 2) is False
     assert (ds != other) is False
@@ -92,28 +95,30 @@ def test_dataset():
     assert ds != other
 
 
-def test_select_variables():
-    root = pathlib.Path(__file__).parent
+def test_select_variables() -> None:
+    """Test select_variables."""
+    root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
-        config = json.load(stream)
-    ds = meta.Dataset.from_config(config)
-    vars = ds.select_variables(('longitude', 'latitude'))
-    assert vars == {'longitude', 'latitude'}
-    vars = ds.select_variables(drop_variables=('longitude', 'latitude'))
-    assert set(vars) & {'longitude', 'latitude'} == set()
-    vars = ds.select_variables(keep_variables=('longitude', 'latitude',
-                                               'time'),
-                               drop_variables=('time', ))
-    assert vars == {'longitude', 'latitude'}
+        config: dict[str, Any] = json.load(stream)
+    ds: meta.Dataset = meta.Dataset.from_config(config)
+    variables: set[str] = ds.select_variables(('longitude', 'latitude'))
+    assert variables == {'longitude', 'latitude'}
+    variables = ds.select_variables(drop_variables=('longitude', 'latitude'))
+    assert set(variables) & {'longitude', 'latitude'} == set()
+    variables = ds.select_variables(keep_variables=('longitude', 'latitude',
+                                                    'time'),
+                                    drop_variables=('time', ))
+    assert variables == {'longitude', 'latitude'}
 
 
-def test_search_same_dimensions_as():
+def test_search_same_dimensions_as() -> None:
     """Test search_same_dimensions_as."""
-    root = pathlib.Path(__file__).parent
+    root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
-        first = json.load(stream)
-    ds = meta.Dataset.from_config(first)
-    other = ds.search_same_dimensions_as(ds.variables['simulated_error_karin'])
+        first: dict[str, Any] = json.load(stream)
+    ds: meta.Dataset = meta.Dataset.from_config(first)
+    other: meta.Variable = ds.search_same_dimensions_as(
+        ds.variables['simulated_error_karin'])
     assert other.dimensions == ds.variables['simulated_error_karin'].dimensions
 
     other = meta.Variable.from_config(other.get_config())
@@ -122,23 +127,23 @@ def test_search_same_dimensions_as():
         ds.search_same_dimensions_as(other)
 
 
-def test_pickle():
+def test_pickle() -> None:
     """Test pickling."""
-    root = pathlib.Path(__file__).parent
+    root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
-        data = json.load(stream)
-    ds = meta.Dataset.from_config(data)
-    other = pickle.loads(pickle.dumps(ds))
+        data: dict[str, Any] = json.load(stream)
+    ds: meta.Dataset = meta.Dataset.from_config(data)
+    other: meta.Dataset = pickle.loads(pickle.dumps(ds))
     assert ds == other
 
 
-def test_missing_variables():
+def test_missing_variables() -> None:
     """Test missing_variables."""
-    root = pathlib.Path(__file__).parent
+    root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
-        data = json.load(stream)
-    ds = meta.Dataset.from_config(data)
-    other = pickle.loads(pickle.dumps(ds))
+        data: dict[str, Any] = json.load(stream)
+    ds: meta.Dataset = meta.Dataset.from_config(data)
+    other: meta.Dataset = pickle.loads(pickle.dumps(ds))
 
     assert len(ds.missing_variables(other)) == 0
 
@@ -155,39 +160,42 @@ def test_missing_variables():
         ds.missing_variables(other)
 
 
-def test_add_variable():
+def test_add_variable() -> None:
     """Test adding a variable."""
-    ds = meta.Dataset(('x', 'y'), [], [])
-    ds.add_variable(meta.Variable('a', numpy.float64, ('x', 'y')))
+    ds = meta.Dataset(('x', 'y'), [])
+    ds.add_variable(meta.Variable('a', numpy.float64, dimensions=('x', 'y')))
 
     with pytest.raises(ValueError):
-        ds.add_variable(meta.Variable('a', numpy.float64, ('x', 'y')))
+        ds.add_variable(
+            meta.Variable('a', numpy.float64, dimensions=('x', 'y')))
 
-    ds.add_variable(meta.Variable('b', numpy.float64, ('x')))
-    ds.add_variable(meta.Variable('c', numpy.float64, ('y')))
-
-    with pytest.raises(ValueError):
-        ds.add_variable(meta.Variable('d', numpy.float64, ('a', 'y')))
+    ds.add_variable(meta.Variable('b', numpy.float64, dimensions=('x', )))
+    ds.add_variable(meta.Variable('c', numpy.float64, dimensions=('y', )))
 
     with pytest.raises(ValueError):
-        ds.add_variable(meta.Variable('e', numpy.float64, ('a', 'b')))
+        ds.add_variable(
+            meta.Variable('d', numpy.float64, dimensions=('a', 'y')))
 
     with pytest.raises(ValueError):
-        ds.add_variable(meta.Variable('f', numpy.float64, ('a')))
+        ds.add_variable(
+            meta.Variable('e', numpy.float64, dimensions=('a', 'b')))
 
-    ds.add_variable(meta.Variable('g', numpy.float64, ()))
+    with pytest.raises(ValueError):
+        ds.add_variable(meta.Variable('f', numpy.float64, dimensions=('a', )))
+
+    ds.add_variable(meta.Variable('g', numpy.float64))
 
 
-def test_select_variables_by_dims():
+def test_select_variables_by_dims() -> None:
     """Test select_variable_by_dims."""
-    ds = meta.Dataset(('a', 'b', 'x', 'y'), [], [])
-    ds.add_variable(meta.Variable('a', numpy.float64, ('x', 'y')))
-    ds.add_variable(meta.Variable('b', numpy.float64, ('x')))
-    ds.add_variable(meta.Variable('c', numpy.float64, ('y')))
-    ds.add_variable(meta.Variable('d', numpy.float64, ('a', 'y')))
-    ds.add_variable(meta.Variable('e', numpy.float64, ('a', 'b')))
-    ds.add_variable(meta.Variable('f', numpy.float64, ('a')))
-    ds.add_variable(meta.Variable('g', numpy.float64, ()))
+    ds = meta.Dataset(('a', 'b', 'x', 'y'), [])
+    ds.add_variable(meta.Variable('a', numpy.float64, dimensions=('x', 'y')))
+    ds.add_variable(meta.Variable('b', numpy.float64, dimensions=('x', )))
+    ds.add_variable(meta.Variable('c', numpy.float64, dimensions=('y', )))
+    ds.add_variable(meta.Variable('d', numpy.float64, dimensions=('a', 'y')))
+    ds.add_variable(meta.Variable('e', numpy.float64, dimensions=('a', 'b')))
+    ds.add_variable(meta.Variable('f', numpy.float64, dimensions=('a', )))
+    ds.add_variable(meta.Variable('g', numpy.float64))
 
     assert ds.select_variables_by_dims(('x', 'y')) == {'a', 'b', 'c', 'd'}
     assert ds.select_variables_by_dims(('x', )) == {'a', 'b'}

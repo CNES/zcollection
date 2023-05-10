@@ -16,6 +16,8 @@ import numpy
 import pytest
 import xarray
 
+from zcollection.type_hints import ArrayLike
+
 from . import data
 from .. import Sequence, get_codecs
 from ... import dataset
@@ -25,7 +27,7 @@ from ...tests.cluster import dask_client, dask_cluster
 # pylint: enable=unused-import # Need to import for fixtures
 
 
-def test_construction():
+def test_construction() -> None:
     """Test the sequence constructor."""
     assert isinstance(Sequence(('a', 'b')), Sequence)
     assert len(Sequence(('a', 'b'))) == 2
@@ -38,7 +40,7 @@ def test_construction():
     with pytest.raises(ValueError):
         Sequence(('a', 'b'), dtype=('float32', 'int32'))
     with pytest.raises(TypeError):
-        Sequence(('a', 'b'), dtype=('int32'))
+        Sequence(('a', 'b'), dtype='int32')
     partitioning = Sequence(('a', 'b'))
     partition_keys = partitioning.parse('a=1/b=2')
     assert partitioning.encode(partition_keys) == (1, 2)
@@ -52,12 +54,14 @@ def test_construction():
         partitioning.parse('field=1')
 
 
+@pytest.mark.parametrize('delayed', [False, True])
 def test_split_dataset(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    delayed: bool,
+) -> None:
     """Test the split_dataset method."""
     repeatability = 5
-    xr_ds = data.create_test_sequence(repeatability, 20, 10)
+    xds = data.create_test_sequence(repeatability, 20, 10)
     partitioning = Sequence(('cycle_number', 'pass_number'))
 
     cycle_number = 1
@@ -69,20 +73,22 @@ def test_split_dataset(
     )
 
     # Build the test dataset
-    ds = dataset.Dataset.from_xarray(xr_ds)
+    zds = dataset.Dataset.from_xarray(xds)
+    if not delayed:
+        zds = zds.compute()
 
-    iterator = partitioning.split_dataset(ds, 'num_lines')
+    iterator = partitioning.split_dataset(zds, 'num_lines')
     assert isinstance(iterator, Iterator)
 
     for partition, indexer in iterator:
-        subset = ds.isel(indexer)
+        subset = zds.isel(indexer)
         expected = (f'cycle_number={cycle_number}',
                     f'pass_number={pass_number}')
         assert expected == partition
         assert numpy.all(
-            xr_ds.where((xr_ds.cycle_number == cycle_number)
-                        & (xr_ds.pass_number == pass_number),
-                        drop=True).observation ==
+            xds.where((xds.cycle_number == cycle_number)
+                      & (xds.pass_number == pass_number),
+                      drop=True).observation ==
             subset.variables['observation'].array)
 
         partition_keys = partitioning.parse('/'.join(partition))
@@ -97,23 +103,25 @@ def test_split_dataset(
             pass_number = 1
             cycle_number += 1
 
-    xr_ds['cycle_number'] = xarray.DataArray(numpy.array(
-        [xr_ds['cycle_number'].values] * 2).T,
-                                             dims=('num_lines', 'nump_pixels'))
-    ds = dataset.Dataset.from_xarray(xr_ds)
+    xds['cycle_number'] = xarray.DataArray(numpy.array(
+        [xds['cycle_number'].values] * 2).T,
+                                           dims=('num_lines', 'nump_pixels'))
+    zds = dataset.Dataset.from_xarray(xds)
+    if not delayed:
+        zds = zds.compute()
     with pytest.raises(ValueError):
-        list(partitioning.split_dataset(ds, 'num_lines'))
+        list(partitioning.split_dataset(zds, 'num_lines'))
 
 
-def test_config():
+def test_config() -> None:
     """Test the configuration of the Sequence class."""
     partitioning = Sequence(('cycle_number', 'pass_number'))
     config = partitioning.get_config()
-    partitioning = get_codecs(config)
+    partitioning = get_codecs(config)  # type: ignore[assignment]
     assert isinstance(partitioning, Sequence)
 
 
-def test_pickle():
+def test_pickle() -> None:
     """Test the pickling of the Date class."""
     partitioning = Sequence(('cycle_number', 'pass_number'))
     other = pickle.loads(pickle.dumps(partitioning))
@@ -122,9 +130,11 @@ def test_pickle():
 
 
 # pylint: disable=protected-access
+@pytest.mark.parametrize('delayed', [False, True])
 def test_multiple_sequence(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    delayed: bool,
+) -> None:
     """Test the creation of a sequence with multiple variables."""
     arrays = {
         '_a': numpy.array([], dtype='i8'),
@@ -140,19 +150,20 @@ def test_multiple_sequence(
             arrays['_c'] = numpy.concatenate(
                 (arrays['_c'], numpy.arange(5, dtype='i8')))
     partitioning = Sequence(('_a', '_b', '_c'))
-    variables: dict[str, dask.array.core.Array] = {
-        '_a':
-        dask.array.core.from_array(arrays['_a'],
-                                   chunks=(10, )),  # type: ignore[arg-type]
-        '_b':
-        dask.array.core.from_array(arrays['_b'],
-                                   chunks=(10, )),  # type: ignore[arg-type]
-        '_c': dask.array.core.from_array(arrays['_c'], chunks=(10, ))
-    }  # type: ignore[arg-type]
+    chunks: str = (10, )  # type: ignore[assignment]
+    if delayed:
+        variables: dict[str, ArrayLike] = {  # type: ignore[assignment]
+            '_a': dask.array.core.from_array(arrays['_a'], chunks=chunks),
+            '_b': dask.array.core.from_array(arrays['_b'], chunks=chunks),
+            '_c': dask.array.core.from_array(arrays['_c'], chunks=chunks)
+        }
+    else:
+        variables = arrays  # type: ignore[assignment]
     _a = 0
     _b = 0
     _c = 0
-    for ix, item in enumerate(partitioning._split(variables)):
+    for idx, item in enumerate(
+            partitioning._split(variables)):  # type: ignore[arg-type]
         assert item[0] == (('_a', _a), ('_b', _b), ('_c', _c))
         _c += 1
         if _c > 4:
@@ -161,36 +172,33 @@ def test_multiple_sequence(
         if _b > 4:
             _b = 0
             _a += 1
-        assert item[1] == slice(ix, ix + 1)
+        assert item[1] == slice(idx, idx + 1)
 
     numpy.random.shuffle(arrays['_c'])
-    variables['_c'] = dask.array.core.from_array(arrays['_c'],
-                                                 chunks=(10, ))  # type: ignore
+    variables['_c'] = dask.array.core.from_array(  # type: ignore[assignment]
+        arrays['_c'], chunks=chunks) if delayed else arrays['_c']
 
     with pytest.raises(ValueError):
-        list(partitioning._split(variables))
+        list(partitioning._split(variables))  # type: ignore[arg-type]
 
     del variables['_c']
     del variables['_b']
     partitioning = Sequence(('_a', '_b', '_c'))
 
     _a = 0
-    for ix, item in enumerate(partitioning._split(variables)):
+    for idx, item in enumerate(
+            partitioning._split(variables)):  # type: ignore[arg-type]
         assert item[0] == (('_a', _a), )
         _a += 1
-        assert item[1] == slice(ix * 25, ix * 25 + 25)
+        assert item[1] == slice(idx * 25, idx * 25 + 25)
     # pylint: enable=protected-access
 
 
-def test_values_must_be_integer(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
+def test_values_must_be_integer() -> None:
     """Test that the values must be integer."""
     values = numpy.arange(0, 100, dtype='f8')
     partitioning = Sequence(('values', ))
     # pylint: disable=protected-access
     with pytest.raises(TypeError):
-        list(
-            partitioning._split({'values':
-                                 dask.array.core.from_array(values)}))
+        list(partitioning._split({'values': values}))
     # pylint: enable=protected-access

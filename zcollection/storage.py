@@ -19,6 +19,7 @@ from dask.delayed import Delayed as dask_Delayed
 import dask.distributed
 import dask.local
 import fsspec
+import numcodecs.abc
 import numpy
 import zarr
 
@@ -36,7 +37,7 @@ ZATTRS = '.zattrs'
 ZGROUP = '.zgroup'
 
 #: Module logger.
-_LOGGER = logging.getLogger(__name__)
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 def execute_transaction(
@@ -47,21 +48,27 @@ def execute_transaction(
 ) -> Any:
     """Execute a transaction in the collection.
 
+    This function executes a transaction in the collection by computing the
+    given futures using the provided Dask client. The synchronizer instance is
+    used to handle access to critical resources. Any additional keyword
+    arguments are passed to the `dask.distributed.compute` function.
+
     Args:
         client: The Dask client.
         synchronizer: The instance handling access to critical resources.
         futures: Lazy tasks to be done.
-        kwargs: Keyword arguments to pass to :func:`dask.distributed.compute`.
+        **kwargs: Keyword arguments to pass to `dask.distributed.compute`.
 
     Returns:
         The result of the transaction.
     """
     if not futures:
         return None
-    awaitables = []
+    awaitables: Iterable[Any] = []
     try:
         with synchronizer:
-            awaitables = client.compute(futures, **kwargs)
+            awaitables = client.compute(futures,
+                                        **kwargs)  # type: ignore[arg-type]
             return client.gather(awaitables)
     except:  # noqa: E722
         # Before throwing the exception, we wait until all future scheduled
@@ -76,13 +83,14 @@ def _to_zarr(array: dask.array.core.Array, mapper: fsspec.FSMap, path: str,
     """Write a Dask array to a Zarr dataset.
 
     Args:
-        array: The array to write.
+        array: The Dask array to write.
         mapper: The file system mapper.
         path: The path to the Zarr dataset.
-        **kwargs: Keyword arguments to pass to :func:`zarr.create`.
+        **kwargs: Additional keyword arguments to pass to the `zarr.create`
+            function.
     """
-    chunks = [chunk[0] for chunk in array.chunks]
-    target = zarr.create(
+    chunks: list[tuple[int, ...]] = [chunk[0] for chunk in array.chunks]
+    target: dask.array.core.Array = zarr.create(
         shape=array.shape,
         chunks=chunks,  # type: ignore[arg-type]
         dtype=array.dtype,
@@ -124,8 +132,9 @@ def write_zarr_variable(
     args: tuple[str, dataset.Variable],
     dirname: str,
     fs: fsspec.AbstractFileSystem,
-    chunks: dict[str, int | str] | None = None,
+    *,
     block_size_limit: int | None = None,
+    chunks: dict[str, int | str] | None = None,
 ) -> None:
     """Write a variable to a Zarr dataset.
 
@@ -135,12 +144,20 @@ def write_zarr_variable(
             - The variable to write.
         dirname: The target directory.
         fs: The file system on which the Zarr dataset is stored.
-        chunks: Chunk size for each dimension.
-        block_size_limit: Maximum size (in bytes) of a block/chunk.
+        block_size_limit: Maximum size (in bytes) of a block/chunk. Defaults
+            to :data:`zcollection.meta.BLOCK_SIZE_LIMIT`.
+        chunks: Chunk size for each dimension. Defaults to ``None`` (i.e. the
+            default chunk size is used).
     """
+    name: str
+    variable: dataset.Variable
+    kwargs: dict[str, tuple[numcodecs.abc.Codec, ...]]
+
     name, variable = args
     kwargs = {'filters': variable.filters}
-    data = variable.array
+    data: Any = variable.array
+    if isinstance(data, numpy.ndarray):
+        data = dask.array.core.from_array(data)
 
     # If the user has not specified a chunk size, we use the default one.
     # Otherwise, we use the user's choice.
@@ -167,18 +184,18 @@ def write_zarr_variable(
 
 
 def _write_meta(
-    ds: dataset.Dataset,
+    zds: dataset.Dataset,
     dirname: str,
     fs: fsspec.AbstractFileSystem,
 ) -> None:
     """Write the metadata of a dataset to a Zarr dataset.
 
     Args:
-        ds: The dataset to process.
+        zds: The dataset to process.
         dirname: The storage directory of the Zarr dataset.
         fs: The file system on which the Zarr dataset is stored.
     """
-    attrs = collections.OrderedDict(item.get_config() for item in ds.attrs)
+    attrs = collections.OrderedDict(item.get_config() for item in zds.attrs)
     with fs.open(join_path(dirname, ZATTRS), mode='w') as stream:
         json.dump(attrs, stream, indent=2)  # type: ignore[arg-type]
 
@@ -193,76 +210,104 @@ def _write_meta(
 
 
 def write_zarr_group(
-    ds: dataset.Dataset,
+    zds: dataset.Dataset,
     dirname: str,
     fs: fsspec.AbstractFileSystem,
     synchronizer: sync.Sync,
-    parallel: bool = True,
+    *,
+    distributed: bool = True,
 ) -> None:
-    """Write a partition to a Zarr group.
+    """Write a partition of a dataset to a Zarr group.
 
     Args:
-        ds: The dataset to write.
+        zds: The dataset partition to write.
         dirname: The name of the partition.
         fs: The file system that the partition is stored on.
         synchronizer: The instance handling access to critical resources.
-        parallel: Whether to write the variables in parallel using Dask.
+        distributed: Whether to use Dask distributed to write the variables
+            in parallel. Defaults to ``True``.
+
+    Writes the variables of the given dataset partition to a Zarr group
+    located at the specified directory on the given file system. If
+    `distributed` is `True`, the variables are written in parallel using
+    Dask distributed. Otherwise, the variables are written sequentially.
+
+    The `synchronizer` argument is an instance of `sync.Sync` that handles
+    access to critical resources, such as the Zarr group's metadata and
+    attributes. This ensures that multiple processes or threads do not
+    attempt to modify the same resource at the same time.
     """
-    if parallel:
-        with dask.distributed.worker_client() as client:
-            iterables = [(name, client.scatter(variable))
-                         for name, variable in ds.variables.items()]
-            futures = client.map(write_zarr_variable,
-                                 iterables,
-                                 dirname=dirname,
-                                 fs=fs,
-                                 chunks=ds.chunks,
-                                 block_size_limit=ds.block_size_limit)
-            execute_transaction(client, synchronizer, futures)
-    else:
-        for name, variable in ds.variables.items():
-            write_zarr_variable((name, variable),
-                                dirname,
-                                fs,
-                                chunks=ds.chunks,
-                                block_size_limit=ds.block_size_limit)
-    _write_meta(ds, dirname, fs)
+    with synchronizer:
+        if distributed:
+            with dask.distributed.worker_client() as client:
+                iterables: list[tuple[str, Any]] = [
+                    (name, client.scatter(variable))
+                    for name, variable in zds.variables.items()
+                ]
+                futures: list[Any] = client.map(
+                    write_zarr_variable,
+                    iterables,
+                    batch_size=64,
+                    block_size_limit=zds.block_size_limit,
+                    chunks=zds.chunks,
+                    dirname=dirname,
+                    fs=fs,
+                )
+                execute_transaction(client, sync.NoSync(), futures)
+        else:
+            tuple(
+                map(
+                    lambda item: write_zarr_variable(
+                        item,
+                        dirname,
+                        fs,
+                        chunks=zds.chunks,
+                        block_size_limit=zds.block_size_limit,
+                    ), zds.variables.items()))
+        _write_meta(zds, dirname, fs)
 
 
-def open_zarr_array(array: zarr.Array,
-                    name: str,
-                    delayed: bool = True) -> dataset.Variable:
-    """Open a Zarr array as a Dask array.
+def open_zarr_array(
+    array: zarr.Array,
+    name: str,
+    *,
+    delayed: bool = True,
+) -> dataset.Variable:
+    """Open a Zarr array as a Dask array or a NumPy array.
 
     Args:
         array: The Zarr array to open.
         name: The name of the variable.
-        delayed: Whether to open the array lazily.
+        delayed: Whether to load the variable lazily. If True, returns a Dask
+            array. If False, returns a NumPy array. Defaults to True.
 
     Returns:
-        The variable.
+        The variable as a Dask array or a NumPy array.
     """
     if delayed:
         return dataset.DelayedArray.from_zarr(array, name, DIMENSIONS)
     return dataset.Array.from_zarr(array, name, DIMENSIONS)
 
 
-def open_zarr_group(dirname,
-                    fs: fsspec.AbstractFileSystem,
-                    *,
-                    selected_variables: Iterable[str] | None = None,
-                    delayed: bool = True) -> dataset.Dataset:
+def open_zarr_group(
+    dirname,
+    fs: fsspec.AbstractFileSystem,
+    *,
+    delayed: bool = True,
+    selected_variables: Iterable[str] | None = None,
+) -> dataset.Dataset:
     """Open a Zarr group stored in a partition.
 
     Args:
         dirname: The name of the partition.
         fs: The file system that the partition is stored on.
+        delayed: Whether to load the variables lazily. Defaults to True.
         selected_variables: The list of variables to retain from the Zarr
-            group. If None, all variables are selected.
-        delayed: Whether to open the variables lazily.
+            group. If None, all variables are selected. Defaults to None.
 
     Returns:
-        The zarr group stored in the partition.
+        The Zarr group stored in the partition, with the specified variables
+        and attributes.
     """
     _LOGGER.debug('Opening Zarr group %r', dirname)
     store: zarr.Group = zarr.open_consolidated(  # type: ignore[arg-type]
@@ -270,7 +315,7 @@ def open_zarr_group(dirname,
     # Ignore unknown variables to retain.
     selected_variables = set(selected_variables) & set(
         store) if selected_variables is not None else set(store)
-    variables = [
+    variables: list[dataset.Variable] = [
         open_zarr_array(
             store[name],  # type: ignore[arg-type]
             name,
@@ -280,7 +325,8 @@ def open_zarr_group(dirname,
     return dataset.Dataset(
         variables=variables,
         attrs=tuple(dataset.Attribute(*item) for item in store.attrs.items()),
-        delayed=delayed)
+        delayed=delayed,
+    )
 
 
 def update_zarr_array(
@@ -288,15 +334,22 @@ def update_zarr_array(
     array: ArrayLike,
     fs: fsspec.AbstractFileSystem,
 ) -> None:
-    """Update a Zarr array.
+    """Update a Zarr array with new data.
 
     Args:
-        dirname: The storage directory of the Zarr array..
-        array: The data updated to write.
-        fs: The file system that the Zarr array is stored on.
+        dirname: The directory where the Zarr array is stored.
+        array: The new data to write to the array.
+        fs: The file system where the Zarr array is stored.
+
+    Notes:
+        This function updates the entire Zarr array with the new data. If the
+        array is a Dask array, it must be computed before writing to the Zarr.
+        If the array is a masked array and the Zarr array has a fill value, the
+        masked values are filled with the fill value before writing to the Zarr
+        array.
     """
     _LOGGER.debug('Updating Zarr array %r', dirname)
-    store = zarr.open_array(fs.get_mapper(dirname), mode='a')
+    store: zarr.Array = zarr.open_array(fs.get_mapper(dirname), mode='a')
 
     if isinstance(array, dask.array.core.Array):
         array = array.compute()
@@ -324,7 +377,7 @@ def del_zarr_array(
         fs: The file system that the dataset is stored on.
     """
     _LOGGER.debug('Deleting Zarr array %r', dirname)
-    path = join_path(dirname, name)
+    path: str = join_path(dirname, name)
     if fs.exists(path):
         fs.rm(path, recursive=True)
         zarr.consolidate_metadata(
@@ -339,6 +392,7 @@ def add_zarr_array(
     variable: meta.Variable,
     template: str,
     fs: fsspec.AbstractFileSystem,
+    *,
     chunks: dict[str, int | str] | None = None,
 ) -> None:
     """Add a variable to a Zarr dataset.
@@ -348,20 +402,29 @@ def add_zarr_array(
         variable: The variable to add.
         template: The name of the template variable.
         fs: The file system that the dataset is stored on.
-        chunks: Chunk size for each dimension.
+        chunks: Chunk size for each dimension. Defaults to None. See
+            :func:`zarr.create` for more information.
+
+    Notes:
+        This function adds a new variable to an existing Zarr dataset. The new
+        variable is created with the same shape as the template variable, and
+        with the specified chunk size (if provided). The function also writes
+        the variable's attributes to the dataset, and consolidates the
+        dataset's metadata.
     """
     _LOGGER.debug('Adding variable %r to Zarr dataset %r', variable.name,
                   dirname)
-    shape = zarr.open(fs.get_mapper(join_path(dirname, template))).shape
+    shape: tuple[int, ...] = zarr.open(  # type: ignore[arg-type]
+        fs.get_mapper(join_path(dirname, template))).shape
 
-    var_chunks = shape if chunks is None else tuple(
-        chunks.get(dim, shape[ix])
+    var_chunks: tuple[int | str, ...] = shape if chunks is None else tuple(
+        chunks.get(dim, shape[ix])  # type: ignore[misc]
         for ix, dim in enumerate(variable.dimensions))
 
-    store = fs.get_mapper(join_path(dirname, variable.name))
+    store: fsspec.FSMap = fs.get_mapper(join_path(dirname, variable.name))
     zarr.create(
         shape,
-        chunks=var_chunks,
+        chunks=var_chunks,  # type: ignore[arg-type]
         dtype=variable.dtype,
         compressor=variable.compressor,  # type: ignore[arg-type]
         fill_value=variable.fill_value,  # type: ignore[arg-type]

@@ -30,11 +30,11 @@ class PartitionCallable(Protocol):
         ...
         # pylint: enable=unnecessary-ellipsis
 
-    def __call__(self, ds: dataset.Dataset, *args, **kwargs) -> Any:
+    def __call__(self, zds: dataset.Dataset, *args, **kwargs) -> Any:
         """Call the partition function.
 
         Args:
-            ds: Dataset to partition.
+            zds: Dataset to partition.
             *args: Positional arguments.
             **kwargs: Keyword arguments.
 
@@ -43,26 +43,8 @@ class PartitionCallable(Protocol):
         """
 
 
-class MapCallable(Protocol):
-    """Protocol for map callables.
-
-    A callable map is a function that accepts a data set, a list of
-    arguments, a dictionary of keyword arguments and returns a result.
-    """
-
-    def __call__(self, ds: dataset.Dataset, *args, **kwargs) -> Any:
-        """Call the map function.
-
-        Args:
-            ds: Dataset to map.
-            *args: Positional arguments.
-            **kwargs: Keyword arguments.
-
-        Returns:
-            Result of the map function.
-        """
-
-    #: pylint: enable=too-few-public-methods
+#: Alias for :class:`PartitionCallable`.
+MapCallable = PartitionCallable
 
 
 class UpdateCallable(Protocol):
@@ -80,12 +62,12 @@ class UpdateCallable(Protocol):
         ...
         # pylint: enable=unnecessary-ellipsis
 
-    def __call__(self, ds: dataset.Dataset, *args,
+    def __call__(self, zds: dataset.Dataset, *args,
                  **kwargs) -> dict[str, ArrayLike]:
         """Call the update function.
 
         Args:
-            ds: Dataset to update.
+            zds: Dataset to update.
             *args: Positional arguments.
             **kwargs: Keyword arguments.
 

@@ -8,12 +8,20 @@ Partitioning scheme.
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar, Iterator, Sequence, Tuple
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Generator,
+    Iterator,
+    Match,
+    Sequence,
+    Tuple,
+)
 import abc
 import collections
 import re
 
-import dask.array
 import dask.array.core
 import dask.array.creation
 import dask.array.reductions
@@ -22,10 +30,13 @@ import fsspec
 import numpy
 
 from .. import dataset
-from ..type_hints import NDArray
+from ..type_hints import ArrayLike, DTypeLike, NDArray
 
 #: Object that represents a partitioning scheme
 Partition = Tuple[Tuple[Tuple[str, Any], ...], slice]
+
+#: The callable that parses the partitioning scheme
+PatternType = Callable[[str], Match[str] | None]
 
 #: Allowed data types for partitioning schemes
 DATA_TYPES = ('int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32',
@@ -34,6 +45,7 @@ DATA_TYPES = ('int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32',
 
 def _logical_or_reduce(
     arr: dask.array.core.Array,
+    *,
     axis: int | tuple[int, ...] | None = None,
 ) -> dask.array.core.Array:
     """Implementation of `numpy.logical_or` reduction with dask.
@@ -44,7 +56,6 @@ def _logical_or_reduce(
             all the axes. If this is a tuple of ints, a reduction is performed
             on multiple axes, instead of a single axis or all the axes as
             before.
-
     Returns:
         Reduced array.
     """
@@ -52,10 +63,10 @@ def _logical_or_reduce(
 
     #: pylint: disable=unused-argument
     # The function signature is required by the `dask.array.reduce` function.
-    def chunk(block, axis, keepdims):
+    def chunk(block, axis, keepdims) -> Any:
         return block
 
-    def aggregate(block, axis, keepdims):
+    def aggregate(block, axis, keepdims) -> Any:
         return numpy.logical_or.reduce(block, axis=axis)
 
     #: pylint: enable=unused-argument
@@ -74,22 +85,45 @@ def unique(arr: dask.array.core.Array) -> tuple[NDArray, NDArray]:
 
     Args:
         arr: Array of elements.
-
     Returns:
         Tuple of unique elements and their indices.
     """
-    size = arr.shape[0]
-    chunks = arr.chunks[0]
+    size: int = arr.shape[0]
+    chunks: tuple[int, ...] = arr.chunks[0]
     #: pylint: disable=not-callable
-    mask = dask.array.wrap.empty((size, ), dtype=numpy.bool_, chunks=chunks)
+    mask: dask.array.core.Array = dask.array.wrap.empty((size, ),
+                                                        dtype=numpy.bool_,
+                                                        chunks=chunks)
     #: pylint: enable=not-callable
     mask[0] = True
     mask[1:] = (_logical_or_reduce(arr, axis=1)
                 if arr.ndim > 1 else arr[1:] != arr[:-1])
-    dtype = numpy.uint32 if size < 2**32 else numpy.uint64
-    indices = dask.array.creation.arange(size, dtype=dtype, chunks=chunks)
+    dtype: DTypeLike = numpy.uint32 if size < 2**32 else numpy.uint64
+    indices: dask.array.core.Array = dask.array.creation.arange(
+        size,
+        dtype=dtype,
+        chunks=chunks,  # type: ignore[arg-type]
+    )
     mask = mask.persist()
     return arr[mask].compute(), indices[mask].compute()
+
+
+def unique_and_check_monotony(arr: ArrayLike) -> tuple[NDArray, NDArray]:
+    """Return unique elements and their indices.
+
+    Args:
+        arr: Array of elements.
+        is_delayed: If True, the array is delayed.
+    Returns:
+        Tuple of unique elements and their indices.
+    """
+    index: NDArray
+    indices: NDArray
+
+    index, indices = numpy.unique(arr, axis=0, return_index=True)
+    if not numpy.all(numpy.diff(indices) > 0):
+        raise ValueError('index is not monotonic')
+    return index, indices
 
 
 def difference(arr: NDArray) -> NDArray:
@@ -98,7 +132,6 @@ def difference(arr: NDArray) -> NDArray:
 
     Args:
         arr: Array to calculate the difference for.
-
     Returns:
         Array of differences
     """
@@ -111,7 +144,6 @@ def concatenate_item(arr: NDArray, item: Any) -> NDArray:
     Args:
         arr: Array to concatenate.
         item: Item to concatenate.
-
     Returns:
         Concatenated array.
     """
@@ -128,13 +160,11 @@ def list_partitions(
 
     The function will go down the tree and return all the files present when the
     requested depth is reached.
-
     Args:
         fs: file system object
         path: path to the directory
         depth: maximum depth of the directory tree.
         root: if True, the path is the root of the tree.
-
     Returns:
         Iterator of (path, directories, files).
     """
@@ -171,14 +201,23 @@ def list_partitions(
     return StopIteration()
 
 
-class Partitioning(abc.ABC):
-    """Partitioning scheme.
+class Partitioning(metaclass=abc.ABCMeta):
+    """Initializes a new Partitioning instance.
 
     Args:
-        variables:  List of variables to be used for partitioning
-        dtype: The list of data types allowing to store the values of variables
-            in a binary representation without loss of information.
-            Defaults to int64.
+        variables: A list of strings representing the variables to be used for
+            partitioning.
+        dtype: An optional sequence of strings representing the data type used
+            to store variable values in a binary representation without data
+            loss. Must be one of the following allowed data types: ``int8``,
+            ``int16``, ``int32``, ``int64``, ``uint8``, ``uint16``, ``uint32``,
+            ``uint64``. If not provided, defaults to ``int64`` for all
+            variables.
+
+    Raises:
+        TypeError: If dtype is not a sequence of strings.
+        ValueError: If any of the data types provided is not one of the allowed
+            data types.
     """
     __slots__ = ('_dtype', '_pattern', 'variables')
 
@@ -196,9 +235,10 @@ class Partitioning(abc.ABC):
         self.variables = tuple(variables)
         #: Data type used to store variable values in a binary representation
         #: without data loss.
-        self._dtype = dtype or ('int64', ) * len(self.variables)
+        self._dtype: tuple[str, ...] = tuple(
+            dtype) if dtype is not None else ('int64', ) * len(self.variables)
         #: The regular expression that matches the partitioning scheme.
-        self._pattern = self._regex().search
+        self._pattern: PatternType = self._regex().search
 
         if len(set(self._dtype) - set(DATA_TYPES)) != 0:
             raise ValueError(
@@ -223,7 +263,7 @@ class Partitioning(abc.ABC):
     @abc.abstractmethod
     def _split(
         self,
-        variables: dict[str, dask.array.core.Array],
+        variables: dict[str, ArrayLike],
     ) -> Iterator[Partition]:
         """Split the variables constituting the partitioning into partitioning
         schemes.
@@ -231,7 +271,6 @@ class Partitioning(abc.ABC):
         Args:
             variables: The variables to be split constituting the
                 partitioning scheme.
-
         Returns:
             A sequence of tuples that contains the partitioning
                 scheme and the associated indexer to divide the dataset on each
@@ -245,53 +284,52 @@ class Partitioning(abc.ABC):
 
     def index_dataset(
         self,
-        ds: dataset.Dataset,
+        zds: dataset.Dataset,
     ) -> Iterator[Partition]:
         """Yield the indexing scheme for the given dataset.
 
         Args:
-            ds: The dataset to be indexed.
-
+            zds: The dataset to be indexed.
         Yields:
             The indexing scheme for the partitioning scheme.
-
         Raises:
             ValueError: if one of the variables needs for the partitioning
                 is not monotonic.
         """
         variables = collections.OrderedDict(
-            (name, ds.variables[name].array) for name in self.variables)
-        # If the dask array is too chunked, the calculation is excessively
-        # long.
-        return self._split(
-            {name: arr.rechunk().persist()
-             for name, arr in variables.items()})
+            (name, zds.variables[name].array) for name in self.variables)
+        if zds.delayed:
+            # If the dask array is too chunked, the calculation is excessively
+            # long.
+            return self._split({
+                name: arr.rechunk().persist()
+                for name, arr in variables.items()
+            })
+        return self._split(variables)
 
     def split_dataset(
         self,
-        ds: dataset.Dataset,
+        zds: dataset.Dataset,
         axis: str,
     ) -> Iterator[tuple[tuple[str, ...], dict[str, slice]]]:
         """Split the dataset into partitions.
 
         Args:
-            ds:  The dataset to be split.
+            zds:  The dataset to be split.
             axis: The axis to be used for the splitting.
-
         Yields:
             The partitioning scheme and the indexer to divide the dataset on
             each partition found.
-
         Raises:
             ValueError: if one of the variables needs for the partitioning
                 is not a one-dimensional array.
         """
         for item in self.variables:
-            if len(ds.variables[item].shape) != 1:
+            if len(zds.variables[item].shape) != 1:
                 raise ValueError(f'f{item!r} must be a one-dimensional array')
         return ((self._partition(selection), {
             axis: indexer
-        }) for selection, indexer in self.index_dataset(ds))
+        }) for selection, indexer in self.index_dataset(zds))
 
     def get_config(self) -> dict[str, Any]:
         """Return the configuration of the partitioning scheme.
@@ -299,9 +337,10 @@ class Partitioning(abc.ABC):
         Returns:
             The configuration of the partitioning scheme.
         """
-        config = {'id': self.ID}
-        slots = (getattr(_class, '__slots__', ())
-                 for _class in reversed(self.__class__.__mro__))
+        config: dict[str, str | None] = {'id': self.ID}
+        slots: Generator[tuple[str, ...], None, None] = (getattr(
+            _class, '__slots__',
+            ()) for _class in reversed(self.__class__.__mro__))
         config.update((attr, getattr(self, attr)) for _class in slots
                       for attr in _class if not attr.startswith('_'))
         return config
@@ -312,7 +351,6 @@ class Partitioning(abc.ABC):
 
         Args:
             config: The configuration of the partitioning scheme.
-
         Returns:
             The partitioning scheme.
         """
@@ -323,15 +361,17 @@ class Partitioning(abc.ABC):
 
         Args:
             partition: The partitioning scheme to be parsed.
-
         Returns:
             The parsed partitioning scheme.
+        Raises:
+            ValueError: if the partitioning scheme is not driven by this
+                instance.
         """
-        match = self._pattern(partition)
+        match: Match[str] | None = self._pattern(partition)
         if match is None:
             raise ValueError(
                 f'Partition is not driven by this instance: {partition}')
-        groups = match.groups()
+        groups: tuple[str, ...] = match.groups()
         return tuple((groups[ix], int(groups[ix + 1]))
                      for ix in range(0, len(groups), 2))
 
@@ -344,7 +384,6 @@ class Partitioning(abc.ABC):
 
         Args:
             partition: The partitioning scheme to be encoded.
-
         Returns:
             The encoded partitioning scheme.
         """
@@ -355,7 +394,6 @@ class Partitioning(abc.ABC):
 
         Args:
             values: The encoded partitioning scheme.
-
         Returns:
             The decoded partitioning scheme.
         """
@@ -367,7 +405,6 @@ class Partitioning(abc.ABC):
         Args:
             partition_scheme: The partitioning scheme to be joined.
             sep: The separator to be used.
-
         Returns:
             The joined partitioning scheme.
         """
@@ -383,7 +420,6 @@ class Partitioning(abc.ABC):
         Args:
             fs: The filesystem to be used.
             path: The path to the directory containing the partitions.
-
         Yields:
             The partitions.
         """

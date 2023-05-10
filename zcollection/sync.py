@@ -53,7 +53,7 @@ class ProcessSync(Sync):
     """This class is used when the user wants to synchronize accesses to the
     collection, in other words, when there is concurrency."""
 
-    def __init__(self, path: str):
+    def __init__(self, path: str) -> None:
         self.lock = fasteners.InterProcessLock(path)
 
     def __enter__(self) -> bool:

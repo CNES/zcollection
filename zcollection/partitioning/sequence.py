@@ -15,7 +15,7 @@ import dask.array.routines
 import numpy
 
 from . import abc
-from ..type_hints import NDArray
+from ..type_hints import ArrayLike, NDArray
 
 
 def _is_monotonic(arr: NDArray) -> bool:
@@ -32,21 +32,49 @@ def _is_monotonic(arr: NDArray) -> bool:
         True if the array is monotonic, False otherwise.
     """
     # `reversed` because `numpy.lexsort` wants the most significant key last.
-    values = [arr[:, ix] for ix in reversed(range(arr.shape[1]))]
-    sort_order = numpy.lexsort(numpy.array(values))
+    values: list[NDArray] = [
+        arr[:, ix] for ix in reversed(range(arr.shape[1]))
+    ]
+    sort_order: NDArray = numpy.lexsort(numpy.array(values))
     return numpy.all(abc.difference(sort_order) > 0)  # type: ignore
 
 
+def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
+    """Return unique elements and their indices.
+
+    Args:
+        arr: Array of elements.
+        is_delayed: If True, the array is delayed.
+    Returns:
+        Tuple of unique elements and their indices.
+    """
+    index: NDArray
+    indices: NDArray
+
+    if is_delayed:
+        index, indices = abc.unique(arr)  # type: ignore[arg-type]
+        if not _is_monotonic(index):
+            raise ValueError('index is not monotonic')
+        return index, indices
+    return abc.unique_and_check_monotony(arr)
+
+
 class Sequence(abc.Partitioning):
-    """Partitioning a sequence of variables.
+    """Initialize a partitioning scheme for a sequence of variables.
 
     A sequence is a combination of variables constituting unique monotonic keys.
     For example, the orbit number (``cycle``) and the half-orbit number
     (``pass``) of a satellite.
 
     Args:
-        variables: The sequence of variables constituting the partitioning.
-        dtype: The data type of the partitioning.
+        variables: A list of strings representing the variables to be used for
+            partitioning.
+        dtype: An optional sequence of strings representing the data type used
+            to store variable values in a binary representation without data
+            loss. Must be one of the following allowed data types: ``int8``,
+            ``int16``, ``int32``, ``int64``, ``uint8``, ``uint16``, ``uint32``,
+            ``uint64``. If not provided, defaults to ``int64`` for all
+            variables.
 
     Raises:
         ValueError: If the periodicity is not valid.
@@ -60,20 +88,26 @@ class Sequence(abc.Partitioning):
     # pylint: disable=arguments-differ
     # False positive: `self` is used in the signature.
     @staticmethod
-    def _split(
-        variables: dict[str,
-                        dask.array.core.Array]) -> Iterator[abc.Partition]:
+    def _split(variables: dict[str, ArrayLike]) -> Iterator[abc.Partition]:
         """Split the variables constituting the partitioning into partitioning
         schemes."""
+        index: NDArray
+        indices: NDArray
+        matrix: dask.array.core.Array | NDArray
+
+        # Determine if the variables are handled by Dask.
+        is_delayed: bool = any(
+            isinstance(item, dask.array.core.Array)
+            for item in variables.values())
+
+        # Combines the arrays of variable values into a transposed matrix.
         matrix = dask.array.routines.vstack(tuple(
-            variables.values())).transpose()
+            variables.values())).transpose() if is_delayed else numpy.vstack(
+                tuple(variables.values())).transpose()
         if matrix.dtype.kind not in 'iu':
             raise TypeError('The variables must be integer')
 
-        index, indices = abc.unique(matrix)
-        if not _is_monotonic(index):
-            raise ValueError('index is not monotonic')
-
+        index, indices = _unique(matrix, is_delayed)  # type: ignore[arg-type]
         indices = abc.concatenate_item(indices, matrix.shape[0])
 
         fields = tuple(variables.keys())

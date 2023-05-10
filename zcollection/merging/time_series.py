@@ -10,6 +10,7 @@ import numpy
 
 from . import period
 from .. import dataset
+from ..type_hints import NDArray
 
 
 def merge_time_series(
@@ -43,8 +44,8 @@ def merge_time_series(
     Returns:
         The merged dataset.
     """
-    existing_axis = existing_ds.variables[axis].values
-    inserted_axis = inserted_ds.variables[axis].values
+    existing_axis: NDArray = existing_ds.variables[axis].values
+    inserted_axis: NDArray = inserted_ds.variables[axis].values
     existing_period = period.Period(existing_axis.min(),
                                     existing_axis.max(),
                                     within=True)
@@ -52,7 +53,8 @@ def merge_time_series(
                                     inserted_axis.max(),
                                     within=True)
 
-    relation = inserted_period.get_relation(existing_period)
+    relation: period.PeriodRelation = inserted_period.get_relation(
+        existing_period)
 
     # The new piece is located before the existing data.
     if relation.is_before():
@@ -66,7 +68,7 @@ def merge_time_series(
     if relation.contains():
         return inserted_ds
 
-    intersection = inserted_period.intersection(existing_period)
+    intersection: period.Period = inserted_period.intersection(existing_period)
 
     # The new piece is located before, but there is an overlap
     # between the two datasets.
@@ -94,14 +96,14 @@ def merge_time_series(
     assert relation.is_inside()
     # comparison between ndarray and datetime64
     index = numpy.where(existing_axis < intersection.begin)[0]  # type: ignore
-    before = existing_ds.isel(
+    before: dataset.Dataset = existing_ds.isel(
         {partitioning_dim: slice(0, index[-1] + 1, None)})
 
     # pylint: disable=comparison-with-callable
     # comparison between ndarray and datetime64
     index = numpy.where(existing_axis > intersection.end())[0]  # type: ignore
     # pylint: enable=comparison-with-callable
-    after = existing_ds.isel(
+    after: dataset.Dataset = existing_ds.isel(
         {partitioning_dim: slice(index[0], index[-1] + 1, None)})
 
     return before.concat((inserted_ds, after), partitioning_dim)

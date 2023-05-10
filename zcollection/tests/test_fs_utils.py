@@ -6,6 +6,7 @@
 Testing utilities
 =================
 """
+from typing import Any
 import os
 import pathlib
 import platform
@@ -34,7 +35,7 @@ Aenean justo sapien, mollis aliquam vestibulum id, suscipit a ligula. Phasellus
 porta arcu erat, elementum faucibus leo auctor vel. Integer vel pharetra leo.'''
 
 
-def test_join_path():
+def test_join_path() -> None:
     """Test the join_path function."""
     assert fs_utils.join_path('a', 'b', 'c') == 'a/b/c'
     assert fs_utils.join_path('a', 'b', 'c', 'd') == 'a/b/c/d'
@@ -42,7 +43,7 @@ def test_join_path():
     assert fs_utils.join_path('a', 'b', 'c', 'd', 'e', 'f') == 'a/b/c/d/e/f'
 
 
-def test_get_fs():
+def test_get_fs() -> None:
     """Test the get_fs function."""
     fs = fs_utils.get_fs('file')
     assert isinstance(fs, fsspec.implementations.local.LocalFileSystem)
@@ -50,9 +51,11 @@ def test_get_fs():
     assert isinstance(fs, fsspec.implementations.local.LocalFileSystem)
 
 
-def test_fs_walk(tmpdir):
+def test_fs_walk(tmpdir) -> None:
     """Test the fs_walk function."""
-    for ix, item in enumerate([
+    item: Any
+
+    for idx, item in enumerate([
         ('year=2014', 'month=5'),
         ('year=2014', 'month=5', 'day=2'),
         ('year=2014', 'month=5', 'day=1'),
@@ -81,8 +84,8 @@ def test_fs_walk(tmpdir):
         path = pathlib.Path(tmpdir).joinpath(*item)
         path.mkdir(parents=True, exist_ok=False)
         if 'day' in item[-1]:
-            with path.joinpath(f'file_{ix}.txt').open(mode='w',
-                                                      encoding='utf-8'):
+            with path.joinpath(f'file_{idx}.txt').open(mode='w',
+                                                       encoding='utf-8'):
                 ...
 
     fs = fs_utils.get_fs()
@@ -104,7 +107,7 @@ def test_fs_walk(tmpdir):
                          sort=True)) == [('', [], [])]
 
 
-def test_normalize_path():
+def test_normalize_path() -> None:
     """Test the normalize_path function."""
     fs = fsspec.filesystem('file')
     root = str(pathlib.Path('/').resolve())
@@ -129,7 +132,7 @@ def test_normalize_path():
     assert fs_utils.normalize_path(fs, './foo') == './foo'
 
 
-def test_copy_file(tmpdir):
+def test_copy_file(tmpdir) -> None:
     """Test the copy file across different file systems."""
     fs_source = fsspec.filesystem('file')
     fs_target = fsspec.filesystem('memory')
@@ -141,7 +144,7 @@ def test_copy_file(tmpdir):
     assert fs_target.cat('foo.txt').decode('utf-8') == TEXT
 
 
-def test_copy_files(tmpdir):
+def test_copy_files(tmpdir) -> None:
     """Test the copy files across different file systems."""
     source = tmpdir / 'source'
     target = tmpdir / 'target'
@@ -165,12 +168,13 @@ def test_copy_files(tmpdir):
         assert fs_target.cat(item).decode('utf-8') == TEXT
 
 
-def test_copy_tree(tmpdir):
+def test_copy_tree(tmpdir) -> None:
     """Test the copy tree across different file systems."""
+    item: Any
     fs_source = fsspec.filesystem('file')
     fs_target = fsspec.filesystem('memory')
 
-    for ix, item in enumerate([
+    for idx, item in enumerate([
         ('year=2014', 'month=5'),
         ('year=2014', 'month=5', 'day=2'),
         ('year=2014', 'month=5', 'day=1'),
@@ -199,7 +203,7 @@ def test_copy_tree(tmpdir):
         path = fs_utils.join_path(str(tmpdir), *item)
         fs_source.makedirs(path, exist_ok=False)
         if 'day' in item[-1]:
-            with fs_source.open(fs_utils.join_path(path, f'file_{ix}.txt'),
+            with fs_source.open(fs_utils.join_path(path, f'file_{idx}.txt'),
                                 mode='wb',
                                 encoding='utf-8') as stream:
                 stream.write(TEXT.encode('utf-8'))

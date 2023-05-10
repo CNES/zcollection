@@ -6,12 +6,14 @@
 Test the registry module.
 =========================
 """
+from typing import Any
+
 import pytest
 
 from .. import registry
 
 
-def test_get_codecs():
+def test_get_codecs() -> None:
     """Test the get_codecs function."""
     with pytest.raises(ValueError):
         registry.get_codecs({'ID': 'foo'})
@@ -24,10 +26,10 @@ class MyCodec:
     """A dummy codec."""
     ID = 'foo'
 
-    __slots__ = ('attribute', )
+    __slots__: tuple[str, ...] = ('attribute', )
 
     def __init__(self, attribute) -> None:
-        self.attribute = attribute
+        self.attribute: Any = attribute
 
     def get_config(self) -> dict:
         """Returns the configuration of the codec."""
@@ -39,9 +41,9 @@ class MyCodec:
         return cls(config['attribute'])
 
 
-def test_register_codec():
+def test_register_codec() -> None:
     """Test the register_codec function."""
-    registry.register_codec(MyCodec, 'foo')
+    registry.register_codec(MyCodec, codec_id='foo')  # type: ignore[arg-type]
 
     instance = MyCodec(12)
 
@@ -50,4 +52,6 @@ def test_register_codec():
     assert isinstance(other, MyCodec)
 
     with pytest.raises(ValueError):
-        registry.register_codec(MyCodec, 'foo')
+        registry.register_codec(
+            MyCodec,  # type: ignore[arg-type]
+            codec_id='foo')

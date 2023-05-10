@@ -19,6 +19,7 @@ import pyarrow
 import pyarrow.parquet
 
 from .. import collection, dataset
+from ..collection import MapCallable
 from ..type_hints import NDArray
 
 #: Scalar data type for the index.
@@ -45,14 +46,14 @@ class IndexingCallable(Protocol):
 
     def __call__(
         self,
-        ds: dataset.Dataset,
+        zds: dataset.Dataset,
         *args,
         **kwargs,
     ) -> NDArray:
         """Indexing the partition of the collection.
 
         Args:
-            ds: Dataset to be indexed.
+            zds: Dataset to be indexed.
             *args: Positional arguments.
             **kwargs: Keyword arguments.
 
@@ -67,7 +68,7 @@ class IndexingCallable(Protocol):
         # pylint: enable=unnecessary-ellipsis
 
 
-class Indexer:
+class Indexer(abc.ABC):
     """Abstract base class for indexing a collection.
 
     This class defines the interface for indexing a collection.
@@ -91,9 +92,10 @@ class Indexer:
         if isinstance(path, pathlib.Path):
             path = str(path)
         #: Path to the index.
-        self._path = path
+        self._path: str = path
         #: Filesystem to use.
-        self._fs = filesystem or fsspec.filesystem('file')
+        self._fs: fsspec.AbstractFileSystem = \
+            filesystem or fsspec.filesystem('file')
         #: Metadata to attach to the index.
         self._meta: dict[str, bytes] = {}
         #: Partitioning keys of the indexed collection.
@@ -138,12 +140,12 @@ class Indexer:
             The PyArrow type.
         """
         dtype = dict(cls.dtype(**kwargs))
-        binary = {}
+        binary: dict[str, pyarrow.DataType] = {}
         for name, value in tuple(dtype.items()):
             if value.startswith('S'):
                 binary[name] = pyarrow.binary(int(value[1:]))
                 del dtype[name]
-        result = {
+        result: dict[str, pyarrow.DataType] = {
             name: getattr(pyarrow, value)()
             for name, value in dtype.items()
         }
@@ -161,21 +163,21 @@ class Indexer:
             partition_schema: A tuple of (name, type) pairs that describes the
                 storage properties of the collection's partitioning keys.
         """
-        dtype = self.pyarrow_type(**kwargs)
+        dtype: dict[str, pyarrow.DataType] = self.pyarrow_type(**kwargs)
         self._partition_keys = tuple(item[0] for item in partition_schema)
         self._type = {name: dtype[name] for name, _ in self.dtype()}
         self._type.update({item[0]: item[1] for item in partition_schema})
 
     def _sort_keys(self) -> list[tuple[str, str]]:
         """Return the list of keys to sort the index by."""
-        keys = self._partition_keys + (self.START, self.STOP)
+        keys: tuple[str, ...] = self._partition_keys + (self.START, self.STOP)
         return [(key, 'ascending') for key in keys]
 
     @classmethod
     def _create(
         cls,
         path: pathlib.Path | str,
-        ds: collection.Collection,
+        zds: collection.Collection,
         meta: dict[str, bytes] | None = None,
         filesystem: fsspec.AbstractFileSystem | None = None,
         **kwargs,
@@ -184,7 +186,7 @@ class Indexer:
 
         Args:
             path: The path to the index.
-            ds: The collection to index.
+            zds: The collection to index.
             meta: Metadata to attach to the index.
             filesystem: The filesystem to use.
 
@@ -192,8 +194,8 @@ class Indexer:
             The created index.
         """
         partition_schema = tuple((name, getattr(pyarrow, value)())
-                                 for name, value in ds.partitioning.dtype())
-        self = cls(path, filesystem=filesystem)
+                                 for name, value in zds.partitioning.dtype())
+        self: Indexer = cls(path, filesystem=filesystem)
         self._meta = meta or {}
         self._set_schema(partition_schema, **kwargs)
         return self
@@ -203,7 +205,7 @@ class Indexer:
     def create(
         cls,
         path: pathlib.Path | str,
-        ds: collection.Collection,
+        zds: collection.Collection,
         *,
         filesystem: fsspec.AbstractFileSystem | None = None,
         **kwargs,
@@ -212,7 +214,7 @@ class Indexer:
 
         Args:
             path: The path to the index.
-            ds: The collection to index.
+            zds: The collection to index.
             filesystem: The filesystem to use.
 
         Returns:
@@ -235,9 +237,9 @@ class Indexer:
         Returns:
             The index.
         """
-        self = cls(path, filesystem=filesystem)
+        self: Indexer = cls(path, filesystem=filesystem)
         with self._fs.open(path, 'rb') as stream:
-            schema = pyarrow.parquet.read_schema(stream)
+            schema: pyarrow.Schema = pyarrow.parquet.read_schema(stream)
         columns = tuple(name for name, _ in self.dtype())
         self._partition_keys = tuple(name for name in schema.names
                                      if name not in columns)
@@ -250,8 +252,8 @@ class Indexer:
 
     def _update(
         self,
-        ds: collection.Collection,
-        func: IndexingCallable,
+        zcollection: collection.Collection,
+        func: MapCallable,
         partition_size: int | None = None,
         npartitions: int | None = None,
         **kwargs,
@@ -259,17 +261,17 @@ class Indexer:
         """Update the index.
 
         Args:
-            ds: The dataset containing the new data.
+            zcollection: The collection to index.
             func: The function to use to calculate the index.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
             **kwargs: Additional arguments to pass to the function.
         """
         tables: list[pyarrow.Table] = []
-        bag = ds.map(func,
-                     partition_size=partition_size,
-                     npartitions=npartitions,
-                     **kwargs)
+        bag = zcollection.map(func,
+                              partition_size=partition_size,
+                              npartitions=npartitions,
+                              **kwargs)
         # List of new partitions indexed.
         partitions = []
         for partition, data in bag.compute():
@@ -334,7 +336,7 @@ class Indexer:
     @abc.abstractmethod
     def update(
         self,
-        ds: collection.Collection,
+        zds: collection.Collection,
         *,
         partition_size: int | None = None,
         npartitions: int | None = None,
@@ -342,7 +344,7 @@ class Indexer:
         """Update the index.
 
         Args:
-            ds: The dataset containing the new data.
+            zds: The dataset containing the new data.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
         """

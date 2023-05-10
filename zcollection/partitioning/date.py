@@ -9,11 +9,13 @@ Partitioning by date
 from __future__ import annotations
 
 from typing import Any, ClassVar, Iterator, Sequence
+import datetime
 
 import dask.array.core
 import numpy
 
 from . import abc
+from ..type_hints import ArrayLike, NDArray
 
 #: Numpy time units
 RESOLUTION = ('Y', 'M', 'D', 'h', 'm', 's')
@@ -25,7 +27,7 @@ UNITS = ('year', 'month', 'day', 'hour', 'minute', 'second')
 DATA_TYPES = ('uint16', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8')
 
 #: Time separation units
-SEPARATORS = {
+SEPARATORS: dict[str, str] = {
     'year': '-',
     'month': '-',
     'day': 'T',
@@ -35,12 +37,39 @@ SEPARATORS = {
 }
 
 
-class Date(abc.Partitioning):
-    """Date partitioning.
+def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
+    """Return unique elements and their indices.
 
     Args:
-        variables: Variable names used for the partitioning.
-        resolution: Time resolution of the partitioning.
+        arr: Array of elements.
+        is_delayed: If True, the array is delayed.
+    Returns:
+        Tuple of unique elements and their indices.
+    Raises:
+        ValueError: If the array is not monotonic.
+    """
+    index: NDArray
+    indices: NDArray
+
+    if is_delayed:
+        index, indices = abc.unique(arr)  # type: ignore[arg-type]
+        # We don't use here the function `numpy.diff` but `abc.difference` for
+        # optimization purposes.
+        if not numpy.all(
+                abc.difference(index.view(numpy.int64)) >= 0):  # type: ignore
+            raise ValueError('index is not monotonic')
+        return index, indices
+    return abc.unique_and_check_monotony(arr)
+
+
+class Date(abc.Partitioning):
+    """Initialize a partitioning scheme based on dates.
+
+    Args:
+        variables: A list of strings representing the variables to be used for
+            partitioning.
+        resolution: Time resolution of the partitioning. Must be in
+            :data:`RESOLUTION`.
 
     Raises:
         ValueError: If the resolution is not in the list of supported
@@ -61,12 +90,12 @@ class Date(abc.Partitioning):
                 'Partitioning on dates is performed on a single variable.')
         if resolution not in RESOLUTION:
             raise ValueError('resolution must be in: ' + ', '.join(RESOLUTION))
-        index = RESOLUTION.index(resolution) + 1
+        index: int = RESOLUTION.index(resolution) + 1
 
         #: The time resolution of the partitioning
-        self.resolution = resolution
+        self.resolution: str = resolution
         #: The time parts used for the partitioning
-        self._attrs = UNITS[:index + 1]
+        self._attrs: tuple[str, ...] = UNITS[:index + 1]
         #: The indices of the time parts used for the partitioning
         self._index = tuple(range(index))
         super().__init__(variables,
@@ -83,32 +112,34 @@ class Date(abc.Partitioning):
         selection: tuple[tuple[str, Any], ...],
     ) -> tuple[str, ...]:
         """Return the partitioning scheme for the given selection."""
-        _, datetime64 = selection[0]
-        datetime = datetime64.astype('M8[s]').item()
+        datetime64: NDArray = selection[0][1]
+        py_datetime: datetime.datetime = datetime64.astype('M8[s]').item()
         return tuple(UNITS[ix] + '=' +
-                     f'{getattr(datetime, self._attrs[ix]):02d}'
+                     f'{getattr(py_datetime, self._attrs[ix]):02d}'
                      for ix in self._index)
         # pylint: enable=arguments-differ
 
     def _split(
         self,
-        variables: dict[str, dask.array.core.Array],
+        variables: dict[str, ArrayLike],
     ) -> Iterator[abc.Partition]:
         """Return the partitioning scheme for the given variables."""
+        index: NDArray
+        indices: NDArray
+        name: str
+        values: ArrayLike
+
+        # Determine if the variables are handled by Dask.
+        is_delayed: bool = any(
+            isinstance(value, dask.array.core.Array)
+            for value in variables.values())
         name, values = tuple(variables.items())[0]
 
         if not numpy.issubdtype(values.dtype, numpy.dtype('datetime64')):
             raise TypeError('values must be a datetime64 array')
 
-        index, indices = abc.unique(
-            values.astype(f'datetime64[{self.resolution}]'))
-
-        # We don't use here the function `numpy.diff` but `abc.difference` for
-        # optimization purposes.
-        if not numpy.all(
-                abc.difference(index.view(numpy.int64)) >= 0):  # type: ignore
-            raise ValueError('index is not monotonic')
-
+        index, indices = _unique(
+            values.astype(f'datetime64[{self.resolution}]'), is_delayed)
         indices = abc.concatenate_item(indices, values.size)
 
         return ((((name, date), ), slice(start, indices[ix + 1], None))
@@ -181,7 +212,7 @@ class Date(abc.Partitioning):
             >>> partitioning.decode((numpy.datetime64('2020-01-01'), ))
             (("year", 2020), ("month", 1), ("day", 1))
         """
-        datetime64, = values
-        datetime = datetime64.astype('M8[s]').item()
-        return tuple((UNITS[ix], getattr(datetime, self._attrs[ix]))
+        datetime64: NDArray = values[0]
+        py_datetime: datetime.datetime = datetime64.astype('M8[s]').item()
+        return tuple((UNITS[ix], getattr(py_datetime, self._attrs[ix]))
                      for ix in self._index)

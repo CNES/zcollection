@@ -66,7 +66,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         # pylint: disable=protected-access
         # Useless to rewrite the html representation of the array. Use the
         # zarr one.
-        html_code = self._array.info._repr_html_()
+        html_code: str = self._array.info._repr_html_()
         #: pylint: enable=protected-access
         return html_code.replace('zarr.core.Array', str(type(self)))
 
@@ -82,7 +82,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         Returns:
             The data for the key.
         """
-        values = self._array[key]
+        values: Array = self._array[key]
         if self._fill_value is not None:
             values = numpy.ma.masked_equal(values, self._fill_value)
         return values
@@ -188,7 +188,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
             The numpy.ndarray of the array or numpy.ma.masked_array if
             a fill_value is defined.
         """
-        array = self._array[...]
+        array: Array = self._array[...]
         if self._fill_value is not None:
             array = numpy.ma.masked_equal(array, self._fill_value)
         if dtype is not None:
@@ -229,11 +229,11 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         Returns:
             The result of the numpy function.
         """
-        args = [
+        arrays: list[NDArray] = [
             item.__array__() if isinstance(item, CompressedArray) else item
             for item in args
         ]
-        return func(*args, **kwargs)
+        return func(*arrays, **kwargs)
 
     def __array_ufunc__(
         self,
@@ -289,7 +289,7 @@ def dask_array_from_compressed_array(
     Returns:
         The dask array.
     """
-    chunks = array.chunks
+    chunks: Sequence[Sequence[int]] = array.chunks
     if name is None:
         name = 'from-compressed-array-' + dask.base.tokenize(
             array, chunks, **kwargs)
@@ -301,21 +301,21 @@ def dask_array_from_compressed_array(
 
 
 @dask.array.dispatch.concatenate_lookup.register(CompressedArray)
-def _concatenate_compressed_array(arrays, **kwargs):
-    dtype = kwargs.get('dtype', None)
-    arr = [item.__array__(dtype=dtype) for item in arrays]
+def _concatenate_compressed_array(arrays, **kwargs) -> NDArray:
+    dtype: DType | None = kwargs.get('dtype', None)
+    arr: list[NDArray] = [item.__array__(dtype=dtype) for item in arrays]
     if any(tuple(item.fill_value is not None for item in arrays)):
         return numpy.ma.concatenate(arr, **kwargs)
     return numpy.concatenate(arr, **kwargs)
 
 
 @dask.array.dispatch.numel_lookup.register(CompressedArray)
-def _numel_compressed_array(array, **kwargs):
+def _numel_compressed_array(array, **kwargs) -> numpy.float64 | NDArray:
     #: pylint: disable=protected-access
     # array is a CompressedArray, we can access its _array attribute.
     # We reuse the implementation of dask array numel. Useless to
     # reimplement it.
-    arr = array.__array__(dtype=kwargs.get('dtype', None))
+    arr: NDArray = array.__array__(dtype=kwargs.get('dtype', None))
     if array._fill_value is not None:
         return dask.array.backends._numel_masked(arr, **kwargs)
     return dask.array.backends._numel_ndarray(arr, **kwargs)

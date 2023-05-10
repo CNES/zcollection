@@ -78,8 +78,31 @@ class ArrayLike(Protocol[_DType_co]):
         ...
 
     @property
+    def dtype(self) -> DType:
+        """The data type of the array."""
+        # pylint: disable=unnecessary-ellipsis
+        # Make checker happy.
+        ...
+        # pylint: enable=unnecessary-ellipsis
+
+    @property
     def shape(self) -> tuple[int, ...]:
         """The shape of the array."""
+        # pylint: disable=unnecessary-ellipsis
+        # Make checker happy.
+        ...
+        # pylint: enable=unnecessary-ellipsis
+
+    @property
+    def size(self) -> int:
+        """The size of the array."""
+        # pylint: disable=unnecessary-ellipsis
+        # Make checker happy.
+        ...
+        # pylint: enable=unnecessary-ellipsis
+
+    def astype(self, dtype: DTypeLike) -> ArrayLike[_DType_co]:
+        """Convert the array to a given type."""
         # pylint: disable=unnecessary-ellipsis
         # Make checker happy.
         ...

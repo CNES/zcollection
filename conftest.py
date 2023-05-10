@@ -9,7 +9,7 @@ Test setup
 """
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser) -> None:
     """Add command line options to pytest."""
     parser.addoption(
         '--s3',

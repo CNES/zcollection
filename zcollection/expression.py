@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 import ast
 import dataclasses
+import types
 
 
 @dataclasses.dataclass
@@ -19,17 +20,16 @@ class Expression:
 
     Args:
         expression: The expression to be evaluated
-
     Raises:
         NameError: If a variable is not defined.
-
     Example:
         >>> expr = Expression("year==2000 and month==1 and day in range(1, 12)")
     """
-    __slots__ = ('code', )
-
     #: Compiled expression to be evaluated
-    code: Any
+    code: types.CodeType
+
+    #: Known data members
+    __slots__: tuple[str, ...] = ('code', )
 
     #: The builtins that are allowed in the expression.
     BUILTINS: ClassVar[dict[str, Any]] = {'range': range}
@@ -39,7 +39,7 @@ class Expression:
 
     def __call__(self, variables: dict[str, Any]) -> Any:
         try:
-            __locals = {
+            __locals: dict[str, Any] = {
                 name: variables[name]
                 for name in self.code.co_names if name not in self.BUILTINS
             }

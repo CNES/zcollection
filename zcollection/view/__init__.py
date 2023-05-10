@@ -22,8 +22,9 @@ import dask.utils
 import fsspec
 
 from .. import collection, dask_utils, dataset, fs_utils, meta, storage, sync
-from ..collection.detail import try_infer_callable
+from ..collection.detail import _try_infer_callable
 from ..convenience import collection as convenience
+from ..type_hints import ArrayLike
 from .detail import (
     ViewReference,
     _assert_have_variables,
@@ -41,7 +42,7 @@ from .detail import (
     _write_checksum,
 )
 
-__all__ = ['View', 'ViewReference']
+__all__ = ('View', 'ViewReference')
 
 #: Module logger.
 _LOGGER = logging.getLogger(__name__)
@@ -59,8 +60,7 @@ class View:
             not provided, all partitions are selected.
         synchronizer: The synchronizer used to synchronize the view.
 
-    .. note::
-
+    Note:
         Normally, you should not call this constructor directly. Instead, use
         :func:`create_view <zcollection.create_view>` or :func:`open_view
         <zcollection.open_view>` to create or open a view.
@@ -79,17 +79,17 @@ class View:
         synchronizer: sync.Sync | None = None,
     ) -> None:
         #: The file system used to access the view (default local file system).
-        self.fs = fs_utils.get_fs(filesystem)
+        self.fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
         #: Path to the directory where the view is stored.
-        self.base_dir = fs_utils.normalize_path(self.fs, base_dir)
+        self.base_dir: str = fs_utils.normalize_path(self.fs, base_dir)
         #: The reference collection of the view.
-        self.view_ref = convenience.open_collection(
+        self.view_ref: collection.Collection = convenience.open_collection(
             view_ref.path, mode='r', filesystem=view_ref.filesystem)
         #: The metadata of the variables handled by the view.
-        self.metadata = ds or meta.Dataset(
+        self.metadata: meta.Dataset = ds or meta.Dataset(
             self.view_ref.metadata.dimensions, variables=[], attrs=[])
         #: The synchronizer used to synchronize the view.
-        self.synchronizer = synchronizer or sync.NoSync()
+        self.synchronizer: sync.Sync = synchronizer or sync.NoSync()
         #: The filters used to select the partitions of the reference.
         self.filters = filters
 
@@ -113,7 +113,7 @@ class View:
         args = tuple(filter(lambda item: not self.fs.exists(item), args))
         _LOGGER.info('%d partitions selected from %s', len(args),
                      self.view_ref)
-        client = dask_utils.get_client()
+        client: dask.distributed.Client = dask_utils.get_client()
         storage.execute_transaction(
             client, self.synchronizer,
             client.map(
@@ -136,8 +136,8 @@ class View:
 
     def _write_config(self) -> None:
         """Write the configuration file for the view."""
-        config = self._config(self.base_dir)
-        fs = json.loads(self.view_ref.fs.to_json())
+        config: str = self._config(self.base_dir)
+        fs: dict[str, Any] = json.loads(self.view_ref.fs.to_json())
         with self.fs.open(config, mode='w') as stream:
             json.dump(
                 {
@@ -175,14 +175,14 @@ class View:
             ValueError: If the provided directory does not contain a view.
         """
         _LOGGER.info('Opening view %r', path)
-        fs = fs_utils.get_fs(filesystem)
-        config = cls._config(path)
+        fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
+        config: str = cls._config(path)
         if not fs.exists(config):
             raise ValueError(f'zarr view not found at path {path!r}')
         with fs.open(config) as stream:
-            data = json.load(stream)
+            data: dict[str, Any] = json.load(stream)
 
-        view_ref = data['view_ref']
+        view_ref: dict[str, Any] = data['view_ref']
         return View(data['base_dir'],
                     ViewReference(
                         view_ref['path'],
@@ -223,7 +223,8 @@ class View:
         Returns:
             The variables of the view.
         """
-        return collection.variables(self.metadata, selected_variables)
+        return dataset.get_dataset_variable_properties(self.metadata,
+                                                       selected_variables)
 
     def add_variable(
         self,
@@ -254,11 +255,12 @@ class View:
         if (variable.name in self.view_ref.metadata.variables
                 or variable.name in self.metadata.variables):
             raise ValueError(f'Variable {variable.name} already exists')
-        client = dask_utils.get_client()
+        client: dask.distributed.Client = dask_utils.get_client()
         self.metadata.add_variable(variable)
-        template = self.view_ref.metadata.search_same_dimensions_as(variable)
+        template: meta.Variable = \
+            self.view_ref.metadata.search_same_dimensions_as(variable)
 
-        existing_partitions = {
+        existing_partitions: set[str] = {
             pathlib.Path(path).relative_to(self.base_dir).as_posix()
             for path in self.partitions()
         }
@@ -317,9 +319,9 @@ class View:
         _LOGGER.info('Dropping variable %r', varname)
         _assert_variable_handled(self.view_ref.metadata, self.metadata,
                                  varname)
-        client = dask_utils.get_client()
+        client: dask.distributed.Client = dask_utils.get_client()
 
-        variable = self.metadata.variables.pop(varname)
+        variable: meta.Variable = self.metadata.variables.pop(varname)
         self._write_config()
 
         storage.execute_transaction(
@@ -332,14 +334,15 @@ class View:
     def load(
         self,
         *,
+        delayed: bool = True,
         filters: collection.PartitionFilter = None,
         indexer: collection.Indexer | None = None,
         selected_variables: Iterable[str] | None = None,
-        delayed: bool = True,
     ) -> dataset.Dataset | None:
         """Load the view.
 
         Args:
+            delayed: Whether to load data in a dask array or not.
             filters: The predicate used to filter the partitions to select.
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
@@ -347,7 +350,6 @@ class View:
             indexer: The indexer to apply.
             selected_variables: A list of variables to retain from the view.
                 If None, all variables are loaded.
-            delayed: If True, the variables are handled as dask arrays.
 
         Returns:
             The dataset.
@@ -370,8 +372,8 @@ class View:
             arguments = tuple((self.view_ref.partitioning.parse(item), [])
                               for item in self.partitions(filters=filters))
 
-        client = dask_utils.get_client()
-        futures = client.map(
+        client: dask.distributed.Client = dask_utils.get_client()
+        futures: list[dask.distributed.Future] = client.map(
             _load_one_dataset,
             arguments,
             base_dir=self.base_dir,
@@ -380,8 +382,7 @@ class View:
             selected_variables=self.view_ref.metadata.select_variables(
                 selected_variables),
             view_ref=client.scatter(self.view_ref),
-            variables=self.metadata.select_variables(selected_variables),
-        )
+            variables=self.metadata.select_variables(selected_variables))
 
         # The load function returns the path to the partitions and the loaded
         # datasets. Only the loaded datasets are retrieved here and filter None
@@ -392,7 +393,7 @@ class View:
                 filter(lambda item: item is not None,
                        client.gather(futures))))  # type: ignore[arg-type]
         if arrays:
-            array = arrays.pop(0)
+            array: dataset.Dataset = arrays.pop(0)
             if arrays:
                 array = array.concat(arrays,
                                      self.view_ref.partition_properties.dim)
@@ -408,6 +409,7 @@ class View:
         /,
         *args,
         depth: int = 0,
+        delayed: bool = True,
         filters: collection.PartitionFilter = None,
         partition_size: int | None = None,
         selected_variables: Iterable[str] | None = None,
@@ -425,6 +427,7 @@ class View:
                 argument, it will be passed a tuple with the name of the
                 partitioned dimension and the slice allowing getting in the
                 dataset the selected partition without the overlap.
+            delayed: Whether to load data in a dask array or in memory.
             filters: The predicate used to filter the partitions to drop.
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
@@ -436,7 +439,6 @@ class View:
             selected_variables: A list of variables to retain from the view.
                 If None, all variables are loaded. Useful to load only a
                 subset of the view.
-            delayed: If True, the variables are handled as dask arrays.
             args: The positional arguments to pass to the function.
             kwargs: The keyword arguments to pass to the function.
 
@@ -455,12 +457,17 @@ class View:
         """
         _assert_have_variables(self.metadata)
 
-        client = dask_utils.get_client()
+        client: dask.distributed.Client = dask_utils.get_client()
 
         datasets_list = tuple(
-            _load_datasets_list(client, self.base_dir, self.fs,
-                                self.view_ref, self.metadata,
-                                self.partitions(filters), selected_variables))
+            _load_datasets_list(client=client,
+                                base_dir=self.base_dir,
+                                delayed=delayed,
+                                fs=self.fs,
+                                view_ref=self.view_ref,
+                                metadata=self.metadata,
+                                partitions=self.partitions(filters),
+                                selected_variables=selected_variables))
 
         # If no dataset is selected, we have nothing to do.
         if not datasets_list:
@@ -468,7 +475,7 @@ class View:
                           'data is selected with the given filters.')
             return
 
-        func_result = try_infer_callable(
+        func_result: dict[str, ArrayLike] = _try_infer_callable(
             func, datasets_list[0][0], self.view_ref.partition_properties.dim,
             *args, **kwargs)
         tuple(
@@ -512,7 +519,9 @@ class View:
     def map(
         self,
         func: collection.MapCallable,
+        /,
         *args,
+        delayed: bool = True,
         filters: collection.PartitionFilter = None,
         partition_size: int | None = None,
         npartitions: int | None = None,
@@ -524,6 +533,7 @@ class View:
         Args:
             func: The function to apply to every partition of the view.
             *args: The positional arguments to pass to the function.
+            delayed: Whether to load data in a dask array or in memory.
             filters: The predicate used to filter the partitions to process.
                 To get more information on the predicate, see the
                 documentation of the :meth:`zcollection.Collection.partitions`
@@ -565,28 +575,36 @@ class View:
             Returns:
                 The result of the function.
             """
-            ds, partition = arguments
+            zds, partition = arguments
             return self.view_ref.partitioning.parse(partition), func(
-                ds, *args, **kwargs)
+                zds, *args, **kwargs)
 
         _assert_have_variables(self.metadata)
 
-        client = dask_utils.get_client()
+        client: dask.distributed.Client = dask_utils.get_client()
         datasets_list = tuple(
-            _load_datasets_list(client, self.base_dir, self.fs,
-                                self.view_ref, self.metadata,
-                                self.partitions(filters), selected_variables))
-        bag = dask.bag.core.from_sequence(datasets_list,
-                                          partition_size=partition_size,
-                                          npartitions=npartitions)
+            _load_datasets_list(client=client,
+                                base_dir=self.base_dir,
+                                delayed=delayed,
+                                fs=self.fs,
+                                view_ref=self.view_ref,
+                                metadata=self.metadata,
+                                partitions=self.partitions(filters),
+                                selected_variables=selected_variables))
+        bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
+            datasets_list,
+            partition_size=partition_size,
+            npartitions=npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
         # pylint: enable=duplicate-code
 
     def map_overlap(
         self,
         func: collection.MapCallable,
-        depth: int,
+        /,
         *args,
+        depth: int = 1,
+        delayed: bool = True,
         filters: collection.PartitionFilter = None,
         partition_size: int | None = None,
         npartitions: int | None = None,
@@ -605,6 +623,7 @@ class View:
                 partitioned dimension and the slice allowing getting in the
                 dataset the selected partition without the overlap.
             *args: The positional arguments to pass to the function.
+            delayed: Whether to load data in a dask array or in memory.
             filters: The predicate used to filter the partitions to process.
                 To get more information on the predicate, see the
                 documentation of the :meth:`zcollection.Collection.partitions`
@@ -631,7 +650,8 @@ class View:
         if depth < 0:
             raise ValueError('Depth must be greater than or equal to 0')
 
-        add_partition_info = dask.utils.has_keyword(func, 'partition_info')
+        add_partition_info: bool = dask.utils.has_keyword(
+            func, 'partition_info')
 
         def _wrap(
             arguments: tuple[dataset.Dataset, str],
@@ -654,8 +674,8 @@ class View:
             Returns:
                 The result of the function.
             """
-            ds, indices = _select_overlap(arguments, datasets_list, depth,
-                                          self.view_ref)
+            zds, indices = _select_overlap(arguments, datasets_list, depth,
+                                           self.view_ref)
 
             if add_partition_info:
                 kwargs = kwargs.copy()
@@ -664,18 +684,24 @@ class View:
 
             # Finally, apply the function.
             return (self.view_ref.partitioning.parse(arguments[1]),
-                    func(ds, *args, **kwargs))
+                    func(zds, *args, **kwargs))
 
         _assert_have_variables(self.metadata)
 
-        client = dask_utils.get_client()
+        client: dask.distributed.Client = dask_utils.get_client()
         datasets_list = tuple(
-            _load_datasets_list(client, self.base_dir, self.fs,
-                                self.view_ref, self.metadata,
-                                self.partitions(filters), selected_variables))
-        bag = dask.bag.core.from_sequence(datasets_list,
-                                          partition_size=partition_size,
-                                          npartitions=npartitions)
+            _load_datasets_list(client=client,
+                                base_dir=self.base_dir,
+                                delayed=delayed,
+                                fs=self.fs,
+                                view_ref=self.view_ref,
+                                metadata=self.metadata,
+                                partitions=self.partitions(filters),
+                                selected_variables=selected_variables))
+        bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
+            datasets_list,
+            partition_size=partition_size,
+            npartitions=npartitions)
         return bag.map(_wrap, func, datasets_list, depth, *args, **kwargs)
 
     def is_synced(self) -> bool:
@@ -685,7 +711,7 @@ class View:
             True if the view is synchronized, False otherwise.
         """
         partitions = tuple(self.view_ref.partitions(relative=True))
-        client = dask_utils.get_client()
+        client: dask.distributed.Client = dask_utils.get_client()
         unsynchronized_partition = storage.execute_transaction(
             client, self.synchronizer,
             client.map(_sync,
@@ -736,8 +762,8 @@ class View:
         partitions = tuple(self.view_ref.partitions(relative=True))
         _LOGGER.info('%d partitions to synchronize', len(partitions))
 
-        client = dask_utils.get_client()
-        synchronized_partition = storage.execute_transaction(
+        client: dask.distributed.Client = dask_utils.get_client()
+        synchronized_partition: list[str | None] = storage.execute_transaction(
             client, self.synchronizer,
             client.map(_sync,
                        partitions,
@@ -745,8 +771,10 @@ class View:
                        fs=self.fs,
                        view_ref=self.view_ref,
                        metadata=self.metadata))
-        partition_ids = []
-        for item in filter(lambda item: item is not None,
-                           synchronized_partition):
-            partition_ids.append(dict(self.view_ref.partitioning.parse(item)))
+
+        partition_ids = tuple(
+            dict(self.view_ref.partitioning.parse(
+                item))  # type: ignore[arg-type] # item is filtered
+            for item in filter(lambda item: item is not None,
+                               synchronized_partition))
         return lambda item: item in partition_ids

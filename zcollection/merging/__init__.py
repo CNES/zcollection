@@ -13,12 +13,13 @@ import random
 import shutil
 
 import fsspec
+import fsspec.implementations.local
 import zarr.storage
 
 from .. import dataset, storage, sync
 from .time_series import merge_time_series
 
-__all__ = ['MergeCallable', 'perform', 'merge_time_series']
+__all__ = ('MergeCallable', 'perform', 'merge_time_series')
 
 #: Character set used to create a temporary directory.
 CHARACTERS = 'abcdefghijklmnopqrstuvwxyz0123456789_'
@@ -64,7 +65,7 @@ def _rename(
     fs: fsspec.AbstractFileSystem,
     source: str,
     dest: str,
-):
+) -> None:
     """Rename a directory on a file system.
 
     Args:
@@ -87,20 +88,21 @@ def _rename(
 
 def _update_fs(
     dirname: str,
-    ds: dataset.Dataset,
+    zds: dataset.Dataset,
     fs: fsspec.AbstractFileSystem,
+    *,
     synchronizer: sync.Sync | None = None,
 ) -> None:
     """Updates a dataset stored in a partition.
 
     Args:
         dirname: The name of the partition.
-        ds: The dataset to update.
+        zds: The dataset to update.
         fs: The file system that the partition is stored on.
         synchronizer: The instance handling access to critical resources.
     """
     # Name of the temporary directory.
-    temp = dirname + '.' + ''.join(
+    temp: str = dirname + '.' + ''.join(
         random.choice(CHARACTERS) for _ in range(10))
 
     # Initializing Zarr group
@@ -109,7 +111,7 @@ def _update_fs(
     # Writing new data.
     try:
         # The synchronization is done by the caller.
-        storage.write_zarr_group(ds, temp, fs, synchronizer or sync.NoSync())
+        storage.write_zarr_group(zds, temp, fs, synchronizer or sync.NoSync())
     except Exception:
         # The "write_zarr_group" method throws the exception if all scheduled
         # tasks are finished. So here we can delete the temporary directory.
@@ -126,22 +128,28 @@ def perform(
     axis: str,
     fs: fsspec.AbstractFileSystem,
     partitioning_dim: str,
+    *,
+    delayed: bool = True,
     merge_callable: MergeCallable | None,
     synchronizer: sync.Sync | None = None,
 ) -> None:
-    """Performs the merge between a new dataset and an existing partition.
+    """Merges a new dataset with an existing partition.
 
     Args:
         ds_inserted: The dataset to merge.
         dirname: The name of the partition.
         axis: The axis to merge on.
-        fs: The file system on which the partition is stored on.
+        fs: The file system on which the partition is stored.
         partitioning_dim: The partitioning dimension.
+        delayed: If True, the existing dataset is loaded lazily. Defaults to
+            True.
         merge_callable: The merge callable. If None, the inserted dataset
             overwrites the existing dataset stored in the partition.
+            Defaults to None.
         synchronizer: The instance handling access to critical resources.
+            Defaults to None.
     """
-    ds = merge_callable(
-        storage.open_zarr_group(dirname, fs), ds_inserted, axis,
-        partitioning_dim) if merge_callable is not None else ds_inserted
-    _update_fs(dirname, ds, fs, synchronizer)
+    zds: dataset.Dataset = merge_callable(
+        storage.open_zarr_group(dirname, fs, delayed=delayed), ds_inserted,
+        axis, partitioning_dim) if merge_callable is not None else ds_inserted
+    _update_fs(dirname, zds, fs, synchronizer=synchronizer)

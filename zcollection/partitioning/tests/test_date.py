@@ -6,7 +6,7 @@
 Test partitioning by date.
 ==========================
 """
-from typing import Iterator
+import dataclasses
 import pickle
 import random
 import string
@@ -22,17 +22,66 @@ from .. import Date, get_codecs
 from ... import dataset
 # pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster
+from ...type_hints import NDArray
 
 # pylint: disable=disable=unused-argument
 
+#: First date of the dataset to partition
+START_DATE = numpy.datetime64('2000-01-06', 'ns')
 
+#: Time delta between two partitions
+TIME_DELTA = numpy.timedelta64(1, 'h')
+
+
+@dataclasses.dataclass(frozen=True)
+class PartitionTestData:
+    """Test data for partitioning."""
+    timedelta: numpy.timedelta64
+    indices: slice
+    resolution: str
+    partitioning: Date
+    dates: NDArray
+
+    def check_partitioning(self, date: numpy.datetime64, zds: dataset.Dataset,
+                           partition: tuple[str, ...]) -> None:
+        """Check the partitioning of a dataset."""
+        item = date.astype('datetime64[us]').item()
+        assert partition == (
+            f'year={item.year}',
+            f'month={item.month:02d}',
+            f'day={item.day:02d}',
+            f'hour={item.hour:02d}',
+        )[self.indices]
+
+        folder = '/'.join(partition)
+        fields = self.partitioning.parse(folder)
+        parsed_date, = self.partitioning.encode(fields)
+        assert parsed_date == numpy.datetime64(date).astype(
+            f'datetime64[{self.resolution}]')
+
+        expected_selection = self.dates[
+            (self.dates >= parsed_date)
+            & (self.dates < parsed_date + self.timedelta)]
+        assert numpy.all(zds.variables['dates'].compute(
+            scheduler=dask.local.get_sync) == expected_selection)
+
+        assert fields == (
+            ('year', item.year),
+            ('month', item.month),
+            ('day', item.day),
+            ('hour', item.hour),
+        )[self.indices]
+        assert self.partitioning.join(fields, '/') == folder
+        assert self.partitioning.join(
+            self.partitioning.decode((parsed_date, )), '/') == folder
+
+
+@pytest.mark.parametrize('delayed', [False, True])
 def test_split_dataset(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-):
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    delayed: bool,
+) -> None:
     """Test the split_dataset method."""
-    start_date = numpy.datetime64('2000-01-06', 'us')
-    delta = numpy.timedelta64(1, 'h')
-
     for end_date, indices, resolution in [
         (
             numpy.datetime64('2001-12-31', 'Y'),
@@ -60,70 +109,39 @@ def test_split_dataset(
         timedelta = numpy.timedelta64(1, resolution)
 
         # Temporal axis to split
-        dates = numpy.arange(start_date, end_date, delta)
+        dates: NDArray = numpy.arange(START_DATE, end_date, TIME_DELTA)
 
         # Measured data
-        observation = numpy.random.rand(dates.size)  # type: ignore
+        observation: NDArray = numpy.random.rand(dates.size)  # type: ignore
 
         # Create the dataset to split
-        ds = xarray.Dataset(
-            dict(dates=xarray.DataArray(dates, dims=('num_lines', )),
-                 observation=xarray.DataArray(observation,
-                                              dims=('num_lines', ))))
+        xds = xarray.Dataset({
+            'dates':
+            xarray.DataArray(dates, dims=('num_lines', )),
+            'observation':
+            xarray.DataArray(observation, dims=('num_lines', ))
+        })
 
         partitioning = Date(('dates', ), resolution)
         assert len(partitioning) == len(range(indices.start, indices.stop))
 
         # Date of the current partition
-        date = numpy.datetime64(start_date, resolution)
+        date = numpy.datetime64(START_DATE, resolution)
 
         # Build the test dataset
-        ds = dataset.Dataset.from_xarray(ds)
+        zds = dataset.Dataset.from_xarray(xds)
+        if not delayed:
+            zds = zds.compute()
 
-        iterator = partitioning.split_dataset(ds, 'num_lines')
-        assert isinstance(iterator, Iterator)
+        checker = PartitionTestData(timedelta, indices, resolution,
+                                    partitioning, dates)
 
-        for partition, indexer in iterator:
-            subset = ds.isel(indexer)
-
-            # Cast the date to the a datetime object to extract the date
-            item = date.astype('datetime64[us]').item()
-            expected = (
-                f'year={item.year}',
-                f'month={item.month:02d}',
-                f'day={item.day:02d}',
-                f'hour={item.hour:02d}',
-            )
-            assert partition == expected[indices]
-
-            folder = '/'.join(partition)
-            fields = partitioning.parse(folder)
-            parsed_date, = partitioning.encode(fields)
-            assert parsed_date == numpy.datetime64(date).astype(
-                f'datetime64[{resolution}]')
-
-            expected_selection = dates[
-                (dates >= parsed_date)  # type: ignore
-                & (dates < parsed_date + timedelta)]  # type: ignore
-            computed_selection = subset.variables['dates'].compute(
-                scheduler=dask.local.get_sync)
-            assert numpy.all(computed_selection == expected_selection)
-
-            expected = (
-                ('year', item.year),
-                ('month', item.month),
-                ('day', item.day),
-                ('hour', item.hour),
-            )
-            assert fields == expected[indices]
-            assert partitioning.join(fields, '/') == folder
-            assert partitioning.join(partitioning.decode((parsed_date, )),
-                                     '/') == folder
-
+        for partition, indexer in partitioning.split_dataset(zds, 'num_lines'):
+            checker.check_partitioning(date, zds.isel(indexer), partition)
             date += timedelta
 
 
-def test_construction():
+def test_construction() -> None:
     """Test the construction of the Date class."""
     partitioning = Date(('dates', ), 'D')
     assert partitioning.resolution == 'D'
@@ -163,19 +181,22 @@ def test_pickle():
     assert other.variables == ('dates', )
 
 
+@pytest.mark.parametrize('delayed', [False, True])
 def test_no_monotonic(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    delayed: bool,
 ):
     """Test that the Date partitioning raises an error if the temporal axis is
     not monotonic."""
-    dates = numpy.arange(numpy.datetime64('2000-01-01', 'h'),
-                         numpy.datetime64('2000-01-02', 'h'),
-                         numpy.timedelta64(1, 'm'))
+    dates: numpy.ndarray = numpy.arange(numpy.datetime64('2000-01-01', 'h'),
+                                        numpy.datetime64('2000-01-02', 'h'),
+                                        numpy.timedelta64(1, 'm'))
     numpy.random.shuffle(dates)
     partitioning = Date(('dates', ), 'h')
     # pylint: disable=protected-access
     with pytest.raises(ValueError):
-        list(partitioning._split({'dates': dask.array.core.from_array(dates)}))
+        arr = dask.array.core.from_array(dates) if delayed else dates
+        list(partitioning._split({'dates': arr}))  # type: ignore[arg-type]
     # pylint: enable=protected-access
 
 
@@ -190,7 +211,11 @@ def test_values_must_be_datetime64(
     dates = dates.astype('int64')
     with pytest.raises(TypeError):
         # pylint: disable=protected-access
-        list(partitioning._split({'dates': dask.array.core.from_array(dates)}))
+        list(
+            partitioning._split({
+                'dates':
+                dask.array.core.from_array(dates)  # type: ignore[arg-type]
+            }))
     # pylint: enable=protected-access
 
 

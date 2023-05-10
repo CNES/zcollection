@@ -33,9 +33,9 @@ class Pair(abc.ABC):
 
     def __init__(self, name: str, value: Any) -> None:
         #: Name of the key.
-        self.name = name
+        self.name: str = name
         #: Value of the key.
-        self.value = self._encode(value)
+        self.value: Any = self._encode(value)
 
     @staticmethod
     def _encode(value: Any) -> Any:
@@ -110,13 +110,20 @@ class Variable:
     """Handle the metadata of a dataset variable.
 
     Args:
-        name: name of the variable
-        dtype: data type of the variable
-        dimensions: names of the dimensions of the variable
-        attrs: attributes of the variable
-        compressor: compression codec for the variable
-        fill_value: fill value for the variable
-        filters: filters for the variable
+        name: Name of the variable.
+        dtype: Data type of the variable.
+        dimensions: Names of the dimensions of the variable. Defaults to None.
+        attrs: Attributes of the variable. Defaults to None.
+        compressor: Compression codec for the variable. Defaults to None.
+        fill_value: Fill value for the variable. Defaults to None.
+        filters: Filters for the variable. Defaults to None.
+
+    Warning:
+        If the variable uses filters, the ``fill_value`` parameter must be the
+        value that results from decoding the filter. For example, if the filter
+        is ``FixedScaleOffset(0, 1000)`` and the desired ``fill_value`` is
+        ``65536``, then the ``fill_value`` parameter must be ``65536 / 1000 =
+        65.536``.
     """
     __slots__ = ('attrs', 'compressor', 'dimensions', 'dtype', 'fill_value',
                  'filters', 'name')
@@ -124,6 +131,7 @@ class Variable:
     def __init__(self,
                  name: str,
                  dtype: DTypeLike,
+                 *,
                  dimensions: Sequence[str] | None = None,
                  attrs: Sequence[Attribute] | None = None,
                  compressor: numcodecs.abc.Codec | None = None,
@@ -134,17 +142,17 @@ class Variable:
         #: Attributes of the variable.
         self.attrs = tuple(attrs)
         #: Compression codec for the variable.
-        self.compressor = compressor
+        self.compressor: numcodecs.abc.Codec | None = compressor
         #: Dimensions of the variable.
         self.dimensions = tuple(dimensions or ())
         #: Data type of the variable.
         self.dtype = numpy.dtype(dtype)
         #: Fill value for the variable.
-        self.fill_value = fill_value
+        self.fill_value: Any | None = fill_value
         #: Filter codecs for the variable.
-        self.filters = filters or tuple()
+        self.filters = tuple(filters or ())
         #: Variable name.
-        self.name = name
+        self.name: str = name
 
     def __repr__(self) -> str:
         return f'{self.__class__.__name__}({self.name!r})'
@@ -160,19 +168,21 @@ class Variable:
         Returns:
             variable configuration.
         """
+        compressor: numcodecs.abc.Codec | None
+        compressor_config: dict[str, None] | None
+
         compressor = self.compressor
-        compressor = compressor.get_config(
+        compressor_config = compressor.get_config(
         ) if compressor is not None else None
-        filters = tuple(item.get_config() for item in self.filters)
 
         return {
             'attrs': sorted(item.get_config() for item in self.attrs),
-            'compressor': compressor,
+            'compressor': compressor_config,
             'dimensions': self.dimensions,
             'dtype': zarr.meta.encode_dtype(self.dtype),
             'fill_value': zarr.meta.encode_fill_value(self.fill_value,
                                                       self.dtype),
-            'filters': filters,
+            'filters': tuple(item.get_config() for item in self.filters),
             'name': self.name,
         }
 
@@ -191,7 +201,7 @@ class Variable:
             """Get the codec from its configuration."""
             return zarr.codecs.get_codec(codec) if codec is not None else None
 
-        dtype = zarr.meta.decode_dtype(data['dtype'])
+        dtype: DTypeLike = zarr.meta.decode_dtype(data['dtype'])
         filters: Sequence[numcodecs.abc.Codec] = tuple(
             zarr.codecs.get_codec(item) for item in data['filters']
             if item is not None)
@@ -199,11 +209,11 @@ class Variable:
         return Variable(
             data['name'],
             dtype,
-            data['dimensions'],
-            tuple(Attribute.from_config(item) for item in data['attrs']),
-            get_codec(data['compressor']),
-            zarr.meta.decode_fill_value(data['fill_value'], dtype),
-            filters,
+            dimensions=data['dimensions'],
+            attrs=tuple(Attribute.from_config(item) for item in data['attrs']),
+            compressor=get_codec(data['compressor']),
+            fill_value=zarr.meta.decode_fill_value(data['fill_value'], dtype),
+            filters=filters,
         )
 
     def set_for_insertion(self) -> Variable:
@@ -212,20 +222,28 @@ class Variable:
         Returns:
             The variable.
         """
-        return Variable(self.name, self.dtype, self.dimensions, None,
-                        self.compressor, self.fill_value, self.filters)
+        return Variable(self.name,
+                        self.dtype,
+                        dimensions=self.dimensions,
+                        compressor=self.compressor,
+                        fill_value=self.fill_value,
+                        filters=self.filters)
 
 
 class Dataset:
     """Handle the metadata of a dataset.
 
     Args:
-        dimensions: dimensions of the dataset
-        variables: variables of the dataset
-        attrs: attributes of the dataset
-        chunks: chunk size for each dimension.
-        block_size_limit: maximum size (in bytes) of a
-            block/chunk of variable's data.
+        dimensions: A sequence of strings representing the dimensions of the
+            dataset.
+        variables: A sequence of :py:class:`Variable` objects representing the
+            variables of the dataset.
+        attrs: An optional sequence of :py:class:`Attribute` objects
+            representing the attributes of the dataset. Defaults to None.
+        chunks: An optional sequence of :py:class:`Dimension` objects
+            representing the chunk size for each dimension. Defaults to None.
+        block_size_limit: An optional integer representing the maximum size
+            (in bytes) of a block/chunk of variable's data.
     """
     __slots__ = ('dimensions', 'variables', 'attrs', 'chunks',
                  'block_size_limit')
@@ -233,6 +251,7 @@ class Dataset:
     def __init__(self,
                  dimensions: Sequence[str],
                  variables: Sequence[Variable],
+                 *,
                  attrs: Sequence[Attribute] | None = None,
                  chunks: Sequence[Dimension] | None = None,
                  block_size_limit: int | None = None) -> None:
@@ -240,16 +259,19 @@ class Dataset:
         self.dimensions = tuple(dimensions)
 
         #: Variables of the dataset.
-        self.variables = {item.name: item for item in variables}
+        self.variables: dict[str, Variable] = {
+            item.name: item
+            for item in variables
+        }
 
         #: Attributes of the dataset.
-        self.attrs = attrs or []
+        self.attrs = list(attrs or [])
 
         #: Maximum data chunk size
-        self.block_size_limit = block_size_limit or BLOCK_SIZE_LIMIT
+        self.block_size_limit: int = block_size_limit or BLOCK_SIZE_LIMIT
 
         #: Chunk size for each dimension
-        self.chunks = chunks or []
+        self.chunks = list(chunks or [])
 
     def select_variables(
         self,
@@ -288,18 +310,19 @@ class Dataset:
         Returns:
             Dataset configuration.
         """
+        attrs: list[tuple[str, Any]]
+        variables: tuple[dict[str, Any], ...]
+
+        attrs = sorted(item.get_config() for item in self.attrs)
+        variables = tuple(self.variables[name].get_config()
+                          for name in sorted(self.variables))
+
         return {
-            'attrs':
-            sorted(item.get_config() for item in self.attrs),
-            'dimensions':
-            self.dimensions,
-            'variables':
-            tuple(self.variables[name].get_config()
-                  for name in sorted(self.variables)),
-            'chunks':
-            sorted(item.get_config() for item in self.chunks),
-            'block_size_limit':
-            self.block_size_limit
+            'attrs': attrs,
+            'dimensions': self.dimensions,
+            'variables': variables,
+            'chunks': tuple(item.get_config() for item in self.chunks),
+            'block_size_limit': self.block_size_limit
         }
 
     def add_variable(self, variable: Variable) -> None:
@@ -309,9 +332,10 @@ class Dataset:
             variable: variable to add.
 
         Raises:
-            TypeError: if the variable is not a Variable.
-            ValueError: if the variable already exists or if the variable
-                dimensions don't match the dataset dimensions.
+            TypeError: If the variable is not a Variable object.
+            ValueError: If the variable already exists in the dataset or if
+                the variable's dimensions do not match the dataset's
+                dimensions.
         """
         if not isinstance(variable, Variable):
             raise TypeError(
@@ -349,25 +373,26 @@ class Dataset:
         )
 
     def search_same_dimensions_as(self, variable: Variable) -> Variable:
-        """Search for a variable in this dataset with the same dimensions as
-        the given variable.
+        """Searches for a variable in this dataset that has the same dimensions
+        as the given variable.
 
         Args:
             variable: The variable used for searching.
 
         Returns:
-            The variable having the same dimensions as the supplied variable.
+            The variable that has the same dimensions as the supplied
+            variable.
 
         Raises:
             ValueError: If no variable with the same dimensions as the given
-                variable is found.
+            variable is found.
         """
         for item in self.variables.values():
             if item.dimensions == variable.dimensions:
                 return item
         raise ValueError('No variable using the same dimensions exists.')
 
-    def missing_variables(self, other: Dataset) -> Sequence[str]:
+    def missing_variables(self, other: Dataset) -> tuple[str, ...]:
         """Finds the variables in the provided dataset that are not in this
         instance.
 
@@ -375,8 +400,12 @@ class Dataset:
             other: The dataset to compare against.
 
         Returns:
-            The names of the missing variables in this dataset relative to the
-            provided dataset.
+            A tuple containing the names of the variables that are defined in
+            this dataset but not in the provided dataset.
+
+        Raises:
+            ValueError: If the provided dataset does not define one or more
+                variables that are defined in this dataset.
         """
         this = set(self.variables)
         others = set(other.variables)
@@ -395,12 +424,14 @@ class Dataset:
         dimensions depending on the predicate.
 
         Args:
-            dims: The dimensions to select.
-            predicate: If True, select variables that have the given dimensions.
-                If False, select variables that don't have the given dimensions.
+            dims: A sequence of dimensions to select.
+            predicate: A boolean value that determines whether to select
+                variables that have the given dimensions (True) or variables
+                that don't have the given dimensions (False).
 
         Returns:
-            The names of the variables that have the given dimensions.
+            A set of variable names that have the given dimensions (if predicate
+            is True) or don't have the given dimensions (if predicate is False).
         """
         if len(dims) == 0:
             return {

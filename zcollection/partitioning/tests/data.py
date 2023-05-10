@@ -9,12 +9,13 @@ Make test data.
 import numpy
 import xarray
 
-START_DATE = numpy.datetime64('2000-01-01', 'us')
-END_DATE = numpy.datetime64('2000-06-30', 'us')
+START_DATE = numpy.datetime64('2000-01-01', 'ns')
+END_DATE = numpy.datetime64('2000-06-30', 'ns')
 DELTA = numpy.timedelta64(72, 'h')
 
 
-def create_test_sequence(repeatability, number_of_measures, number_of_cycles):
+def create_test_sequence(repeatability, number_of_measures,
+                         number_of_cycles) -> xarray.Dataset:
     """Creation of a data set for testing purposes."""
     pass_number = numpy.hstack([
         numpy.tile(ix + 1, number_of_measures) for j in range(number_of_cycles)
@@ -25,12 +26,29 @@ def create_test_sequence(repeatability, number_of_measures, number_of_cycles):
         for ix in range(number_of_cycles)
     ])
     delta = numpy.timedelta64(24 // repeatability // 2, 'h')
-    time = numpy.arange(START_DATE, START_DATE + len(cycle_number) * delta,
-                        delta)
+    time: numpy.ndarray = numpy.arange(START_DATE,
+                                       START_DATE + len(cycle_number) * delta,
+                                       delta)
     observation = numpy.random.rand(cycle_number.size)  # type: ignore
-    ds = xarray.Dataset(
-        dict(time=xarray.DataArray(time, dims=('num_lines', )),
-             cycle_number=xarray.DataArray(cycle_number, dims=('num_lines', )),
-             pass_number=xarray.DataArray(pass_number, dims=('num_lines', )),
-             observation=xarray.DataArray(observation, dims=('num_lines', ))))
-    return ds
+    return xarray.Dataset({
+        'time':
+        xarray.DataArray(
+            time,
+            dims=('num_lines', ),
+        ),
+        'cycle_number':
+        xarray.DataArray(
+            cycle_number,
+            dims=('num_lines', ),
+        ),
+        'pass_number':
+        xarray.DataArray(
+            pass_number,
+            dims=('num_lines', ),
+        ),
+        'observation':
+        xarray.DataArray(
+            observation,
+            dims=('num_lines', ),
+        ),
+    })

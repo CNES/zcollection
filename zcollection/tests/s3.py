@@ -3,9 +3,10 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Support to test with minio
-==========================
+Fixtures for testing S3 using the pytest and minio.
+===================================================
 """
+from typing import Iterator, Literal
 import os
 import pathlib
 import shlex
@@ -21,14 +22,14 @@ import s3fs
 #: Listen port
 PORT = 5555
 #: Listen address
-ENDPOINT = f'127.0.0.1:{PORT}'
+ENDPOINT: str = f'127.0.0.1:{PORT}'
 #: URI for minio
-ENDPOINT_URI = f'http://{ENDPOINT}'
+ENDPOINT_URI: str = f'http://{ENDPOINT}'
 #: Credential for minio
 CREDENTIAL = '25219d58-f6c6-11eb-922c-770d49cd18e4'
 
 
-def have_minio():
+def have_minio() -> Literal[True]:
     """Check if minio is available."""
     try:
         subprocess.check_output(['minio', '--version'])
@@ -40,21 +41,38 @@ def have_minio():
 have_minio()
 
 
+def is_minio_up(timeout: float) -> bool:
+    """Check if minio server is up."""
+    try:
+        response = requests.get(ENDPOINT_URI, timeout=timeout)
+        if response.status_code == 403:
+            return True
+    except:  # pylint: disable=bare-except
+        pass
+    return False
+
+
+def wait_for_minio_to_start(timeout: float) -> None:
+    """Wait for the minio server to start."""
+    while timeout > 0:
+        try:
+            response = requests.get(ENDPOINT_URI, timeout=1)
+            if response.status_code == 403:
+                return
+        except:  # pylint: disable=bare-except
+            pass
+        timeout -= 0.1
+        time.sleep(0.1)
+    raise RuntimeError("minio server didn't start")
+
+
 @pytest.fixture()
-def s3_base(tmpdir, pytestconfig):
+def s3_base(tmpdir, pytestconfig) -> Iterator[None]:
     """Launch minio server."""
     if pytestconfig.getoption('s3') is False:
         pytest.skip('S3 disabled')
-    try:
-        # should fail since we didn't start server yet
-        response = requests.get(ENDPOINT_URI)
-    # pylint: disable=bare-except
-    except:
-        pass
-    # pylint: enable=bare-except
-    else:
-        if response.status_code == 403:
-            raise RuntimeError('minio server already up')
+    if is_minio_up(timeout=1):
+        raise RuntimeError('minio server already up')
     os.environ['MINIO_CACHE_AFTER'] = '1'
     os.environ['MINIO_CACHE'] = 'on'
     os.environ['MINIO_ROOT_PASSWORD'] = CREDENTIAL
@@ -64,21 +82,8 @@ def s3_base(tmpdir, pytestconfig):
         shlex.split(f'minio server --quiet --address {ENDPOINT} '
                     f"--console-address :{PORT+1} '{tmpdir!s}'"))
 
-    timeout = 5
-    while timeout > 0:
-        try:
-            response = requests.get(ENDPOINT_URI)
-            if response.status_code == 403:
-                break
-        # pylint: disable=bare-except
-        except:
-            pass
-        # pylint: disable=bare-except
-        timeout -= 0.1
-        time.sleep(0.1)
-    if timeout <= 0:
-        raise RuntimeError("minio server didn't start")
     try:
+        wait_for_minio_to_start(timeout=30)
         yield
     finally:
         process.terminate()
@@ -86,9 +91,9 @@ def s3_base(tmpdir, pytestconfig):
     # pylint: enable=consider-using-with
 
 
-def make_bucket(name):
+def make_bucket(name) -> None:
     """Create a bucket."""
-    session = botocore.session.get_session()
+    session: botocore.session.Session = botocore.session.get_session()
     client = session.create_client(
         's3',
         aws_access_key_id=CREDENTIAL,
@@ -101,7 +106,7 @@ def make_bucket(name):
 
 # pylint: disable=redefined-outer-name, unused-argument # pytest fixture
 @pytest.fixture()
-def s3(s3_base):
+def s3(s3_base) -> Iterator[s3fs.core.S3FileSystem]:
     """Create a S3 file system instance."""
     s3fs.core.S3FileSystem.clear_instance_cache()
     fs = s3fs.core.S3FileSystem(anon=False,
@@ -126,12 +131,12 @@ class S3:
     ID = 0
 
     # pylint: disable=redefined-outer-name # pytest fixture
-    def __init__(self, s3):
-        name = f'bucket{S3.ID}'
+    def __init__(self, s3: s3fs.core.S3FileSystem) -> None:
+        name: str = f'bucket{S3.ID}'
         S3.ID += 1
         make_bucket(name)
-        self.collection = S3Path(name).joinpath('collection')
-        self.view = S3Path(name).joinpath('view')
-        self.fs = s3
+        self.collection: S3Path = S3Path(name).joinpath('collection')
+        self.view: S3Path = S3Path(name).joinpath('view')
+        self.fs: s3fs.core.S3FileSystem = s3
 
     # pylint: enable=redefined-outer-name

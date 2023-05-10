@@ -21,22 +21,26 @@ from ...tests.data import (
     create_test_dataset,
     make_dataset,
 )
+from ...tests.fixture import dask_arrays, numpy_arrays
 from ...tests.fs import local_fs, s3, s3_base, s3_fs
 from ...view.detail import _calculate_axis_reference
 
 # pylint: enable=unused-import
 
 
-@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('arrays_type', ['dask_arrays', 'numpy_arrays'])
 def test_view(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-    arg,
+    fs,
+    arrays_type,
     request,
 ):
     """Test the creation of a view."""
-    tested_fs = request.getfixturevalue(arg)
+    tested_fs = request.getfixturevalue(fs)
+    delayed = request.getfixturevalue(arrays_type)
 
-    create_test_collection(tested_fs)
+    create_test_collection(tested_fs, delayed=False)
     instance = convenience.create_view(str(tested_fs.view),
                                        view.ViewReference(
                                            str(tested_fs.collection),
@@ -47,7 +51,7 @@ def test_view(
 
     # No variable recorded, so no data can be loaded
     with pytest.raises(ValueError):
-        instance.load()
+        instance.load(delayed=delayed)
 
     var = meta.Variable(
         name='var2',
@@ -67,9 +71,9 @@ def test_view(
 
     instance = convenience.open_view(str(tested_fs.view),
                                      filesystem=tested_fs.fs)
-    ds = instance.load()
-    assert ds is not None
-    assert set(ds['time'].values.astype('datetime64[D]')) == {
+    zds = instance.load(delayed=delayed)
+    assert zds is not None
+    assert set(zds['time'].values.astype('datetime64[D]')) == {
         numpy.datetime64('2000-01-01'),
         numpy.datetime64('2000-01-04'),
         numpy.datetime64('2000-01-07'),
@@ -79,18 +83,18 @@ def test_view(
     }
 
     # Loading a variable existing only in the view.
-    ds = instance.load(selected_variables=('var3', ))
-    assert ds is not None
-    assert tuple(ds.variables) == ('var3', )
-    assert 'var3' in ds.metadata().variables.keys()
+    zds = instance.load(delayed=delayed, selected_variables=('var3', ))
+    assert zds is not None
+    assert tuple(zds.variables) == ('var3', )
+    assert 'var3' in zds.metadata().variables.keys()
 
     # The metadata of the reference collection is not modified.
     assert 'var3' not in instance.view_ref.metadata.variables.keys()
 
     # Loading a non existing variable.
-    ds = instance.load(selected_variables=('var55', ))
-    assert ds is not None
-    assert len(ds.variables) == 0
+    zds = instance.load(delayed=delayed, selected_variables=('var55', ))
+    assert zds is not None
+    assert len(zds.variables) == 0
 
     # Test view loading that is no longer synchronized with the reference
     # collection.
@@ -101,9 +105,9 @@ def test_view(
     assert len(tuple(instance.partitions())) == 5
     assert len(tuple(instance.view_ref.partitions())) == 6
 
-    ds = instance.load()
-    assert ds is not None
-    assert set(ds['time'].values.astype('datetime64[D]')) == {
+    zds = instance.load(delayed=delayed)
+    assert zds is not None
+    assert set(zds['time'].values.astype('datetime64[D]')) == {
         numpy.datetime64('2000-01-01'),
         numpy.datetime64('2000-01-04'),
         numpy.datetime64('2000-01-07'),
@@ -115,14 +119,14 @@ def test_view(
     var.name = 'var4'
     instance.add_variable(var)
 
-    ds = instance.load()
-    assert ds is not None
+    zds = instance.load(delayed=delayed)
+    assert zds is not None
 
-    def update(ds, varname):
+    def update(zds, varname):
         """Update function used for this test."""
-        return {varname: ds.variables['var1'].values * 0 + 5}
+        return {varname: zds.variables['var1'].values * 0 + 5}
 
-    instance.update(update, 'var3')  # type: ignore
+    instance.update(update, 'var3', delayed=delayed)  # type: ignore
 
     with pytest.raises(ValueError):
         instance.update(update, 'varX')  # type: ignore
@@ -130,16 +134,16 @@ def test_view(
     with pytest.raises(ValueError):
         instance.update(update, 'var2')  # type: ignore
 
-    ds = instance.load()
-    assert ds is not None
-    numpy.all(ds.variables['var3'].values == 5)
+    zds = instance.load(delayed=delayed)
+    assert zds is not None
+    numpy.all(zds.variables['var3'].values == 5)
 
     indexers = instance.map(
         lambda x: slice(0, x.dimensions['num_lines'])  # type: ignore
     ).compute()
-    ds1 = instance.load(indexer=indexers)
+    ds1 = instance.load(delayed=delayed, indexer=indexers)
     assert ds1 is not None
-    ds2 = instance.load()
+    ds2 = instance.load(delayed=delayed)
     assert ds2 is not None
 
     assert numpy.allclose(ds1.variables['var1'].values,
@@ -181,22 +185,22 @@ def test_view_overlap(
 
     instance.add_variable(var)
 
-    def update(ds, varname, partition_info: tuple[str, slice]):
+    def update(zds, varname, partition_info: tuple[str, slice]):
         """Update function used for this test."""
         assert isinstance(partition_info, tuple)
         assert len(partition_info) == 2
         assert isinstance(partition_info[0], str)
         assert isinstance(partition_info[1], slice)
         assert partition_info[0] == 'num_lines'
-        return {varname: ds.variables['var1'].values * 1 + 5}
+        return {varname: zds.variables['var1'].values * 1 + 5}
 
     instance.update(update, 'var3', depth=1)  # type: ignore
 
-    ds = instance.load()
-    assert ds is not None
-    numpy.all(ds.variables['var3'].values == 5)
+    zds = instance.load()
+    assert zds is not None
+    numpy.all(zds.variables['var3'].values == 5)
 
-    def map_func(x, partition_info: tuple[str, slice]):
+    def map_func(_, partition_info: tuple[str, slice]):
         """Map function used for this test."""
         assert isinstance(partition_info, tuple)
         assert len(partition_info) == 2
@@ -219,13 +223,14 @@ def test_view_overlap(
 
 def test_view_checksum(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-        tmpdir):
-    ds = next(create_test_dataset())
-    zcollection = collection.Collection('time', ds.metadata(),
+        tmpdir) -> None:
+    """Test the checksum calculation."""
+    zds = next(create_test_dataset())
+    zcollection = collection.Collection('time', zds.metadata(),
                                         partitioning.Date(('time', ), 'D'),
                                         str(tmpdir))
 
-    zcollection.insert(ds)
+    zcollection.insert(zds)
     partition = tmpdir / 'year=2000' / 'month=01' / 'day=01'
     axis_ref = _calculate_axis_reference(str(partition), zcollection)
     assert isinstance(axis_ref.array, numpy.ndarray)
@@ -233,8 +238,8 @@ def test_view_checksum(
     assert isinstance(axis_ref.dimension, str)
     assert len(axis_ref.checksum) == 64
     assert axis_ref.dimension == 'num_lines'
-    assert axis_ref.checksum == ('4bbb9253c07f36002098f8bba57151eb'
-                                 '0143f5fe5c634950340f3e2f1a4f51cf')
+    assert axis_ref.checksum == ('1a1727b18e729c376442e76d806565b8'
+                                 '359e3af9c93572af3e5fe8980ced6956')
 
 
 @pytest.mark.filterwarnings('ignore:.*cannot be serialized.*')
@@ -258,25 +263,25 @@ def test_view_sync(
     instance.add_variable(var)
     del instance
 
-    collection = convenience.open_collection(str(tested_fs.collection),
-                                             filesystem=tested_fs.fs,
-                                             mode='w')
-    ds = collection.load(filters=lambda keys: keys['year'] == 2000 and keys[
+    zcollection = convenience.open_collection(str(tested_fs.collection),
+                                              filesystem=tested_fs.fs,
+                                              mode='w')
+    zds = zcollection.load(filters=lambda keys: keys['year'] == 2000 and keys[
         'month'] == 1 and keys['day'] == 16)
-    assert ds is not None
+    assert zds is not None
     dates = numpy.arange(numpy.datetime64('2000-01-16'),
                          numpy.datetime64('2000-01-16T23:59:59'),
                          numpy.timedelta64(1, 'h'))
-    ds = make_dataset(
-        dates,
-        numpy.ones((len(dates), ds.dimensions['num_pixels']),
-                   dtype=numpy.float64))
-    collection.insert(ds)
-    del collection
+    zds = make_dataset(
+        dates.astype('M8[ns]'),
+        numpy.ones((len(dates), zds.dimensions['num_pixels']),
+                   dtype=numpy.int64))
+    zcollection.insert(zds)
+    del zcollection
     instance = convenience.open_view(str(tested_fs.view),
                                      filesystem=tested_fs.fs)
     assert instance is not None
     assert instance.is_synced() is False
     instance.sync(filters=lambda keys: True)
-    ds = instance.load()
-    assert ds is not None
+    zds = instance.load()
+    assert zds is not None

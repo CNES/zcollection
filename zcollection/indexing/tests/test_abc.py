@@ -5,7 +5,7 @@
 """Test the base class for indexing."""
 from __future__ import annotations
 
-from typing import Iterator, List, Optional, Tuple, Union
+from typing import Iterator
 import pathlib
 
 import fsspec
@@ -52,22 +52,22 @@ def split_half_orbit(
 # The signature of the function must follow the signature of
 # zcollection.PartitionCallable
 def _half_orbit(
-    ds: dataset.Dataset,
+    zds: dataset.Dataset,
     *args,
     **kwargs,
 ) -> NDArray:
     """Return the indexes of the start and stop of each half-orbit.
 
     Args:
-        ds: Datasets stored in a partition to be indexed.
+        zds: Datasets stored in a partition to be indexed.
 
     Returns:
         Dictionary of start and stop indexes for each half-orbit.
     """
     pass_number_varname = kwargs.pop('pass_number', 'pass_number')
     cycle_number_varname = kwargs.pop('cycle_number', 'cycle_number')
-    pass_number = ds.variables[pass_number_varname].values
-    cycle_number = ds.variables[cycle_number_varname].values
+    pass_number = zds.variables[pass_number_varname].values
+    cycle_number = zds.variables[cycle_number_varname].values
 
     generator = ((
         i0,
@@ -104,7 +104,7 @@ class HalfOrbitIndexer(abc.Indexer):
     def create(
         cls,
         path: pathlib.Path | str,
-        ds: collection.Collection,
+        zds: collection.Collection,
         *,
         filesystem: fsspec.AbstractFileSystem | None = None,
         **kwargs,
@@ -113,20 +113,20 @@ class HalfOrbitIndexer(abc.Indexer):
 
         Args:
             path: The path to the index.
-            ds: The collection to be indexed.
+            zds: The collection to be indexed.
             filesystem: The filesystem to use.
 
         Returns:
             The created index.
         """
         return super()._create(path,
-                               ds,
-                               meta=dict(attribute=b'value'),
+                               zds,
+                               meta={'attribute': b'value'},
                                filesystem=filesystem)  # type: ignore
 
     def update(
         self,
-        ds: collection.Collection,
+        zds: collection.Collection,
         *,
         partition_size: int | None = None,
         npartitions: int | None = None,
@@ -135,7 +135,7 @@ class HalfOrbitIndexer(abc.Indexer):
         """Update the index.
 
         Args:
-            ds: New data stored in the collection to be indexed.
+            zds: New data stored in the collection to be indexed.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
             cycle_number: The name of the cycle number variable stored in the
@@ -143,7 +143,8 @@ class HalfOrbitIndexer(abc.Indexer):
             pass_number: The name of the pass number variable stored in the
                 collection. Defaults to "pass_number".
         """
-        super()._update(ds, _half_orbit, partition_size, npartitions, **kwargs)
+        super()._update(zds, _half_orbit, partition_size, npartitions,
+                        **kwargs)
 
 
 def test_indexer(
@@ -176,36 +177,40 @@ def test_indexer(
     indexer.update(zcollection)
     assert isinstance(indexer.table, pyarrow.Table)
 
-    selection = zcollection.load(indexer=indexer.query(dict(cycle_number=2)))
+    selection = zcollection.load(indexer=indexer.query({'cycle_number': 2}))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2}
 
     with pytest.raises(ValueError):
-        indexer.query(dict(cycle_number=3), logical_op='X')
+        indexer.query({'cycle_number': 3}, logical_op='X')
 
     with pytest.raises(ValueError):
-        indexer.query(dict(X=3))
+        indexer.query({'X': 3})
 
     # Updating the index should not change the indexer.
     indexer.update(zcollection)
-    other = zcollection.load(indexer=indexer.query(dict(cycle_number=2)))
+    other = zcollection.load(indexer=indexer.query({'cycle_number': 2}))
     assert other is not None
     assert numpy.all(
         other['observation'].values == selection['observation'].values)
 
     selection = zcollection.load(
-        indexer=indexer.query(dict(cycle_number=[2, 4])))
+        indexer=indexer.query({'cycle_number': [2, 4]}))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2, 4}
 
-    selection = zcollection.load(
-        indexer=indexer.query(dict(cycle_number=[2, 4], pass_number=1)))
+    selection = zcollection.load(indexer=indexer.query({
+        'cycle_number': [2, 4],
+        'pass_number': 1
+    }))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2, 4}
     assert set(selection.variables['pass_number'].values) == {1}
 
-    selection = zcollection.load(
-        indexer=indexer.query(dict(cycle_number=[2, 4], pass_number=[1, 5])))
+    selection = zcollection.load(indexer=indexer.query({
+        'cycle_number': [2, 4],
+        'pass_number': [1, 5]
+    }))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2, 4}
     assert set(selection.variables['pass_number'].values) == {1, 5}
@@ -213,15 +218,17 @@ def test_indexer(
     indexer = HalfOrbitIndexer.open(str(
         local_fs.collection.joinpath('index.parquet')),
                                     filesystem=local_fs.fs)
-    assert indexer.meta == dict(attribute=b'value')
-    selection = zcollection.load(
-        indexer=indexer.query(dict(cycle_number=[2, 4], pass_number=[1, 5])))
+    assert indexer.meta == {'attribute': b'value'}
+    selection = zcollection.load(indexer=indexer.query({
+        'cycle_number': [2, 4],
+        'pass_number': [1, 5]
+    }))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2, 4}
     assert set(selection.variables['pass_number'].values) == {1, 5}
 
     indices = tuple(
-        indexer.query(dict(cycle_number=[2, 4]), only_partition_keys=False))
+        indexer.query({'cycle_number': [2, 4]}, only_partition_keys=False))
     assert tuple(item[0] for item in indices[0][0]) == (
         'cycle_number',
         'pass_number',
@@ -229,5 +236,5 @@ def test_indexer(
         'month',
     )
 
-    indexer = abc.Indexer('', filesystem=fsspec.filesystem('memory'))
-    assert indexer.query(dict(cycle_number=[2, 4])) == tuple()
+    indexer = HalfOrbitIndexer('', filesystem=fsspec.filesystem('memory'))
+    assert indexer.query({'cycle_number': [2, 4]}) == tuple()

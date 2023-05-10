@@ -5,6 +5,7 @@ Overview of a View.
 This section outlines the steps required to get started with the main features
 of a ``View``.
 """
+from typing import Iterator
 import pprint
 
 import dask.distributed
@@ -22,24 +23,26 @@ import zcollection.tests.data
 # As in the example of handling
 # :ref:`collections <sphx_glr_auto_examples_ex_collection.py>`, we will create
 # the test environment and a collection.
-def create_dataset():
+def create_dataset() -> zcollection.Dataset:
     """Create a dataset to record."""
-    generator = zcollection.tests.data.create_test_dataset_with_fillvalue()
+    generator: Iterator[zcollection.Dataset] = \
+        zcollection.tests.data.create_test_dataset_with_fillvalue()
     return next(generator)
 
 
 cluster = dask.distributed.LocalCluster(processes=False)
 client = dask.distributed.Client(cluster)
 
-ds = create_dataset()
-fs = fsspec.filesystem('memory')
-collection = zcollection.create_collection('time',
-                                           ds,
-                                           zcollection.partitioning.Date(
-                                               ('time', ), resolution='M'),
-                                           '/view_reference',
-                                           filesystem=fs)
-collection.insert(ds, merge_callable=zcollection.merging.merge_time_series)
+zds: zcollection.Dataset | None = create_dataset()
+assert zds is not None
+fs: fsspec.AbstractFileSystem = fsspec.filesystem('memory')
+collection: zcollection.Collection = zcollection.create_collection(
+    'time',
+    zds,
+    zcollection.partitioning.Date(('time', ), resolution='M'),
+    '/view_reference',
+    filesystem=fs)
+collection.insert(zds, merge_callable=zcollection.merging.merge_time_series)
 
 # %%
 # Creation of views
@@ -48,10 +51,10 @@ collection.insert(ds, merge_callable=zcollection.merging.merge_time_series)
 # A :py:class:`view<zcollection.view.View>` allows you to extend a collection
 # (:py:class:`a view reference<zcollection.view.ViewReference>`) that you are
 # not allowed to modify.
-view = zcollection.create_view('/my_view',
-                               zcollection.view.ViewReference(
-                                   '/view_reference', fs),
-                               filesystem=fs)
+view: zcollection.View = zcollection.create_view(
+    '/my_view',
+    zcollection.view.ViewReference('/view_reference', fs),
+    filesystem=fs)
 
 # %%
 # .. note::
@@ -81,9 +84,10 @@ except ValueError as err:
 # Such a state of the view is not very interesting. But it is possible to
 # :py:meth:`add<zcollection.view.View.add_variable>` and modify variables in
 # order to enhance the view.
-var3 = ds.metadata().variables['var2']
-var3.name = 'var3'
-view.add_variable(var3)
+var3_template: zcollection.meta.Variable = zds.metadata().variables['var2']
+var3_template.name = 'var3'
+view.add_variable(var3_template)
+del var3_template
 
 # %%
 # This step creates all necessary partitions for the new variable.
@@ -91,9 +95,9 @@ pprint.pprint(fs.listdir('/my_view/year=2000'))
 
 # %%
 # The new variable is not initialized.
-ds = view.load()
-assert ds is not None
-ds.variables['var3'].values
+zds = view.load()
+assert zds is not None
+zds.variables['var3'].values
 
 # %%
 # The same principle used by the collection allows to
@@ -107,10 +111,10 @@ view.update(
 # neighboring partitions with the keyword argument ``depth``.
 
 # %%
-ds = view.load()
-assert ds is not None
-var3 = ds['var3'].values
-var3
+zds = view.load()
+assert zds is not None
+var3: numpy.ndarray = zds['var3'].values
+print(var3)
 
 # %%
 # **Warning**: The variables of the reference collection cannot be edited.
@@ -152,14 +156,14 @@ def resize(ds: zcollection.Dataset, dim: str,
                      for dim, size in zip(var.dimensions, var.shape))
 
     return zcollection.Dataset([
-        zcollection.DelayedArray(
+        zcollection.Array(
             name,
             numpy.resize(var.array.compute(), new_shape(var, dim, size)),
             var.dimensions,
-            var.attrs,
-            var.compressor,
-            var.fill_value,
-            var.filters,
+            attrs=var.attrs,
+            compressor=var.compressor,
+            fill_value=var.fill_value,
+            filters=var.filters,
         ) for name, var in ds.variables.items()
     ])
 
@@ -170,9 +174,9 @@ def resize(ds: zcollection.Dataset, dim: str,
 collection = zcollection.open_collection('/view_reference',
                                          filesystem=fs,
                                          mode='w')
-ds = collection.load(
+zds = collection.load(
     filters=lambda keys: keys['month'] == 6 and keys['year'] == 2000)
-assert ds is not None
+assert zds is not None
 
 # %%
 # We create a new time variable, resize the dataset and insert the new time
@@ -182,12 +186,12 @@ time: numpy.ndarray = numpy.arange(
     numpy.datetime64('2000-06-30T23:59:59'),
     numpy.timedelta64(1, 'h'),
 )
-ds = resize(ds, 'num_lines', len(time))
-ds['time'].data = time
+zds = resize(zds, 'num_lines', len(time))
+zds['time'].values = time
 
 # %%
 # Finally, we update the partition in the reference collection.
-collection.insert(ds)
+collection.insert(zds)
 
 # %%
 # Now we cannot load the view, because the shape of the last partition is no
@@ -215,9 +219,9 @@ print(tuple(view.partitions(filters=filters)))
 
 # %%
 # The view is now synchronized and can be loaded.
-ds = view.load()
-assert ds is not None
-ds.variables['var3'].values
+zds = view.load()
+assert zds is not None
+zds.variables['var3'].values
 
 # %%
 # Map a function over the view

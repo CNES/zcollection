@@ -31,19 +31,19 @@ def _period(start: int, end: int, within: bool = False) -> Period:
     return Period(_datetime(start), _datetime(end), within=within)
 
 
-def _period1(within=False):
+def _period1(within=False) -> Period:
     return _period(1, 10, within=within)
 
 
-def _period2():
+def _period2() -> Period:
     return _period(5, 30)
 
 
-def _period3():
+def _period3() -> Period:
     return _period(35, 81)
 
 
-def test_interface():
+def test_interface() -> None:
     """Test the interface of the Period class."""
     period1 = _period1()
     assert period1.begin == _datetime(1)
@@ -68,7 +68,7 @@ def test_interface():
     assert not period2.is_null()
 
 
-def test_cmp():
+def test_cmp() -> None:
     """Test the comparison operators."""
     period1 = _period1()
     period2 = _period2()
@@ -84,7 +84,7 @@ def test_cmp():
     assert period1 != 1
 
 
-def test_shift():
+def test_shift() -> None:
     """Test the shift method."""
     period1 = _period1()
     period1.shift(_timedelta(5))
@@ -93,7 +93,7 @@ def test_shift():
     assert period1 == _period(-9, 0)
 
 
-def test_relation():
+def test_relation() -> None:
     """Test the relations between periods."""
     period1 = _period1()
     period2 = _period2()
@@ -139,7 +139,7 @@ def test_relation():
     assert period1.intersection(period2) == period2
 
 
-def test_zero_length_period():
+def test_zero_length_period() -> None:
     """Test the zero length period."""
     zero_len = Period.from_duration(_datetime(3), _timedelta(0))
     assert _period(1, 1) == Period.from_duration(_datetime(1), _timedelta(0))
@@ -168,7 +168,7 @@ def test_zero_length_period():
     assert zero_len.span(period2) == _period(3, 30)
 
 
-def test_invalid_period():
+def test_invalid_period() -> None:
     """Test the invalid period."""
     null_per = _period(5, 1)
 
@@ -191,7 +191,7 @@ def test_invalid_period():
     assert null_per.span(_period3()) == _period(5, 81)
 
 
-def test_invalid():
+def test_invalid() -> None:
     """Test the invalid periods."""
     period1 = _period(0, -2)
     assert period1.begin == _datetime(0)
@@ -283,7 +283,7 @@ def test_invalid():
     assert period1 == period2
 
 
-def test_period_get_relation():
+def test_period_get_relation() -> None:
     """Test the get_relation method."""
 
     #          ##################
@@ -411,13 +411,13 @@ def test_period_get_relation():
     assert period1.get_relation(period2).is_before()
 
 
-def test_pickle():
+def test_pickle() -> None:
     """Test pickling."""
     period = _period1()
     assert pickle.loads(pickle.dumps(period)) == period
 
 
-def test_invalid_type():
+def test_invalid_type() -> None:
     """Test invalid type."""
     with pytest.raises(ValueError):
         Period(numpy.int64(1), numpy.int64(2))  # type: ignore

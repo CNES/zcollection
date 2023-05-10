@@ -8,7 +8,7 @@ Time period
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable, Match
 import enum
 import re
 
@@ -17,17 +17,17 @@ import numpy
 from ..type_hints import DType
 
 # Parse the unit of numpy.timedelta64.
-PATTERN = re.compile(r'(?:datetime|timedelta)64\[(\w+)\]').search
+PATTERN: Callable[[str], Match[str] | None] = re.compile(
+    r'(?:datetime|timedelta)64\[(\w+)\]').search
 
 #: Numpy time units
-RESOLUTION = [
-    'as', 'fs', 'ps', 'ns', 'us', 'ms', 's', 'm', 'h', 'D', 'W', 'M', 'Y'
-]
+RESOLUTION = ('as', 'fs', 'ps', 'ns', 'us', 'ms', 's', 'm', 'h', 'D', 'W', 'M',
+              'Y')
 
 
 def _time64_unit(dtype: DType[Any]) -> str:
     """Get the unit of time."""
-    match = PATTERN(dtype.name)
+    match: Match[str] | None = PATTERN(dtype.name)
     if match is None:
         raise ValueError(f'dtype is not a time duration: {dtype}')
     return match.group(1)
@@ -203,13 +203,14 @@ class Period:
             (i.e. the end date is within the period), otherwise the
             interval is open.
     """
-    __slots__ = ('_begin', '_duration_unit', '_last')
+    __slots__: tuple[str, ...] = ('_begin', '_duration_unit', '_last')
 
     def __init__(self,
                  begin: numpy.datetime64,
                  end: numpy.datetime64,
+                 *,
                  within: bool = False) -> None:
-        duration_unit = _min_time64_unit(begin.dtype, end.dtype)
+        duration_unit: str = _min_time64_unit(begin.dtype, end.dtype)
 
         #: The beginning of the period.
         self._begin: numpy.datetime64 = begin
@@ -320,7 +321,7 @@ class Period:
     def contains(
         self,
         other: numpy.datetime64 | Period,
-    ) -> numpy.bool_:
+    ) -> bool:
         """Check if the given period is contains this period.
 
         Args:
@@ -333,8 +334,9 @@ class Period:
               other period
         """
         if isinstance(other, numpy.datetime64):
-            return self._begin <= other <= self._last
-        return (self._begin <= other.begin) and (self._last >= other.last)
+            return bool(self._begin <= other <= self._last)
+        return bool((self._begin <= other.begin)
+                    and (self._last >= other.last))
 
     def is_adjacent(self, other: Period) -> bool:
         """True if periods are next to each other without a gap.
@@ -377,7 +379,7 @@ class Period:
         if self.is_null():
             # null period isn't after
             return False
-        return bool(point < self._begin)  # numpy.bool_ -> bool
+        return bool(point < self._begin)
 
     def is_before(self, point: numpy.datetime64) -> bool:
         """True if all of the period is prior to the passed point or end <=
@@ -400,7 +402,7 @@ class Period:
         if self.is_null():
             # null period isn't before anything
             return False
-        return bool(self._last < point)  # numpy.bool_ -> bool
+        return bool(self._last < point)
 
     def intersects(self, other: Period) -> bool:
         """True if the periods overlap in any way.
@@ -422,9 +424,9 @@ class Period:
         Returns:
             True if the periods intersect
         """
-        return (self.contains(other.begin) or other.contains(self._begin)
-                or ((other.begin < self._begin) and
-                    (other.last >= self._begin)))  # type:ignore
+        return bool(
+            self.contains(other.begin) or other.contains(self._begin)
+            or ((other.begin < self._begin) and (other.last >= self._begin)))
 
     def intersection(self, other: Period) -> Period:
         """Return the period of intersection or null period if no intersection.
@@ -488,8 +490,10 @@ class Period:
         Returns:
             The combined period.
         """
-        start = self._begin if self._begin < other.begin else other.begin
-        end = other.end() if self._last < other.last else self.end()
+        start: numpy.datetime64 = (self._begin if self._begin < other.begin
+                                   else other.begin)
+        end: numpy.datetime64 = (other.end()
+                                 if self._last < other.last else self.end())
         return Period(start, end)
 
     # pylint: disable=too-many-return-statements
@@ -530,12 +534,12 @@ class Period:
         Returns:
             The relation.
         """
-        relation = self._get_direct_relation(other)
+        relation: PeriodRelation | None = self._get_direct_relation(other)
         if relation is not None:
             return relation
 
-        period_contains_start = other.contains(self._begin)
-        period_contains_end = other.contains(self._last)
+        period_contains_start: bool = other.contains(self._begin)
+        period_contains_end: bool = other.contains(self._last)
 
         if period_contains_start and period_contains_end:
             if other.begin == self.begin:

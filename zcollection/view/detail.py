@@ -21,7 +21,7 @@ import numpy
 import zarr
 
 from .. import collection, dataset, meta
-from ..collection.detail import update_with_overlap
+from ..collection.detail import _update_with_overlap
 from ..fs_utils import get_fs, join_path
 from ..storage import (
     DIMENSIONS,
@@ -30,6 +30,7 @@ from ..storage import (
     update_zarr_array,
     write_zattrs,
 )
+from ..type_hints import ArrayLike
 
 #: Name of the file that contains the checksum of the view.
 CHECKSUM_FILE = '.checksum'
@@ -70,6 +71,7 @@ class AxisReference:
 
 
 def _create_zarr_array(args: tuple[str, zarr.Group],
+                       *,
                        base_dir: str,
                        fs: fsspec.AbstractFileSystem,
                        template: str,
@@ -132,6 +134,7 @@ def _drop_zarr_zarr(partition: str,
 
 def _load_one_dataset(
     args: tuple[tuple[tuple[str, int], ...], list[slice]],
+    *,
     base_dir: str,
     delayed: bool,
     fs: fsspec.AbstractFileSystem,
@@ -145,7 +148,7 @@ def _load_one_dataset(
     Args:
         args: tuple containing the partition's keys and its indexer.
         base_dir: Base directory of the view.
-        delayed: If True, variables are stored as dask arrays.
+        delayed: If True, load the dataset lazily.
         fs: The file system used to access the variables in the view.
         selected_variables: The list of variable to retain from the view
             reference.
@@ -155,19 +158,22 @@ def _load_one_dataset(
     Returns:
         The dataset and the partition's path.
     """
+    partition_scheme: tuple[tuple[str, int], ...]
+    slices: list[slice]
+
     partition_scheme, slices = args
-    partition = view_ref.partitioning.join(partition_scheme, fs.sep)
-    ds = open_zarr_group(join_path(view_ref.partition_properties.dir,
-                                   partition),
-                         view_ref.fs,
-                         selected_variables=selected_variables,
-                         delayed=delayed)
-    if ds is None:
+    partition: str = view_ref.partitioning.join(partition_scheme, fs.sep)
+    zds: dataset.Dataset = open_zarr_group(
+        join_path(view_ref.partition_properties.dir, partition),
+        view_ref.fs,
+        delayed=delayed,
+        selected_variables=selected_variables)
+    if zds is None:
         return None
 
     # If the user has not selected any variables in the reference view. In this
     # case, the dataset is built from all the variables selected in the view.
-    if len(ds.dimensions) == 0:
+    if len(zds.dimensions) == 0:
         return dataset.Dataset(
             [
                 open_zarr_array(
@@ -177,13 +183,17 @@ def _load_one_dataset(
                         mode='r',
                     ),
                     variable,
-                    delayed) for variable in variables
+                    delayed=delayed) for variable in variables
             ],
-            ds.attrs), partition
+            attrs=zds.attrs), partition
 
-    _ = {
-        ds.add_variable(  # type: ignore[arg-type,func-returns-value]
-            item.metadata(), item.array)
+    # pylint: disable=expression-not-assigned
+    # We use the set notation to evaluate the generator.
+    {
+        zds.add_variable(  # type: ignore[func-returns-value]
+            item.metadata(),
+            item.array,
+        )
         for item in (
             open_zarr_array(
                 zarr.open(  # type: ignore[arg-type]
@@ -191,17 +201,20 @@ def _load_one_dataset(
                     mode='r',
                 ),
                 variable,
-                delayed) for variable in variables)
+                delayed=delayed) for variable in variables)
     }
+    # pylint: enable=expression-not-assigned
 
     # Apply indexing if needed.
     if len(slices):
-        dim = view_ref.partition_properties.dim
-        ds_list = [ds.isel({dim: indexer}) for indexer in slices]
-        ds = ds_list.pop(0)
+        dim: str = view_ref.partition_properties.dim
+        ds_list: list[dataset.Dataset] = [
+            zds.isel({dim: indexer}) for indexer in slices
+        ]
+        zds = ds_list.pop(0)
         if ds_list:
-            ds = ds.concat(ds_list, dim)
-    return ds, partition
+            zds = zds.concat(ds_list, dim)
+    return zds, partition
 
 
 def _assert_variable_handled(reference: meta.Dataset, view: meta.Dataset,
@@ -220,8 +233,10 @@ def _assert_variable_handled(reference: meta.Dataset, view: meta.Dataset,
 
 
 def _load_datasets_list(
+    *,
     client: dask.distributed.Client,
     base_dir: str,
+    delayed: bool,
     fs: fsspec.AbstractFileSystem,
     view_ref: collection.Collection,
     metadata: meta.Dataset,
@@ -233,6 +248,7 @@ def _load_datasets_list(
     Args:
         client: The client used to load the datasets.
         base_dir: Base directory of the view.
+        delayed: If True, load the dataset lazily.
         fs: The file system used to access the variables in the view.
         view_ref: The view reference.
         metadata: The metadata of the dataset.
@@ -244,11 +260,11 @@ def _load_datasets_list(
     """
     arguments: tuple[tuple[tuple[tuple[str, int], ...], list], ...] = tuple(
         (view_ref.partitioning.parse(item), []) for item in partitions)
-    futures = client.map(
+    futures: list[dask.distributed.Future] = client.map(
         _load_one_dataset,
         arguments,
         base_dir=base_dir,
-        delayed=True,
+        delayed=delayed,
         fs=fs,
         selected_variables=view_ref.metadata.select_variables(
             keep_variables=selected_variables),
@@ -292,8 +308,8 @@ def _select_overlap(
         """Compute the slice of the selected dataset (without overlap)."""
         start = 0
         indices = slice(0, 0, None)
-        for ds, selected_partition in selected_datasets:
-            size = ds.dimensions[view_ref.partition_properties.dim]
+        for zds, selected_partition in selected_datasets:
+            size = zds.dimensions[view_ref.partition_properties.dim]
             indices = slice(start, start + size, None)
             if partition == selected_partition:
                 break
@@ -302,22 +318,22 @@ def _select_overlap(
 
     # The local function is not taken into account for counting
     # locals.
-    _, partition = arguments
-    where = next(ix for ix, item in enumerate(datasets_list)
-                 if item[1] == partition)
+    partition: str = arguments[1]
+    where: int = next(ix for ix, item in enumerate(datasets_list)
+                      if item[1] == partition)
 
     # Search for the overlapping partitions
-    selected_datasets = [
+    selected_datasets: list[tuple[dataset.Dataset, str]] = [
         datasets_list[ix] for ix in range(where - depth, where + depth + 1)
         if 0 <= ix < len(datasets_list)
     ]
 
     # Build the dataset for the selected partitions.
-    groups = [ds for ds, _ in selected_datasets]
-    ds = groups.pop(0)
-    ds = ds.concat(groups, view_ref.partition_properties.dim)
+    groups: list[dataset.Dataset] = [ds for ds, _ in selected_datasets]
+    zds: dataset.Dataset = groups.pop(0)
+    zds = zds.concat(groups, view_ref.partition_properties.dim)
 
-    return ds, calculate_slice(selected_datasets)
+    return zds, calculate_slice(selected_datasets)
 
 
 def _wrap_update_func(
@@ -342,9 +358,9 @@ def _wrap_update_func(
     def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
                       base_dir: str) -> None:
         """Wrap the function to be applied to the dataset."""
-        for ds, partition in parameters:
+        for zds, partition in parameters:
             # Applying function on partition's data
-            dictionary = func(ds, *args, **kwargs)
+            dictionary: dict[str, ArrayLike] = func(zds, *args, **kwargs)
             tuple(
                 update_zarr_array(  # type: ignore[func-returns-value]
                     dirname=join_path(base_dir, partition, varname),
@@ -387,12 +403,24 @@ def _wrap_update_func_overlap(
     def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
                       base_dir: str) -> None:
         """Wrap the function to be applied to the dataset."""
-        for ds, partition in parameters:
-            ds, indices = _select_overlap((ds, partition), datasets_list,
-                                          depth, view_ref)
-            update_with_overlap(func, ds, indices, dim, fs,
-                                join_path(base_dir, partition), *args,
-                                **kwargs)
+        zds: dataset.Dataset
+        indices: slice
+
+        for zds, partition in parameters:
+            zds, indices = _select_overlap((zds, partition), datasets_list,
+                                           depth, view_ref)
+            # pylint: disable=duplicate-code
+            # False positive with the function _wrap_update_func_with_overlap
+            # defined in the module zcollection.collection.detail
+            _update_with_overlap(*args,
+                                 func=func,
+                                 zds=zds,
+                                 indices=indices,
+                                 dim=dim,
+                                 fs=fs,
+                                 path=join_path(base_dir, partition),
+                                 **kwargs)
+            # pylint: enable=duplicate-code
 
     return wrap_function
 
@@ -516,10 +544,10 @@ def _sync_partition(
         for variable in metadata.variables.values():
             template = view_ref.metadata.search_same_dimensions_as(variable)
             _create_zarr_array((partition, group),
-                               base_dir,
-                               fs,
-                               template.name,
-                               variable,
+                               base_dir=base_dir,
+                               fs=fs,
+                               template=template.name,
+                               variable=variable,
                                invalidate_cache=False)
         _write_checksum(path, base_dir, view_ref, fs, group)
         fs.invalidate_cache(path)
@@ -564,6 +592,7 @@ def _extend_partition(
 
 def _sync(
     partition: str,
+    *,
     base_dir: str,
     fs: fsspec.AbstractFileSystem,
     view_ref: collection.Collection,

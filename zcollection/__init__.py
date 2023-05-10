@@ -30,7 +30,7 @@ from .variable import Array, DelayedArray, Variable
 from .version import __version__
 from .view import View, ViewReference
 
-__all__ = [
+__all__ = (
     '__version__',
     'Array',
     'Attribute',
@@ -53,4 +53,4 @@ __all__ = [
     'version',
     'View',
     'ViewReference',
-]
+)

@@ -31,6 +31,19 @@ Merging of existing datasets in a partition.
   zcollection.merging.time_series
   zcollection.merging.period
 
+Variable
+========
+
+Variables handled by the datasets. These objects manage access to the data
+stored in the collection.
+
+.. autosummary::
+  :toctree: _generated/
+
+  zcollection.variable.abc
+  zcollection.variable.array
+  zcollection.variable.delayed_array
+
 Collection
 ==========
 
@@ -45,7 +58,6 @@ Collection
   zcollection.meta
   zcollection.sync
   zcollection.type_hints
-  zcollection.variable
   zcollection.view
 
 Indexing

@@ -32,7 +32,7 @@ def dask_workers(client: dask.distributed.Client,
     Raises:
         ValueError: If no dask workers are available.
     """
-    result = len(
+    result: int = len(
         client.ncores()) if cores_only else sum(  # type: ignore[arg-type]
             item
             for item in client.nthreads().values())  # type: ignore[arg-type]
@@ -50,7 +50,10 @@ def get_client() -> dask.distributed.Client:
     try:
         return dask.distributed.get_client()
     except ValueError:
-        return dask.distributed.Client()
+        return dask.distributed.Client(
+            processes=False,
+            direct_to_workers=True,
+        )
 
 
 def split_sequence(sequence: Sequence[Any],
@@ -68,9 +71,13 @@ def split_sequence(sequence: Sequence[Any],
     sections = len(sequence) if sections is None else sections
     if sections <= 0:
         raise ValueError('The number of sections must be greater than zero.')
-    length = len(sequence)
+    length: int = len(sequence)
     sections = min(sections, length)
+
+    size: int
+    extras: int
     size, extras = divmod(length, sections)
+
     div = tuple(
         itertools.accumulate([0] + extras * [size + 1] +
                              (sections - extras) * [size]))

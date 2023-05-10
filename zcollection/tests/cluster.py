@@ -2,18 +2,32 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
+"""
+Fixtures for testing Dask clusters using the pytest.
+====================================================
+"""
+from typing import Iterator
 import contextlib
 import logging
 import weakref
 
 import dask.config
 import dask.distributed
+import py
 import pytest
 
 
 @pytest.fixture()
-def dask_cluster(pytestconfig, tmpdir_factory, scope='session'):
+def dask_cluster(
+        pytestconfig,
+        tmpdir_factory,
+        scope='session',  # pylint: disable=unused-argument
+) -> str:
     """Launch a Dask LocalCluster with a configurable number of workers."""
+    n_workers: int | None
+    threads_per_worker: int | None
+    processes: bool
+
     try:
         n_workers = int(pytestconfig.getoption('n_workers'))
     except TypeError:
@@ -29,13 +43,13 @@ def dask_cluster(pytestconfig, tmpdir_factory, scope='session'):
     except TypeError:
         processes = False
 
-    tmpdir = tmpdir_factory.getbasetemp()
-    scheduler_file = tmpdir / 'scheduler.json'
+    tmpdir: py.path.local = tmpdir_factory.getbasetemp()
+    scheduler_file: py.path.local = tmpdir / 'scheduler.json'
     if scheduler_file.exists():
         return str(scheduler_file)
 
     # Use the root path of the test session for the dask worker space
-    dask_worker = tmpdir / 'dask_worker_space'
+    dask_worker: py.path.local = tmpdir / 'dask_worker_space'
     dask.config.set(temporary_directory=str(dask_worker))
 
     logging.info('Dask local cluster starting')
@@ -46,7 +60,7 @@ def dask_cluster(pytestconfig, tmpdir_factory, scope='session'):
         processes=processes,
     )
 
-    def teardown():
+    def teardown() -> None:
         """Stop the cluster and remove the scheduler file."""
         if scheduler_file.exists():
             scheduler_file.remove()
@@ -63,13 +77,17 @@ def dask_cluster(pytestconfig, tmpdir_factory, scope='session'):
 
 
 @contextlib.contextmanager
-def _scheduler_file(dask_cluster):
+def _scheduler_file(
+        dask_cluster,  # pylint: disable=redefined-outer-name
+) -> Iterator[str]:
     """Get the scheduler used to connect to the cluster."""
     yield dask_cluster
 
 
 @pytest.fixture()
-def dask_client(dask_cluster):
+def dask_client(
+    dask_cluster,  # pylint: disable=redefined-outer-name
+) -> Iterator[dask.distributed.Client]:
     """Connect a Dask client to the cluster."""
     with _scheduler_file(dask_cluster) as scheduler_file:
         with dask.distributed.Client(scheduler_file=scheduler_file) as client:

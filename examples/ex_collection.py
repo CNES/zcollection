@@ -7,6 +7,7 @@ of a ``Collection``.
 """
 from __future__ import annotations
 
+from typing import Iterator
 import datetime
 import pprint
 
@@ -23,19 +24,21 @@ import zcollection.tests.data
 # ---------------------------------
 #
 # Before we create our first collection, we will create a dataset to record.
-def create_dataset():
+def create_dataset() -> zcollection.Dataset:
     """Create a dataset to record."""
-    generator = zcollection.tests.data.create_test_dataset_with_fillvalue()
+    generator: Iterator[zcollection.Dataset] = \
+        zcollection.tests.data.create_test_dataset_with_fillvalue()
     return next(generator)
 
 
-ds = create_dataset()
-ds.to_xarray()
+zds: zcollection.Dataset | None = create_dataset()
+assert zds is not None
+zds.to_xarray()
 
 # %%
 # We will create the file system that we will use. In this example, a file
 # system in memory.
-fs = fsspec.filesystem('memory')
+fs: fsspec.AbstractFileSystem = fsspec.filesystem('memory')
 
 # %%
 # Finally we create a local dask cluster using only threads in order to work
@@ -54,11 +57,8 @@ partition_handler = zcollection.partitioning.Date(('time', ), resolution='M')
 
 # %%
 # Finally, we create our collection:
-collection = zcollection.create_collection('time',
-                                           ds,
-                                           partition_handler,
-                                           '/my_collection',
-                                           filesystem=fs)
+collection: zcollection.Collection = zcollection.create_collection(
+    'time', zds, partition_handler, '/my_collection', filesystem=fs)
 
 # %%
 # .. note::
@@ -75,7 +75,7 @@ pprint.pprint(collection.metadata.get_config())
 
 # %%
 # Now that the collection has been created, we can insert new records.
-collection.insert(ds)
+collection.insert(zds)
 
 # %%
 # .. note::
@@ -103,9 +103,15 @@ pprint.pprint(fs.listdir('/my_collection/year=2000'))
 # To load the dataset call the method
 # :py:meth:`load<zcollection.collection.Collection.load>` on the instance.  By
 # default, the method loads all partitions stored in the collection.
-collection.load()
+collection.load(delayed=True)
 
 # %%
+# .. note::
+#
+#   By default, the data is loaded as a :py:class:`dask.array<da.Array>`. It is
+#   possible to load the data as a :py:class:`numpy.ndarray` by specifying the
+#   parameter ``delayed=False``.
+#
 # You can also filter the partitions to be considered by filtering the
 # partitions using keywords used for partitioning in a valid Python expression.
 collection.load(filters='year == 2000 and month == 2')
@@ -145,13 +151,13 @@ except ValueError as exc:
 # %%
 # The :py:meth:`add_variable<zcollection.collection.Collection.add_variable>`
 # method allows you to add a new variable to the collection.
-collection.add_variable(ds.metadata().variables['var2'])
+collection.add_variable(zds.metadata().variables['var2'])
 
 # %%
 # The newly created variable is initialized with its default value.
-ds = collection.load()
-assert ds is not None
-ds.variables['var2'].values
+zds = collection.load()
+assert zds is not None
+zds.variables['var2'].values
 
 
 # %%
@@ -161,19 +167,28 @@ ds.variables['var2'].values
 #
 # In this example, we will alter the variable ``var2`` by setting it to 1
 # anywhere the variable ``var1`` is defined.
-def ones(ds):
+def ones(zds) -> dict[str, numpy.ndarray]:
     """Returns a variable with ones everywhere."""
-    return dict(var2=ds.variables['var1'].values * 0 + 1)
+    return dict(var2=zds.variables['var1'].values * 0 + 1)
 
 
 collection.update(ones)  # type: ignore[arg-type]
 
-ds = collection.load()
-assert ds is not None
-ds.variables['var2'].values
+zds = collection.load()
+assert zds is not None
+zds.variables['var2'].values
 
 
 # %%
+# ..note::
+#
+#   The method :py:meth:`update<zcollection.collection.Collection.update>`
+#   supports the ``delayed`` parameter. If ``delayed=True``, the function
+#   ``ones`` is applied to each partition using a Dask array as container
+#   for the variables data stored in the provided dataset. This is the default
+#   behavior. If ``delayed=False``, the function ``ones`` is applied to each
+#   partition using a Numpy array as container.
+#
 # Sometime is it important to know the values of the neighboring partitions.
 # This can be done using the
 # :py:meth:`update<zcollection.collection.Collection.update>` method with the
@@ -188,7 +203,7 @@ ds.variables['var2'].values
 #   start of the slice is 0, it means that the left partition is missing. If the
 #   stop of the slice is equal to the length of the given dataset, it means that
 #   the right partition is missing.
-def twos(ds, partition_info: tuple[str, slice]):
+def twos(ds, partition_info: tuple[str, slice]) -> dict[str, numpy.ndarray]:
     """Returns a variable with twos everywhere if the partition is surrounded
     by partitions on both sides, -1 if the left partition is missing and -2 if
     the right partition is missing."""
@@ -206,9 +221,9 @@ def twos(ds, partition_info: tuple[str, slice]):
 
 collection.update(twos, depth=1)  # type: ignore[arg-type]
 
-ds = collection.load()
-assert ds is not None
-ds.variables['var2'].values
+zds = collection.load()
+assert zds is not None
+zds.variables['var2'].values
 
 # %%
 # Map a function over the collection
