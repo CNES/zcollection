@@ -26,7 +26,7 @@ class MyCodec:
     """A dummy codec."""
     ID = 'foo'
 
-    __slots__: tuple[str, ...] = ('attribute', )
+    __slots__ = ('attribute', )
 
     def __init__(self, attribute) -> None:
         self.attribute: Any = attribute

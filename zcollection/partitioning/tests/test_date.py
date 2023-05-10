@@ -6,6 +6,8 @@
 Test partitioning by date.
 ==========================
 """
+from __future__ import annotations
+
 import dataclasses
 import pickle
 import random

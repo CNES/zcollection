@@ -12,11 +12,16 @@ from typing import (
     Any,
     Callable,
     ClassVar,
+    Dict,
     Iterable,
     Iterator,
+    List,
     Literal,
     NoReturn,
+    Optional,
     Sequence,
+    Tuple,
+    Union,
 )
 import dataclasses
 import datetime
@@ -66,16 +71,16 @@ from .detail import (
 )
 
 #: Type of functions filtering the partitions.
-PartitionFilterCallback = Callable[[dict[str, int]], bool]
+PartitionFilterCallback = Callable[[Dict[str, int]], bool]
 
 #: Type of argument to filter the partitions.
-PartitionFilter = str | PartitionFilterCallback | None
+PartitionFilter = Optional[Union[str, PartitionFilterCallback]]
 
 #: Indexer's type.
-Indexer = Iterable[tuple[tuple[tuple[str, int], ...], slice]]
+Indexer = Iterable[Tuple[Tuple[Tuple[str, int], ...], slice]]
 
 #: Indexer arguments' type.
-IndexerArgs = tuple[tuple[tuple[str, int], ...], list[slice]]
+IndexerArgs = Tuple[Tuple[Tuple[str, int], ...], List[slice]]
 
 #: Name of the directory storing the immutable dataset.
 _IMMUTABLE = '.immutable'

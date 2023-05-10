@@ -15,6 +15,7 @@ from typing import (
     Generator,
     Iterator,
     Match,
+    Optional,
     Sequence,
     Tuple,
 )
@@ -36,7 +37,7 @@ from ..type_hints import ArrayLike, DTypeLike, NDArray
 Partition = Tuple[Tuple[Tuple[str, Any], ...], slice]
 
 #: The callable that parses the partitioning scheme
-PatternType = Callable[[str], Match[str] | None]
+PatternType = Callable[[str], Optional[Match[str]]]
 
 #: Allowed data types for partitioning schemes
 DATA_TYPES = ('int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32',
