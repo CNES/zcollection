@@ -86,13 +86,13 @@ def test_collection_creation(
                               str(tested_fs.collection))
 
     with pytest.raises(ValueError):
-        collection.Collection(axis='time',
-                              ds=zds.metadata(),
-                              mode='X',
-                              partition_handler=partitioning.Date(('time', ),
-                                                                  'D'),
-                              partition_base_dir=str(tested_fs.collection),
-                              filesystem=tested_fs.fs)
+        collection.Collection(
+            axis='time',
+            ds=zds.metadata(),
+            mode='X',  # type: ignore[arg-type]
+            partition_handler=partitioning.Date(('time', ), 'D'),
+            partition_base_dir=str(tested_fs.collection),
+            filesystem=tested_fs.fs)
 
 
 # pylint: disable=too-many-statements
