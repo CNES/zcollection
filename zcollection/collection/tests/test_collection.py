@@ -613,7 +613,7 @@ def test_insert_validation(
     zds.attrs = (meta.Attribute('invalid', 1), )
 
     with pytest.raises(ValueError):
-        zcollection.insert(zds)
+        zcollection.insert(zds, validate=True)
 
     # Inserting a dataset containing variables with invalid attributes
     zds = next(create_test_dataset_with_fillvalue())
@@ -622,7 +622,7 @@ def test_insert_validation(
         var.attrs = (meta.Attribute('invalid', 1), )
 
     with pytest.raises(ValueError):
-        zcollection.insert(zds)
+        zcollection.insert(zds, validate=True)
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
