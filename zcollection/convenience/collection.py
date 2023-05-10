@@ -8,6 +8,8 @@ Convenience functions
 """
 from __future__ import annotations
 
+from typing import Literal
+
 import xarray
 
 from .. import collection, dataset, fs_utils, partitioning
@@ -66,7 +68,7 @@ def create_collection(
 # pylint: disable=redefined-builtin
 def open_collection(path: str,
                     *,
-                    mode: str | None = None,
+                    mode: Literal['r', 'w'] | None = None,
                     **kwargs) -> collection.Collection:
     """Open a collection.
 

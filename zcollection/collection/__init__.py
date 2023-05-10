@@ -14,9 +14,11 @@ from typing import (
     ClassVar,
     Iterable,
     Iterator,
+    Literal,
     NoReturn,
     Sequence,
 )
+import dataclasses
 import datetime
 import functools
 import io
@@ -83,7 +85,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 def build_indexer_args(
-    collection: Collection,
+    collection: ReadOnlyCollection,
     filters: PartitionFilter,
     indexer: Indexer,
     *,
@@ -199,44 +201,45 @@ def _infer_callable(
     return tuple(func_result)
 
 
-class Collection:
-    """This class manages a collection of files in Zarr format stored in a set
-    of subdirectories. These subdirectories split the data, by cycles or dates
-    for example, in order to optimize access and updates, deletion or addition
-    of new data.
+@dataclasses.dataclass(frozen=True)
+class CollectionProperties:
+    """This class contains the properties of a collection."""
+    #: The axis of the collection.
+    axis: str
 
-    Args:
-        axis: The axis of the collection. This is the dimension along which the
-            data is partitioned.
-        ds: The dataset containing the collection. This dataset is used to
-            create the metadata of the collection, which is used to validate
-            datasets that are inserted in the collection.
-        partition_handler: The partitioning strategy for the collection. This
-            is an instance of a subclass of
-            :py:class:`zarr_partitioning.PartitionHandler`.
-        partition_base_dir: The base directory for the collection. This is the
-            directory where the subdirectories containing the partitioned data
-            are stored.
-        mode: The mode of the collection. This can be either 'r' (read-only) or
-            'w' (write). In read-only mode, the collection can only be read and
-            no data can be inserted or modified. In write mode, the collection
-            can be read and modified.
-        filesystem: The filesystem to use for the collection. This is an
-            instance of a subclass of :py:class:`fsspec.AbstractFileSystem`.
-        synchronizer: The synchronizer to use for the collection. This is an
-            instance of a subclass of
-            :py:class:`zarr_synchronizer.Synchronizer`.
+    #: The metadata that describes the dataset handled by the collection.
+    metadata: meta.Dataset
 
-    Raises:
-        ValueError:
-            If the axis does not exist in the dataset, if the partition key is
-            not defined in the dataset or if the access mode is not supported.
+    #: The partitioning strategy used to split the data.
+    partitioning: partitioning.Partitioning
 
-    Notes:
-        Normally, this class is not instantiated directly but through the
-        :py:meth:`create_collection <zcollection.create_collection>` and
-        :py:meth:`open_collection <zcollection.open_collection>` methods of this
-        library.
+    #: The partitioning properties (base directory and dimension).
+    partition: PartitioningProperties
+
+
+@dataclasses.dataclass(frozen=True)
+class CollectionSettings:
+    """This class contains the settings of a collection."""
+    #: The mode of access of the collection.
+    mode: Literal['r', 'w']
+
+    #: The file system used to read/write the collection.
+    filesystem: fsspec.AbstractFileSystem
+
+    #: The synchronizer used to synchronize the modifications.
+    synchronizer: sync.Sync
+
+    def __post_init__(self) -> None:
+        if self.mode not in ('r', 'w'):
+            raise ValueError(f'The mode {self.mode!r} is not supported.')
+
+
+class ReadOnlyCollection:
+    """Collection base class, offering read-only access to a collection of
+    datasets.
+
+    The arguments of the constructor are detailed in the documentation
+    of the parent class :py:class:`zarr_collection.Collection`.
     """
     #: Configuration filename of the collection.
     CONFIG: ClassVar[str] = '.zcollection'
@@ -248,7 +251,7 @@ class Collection:
         partition_handler: partitioning.Partitioning,
         partition_base_dir: str,
         *,
-        mode: str | None = None,
+        mode: Literal['r', 'w'] | None = None,
         filesystem: fsspec.AbstractFileSystem | str | None = None,
         synchronizer: sync.Sync | None = None,
     ) -> None:
@@ -262,38 +265,56 @@ class Collection:
                     f'The partitioning key {varname!r} is not defined in '
                     'the dataset.')
 
-        mode = mode or 'w'
-        if mode not in ('r', 'w'):
-            raise ValueError(f'The mode {mode!r} is not supported.')
+        self._settings = CollectionSettings(mode or 'w',
+                                            fs_utils.get_fs(filesystem),
+                                            synchronizer or sync.NoSync())
 
-        #: The axis of the collection.
-        self.axis: str = axis
-        #: The metadata that describes the dataset handled by the collection.
-        self.metadata: meta.Dataset = ds
-        #: The file system used to read/write the collection.
-        self.fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
-        #: The partitioning strategy used to split the data.
-        self.partitioning: partitioning.Partitioning = partition_handler
-        #: The partitioning properties (base directory and dimension).
-        self.partition_properties = PartitioningProperties(
-            fs_utils.normalize_path(self.fs, partition_base_dir),
-            ds.variables[axis].dimensions[0],
-        )
-        #: The synchronizer used to synchronize the modifications.
-        self.synchronizer: sync.Sync = synchronizer or sync.NoSync()
+        self._properties = CollectionProperties(
+            axis, ds, partition_handler,
+            PartitioningProperties(
+                fs_utils.normalize_path(self._settings.filesystem,
+                                        partition_base_dir),
+                ds.variables[axis].dimensions[0]))
+
         #: The path to the dataset that contains the immutable data relative
         #: to the partitioning.
         self._immutable: str | None = _immutable_path(
-            ds, self.partition_properties)
+            ds, self._properties.partition)
 
-        if mode == 'r':
-            # pylint: disable=method-hidden
-            # These methods are overloaded when the collection is opened in
-            # readonly.
-            self._read_only_mode()
-            # pylint: enable=method-hidden
-        else:
-            self._write_config(skip_if_exists=True)
+    @property
+    def axis(self) -> str:
+        """Return the axis of the collection."""
+        return self._properties.axis
+
+    @property
+    def metadata(self) -> meta.Dataset:
+        """Return the metadata of the collection."""
+        return self._properties.metadata
+
+    @property
+    def partitioning(self) -> partitioning.Partitioning:
+        """Return the partitioning strategy of the collection."""
+        return self._properties.partitioning
+
+    @property
+    def partition_properties(self) -> PartitioningProperties:
+        """Return the partitioning properties of the collection."""
+        return self._properties.partition
+
+    @property
+    def mode(self) -> Literal['r', 'w']:
+        """Return the mode of the collection."""
+        return self._settings.mode
+
+    @property
+    def fs(self) -> fsspec.AbstractFileSystem:
+        """Return the filesystem of the collection."""
+        return self._settings.filesystem
+
+    @property
+    def synchronizer(self) -> sync.Sync:
+        """Return the synchronizer of the collection."""
+        return self._settings.synchronizer
 
     @property
     def immutable(self) -> bool:
@@ -301,118 +322,14 @@ class Collection:
         the partitioning."""
         return self._immutable is not None
 
-    def __str__(self) -> str:
-        return (f'<{self.__class__.__name__} '
-                f'filesystem={self.fs.__class__.__name__!r}, '
-                f'partition_base_dir={self.partition_properties.dir!r}>')
-
-    @staticmethod
-    def _unsupported_operation(*args, **kwargs) -> NoReturn:
-        """Raise an exception if the operation is not supported."""
-        raise io.UnsupportedOperation('not writable')
-
-    def _read_only_mode(self) -> None:
-        """Set the unsupported methods to raise an exception when the
-        collection is opened in read-only mode."""
-        # Set each unsupported method to raise an exception.
-        for item in [
-                'add_variable',
-                'drop_partitions',
-                'drop_variable',
-                'insert',
-                'update',
-        ]:
-            assert hasattr(self, item), f'{item} is not a known method.'
-            setattr(self, item,
-                    types.MethodType(Collection._unsupported_operation, self))
-
     @classmethod
     def _config(cls, partition_base_dir: str) -> str:
         """Return the configuration path."""
         return fs_utils.join_path(partition_base_dir, cls.CONFIG)
 
-    def _write_config(self, skip_if_exists: bool = False) -> None:
-        """Write the configuration file."""
-        base_dir: str = self.partition_properties.dir
-        config: str = self._config(base_dir)
-        exists: bool = self.fs.exists(config)
-
-        if exists and skip_if_exists:
-            return
-
-        _LOGGER.info(
-            "Updating collection's configuration: %s"
-            if exists else 'Creating the collection: %s', config)
-
-        self.fs.makedirs(base_dir, exist_ok=True)
-
-        params = {
-            'axis': self.axis,
-            'dataset': self.metadata.get_config(),
-            'partitioning': self.partitioning.get_config(),
-        }
-
-        with self.fs.open(config, mode='w') as stream:
-            json.dump(params, stream, indent=4)  # type: ignore[arg-type]
-
-    def is_readonly(self) -> bool:
-        """Return True if the collection is read-only."""
-        try:
-            self.insert(dataset.Dataset([]))
-        except io.UnsupportedOperation:
-            return True
-        return False
-
     def is_locked(self) -> bool:
         """Return True if the collection is locked."""
         return self.synchronizer.is_locked()
-
-    @classmethod
-    def from_config(
-        cls,
-        path: str,
-        *,
-        mode: str | None = None,
-        filesystem: fsspec.AbstractFileSystem | str | None = None,
-        synchronizer: sync.Sync | None = None,
-    ) -> Collection:
-        """Open a Collection described by a configuration file.
-
-        Args:
-            path: The path to the configuration file.
-            mode: The mode of the collection. This can be either 'r'
-                (read-only) or 'w' (write).
-            filesystem: The filesystem to use for the collection. This is an
-                instance of a subclass of
-                :py:class:`fsspec.AbstractFileSystem`.
-            synchronizer: The synchronizer to use for the collection. This is
-                an instance of a subclass of
-                :py:class:`zarr_synchronizer.Synchronizer`.
-
-        Returns:
-            The collection.
-
-        Raises:
-            ValueError:
-                If the provided directory does not contain a valid collection
-                configuration file.
-        """
-        _LOGGER.info('Opening collection: %r', path)
-        fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
-        config: str = cls._config(path)
-        if not fs.exists(config):
-            raise ValueError(f'zarr collection not found at path {path!r}')
-        with fs.open(config) as stream:
-            data: dict[str, Any] = json.load(stream)
-        return Collection(
-            data['axis'],
-            meta.Dataset.from_config(data['dataset']),
-            partitioning.get_codecs(data['partitioning']),
-            path,
-            mode=mode or 'r',
-            filesystem=fs,
-            synchronizer=synchronizer,
-        )
 
     def _is_selected(
         self,
@@ -430,102 +347,6 @@ class Collection:
         """
         return True if expr is None else expr(
             dict(self.partitioning.parse('/'.join(partition))))
-
-    # pylint: disable=method-hidden
-    def insert(
-        self,
-        ds: xarray.Dataset | dataset.Dataset,
-        *,
-        merge_callable: merging.MergeCallable | None = None,
-        npartitions: int | None = None,
-        validate: bool = False,
-    ) -> None:
-        """Insert a dataset into the collection.
-
-        Args:
-            ds: The dataset to insert. It can be either an xarray.Dataset or a
-                dataset.Dataset object.
-            merge_callable: A function to use to merge the existing data set
-                already stored in partitions with the new partitioned data. If
-                None, the new partitioned data overwrites the existing
-                partitioned data.
-            npartitions: The maximum number of partitions to process in
-                parallel. By default, partitions are processed one by one.
-            validate: Whether to validate dataset metadata before insertion
-                or not.
-
-        Raises:
-            ValueError:
-                If the dataset does not match the definition of the collection.
-
-        Warns:
-            UserWarning:
-                If two different partitions use the same file (chunk), the
-                library that handles the storage of chunked arrays (HDF5,
-                NetCDF, Zarr, etc.) must be compatible with concurrent access.
-
-        Notes:
-            Each worker will process a set of independent partitions. However,
-            be careful, two different partitions can use the same file (chunk),
-            therefore, the library that handles the storage of chunked arrays
-            (HDF5, NetCDF, Zarr, etc.) must be compatible with concurrent
-            access.
-        """
-        # pylint: disable=method-hidden
-        if isinstance(ds, xarray.Dataset):
-            ds = dataset.Dataset.from_xarray(ds)
-
-        _LOGGER.info('Inserting of a %s dataset in the collection',
-                     dask.utils.format_bytes(ds.nbytes))
-
-        missing_variables: tuple[str, ...] = self.metadata.missing_variables(
-            ds.metadata())
-        for item in missing_variables:
-            variable: meta.Variable = self.metadata.variables[item]
-            ds.add_variable(variable)
-
-        if validate and ds.metadata() != self.metadata:
-            raise ValueError(
-                "Provided dataset's metadata do not match the collection's ones"
-            )
-        ds = ds.set_for_insertion(self.metadata)
-        client: dask.distributed.Client = dask_utils.get_client()
-
-        # If the dataset contains variables that should not be partitioned.
-        if self._immutable is not None:
-
-            # On the first call, we store the immutable variables in
-            # a directory located at the root of the collection.
-            if not self.fs.exists(self._immutable):
-                _write_immutable_dataset(ds, self.axis, self._immutable,
-                                         self.fs, self.synchronizer)
-
-            # Remove the variables that should not be partitioned.
-            ds = ds.select_variables_by_dims((self.axis, ))
-
-        # Process the partitions to insert or update by batches to avoid
-        # memory issues.
-        partitions = tuple(
-            self.partitioning.split_dataset(ds, self.partition_properties.dim))
-
-        if npartitions is not None:
-            if npartitions < 1:
-                raise ValueError('The number of partitions must be positive')
-            npartitions = len(partitions) // npartitions + 1
-
-        scattered_ds: Any = client.scatter(ds)
-        for sequence in dask_utils.split_sequence(partitions, npartitions):
-            futures: list[dask.distributed.Future] = [
-                dask_utils.simple_delayed('insert', _insert)(
-                    args=partition,  # type: ignore[arg-type]
-                    axis=self.axis,
-                    zds=scattered_ds,
-                    fs=self.fs,
-                    merge_callable=merge_callable,
-                    partitioning_properties=self.partition_properties,
-                ) for partition in sequence
-            ]
-            storage.execute_transaction(client, self.synchronizer, futures)
 
     def _relative_path(self, path: str) -> str:
         """Return the relative path to the collection.
@@ -590,57 +411,6 @@ class Collection:
                     for item in partitions
                     if (item != self._immutable and self._is_selected(
                         item.replace(base_dir, '').split(sep), expr)))
-
-    # pylint: disable=method-hidden
-    def drop_partitions(
-        self,
-        *,
-        filters: PartitionFilter = None,
-        timedelta: datetime.timedelta | None = None,
-    ) -> None:
-        # pylint: disable=method-hidden
-        """Drop the selected partitions.
-
-        Args:
-            filters: The predicate used to filter the partitions to drop. To
-                get more information on the predicate, see the documentation of
-                the :meth:`partitions` method.
-            timedelta: Select the partitions created before the specified time
-                delta relative to the current time.
-
-        Example:
-            >>> collection.drop_partitions(filters="year == 2019")
-            >>> collection.drop_partitions(
-            ...     timedelta=datetime.timedelta(days=30))
-        """
-        now: datetime.datetime = datetime.datetime.now()
-        client: dask.distributed.Client = dask_utils.get_client()
-        folders = list(self.partitions(filters=filters, lock=True))
-
-        def is_created_before(path: str, now: datetime.datetime,
-                              timedelta: datetime.timedelta) -> bool:
-            """Return whether the partition was created before the
-            timedelta."""
-            created: datetime.datetime = self.fs.created(path)
-            return now - created > timedelta
-
-        if timedelta is not None:
-            folders = list(
-                filter(
-                    lambda folder: is_created_before(  # type: ignore[arg-type]
-                        folder, now, timedelta),
-                    folders))
-
-        storage.execute_transaction(
-            client, self.synchronizer,
-            client.map(self.fs.rm, folders, recursive=True))
-
-        def invalidate_cache(path) -> None:
-            """Invalidate the cache."""
-            _LOGGER.info('Dropped partition: %s', path)
-            self.fs.invalidate_cache(path)
-
-        tuple(map(invalidate_cache, folders))
 
     # pylint: disable=duplicate-code
     # false positive, no code duplication
@@ -922,6 +692,383 @@ class Collection:
         array.fill_attrs(self.metadata)
         return array
 
+    def _bag_from_partitions(
+        self,
+        filters: PartitionFilter | None = None,
+        **kwargs,
+    ) -> dask.bag.core.Bag:
+        """Return a dask bag from the partitions.
+
+        Args:
+            filters: The predicate used to filter the partitions to load.
+            kwargs: The keyword arguments to pass to the method
+                :meth:`partitions`.
+
+        Returns:
+            The dask bag.
+        """
+        partitions: list[str] = [*self.partitions(filters=filters, **kwargs)]
+        return dask.bag.core.from_sequence(seq=partitions,
+                                           npartitions=len(partitions))
+
+    def iterate_on_records(
+        self,
+        *,
+        relative: bool = False,
+    ) -> Iterator[tuple[str, zarr.Group]]:
+        """Iterate over the partitions and the zarr groups.
+
+        Args:
+            relative: If True, the paths are relative to the base directory.
+
+        Returns
+            The iterator over the partitions and the zarr groups.
+        """
+        yield from (
+            (
+                self._relative_path(item) if relative else item,
+                zarr.open_consolidated(
+                    self.fs.get_mapper(item),  # type: ignore
+                    mode='r',
+                )) for item in self.partitions())
+
+    def variables(
+        self,
+        selected_variables: Iterable[str] | None = None
+    ) -> tuple[dataset.Variable, ...]:
+        """Return the variables of the collection.
+
+        Args:
+            selected_variables: The variables to return. If None, all the
+                variables are returned.
+
+        Returns:
+            The variables of the collection.
+        """
+        return dataset.get_dataset_variable_properties(self.metadata,
+                                                       selected_variables)
+
+
+class Collection(ReadOnlyCollection):
+    """This class manages a collection of files in Zarr format stored in a set
+    of subdirectories. These subdirectories split the data, by cycles or dates
+    for example, in order to optimize access and updates, deletion or addition
+    of new data.
+
+    Args:
+        axis: The axis of the collection. This is the dimension along which the
+            data is partitioned.
+        ds: The dataset containing the collection. This dataset is used to
+            create the metadata of the collection, which is used to validate
+            datasets that are inserted in the collection.
+        partition_handler: The partitioning strategy for the collection. This
+            is an instance of a subclass of
+            :py:class:`zarr_partitioning.PartitionHandler`.
+        partition_base_dir: The base directory for the collection. This is the
+            directory where the subdirectories containing the partitioned data
+            are stored.
+        mode: The mode of the collection. This can be either 'r' (read-only) or
+            'w' (write). In read-only mode, the collection can only be read and
+            no data can be inserted or modified. In write mode, the collection
+            can be read and modified.
+        filesystem: The filesystem to use for the collection. This is an
+            instance of a subclass of :py:class:`fsspec.AbstractFileSystem`.
+        synchronizer: The synchronizer to use for the collection. This is an
+            instance of a subclass of
+            :py:class:`zarr_synchronizer.Synchronizer`.
+
+    Raises:
+        ValueError:
+            If the axis does not exist in the dataset, if the partition key is
+            not defined in the dataset or if the access mode is not supported.
+
+    Notes:
+        Normally, this class is not instantiated directly but through the
+        :py:meth:`create_collection <zcollection.create_collection>` and
+        :py:meth:`open_collection <zcollection.open_collection>` methods of this
+        library.
+    """
+
+    def __init__(
+        self,
+        axis: str,
+        ds: meta.Dataset,
+        partition_handler: partitioning.Partitioning,
+        partition_base_dir: str,
+        *,
+        mode: Literal['r', 'w'] | None = None,
+        filesystem: fsspec.AbstractFileSystem | str | None = None,
+        synchronizer: sync.Sync | None = None,
+    ) -> None:
+        super().__init__(axis=axis,
+                         ds=ds,
+                         partition_handler=partition_handler,
+                         partition_base_dir=partition_base_dir,
+                         mode=mode,
+                         filesystem=filesystem,
+                         synchronizer=synchronizer)
+
+        if self.mode == 'r':
+            # pylint: disable=method-hidden
+            # These methods are overloaded when the collection is opened in
+            # readonly.
+            self._read_only_mode()
+            # pylint: enable=method-hidden
+        else:
+            self._write_config(skip_if_exists=True)
+
+    def __str__(self) -> str:
+        return (f'<{self.__class__.__name__} '
+                f'filesystem={self.fs.__class__.__name__!r}, '
+                f'partition_base_dir={self.partition_properties.dir!r}'
+                f'mode={self.mode!r}>')
+
+    @staticmethod
+    def _unsupported_operation(*args, **kwargs) -> NoReturn:
+        """Raise an exception if the operation is not supported."""
+        raise io.UnsupportedOperation('not writable')
+
+    def _read_only_mode(self) -> None:
+        """Set the unsupported methods to raise an exception when the
+        collection is opened in read-only mode."""
+        # Set each unsupported method to raise an exception.
+        for item in [
+                'add_variable',
+                'drop_partitions',
+                'drop_variable',
+                'insert',
+                'update',
+        ]:
+            assert hasattr(self, item), f'{item} is not a known method.'
+            setattr(self, item,
+                    types.MethodType(Collection._unsupported_operation, self))
+
+    def _write_config(self, skip_if_exists: bool = False) -> None:
+        """Write the configuration file."""
+        base_dir: str = self.partition_properties.dir
+        config: str = self._config(base_dir)
+        exists: bool = self.fs.exists(config)
+
+        if exists and skip_if_exists:
+            return
+
+        _LOGGER.info(
+            "Updating collection's configuration: %s"
+            if exists else 'Creating the collection: %s', config)
+
+        self.fs.makedirs(base_dir, exist_ok=True)
+
+        params = {
+            'axis': self.axis,
+            'dataset': self.metadata.get_config(),
+            'partitioning': self.partitioning.get_config(),
+        }
+
+        with self.fs.open(config, mode='w') as stream:
+            json.dump(params, stream, indent=4)  # type: ignore[arg-type]
+
+    def is_readonly(self) -> bool:
+        """Return True if the collection is read-only."""
+        return self.mode == 'r'
+
+    @classmethod
+    def from_config(
+        cls,
+        path: str,
+        *,
+        mode: Literal['r', 'w'] | None = None,
+        filesystem: fsspec.AbstractFileSystem | str | None = None,
+        synchronizer: sync.Sync | None = None,
+    ) -> Collection:
+        """Open a Collection described by a configuration file.
+
+        Args:
+            path: The path to the configuration file.
+            mode: The mode of the collection. This can be either 'r'
+                (read-only) or 'w' (write).
+            filesystem: The filesystem to use for the collection. This is an
+                instance of a subclass of
+                :py:class:`fsspec.AbstractFileSystem`.
+            synchronizer: The synchronizer to use for the collection. This is
+                an instance of a subclass of
+                :py:class:`zarr_synchronizer.Synchronizer`.
+
+        Returns:
+            The collection.
+
+        Raises:
+            ValueError:
+                If the provided directory does not contain a valid collection
+                configuration file.
+        """
+        _LOGGER.info('Opening collection: %r', path)
+        fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
+        config: str = cls._config(path)
+        if not fs.exists(config):
+            raise ValueError(f'zarr collection not found at path {path!r}')
+        with fs.open(config) as stream:
+            data: dict[str, Any] = json.load(stream)
+        return Collection(
+            data['axis'],
+            meta.Dataset.from_config(data['dataset']),
+            partitioning.get_codecs(data['partitioning']),
+            path,
+            mode=mode or 'r',
+            filesystem=fs,
+            synchronizer=synchronizer,
+        )
+
+    # pylint: disable=method-hidden
+    def insert(
+        self,
+        ds: xarray.Dataset | dataset.Dataset,
+        *,
+        merge_callable: merging.MergeCallable | None = None,
+        npartitions: int | None = None,
+        validate: bool = False,
+    ) -> None:
+        """Insert a dataset into the collection.
+
+        Args:
+            ds: The dataset to insert. It can be either an xarray.Dataset or a
+                dataset.Dataset object.
+            merge_callable: A function to use to merge the existing data set
+                already stored in partitions with the new partitioned data. If
+                None, the new partitioned data overwrites the existing
+                partitioned data.
+            npartitions: The maximum number of partitions to process in
+                parallel. By default, partitions are processed one by one.
+            validate: Whether to validate dataset metadata before insertion
+                or not.
+
+        Raises:
+            ValueError:
+                If the dataset does not match the definition of the collection.
+
+        Warns:
+            UserWarning:
+                If two different partitions use the same file (chunk), the
+                library that handles the storage of chunked arrays (HDF5,
+                NetCDF, Zarr, etc.) must be compatible with concurrent access.
+
+        Notes:
+            Each worker will process a set of independent partitions. However,
+            be careful, two different partitions can use the same file (chunk),
+            therefore, the library that handles the storage of chunked arrays
+            (HDF5, NetCDF, Zarr, etc.) must be compatible with concurrent
+            access.
+        """
+        # pylint: disable=method-hidden
+        if isinstance(ds, xarray.Dataset):
+            ds = dataset.Dataset.from_xarray(ds)
+
+        _LOGGER.info('Inserting of a %s dataset in the collection',
+                     dask.utils.format_bytes(ds.nbytes))
+
+        missing_variables: tuple[str, ...] = self.metadata.missing_variables(
+            ds.metadata())
+        for item in missing_variables:
+            variable: meta.Variable = self.metadata.variables[item]
+            ds.add_variable(variable)
+
+        if validate and ds.metadata() != self.metadata:
+            raise ValueError(
+                "Provided dataset's metadata do not match the collection's ones"
+            )
+        ds = ds.set_for_insertion(self.metadata)
+        client: dask.distributed.Client = dask_utils.get_client()
+
+        # If the dataset contains variables that should not be partitioned.
+        if self._immutable is not None:
+
+            # On the first call, we store the immutable variables in
+            # a directory located at the root of the collection.
+            if not self.fs.exists(self._immutable):
+                _write_immutable_dataset(ds, self.axis, self._immutable,
+                                         self.fs, self.synchronizer)
+
+            # Remove the variables that should not be partitioned.
+            ds = ds.select_variables_by_dims((self.axis, ))
+
+        # Process the partitions to insert or update by batches to avoid
+        # memory issues.
+        partitions = tuple(
+            self.partitioning.split_dataset(ds, self.partition_properties.dim))
+
+        if npartitions is not None:
+            if npartitions < 1:
+                raise ValueError('The number of partitions must be positive')
+            npartitions = len(partitions) // npartitions + 1
+
+        scattered_ds: Any = client.scatter(ds)
+        for sequence in dask_utils.split_sequence(partitions, npartitions):
+            futures: list[dask.distributed.Future] = [
+                dask_utils.simple_delayed('insert', _insert)(
+                    args=partition,  # type: ignore[arg-type]
+                    axis=self.axis,
+                    zds=scattered_ds,
+                    fs=self.fs,
+                    merge_callable=merge_callable,
+                    partitioning_properties=self.partition_properties,
+                ) for partition in sequence
+            ]
+            storage.execute_transaction(client, self.synchronizer, futures)
+
+    # pylint: disable=method-hidden
+    def drop_partitions(
+        self,
+        *,
+        filters: PartitionFilter = None,
+        timedelta: datetime.timedelta | None = None,
+    ) -> None:
+        # pylint: disable=method-hidden
+        """Drop the selected partitions.
+
+        Args:
+            filters: The predicate used to filter the partitions to drop. To
+                get more information on the predicate, see the documentation of
+                the :meth:`partitions` method.
+            timedelta: Select the partitions created before the specified time
+                delta relative to the current time.
+
+        Example:
+            >>> collection.drop_partitions(filters="year == 2019")
+            >>> collection.drop_partitions(
+            ...     timedelta=datetime.timedelta(days=30))
+        """
+        now: datetime.datetime = datetime.datetime.now()
+        client: dask.distributed.Client = dask_utils.get_client()
+        folders = list(self.partitions(filters=filters, lock=True))
+
+        # No partition selected, nothing to do.
+        if not folders:
+            return
+
+        def is_created_before(path: str, now: datetime.datetime,
+                              timedelta: datetime.timedelta) -> bool:
+            """Return whether the partition was created before the
+            timedelta."""
+            created: datetime.datetime = self.fs.created(path)
+            return now - created > timedelta
+
+        if timedelta is not None:
+            folders = list(
+                filter(
+                    lambda folder: is_created_before(  # type: ignore[arg-type]
+                        folder, now, timedelta),
+                    folders))
+
+        storage.execute_transaction(
+            client, self.synchronizer,
+            client.map(self.fs.rm, folders, recursive=True))
+
+        def invalidate_cache(path) -> None:
+            """Invalidate the cache."""
+            _LOGGER.info('Dropped partition: %s', path)
+            self.fs.invalidate_cache(path)
+
+        tuple(map(invalidate_cache, folders))
+
     # pylint: disable=method-hidden
     def update(
         self,
@@ -1007,25 +1154,6 @@ class Collection:
         storage.execute_transaction(
             client, self.synchronizer,
             client.map(local_func, tuple(batches), key=func.__name__))
-
-    def _bag_from_partitions(
-        self,
-        filters: PartitionFilter | None = None,
-        **kwargs,
-    ) -> dask.bag.core.Bag:
-        """Return a dask bag from the partitions.
-
-        Args:
-            filters: The predicate used to filter the partitions to load.
-            kwargs: The keyword arguments to pass to the method
-                :meth:`partitions`.
-
-        Returns:
-            The dask bag.
-        """
-        partitions: list[str] = [*self.partitions(filters=filters, **kwargs)]
-        return dask.bag.core.from_sequence(seq=partitions,
-                                           npartitions=len(partitions))
 
     def drop_variable(
         self,
@@ -1131,50 +1259,13 @@ class Collection:
             self.drop_variable(variable.name)
             raise
 
-    def iterate_on_records(
-        self,
-        *,
-        relative: bool = False,
-    ) -> Iterator[tuple[str, zarr.Group]]:
-        """Iterate over the partitions and the zarr groups.
-
-        Args:
-            relative: If True, the paths are relative to the base directory.
-
-        Returns
-            The iterator over the partitions and the zarr groups.
-        """
-        yield from (
-            (
-                self._relative_path(item) if relative else item,
-                zarr.open_consolidated(
-                    self.fs.get_mapper(item),  # type: ignore
-                    mode='r',
-                )) for item in self.partitions())
-
-    def variables(
-        self,
-        selected_variables: Iterable[str] | None = None
-    ) -> tuple[dataset.Variable, ...]:
-        """Return the variables of the collection.
-
-        Args:
-            selected_variables: The variables to return. If None, all the
-                variables are returned.
-
-        Returns:
-            The variables of the collection.
-        """
-        return dataset.get_dataset_variable_properties(self.metadata,
-                                                       selected_variables)
-
     def copy(
         self,
         target: str,
         *,
         filters: PartitionFilter | None = None,
         filesystem: fsspec.AbstractFileSystem | None = None,
-        mode: str = 'w',
+        mode: Literal['r', 'w'] = 'w',
         npartitions: int | None = None,
         synchronizer: sync.Sync | None = None,
     ) -> Collection:
