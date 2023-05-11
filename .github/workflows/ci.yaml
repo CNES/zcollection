@@ -34,7 +34,7 @@ jobs:
       shell: bash -l {0}
       run: |
         python -m setuptools_scm
-        pytest -v -ra
+        pytest -v -ra --processes
 
   s3-fs:
     runs-on: ubuntu-latest
@@ -68,7 +68,7 @@ jobs:
       shell: bash -l {0}
       run: |
         python -m setuptools_scm
-        pytest -v -ra --s3
+        pytest -v -ra --s3 --processes
 
   win:
     name: win
@@ -93,4 +93,4 @@ jobs:
       shell: bash -l {0}
       run: |
         python -m setuptools_scm
-        pytest -v -ra
+        pytest -v -ra --processes
