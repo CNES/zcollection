@@ -148,7 +148,7 @@ def _variable_repr(var: Variable) -> str:
         dict(zip(var.dimensions, var.shape)))
     lines: list[str] = [
         f'<{var.__module__}.{var.__class__.__name__} {dims_str}>',
-        f'{var.data!r}'
+        f'{var.array!r}'
     ]
     # Attributes
     if len(var.attrs):

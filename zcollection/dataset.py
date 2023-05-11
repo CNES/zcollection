@@ -82,11 +82,11 @@ def _dataset_repr(zds: Dataset) -> str:
     else:
         width: int = representation.calculate_column_width(zds.variables)
         for name, var in zds.variables.items():
-            dims_str = f"({', '.join(map(str, var.dimensions))} "
+            dims_str = f"({', '.join(map(str, var.dimensions))}) "
             name_str: str = f'    {name:<{width}s} {dims_str} {var.dtype}'
+            data_str: str = _dask_repr(var.data) if zds.delayed else '...'
             lines.append(
-                representation.pretty_print(
-                    f'{name_str}: {_dask_repr(var.data)}'))
+                representation.pretty_print(f'{name_str}: {data_str}'))
     # Attributes
     if len(zds.attrs):
         lines.append('  Attributes:')
