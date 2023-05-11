@@ -1152,6 +1152,9 @@ class Collection(ReadOnlyCollection):
         _LOGGER.info('Updating of the (%s) variable in the collection',
                      ', '.join(repr(item) for item in variables))
 
+        selected_partitions = tuple(self.partitions(filters=filters,
+                                                    lock=True))
+
         local_func: WrappedPartitionCallable = _wrap_update_func(
             *args,
             delayed=delayed,
@@ -1167,13 +1170,14 @@ class Collection(ReadOnlyCollection):
                 func=func,
                 fs=self.fs,
                 immutable=self._immutable,
+                selected_partitions=selected_partitions,
                 selected_variables=selected_variables,
                 **kwargs)
 
         client: dask.distributed.Client = dask_utils.get_client()
 
         batches: Iterator[Sequence[str]] = dask_utils.split_sequence(
-            tuple(self.partitions(filters=filters, lock=True)), npartitions
+            selected_partitions, npartitions
             or dask_utils.dask_workers(client, cores_only=True))
         storage.execute_transaction(
             client, self.synchronizer,

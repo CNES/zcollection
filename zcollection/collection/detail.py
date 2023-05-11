@@ -291,6 +291,7 @@ def _wrap_update_func_with_overlap(
     func: UpdateCallable,
     fs: fsspec.AbstractFileSystem,
     immutable: str | None,
+    selected_partitions: Sequence[str],
     selected_variables: Iterable[str] | None,
     **kwargs,
 ) -> WrappedPartitionCallable:
@@ -301,6 +302,8 @@ def _wrap_update_func_with_overlap(
         delayed: Whether to load the dataset lazily.
         func: Function to apply to update each partition.
         fs: File system on which the Zarr dataset is stored.
+        selected_partitions: The list of partitions to update selected by the
+            user.
         selected_variables: Name of the variables to load from the dataset.
             If None, all variables are loaded.
         *args: Positional arguments to pass to the function.
@@ -329,7 +332,7 @@ def _wrap_update_func_with_overlap(
                 fs=fs,
                 immutable=immutable,
                 partition=partition,
-                partitions=partitions,
+                partitions=selected_partitions,
                 selected_variables=selected_variables)
             # pylint: enable=duplicate-code
 
