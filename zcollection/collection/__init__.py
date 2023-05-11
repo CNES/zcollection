@@ -943,6 +943,17 @@ class Collection(ReadOnlyCollection):
                 partitioned data.
             npartitions: The maximum number of partitions to process in
                 parallel. By default, partitions are processed one by one.
+
+                .. note::
+
+                    When inserting partitions, Dask parallelizes the writing of
+                    each partition across its workers. Additionally, the writing
+                    of variables within a partition is parallelized on the
+                    worker responsible for inserting that partition, using
+                    multiple threads. If you're using a single Dask worker,
+                    partition insertion will happen sequentially and changing
+                    this parameter will have no effect.
+
             validate: Whether to validate dataset metadata before insertion
                 or not.
 
