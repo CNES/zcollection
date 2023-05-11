@@ -444,6 +444,9 @@ class View:
         Raises:
             ValueError: If the variable does not exist or if the variable
                 belongs to the reference collection.
+            ValueError: If the depth is greater than 0 and the selected
+                variables does not contain the variables updated by the
+                function.
 
         Example:
             >>> def temp_celsius_to_kelvin(
@@ -494,6 +497,12 @@ class View:
                 **kwargs,
             )
         else:
+            if selected_variables is not None and len(
+                    set(func_result) & set(selected_variables)) == 0:
+                raise ValueError(
+                    'If the depth is greater than 0, the selected variables '
+                    'must contain the variables updated by the function.')
+
             wrap_function = _wrap_update_func_overlap(
                 datasets_list,
                 depth,

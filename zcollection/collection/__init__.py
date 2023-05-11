@@ -1095,7 +1095,7 @@ class Collection(ReadOnlyCollection):
         depth: int = 0,
         filters: PartitionFilter | None = None,
         npartitions: int | None = None,
-        selected_variables: Iterable[str] | None = None,
+        selected_variables: list[str] | None = None,
         **kwargs,
     ) -> None:
         # pylint: disable=method-hidden
@@ -1120,6 +1120,9 @@ class Collection(ReadOnlyCollection):
                 If None, all variables are loaded.
             **kwargs: The keyword arguments to pass to the function.
 
+        Raises:
+            ValueError: If the variables to update are not in the collection.
+
         Example:
             >>> import dask.array
             >>> import zcollection
@@ -1139,6 +1142,12 @@ class Collection(ReadOnlyCollection):
                           category=RuntimeWarning,
                           stacklevel=2)
             return
+
+        # If depth is not 0, the variables updated must be in the selected
+        # variables.
+        if depth != 0 and selected_variables is not None:
+            selected_variables += list(
+                set(variables) - set(selected_variables))
 
         _LOGGER.info('Updating of the (%s) variable in the collection',
                      ', '.join(repr(item) for item in variables))

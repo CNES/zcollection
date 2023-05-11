@@ -249,6 +249,21 @@ def test_update(
                           data.variables['var1'].values * -1 + 5,
                           rtol=0)
 
+    # Test case if the selected variables does not contains the variable
+    # to update.
+    zcollection.update(
+        update,  # type: ignore
+        delayed=delayed,
+        selected_variables=['var1'],
+        depth=1,
+        shift=5)
+
+    data = zcollection.load(delayed=delayed)
+    assert data is not None
+    assert numpy.allclose(data.variables['var2'].values,
+                          data.variables['var1'].values * -1 + 5,
+                          rtol=0)
+
     def update_with_info(zds: dataset.Dataset, partition_info=None, shift=3):
         """Update function used for this test."""
         assert partition_info is not None

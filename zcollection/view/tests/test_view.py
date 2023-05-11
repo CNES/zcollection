@@ -200,6 +200,13 @@ def test_view_overlap(
     assert zds is not None
     numpy.all(zds.variables['var3'].values == 5)
 
+    with pytest.raises(ValueError):
+        instance.update(
+            update,  #  type: ignore
+            'var3',
+            depth=1,
+            selected_variables=('var1', ))
+
     def map_func(_, partition_info: tuple[str, slice]):
         """Map function used for this test."""
         assert isinstance(partition_info, tuple)
