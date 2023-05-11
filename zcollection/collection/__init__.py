@@ -502,12 +502,12 @@ class ReadOnlyCollection:
         func: MapCallable,
         /,
         *args,
+        delayed: bool = True,
         depth: int = 1,
         filters: PartitionFilter = None,
         partition_size: int | None = None,
         npartition: int | None = None,
         selected_variables: Sequence[str] | None = None,
-        delayed: bool = True,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the collection with some
@@ -520,6 +520,7 @@ class ReadOnlyCollection:
                 partitioned dimension and the slice allowing getting in the
                 dataset the selected partition without the overlap.
             *args: The positional arguments to pass to the function.
+            delayed: Whether to load the data lazily or not.
             depth: The depth of the overlap between the partitions. Defaults
                 to 1.
             filters: The predicate used to filter the partitions to process.
@@ -529,7 +530,6 @@ class ReadOnlyCollection:
             npartition: The number of desired bag partitions.
             selected_variables: A list of variables to retain from the
                 collection. If None, all variables are kept.
-            delayed: Whether to load the data lazily or not.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
@@ -1096,6 +1096,7 @@ class Collection(ReadOnlyCollection):
         filters: PartitionFilter | None = None,
         npartitions: int | None = None,
         selected_variables: list[str] | None = None,
+        trim: bool = True,
         **kwargs,
     ) -> None:
         # pylint: disable=method-hidden
@@ -1118,6 +1119,9 @@ class Collection(ReadOnlyCollection):
                 when calling this method.
             selected_variables: A list of variables to load from the collection.
                 If None, all variables are loaded.
+            trim: Whether to trim ``depth`` items from each partition after
+                calling ``func``. Set it to ``False`` if your function does
+                this for you.
             **kwargs: The keyword arguments to pass to the function.
 
         Raises:
@@ -1172,6 +1176,7 @@ class Collection(ReadOnlyCollection):
                 immutable=self._immutable,
                 selected_partitions=selected_partitions,
                 selected_variables=selected_variables,
+                trim=trim,
                 **kwargs)
 
         client: dask.distributed.Client = dask_utils.get_client()

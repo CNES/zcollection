@@ -101,6 +101,7 @@ def _update_with_overlap(
     dim: str,
     fs: fsspec.AbstractFileSystem,
     path: str,
+    trim: bool,
     **kwargs,
 ) -> None:
     """Update a partition with overlap.
@@ -112,6 +113,7 @@ def _update_with_overlap(
         dim: Name of the partitioning dimension.
         fs: File system on which the Zarr dataset is stored.
         path: Path to the Zarr group.
+        trim: Whether to trim the overlap.
         *args: Positional arguments to pass to the function.
         **kwargs: Keyword arguments to pass to the function.
 
@@ -123,13 +125,22 @@ def _update_with_overlap(
         kwargs) if dask.utils.has_keyword(func, 'partition_info') else func(
             zds, *args, **kwargs))
 
-    for varname, array in dictionary.items():
-        slices: tuple[slice, ...] = _get_slices(zds[varname], dim, indices)
-        update_zarr_array(
-            dirname=join_path(path, varname),
-            array=array[slices],  # type: ignore[index]
-            fs=fs,
-        )
+    if trim:
+        for varname, array in dictionary.items():
+            slices: tuple[slice, ...] = _get_slices(zds[varname], dim, indices)
+            update_zarr_array(
+                dirname=join_path(path, varname),
+                array=array[slices],  # type: ignore[index]
+                fs=fs,
+            )
+    else:
+        tuple(
+            map(
+                lambda items: update_zarr_array(
+                    dirname=join_path(path, items[0]),
+                    array=items[1],
+                    fs=fs,
+                ), dictionary.items()))
 
 
 def _load_dataset(
@@ -258,6 +269,7 @@ def _wrap_update_func(
         immutable: Name of the immutable directory.
         selected_variables: Name of the variables to load from the dataset.
             If None, all variables are loaded.
+        trim: Whether to trim the overlap.
         *args: Positional arguments to pass to the function.
         **kwargs: Keyword arguments to pass to the function.
 
@@ -293,6 +305,7 @@ def _wrap_update_func_with_overlap(
     immutable: str | None,
     selected_partitions: Sequence[str],
     selected_variables: Iterable[str] | None,
+    trim: bool,
     **kwargs,
 ) -> WrappedPartitionCallable:
     """Wrap an update function taking a partition's dataset as input and
@@ -300,12 +313,15 @@ def _wrap_update_func_with_overlap(
 
     Args:
         delayed: Whether to load the dataset lazily.
+        depth: Depth of the overlap.
+        dim: Name of the partitioning dimension.
         func: Function to apply to update each partition.
         fs: File system on which the Zarr dataset is stored.
-        selected_partitions: The list of partitions to update selected by the
-            user.
+        immutable: Name of the immutable directory.
+        selected_partitions: List of all partitions selected for the update.
         selected_variables: Name of the variables to load from the dataset.
             If None, all variables are loaded.
+        trim: Whether to trim the overlap.
         *args: Positional arguments to pass to the function.
         **kwargs: Keyword arguments to pass to the function.
 
@@ -343,6 +359,7 @@ def _wrap_update_func_with_overlap(
                                  dim=dim,
                                  fs=fs,
                                  path=partition,
+                                 trim=trim,
                                  **kwargs)
 
     return wrap_function

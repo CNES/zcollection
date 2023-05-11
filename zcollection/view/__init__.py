@@ -413,6 +413,7 @@ class View:
         filters: collection.PartitionFilter = None,
         npartitions: int | None = None,
         selected_variables: Iterable[str] | None = None,
+        trim: bool = True,
         **kwargs,
     ) -> None:
         """Update a variable stored int the view.
@@ -438,6 +439,9 @@ class View:
             selected_variables: A list of variables to retain from the view.
                 If None, all variables are loaded. Useful to load only a
                 subset of the view.
+            trim: Whether to trim ``depth`` items from each partition after
+                calling ``func``. Set it to ``False`` if your function does
+                this for you.
             args: The positional arguments to pass to the function.
             kwargs: The keyword arguments to pass to the function.
 
@@ -509,6 +513,7 @@ class View:
                 func,
                 self.fs,
                 self.view_ref,
+                trim,
                 *args,
                 **kwargs,
             )

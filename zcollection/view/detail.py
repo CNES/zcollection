@@ -377,6 +377,7 @@ def _wrap_update_func_overlap(
     func: collection.UpdateCallable,
     fs: fsspec.AbstractFileSystem,
     view_ref: collection.Collection,
+    trim: bool,
     *args,
     **kwargs,
 ) -> Callable[[Iterable[tuple[dataset.Dataset, str]], str], None]:
@@ -389,6 +390,7 @@ def _wrap_update_func_overlap(
         func: The update function.
         fs: The file system used to access the variables in the view.
         view_ref: The view reference.
+        trim: If True, trim the dataset to the overlap.
         *args: The arguments of the update function.
         **kwargs: The keyword arguments of the update function.
 
@@ -419,6 +421,7 @@ def _wrap_update_func_overlap(
                                  dim=dim,
                                  fs=fs,
                                  path=join_path(base_dir, partition),
+                                 trim=trim,
                                  **kwargs)
             # pylint: enable=duplicate-code
 
