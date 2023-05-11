@@ -1094,7 +1094,7 @@ class Collection(ReadOnlyCollection):
         delayed: bool = True,
         depth: int = 0,
         filters: PartitionFilter | None = None,
-        partition_size: int | None = None,
+        npartitions: int | None = None,
         selected_variables: Iterable[str] | None = None,
         **kwargs,
     ) -> None:
@@ -1113,10 +1113,9 @@ class Collection(ReadOnlyCollection):
                 partitioned dimension and the slice allowing getting in the
                 dataset the selected partition.
             filters: The expression used to filter the partitions to update.
-            partition_size: The number of partitions to update in a single
-                batch. By default, 1 which is the same as to map the function to
-                each partition. Otherwise, the function is called on a batch of
-                partitions.
+            npartitions: The number of partitions to update in parallel. By
+                default, it is equal to the number of Dask workers available
+                when calling this method.
             selected_variables: A list of variables to load from the collection.
                 If None, all variables are loaded.
             **kwargs: The keyword arguments to pass to the function.
@@ -1165,7 +1164,7 @@ class Collection(ReadOnlyCollection):
         client: dask.distributed.Client = dask_utils.get_client()
 
         batches: Iterator[Sequence[str]] = dask_utils.split_sequence(
-            tuple(self.partitions(filters=filters, lock=True)), partition_size
+            tuple(self.partitions(filters=filters, lock=True)), npartitions
             or dask_utils.dask_workers(client, cores_only=True))
         storage.execute_transaction(
             client, self.synchronizer,

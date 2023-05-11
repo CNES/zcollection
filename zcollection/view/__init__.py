@@ -411,7 +411,7 @@ class View:
         depth: int = 0,
         delayed: bool = True,
         filters: collection.PartitionFilter = None,
-        partition_size: int | None = None,
+        npartitions: int | None = None,
         selected_variables: Iterable[str] | None = None,
         **kwargs,
     ) -> None:
@@ -432,10 +432,9 @@ class View:
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
                 <zcollection.collection.Collection.partitions>` method.
-            partition_size: The number of partitions to update in a single
-                batch. By default 1, which is the same as to map the function to
-                each partition. Otherwise, the function is called on a batch of
-                partitions.
+            npartitions: The number of partitions to update in parallel. By
+                default, it is equal to the number of Dask workers available
+                when calling this method.
             selected_variables: A list of variables to retain from the view.
                 If None, all variables are loaded. Useful to load only a
                 subset of the view.
@@ -506,7 +505,7 @@ class View:
             )
 
         batchs = dask_utils.split_sequence(
-            datasets_list, partition_size
+            datasets_list, npartitions
             or dask_utils.dask_workers(client, cores_only=True))
         awaitables = client.map(wrap_function,
                                 tuple(batchs),
