@@ -185,17 +185,33 @@ def test_view_overlap(
 
     instance.add_variable(var)
 
-    def update(zds, varname, partition_info: tuple[str, slice]):
+    def update(zds, varname, partition_info: tuple[str, slice],
+               trim_result: bool) -> dict[str, numpy.ndarray]:
         """Update function used for this test."""
         assert isinstance(partition_info, tuple)
         assert len(partition_info) == 2
         assert isinstance(partition_info[0], str)
         assert isinstance(partition_info[1], slice)
         assert partition_info[0] == 'num_lines'
+        if trim_result:
+            zds = zds.isel(dict((partition_info, )))
         return {varname: zds.variables['var1'].values * 1 + 5}
 
-    instance.update(update, 'var3', depth=1)  # type: ignore
+    instance.update(
+        update,  # type: ignore
+        'var3',
+        depth=1,
+        trim_result=False)
+    zds = instance.load()
+    assert zds is not None
+    numpy.all(zds.variables['var3'].values == 5)
 
+    instance.update(
+        update,  # type: ignore
+        'var3',
+        depth=1,
+        trim=False,
+        trim_result=True)
     zds = instance.load()
     assert zds is not None
     numpy.all(zds.variables['var3'].values == 5)
@@ -205,6 +221,7 @@ def test_view_overlap(
             update,  #  type: ignore
             'var3',
             depth=1,
+            trim_result=False,
             selected_variables=('var1', ))
 
     def map_func(_, partition_info: tuple[str, slice]):

@@ -286,6 +286,25 @@ def test_update(
                           data.variables['var1'].values * -1 + 10,
                           rtol=0)
 
+    def update_and_trim(zds: dataset.Dataset, partition_info=None):
+        """Update function used for this test."""
+        assert partition_info is not None
+        assert partition_info[0] == 'num_lines'
+        zds = zds.isel(dict((partition_info, )))
+        return {'var2': zds.variables['var1'].values * -1}
+
+    zcollection.update(
+        update_and_trim,  # type: ignore
+        delayed=delayed,
+        trim=False,
+        depth=1)
+
+    data = zcollection.load(delayed=delayed)
+    assert data is not None
+    assert numpy.allclose(data.variables['var2'].values,
+                          data.variables['var1'].values * -1,
+                          rtol=0)
+
     def invalid_var_name(zds: dataset.Dataset):
         """Update function used to test if the user wants to update a non-
         existent variable name."""
