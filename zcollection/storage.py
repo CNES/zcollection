@@ -20,6 +20,7 @@ import dask.distributed
 import dask.local
 import fsspec
 import numcodecs.abc
+import numcodecs.blosc
 import numpy
 import zarr
 
@@ -38,6 +39,9 @@ ZGROUP = '.zgroup'
 
 #: Module logger.
 _LOGGER: logging.Logger = logging.getLogger(__name__)
+
+#: Disable multithreading in Blosc to avoid competing with Dask.
+numcodecs.blosc.use_threads = False
 
 
 def execute_transaction(
@@ -247,13 +251,16 @@ def write_zarr_group(
                 futures: list[Any] = client.map(
                     write_zarr_variable,
                     iterables,
-                    batch_size=64,
                     block_size_limit=zds.block_size_limit,
                     chunks=zds.chunks,
                     dirname=dirname,
                     fs=fs,
                 )
-                execute_transaction(client, sync.NoSync(), futures)
+                execute_transaction(
+                    client,
+                    sync.NoSync(),
+                    futures,
+                    workers=dask.distributed.get_worker().address)
         else:
             tuple(
                 map(
