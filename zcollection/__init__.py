@@ -7,12 +7,8 @@ Handle a collection of Zarr groups.
 ===================================
 """
 from . import merging, partitioning
-from .collection import (
-    Collection,
-    Indexer,
-    PartitionFilter,
-    PartitionFilterCallback,
-)
+from .collection import Collection
+from .collection.abc import Indexer, PartitionFilter, PartitionFilterCallback
 from .collection.callable_objects import (
     MapCallable,
     PartitionCallable,

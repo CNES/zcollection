@@ -22,6 +22,7 @@ import dask.utils
 import fsspec
 
 from .. import collection, dask_utils, dataset, fs_utils, meta, storage, sync
+from ..collection.callable_objects import MapCallable, PartitionCallable
 from ..collection.detail import _try_infer_callable
 from ..convenience import collection as convenience
 from ..type_hints import ArrayLike
@@ -336,7 +337,7 @@ class View:
         *,
         delayed: bool = True,
         filters: collection.PartitionFilter = None,
-        indexer: collection.Indexer | None = None,
+        indexer: collection.abc.Indexer | None = None,
         selected_variables: Iterable[str] | None = None,
     ) -> dataset.Dataset | None:
         """Load the view.
@@ -362,10 +363,11 @@ class View:
         _assert_have_variables(self.metadata)
         if indexer is not None:
             arguments = tuple(
-                collection.build_indexer_args(self.view_ref,
-                                              filters,
-                                              indexer,
-                                              partitions=self.partitions()))
+                collection.abc.build_indexer_args(
+                    self.view_ref,
+                    filters,
+                    indexer,
+                    partitions=self.partitions()))
             if len(arguments) == 0:
                 return None
         else:
@@ -531,7 +533,7 @@ class View:
     # false positive, no code duplication
     def map(
         self,
-        func: collection.MapCallable,
+        func: MapCallable,
         /,
         *args,
         delayed: bool = True,
@@ -573,7 +575,7 @@ class View:
 
         def _wrap(
             arguments: tuple[dataset.Dataset, str],
-            func: collection.PartitionCallable,
+            func: PartitionCallable,
             *args,
             **kwargs,
         ) -> tuple[tuple[tuple[str, int], ...], Any]:
@@ -613,7 +615,7 @@ class View:
 
     def map_overlap(
         self,
-        func: collection.MapCallable,
+        func: MapCallable,
         /,
         *args,
         depth: int = 1,
@@ -668,7 +670,7 @@ class View:
 
         def _wrap(
             arguments: tuple[dataset.Dataset, str],
-            func: collection.PartitionCallable,
+            func: PartitionCallable,
             datasets_list: tuple[tuple[dataset.Dataset, str]],
             depth: int,
             *args,
@@ -742,7 +744,7 @@ class View:
     def sync(
         self,
         filters: collection.PartitionFilter = None
-    ) -> collection.PartitionFilterCallback:
+    ) -> collection.abc.PartitionFilterCallback:
         """Synchronize the view with the underlying collection.
 
         This method is useful to update the view after a change in the

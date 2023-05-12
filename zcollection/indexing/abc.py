@@ -19,7 +19,7 @@ import pyarrow
 import pyarrow.parquet
 
 from .. import collection, dataset
-from ..collection import MapCallable
+from ..collection.callable_objects import MapCallable
 from ..type_hints import NDArray
 
 #: Scalar data type for the index.
@@ -357,7 +357,7 @@ class Indexer(abc.ABC):
         return self._table
 
     def _table_2_indexer(self, table: pyarrow.Table,
-                         only_partition_keys: bool) -> collection.Indexer:
+                         only_partition_keys: bool) -> collection.abc.Indexer:
         """Convert a table to an indexer.
 
         Args:
@@ -413,7 +413,7 @@ class Indexer(abc.ABC):
         logical_op: str | None = None,
         mask: pyarrow.ChunkedArray | None = None,
         only_partition_keys: bool = True,
-    ) -> collection.Indexer:
+    ) -> collection.abc.Indexer:
         """Query the index.
 
         Args:
