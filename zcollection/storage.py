@@ -159,9 +159,9 @@ def write_zarr_variable(
 
     name, variable = args
     kwargs = {'filters': variable.filters}
-    data: Any = variable.array
-    if isinstance(data, numpy.ndarray):
-        data = dask.array.core.from_array(data)
+    data: dask.array.core.Array = variable.array if isinstance(
+        variable, dataset.DelayedArray) else dask.array.core.from_array(
+            variable.array)
 
     # If the user has not specified a chunk size, we use the default one.
     # Otherwise, we use the user's choice.
@@ -248,7 +248,7 @@ def write_zarr_group(
                     (name, client.scatter(variable))
                     for name, variable in zds.variables.items()
                 ]
-                futures: list[Any] = client.map(
+                futures: list[dask.distributed.Future] = client.map(
                     write_zarr_variable,
                     iterables,
                     block_size_limit=zds.block_size_limit,

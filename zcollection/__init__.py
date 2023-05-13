@@ -24,7 +24,7 @@ from .dataset import Dataset
 from .meta import Attribute
 from .variable import Array, DelayedArray, Variable
 from .version import __version__
-from .view import View, ViewReference
+from .view import View, ViewReference, ViewUpdateCallable
 
 __all__ = (
     '__version__',
@@ -49,4 +49,5 @@ __all__ = (
     'version',
     'View',
     'ViewReference',
+    'ViewUpdateCallable',
 )

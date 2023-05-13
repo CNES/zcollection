@@ -8,7 +8,7 @@ View on a reference collection.
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar, Iterable, Iterator
+from typing import Any, ClassVar, Iterable, Iterator, Sequence
 import copy
 import json
 import logging
@@ -28,6 +28,7 @@ from ..convenience import collection as convenience
 from ..type_hints import ArrayLike
 from .detail import (
     ViewReference,
+    ViewUpdateCallable,
     _assert_have_variables,
     _assert_variable_handled,
     _create_zarr_array,
@@ -494,6 +495,9 @@ class View:
         _LOGGER.info('Updating variable %s',
                      ', '.join(repr(item) for item in func_result))
 
+        # Function to apply to each partition.
+        wrap_function: ViewUpdateCallable
+
         # Wrap the function to apply to each partition.
         if depth == 0:
             wrap_function = _wrap_update_func(
@@ -520,13 +524,14 @@ class View:
                 **kwargs,
             )
 
-        batchs = dask_utils.split_sequence(
+        batchs: Iterator[Sequence[Any]] = dask_utils.split_sequence(
             datasets_list, npartitions
             or dask_utils.dask_workers(client, cores_only=True))
-        awaitables = client.map(wrap_function,
-                                tuple(batchs),
-                                key=func.__name__,
-                                base_dir=self.base_dir)
+        awaitables: list[dask.distributed.Future] = client.map(
+            wrap_function,
+            tuple(batchs),
+            key=func.__name__,
+            base_dir=self.base_dir)
         storage.execute_transaction(client, self.synchronizer, awaitables)
 
     # pylint: disable=duplicate-code
@@ -590,6 +595,9 @@ class View:
             Returns:
                 The result of the function.
             """
+            zds: dataset.Dataset
+            partition: str
+
             zds, partition = arguments
             return self.view_ref.partitioning.parse(partition), func(
                 zds, *args, **kwargs)
@@ -689,6 +697,9 @@ class View:
             Returns:
                 The result of the function.
             """
+            zds: dataset.Dataset
+            indices: slice
+
             zds, indices = _select_overlap(arguments, datasets_list, depth,
                                            self.view_ref)
 

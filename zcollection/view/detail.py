@@ -34,7 +34,11 @@ from ..storage import (
     update_zarr_array,
     write_zattrs,
 )
-from ..type_hints import ArrayLike
+from ..type_hints import ArrayLike, NDArray
+
+#: Type of the function used to update a view.
+ViewUpdateCallable = Callable[[Iterable[tuple[dataset.Dataset, str]], str],
+                              None]
 
 #: Name of the file that contains the checksum of the view.
 CHECKSUM_FILE = '.checksum'
@@ -67,7 +71,7 @@ class AxisReference:
         checksum: Checksum of the axis values.
     """
     #: Axis values.
-    array: numpy.ndarray
+    array: NDArray
     #: Name of the dimension.
     dimension: str
     #: Checksum of the axis values.
@@ -94,11 +98,14 @@ def _create_zarr_array(args: tuple[str, zarr.Group],
         invalidate_cache: If True, invalidate the cache of the directory
             containing the Zarr array.
     """
+    partition: str
+    group: zarr.Group
+
     partition, group = args
     data: dask.array.core.Array = dask.array.core.from_zarr(group[template])
 
-    dirname = join_path(base_dir, partition)
-    mapper = fs.get_mapper(join_path(dirname, variable.name))
+    dirname: str = join_path(base_dir, partition)
+    mapper: fsspec.FSMap = fs.get_mapper(join_path(dirname, variable.name))
     zarr.full(data.shape,
               chunks=data.chunksize,
               dtype=variable.dtype,
@@ -345,7 +352,7 @@ def _wrap_update_func(
     fs: fsspec.AbstractFileSystem,
     *args,
     **kwargs,
-) -> Callable[[Iterable[tuple[dataset.Dataset, str]], str], None]:
+) -> ViewUpdateCallable:
     """Wrap an update function taking a list of partition's dataset and
     partition's path as input and returning None.
 
@@ -384,7 +391,7 @@ def _wrap_update_func_overlap(
     trim: bool,
     *args,
     **kwargs,
-) -> Callable[[Iterable[tuple[dataset.Dataset, str]], str], None]:
+) -> ViewUpdateCallable:
     """Wrap an update function taking a list of partition's dataset and
     partition's path as input and returning None.
 
@@ -449,11 +456,12 @@ def _calculate_axis_reference(
     Returns:
         The axis reference of the partition.
     """
+    store: zarr.Group
     store = group or zarr.open_consolidated(  # type: ignore[arg-type]
         view_ref.fs.get_mapper(path), )
     array: zarr.Array = store[view_ref.axis]  # type: ignore[arg-type]
-    axis = array[...]
-    checksum = hashlib.sha256(axis.tobytes()).hexdigest()
+    axis: NDArray = array[...]
+    checksum: str = hashlib.sha256(axis.tobytes()).hexdigest()
     return AxisReference(axis, array.attrs[DIMENSIONS][0], checksum)
 
 
@@ -469,10 +477,11 @@ def _write_checksum_array(
         fs: The file system used to access the variables in the view.
         axis_ref: The axis reference of the partition.
     """
-    checksum_path = join_path(partition, CHECKSUM_FILE)
-    mapper = fs.get_mapper(checksum_path)
+    array: zarr.Array
+    checksum_path: str = join_path(partition, CHECKSUM_FILE)
+    mapper: fsspec.FSMap = fs.get_mapper(checksum_path)
     if fs.exists(checksum_path):
-        array = zarr.open(mapper)
+        array = zarr.open(mapper)  # type: ignore[arg-type]
     else:
         array = zarr.create(shape=axis_ref.array.shape,
                             dtype=axis_ref.array.dtype,
@@ -496,8 +505,8 @@ def _load_checksum_array(
     Returns:
         The checksum of the partition and the axis of the reference partition.
     """
-    checksum_path = join_path(partition, CHECKSUM_FILE)
-    mapper = fs.get_mapper(checksum_path)
+    checksum_path: str = join_path(partition, CHECKSUM_FILE)
+    mapper: fsspec.FSMap = fs.get_mapper(checksum_path)
     return zarr.open_array(mapper)
 
 
@@ -518,7 +527,7 @@ def _write_checksum(
         group: The group to compute the checksum of (if None, the group is
             reload from the file system).
     """
-    partition_ref = join_path(
+    partition_ref: str = join_path(
         view_ref.partition_properties.dir,
         str(pathlib.Path(partition).relative_to(base_dir).as_posix()))
     _write_checksum_array(
@@ -542,14 +551,15 @@ def _sync_partition(
         fs: The file system used to access the variables in the view.
         view_ref: The view reference.
     """
-    mapper = view_ref.fs.get_mapper(
+    mapper: fsspec.FSMap = view_ref.fs.get_mapper(
         join_path(view_ref.partition_properties.dir, partition))
     group: zarr.Group = zarr.open_consolidated(  # type: ignore
         mapper, mode='r')
-    path = join_path(base_dir, partition)
+    path: str = join_path(base_dir, partition)
     try:
         for variable in metadata.variables.values():
-            template = view_ref.metadata.search_same_dimensions_as(variable)
+            template: meta.Variable = \
+                view_ref.metadata.search_same_dimensions_as(variable)
             _create_zarr_array((partition, group),
                                base_dir=base_dir,
                                fs=fs,
@@ -577,14 +587,15 @@ def _extend_partition(
         fs: The file system used to access the variables in the view.
         axis_ref: The axis reference of the partition.
     """
-    axis_name = axis_ref.dimension
-    new_size = axis_ref.array.shape[0]
+    axis_name: str = axis_ref.dimension
+    new_size: int = axis_ref.array.shape[0]
     try:
         for variable in fs.listdir(partition):
-            array = zarr.open_array(fs.get_mapper(variable['name']))
-            dimensions = array.attrs[DIMENSIONS]
+            array: zarr.Array = zarr.open_array(fs.get_mapper(
+                variable['name']))
+            dimensions: Sequence[str] = array.attrs[DIMENSIONS]
             if axis_name in dimensions:
-                axis = dimensions.index(axis_name)
+                axis: int = dimensions.index(axis_name)
                 shape = list(array.shape)
                 shape[axis] = new_size
                 array.resize(shape)
@@ -619,7 +630,7 @@ def _sync(
     Returns:
         The partition synced or None if the partition is already synced.
     """
-    partition_view = join_path(base_dir, partition)
+    partition_view: str = join_path(base_dir, partition)
     if not fs.exists(partition_view):
         # The partition does not exist, so we create it.
         if not dry_run:
@@ -627,9 +638,11 @@ def _sync(
         return partition
 
     # The partition exists, so we check if it is synced.
-    partition_ref = join_path(view_ref.partition_properties.dir, partition)
-    array = _load_checksum_array(partition_view, fs)
-    axis_ref = _calculate_axis_reference(partition_ref, view_ref)
+    partition_ref: str = join_path(view_ref.partition_properties.dir,
+                                   partition)
+    array: zarr.Array = _load_checksum_array(partition_view, fs)
+    axis_ref: AxisReference = _calculate_axis_reference(
+        partition_ref, view_ref)
     # If the checksums are different, the partition is not synced. So we
     # remove it (information between the partition and the reference are
     # not consistent)
@@ -637,7 +650,7 @@ def _sync(
         # If the checksums are different, the partition is not synced. we load
         # the axis of partition's view to check if the partition is a subset of
         # the reference partition.
-        axis_view = array[:]
+        axis_view: NDArray = array[:]
         if axis_ref.array.size > axis_view.size and numpy.all(
                 axis_view == axis_ref.array[:axis_view.size]):
             # The view partition is a subset of the reference partition.
