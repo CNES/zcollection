@@ -1,6 +1,25 @@
 Release notes
 =============
 
+2023.5.0
+--------
+* Add missing copyrights.
+* Modularise code to reduce the number of lines per module.
+* Writing variables is limited to the worker being used.
+* Improve test coverage.
+* #9: Read the version attribute directly from the ``version.py`` module.
+* #8: Incomplete overlaps with more than one worker.
+* #7: Fix bug, in the update method, if the user has selected multiple
+  partitions the selected variables must contain the updated variables.
+* #6: the parameter name for specifying the number of concurrent inserts is
+  incorrect.
+* #3: Add a trim argument to the ``update`` method, like Dask's Dask's
+  ``map_overlap``.
+* Update the documentation.
+* Refactor the code.
+* Loading data using Dask or Numpy.
+* Variable adds attributes to partitions.
+
 2023.3.2
 --------
 * Writing a partition with many variables is slow.
