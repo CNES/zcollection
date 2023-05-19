@@ -22,6 +22,14 @@ Required dependencies
 Instructions
 ------------
 
+Installation via conda
+######################
+
+The easiest way to install the library is to use conda. First, install the
+dependencies::
+
+    $ conda install -c conda-forge zcollection
+
 Installation via conda and sources
 ##################################
 
