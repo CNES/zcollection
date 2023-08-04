@@ -122,7 +122,7 @@ def not_equal(first: Any, second: Any) -> bool:
         # pylint: enable=comparison-with-itself
 
     #: pylint: disable=unidiomatic-typecheck
-    if type(first) != type(second):
+    if type(first) is not type(second):
         return True
     #: pylint: enable=unidiomatic-typecheck
     if _is_not_a_number(first) and _is_not_a_number(second):

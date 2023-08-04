@@ -89,6 +89,7 @@ def split_half_orbit(
 def _half_orbit(
     zds: zcollection.Dataset,
     *args,
+    dtype: numpy.dtype | None = None,
     **kwargs,
 ) -> numpy.ndarray:
     """Return the indexes of the start and stop of each half-orbit.
@@ -110,7 +111,7 @@ def _half_orbit(
         pass_number[i0],
     ) for i0, i1 in split_half_orbit(cycle_number, pass_number))
 
-    return numpy.fromiter(generator, numpy.dtype(HalfOrbitIndexer.dtype()))
+    return numpy.fromiter(generator, dtype)
 
 
 # %%
@@ -125,16 +126,15 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
     #: Column name of the pass number.
     PASS_NUMBER = 'pass_number'
 
-    @classmethod
-    def dtype(cls, /, **kwargs) -> List[Tuple[str, str]]:
+    def dtype(self, /, **kwargs) -> List[Tuple[str, str]]:
         """Return the columns of the index.
 
         Returns:
             A tuple of (name, type) pairs.
         """
         return super().dtype() + [
-            (cls.CYCLE_NUMBER, 'uint16'),
-            (cls.PASS_NUMBER, 'uint16'),
+            (self.CYCLE_NUMBER, 'uint16'),
+            (self.PASS_NUMBER, 'uint16'),
         ]
 
     @classmethod
@@ -177,7 +177,11 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
             pass_number: The name of the pass number variable stored in the
                 collection. Defaults to "pass_number".
         """
-        super()._update(zds, _half_orbit, partition_size, npartitions,
+        super()._update(zds,
+                        _half_orbit,
+                        partition_size,
+                        npartitions,
+                        dtype=self.dtype(),
                         **kwargs)
 
 

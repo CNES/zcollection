@@ -38,9 +38,8 @@ except ImportError:
     # For Python < 3.9 we use a backport of GenericAlias provided by
     # numpy
     # isort: off
-    from numpy._typing._generic_alias import (  # type: ignore[assignment,misc]
-        _GenericAlias as GenericAlias,  # yapf: disable
-    )
+    from numpy._typing._generic_alias import (  # type: ignore[no-redef]
+        _GenericAlias as GenericAlias, )
     # isort: on
     # pylint: enable=ungrouped-imports
 

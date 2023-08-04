@@ -114,8 +114,7 @@ class Indexer(abc.ABC):
         """
         return self._meta
 
-    @classmethod
-    def dtype(cls, **_kwargs) -> list[tuple[str, str]]:
+    def dtype(self, **_kwargs) -> list[tuple[str, str]]:
         """Return the columns of the index.
 
         Args:
@@ -125,12 +124,11 @@ class Indexer(abc.ABC):
             A tuple of (name, type) pairs.
         """
         return [
-            (cls.START, 'int64'),
-            (cls.STOP, 'int64'),
+            (self.START, 'int64'),
+            (self.STOP, 'int64'),
         ]
 
-    @classmethod
-    def pyarrow_type(cls, **kwargs) -> dict[str, pyarrow.DataType]:
+    def pyarrow_type(self, **kwargs) -> dict[str, pyarrow.DataType]:
         """Return the PyArrow DataType for the index.
 
         Args:
@@ -139,7 +137,7 @@ class Indexer(abc.ABC):
         Returns:
             The PyArrow type.
         """
-        dtype = dict(cls.dtype(**kwargs))
+        dtype = dict(self.dtype(**kwargs))
         binary: dict[str, pyarrow.DataType] = {}
         for name, value in tuple(dtype.items()):
             if value.startswith('S'):
