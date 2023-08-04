@@ -343,11 +343,11 @@ class ReadOnlyCollection:
         func: MapCallable,
         /,
         *args,
+        delayed: bool = True,
         filters: PartitionFilter = None,
         partition_size: int | None = None,
         npartitions: int | None = None,
         selected_variables: Sequence[str] | None = None,
-        delayed: bool = True,
         **kwargs,
     ) -> dask.bag.core.Bag:
         """Map a function over the partitions of the collection.
@@ -355,6 +355,7 @@ class ReadOnlyCollection:
         Args:
             func: The function to apply to every partition of the collection.
             *args: The positional arguments to pass to the function.
+            delayed: Whether to load the data lazily or not.
             filters: The predicate used to filter the partitions to process.
                 To get more information on the predicate, see the
                 documentation of the :meth:`partitions` method.
@@ -362,7 +363,6 @@ class ReadOnlyCollection:
             npartitions: The number of desired bag partitions.
             selected_variables: A list of variables to retain from the
                 collection. If None, all variables are kept.
-            delayed: Whether to load the data lazily or not.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:

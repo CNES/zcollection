@@ -240,6 +240,7 @@ def test_update(
     zcollection.update(
         update,  # type: ignore
         delayed=delayed,
+        variables=('var2', ),
         depth=1,
         shift=5)
 

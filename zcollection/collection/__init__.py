@@ -448,6 +448,7 @@ class Collection(ReadOnlyCollection):
         npartitions: int | None = None,
         selected_variables: list[str] | None = None,
         trim: bool = True,
+        variables: Sequence[str] | None = None,
         **kwargs,
     ) -> None:
         # pylint: disable=method-hidden
@@ -473,6 +474,11 @@ class Collection(ReadOnlyCollection):
             trim: Whether to trim ``depth`` items from each partition after
                 calling ``func``. Set it to ``False`` if your function does
                 this for you.
+            variables: The list of variables updated by the function. If None,
+                the variables are inferred by calling the function on the first
+                partition. In this case, it is important to ensure that the
+                function can be called twice on the same partition without
+                side-effects. Default is None.
             **kwargs: The keyword arguments to pass to the function.
 
         Raises:
@@ -489,9 +495,9 @@ class Collection(ReadOnlyCollection):
         if not callable(func):
             raise TypeError('func must be a callable')
 
-        variables: tuple[str, ...]
-        variables = _infer_callable(self, func, filters, delayed,
-                                    selected_variables, *args, **kwargs)
+        variables = variables or _infer_callable(
+            self, func, filters, delayed, selected_variables, *args, **kwargs)
+
         if not variables:
             warnings.warn('You are trying to update an empty collection.',
                           category=RuntimeWarning,
