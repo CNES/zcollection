@@ -11,6 +11,7 @@ from __future__ import annotations
 import concurrent.futures
 import datetime
 import io
+import multiprocessing
 
 import dask.array.core
 import dask.distributed
@@ -920,7 +921,8 @@ def test_concurrent_insert(
                                         filesystem=fs,
                                         synchronizer=synchronizer)
 
-    pool = concurrent.futures.ProcessPoolExecutor(max_workers=32)
+    pool = concurrent.futures.ProcessPoolExecutor(
+        max_workers=32, mp_context=multiprocessing.get_context('spawn'))
     futures = []
 
     assert zcollection.is_locked() is False
