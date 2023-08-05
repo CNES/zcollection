@@ -90,5 +90,10 @@ def dask_client(
 ) -> Iterator[dask.distributed.Client]:
     """Connect a Dask client to the cluster."""
     with _scheduler_file(dask_cluster) as scheduler_file:
-        with dask.distributed.Client(scheduler_file=scheduler_file) as client:
-            yield client
+        try:
+            with dask.distributed.Client(
+                    scheduler_file=scheduler_file) as client:
+                yield client
+        except RuntimeError:
+            # Ignore while the client is being stopped.
+            pass

@@ -13,10 +13,13 @@ import dask.array.ma
 import numpy
 import pytest
 
+# pylint: disable=unused-import # Need to import for fixtures
+from ...tests.cluster import dask_client, dask_cluster
+# pylint enable=unused-import
 from ..array import _as_numpy_array
 
 
-def test_as_numpy_array() -> None:
+def test_as_numpy_array(dask_client) -> None:
     """Test converting array like to a dask array."""
     array: numpy.ndarray
     fill_value: Any
