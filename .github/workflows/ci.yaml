@@ -36,7 +36,10 @@ jobs:
     - name: Run Tests
       shell: bash -l {0}
       run: |
-        SETUPTOOLS_SCM_DEBUG=1 python -m setuptools_scm
+        python -m setuptools_scm
+        if [[ ! -e zcollection/version.py ]]; then
+          echo "__version__ = '$(git describe --tags --always)'" > zcollection/version.py
+        fi
         pytest -v -ra --processes
 
   s3-fs:
