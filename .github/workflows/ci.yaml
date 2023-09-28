@@ -19,9 +19,6 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        fetch-tags: true
 
     - name: Setup Miniconda
       uses: mamba-org/provision-with-micromamba@main
@@ -74,6 +71,10 @@ jobs:
       shell: bash -l {0}
       run: |
         python -m setuptools_scm
+        python -m setuptools_scm
+        if [[ ! -e zcollection/version.py ]]; then
+          echo "__version__ = '$(git describe --tags --always)'" > zcollection/version.py
+        fi
         pytest -v -ra --s3 --processes
 
   win:
@@ -99,4 +100,7 @@ jobs:
       shell: bash -l {0}
       run: |
         python -m setuptools_scm
+        if [[ ! -e zcollection/version.py ]]; then
+          echo "__version__ = '$(git describe --tags --always)'" > zcollection/version.py
+        fi
         pytest -v -ra --processes
