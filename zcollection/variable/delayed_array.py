@@ -384,7 +384,7 @@ class DelayedArray(Variable):
         """Return the output keys for the Dask graph."""
         return self.data.__dask_keys__()
 
-    def __dask_layers__(self) -> tuple:
+    def __dask_layers__(self) -> Sequence[str]:
         """Return the layers for the Dask graph."""
         return self.data.__dask_layers__()
 

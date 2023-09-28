@@ -11,6 +11,7 @@ from .. import time_series
 from ...tests import data
 # pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster
+from ...type_hints import NDArray
 
 # pylint: enable=unused-import # Need to import for fixtures
 
@@ -82,3 +83,44 @@ def test_merge_intersection(
         zds0.variables['var1'].values[:1],
         zds0.variables['var1'].values[1:-1] + 100,
         zds0.variables['var1'].values[-1:])))
+
+
+def test_intersection_with_tolerance() -> None:
+    """Test the update of two intersecting time series with a data gap."""
+    dates: NDArray = numpy.arange(
+        numpy.datetime64('2000-01-01', 'ns'),
+        numpy.datetime64('2000-01-01T23:59:59', 'ns'),
+        numpy.timedelta64(1, 's'))
+    measures = numpy.vstack((numpy.arange(dates.size), ) * 25).T
+    zds0 = data.make_dataset(dates, measures, delayed=False)
+
+    dates = numpy.arange(numpy.datetime64('2000-01-01T10:00:00', 'ns'),
+                         numpy.datetime64('2000-01-01T14:59:59', 'ns'),
+                         numpy.timedelta64(1, 's'))
+
+    # Create a gap in the data by removing the data between 11:00 and 13:00
+    mask = (dates > numpy.datetime64('2000-01-01T11:00:00', 'ns')) & (
+        dates < numpy.datetime64('2000-01-01T13:00:00', 'ns'))
+    dates = dates[~mask]
+    measures = numpy.vstack((numpy.arange(dates.size), ) * 25).T
+    zds1 = data.make_dataset(dates, measures, delayed=False)
+
+    # Merge the two datasets with a tolerance of 1 minute to keep the
+    # data gap in the existing dataset.
+    zds_gap_filled = time_series.merge_time_series(zds0,
+                                                   zds1,
+                                                   'time',
+                                                   'num_lines',
+                                                   tolerance=numpy.timedelta64(
+                                                       1, 'm'))
+    # Merge the two datasets without a tolerance. The data gap is
+    # kept and stored in the new dataset.
+    zds_with_gap = time_series.merge_time_series(
+        zds0,
+        zds1,
+        'time',
+        'num_lines',
+    )
+    assert numpy.all(zds_gap_filled.variables['time'].values ==
+                     zds0.variables['time'].values)
+    assert zds_with_gap.time.size == zds0.time.size - mask.sum()

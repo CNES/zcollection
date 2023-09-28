@@ -6,6 +6,8 @@
 Merging a time series
 =====================
 """
+from typing import Any
+
 import numpy
 
 from . import period
@@ -13,7 +15,7 @@ from .. import dataset
 from ..type_hints import NDArray
 
 
-def merge_time_series(
+def _merge_time_series(
     existing_ds: dataset.Dataset,
     inserted_ds: dataset.Dataset,
     axis: str,
@@ -21,28 +23,8 @@ def merge_time_series(
 ) -> dataset.Dataset:
     """Merge two time series together.
 
-    Replaces only the intersection between the existing dataset and the new one,
-    but also keeps the existing records if they have not been updated.
-
-    The following figure illustrates the implemented algorithm. Column ``A``
-    represents the new data and column ``B``, the data already present. The
-    different cells in the columns represent the hours on the day of the
-    measurements. The merge result is shown in column ``C``. It contains the
-    measurements of the column ``A`` or column ``B`` if column ``A`` does not
-    replace them.
-
-    .. figure:: ../images/merge_time_series.svg
-        :align: center
-        :width: 50%
-
-    Args:
-        existing_ds: The existing dataset.
-        inserted_ds: The inserted dataset.
-        axis: The axis to merge on.
-        partitioning_dim: The name of the partitioning dimension.
-
-    Returns:
-        The merged dataset.
+    See :func:`merge_time_series` for
+    details.
     """
     existing_axis: NDArray = existing_ds.variables[axis].values
     inserted_axis: NDArray = inserted_ds.variables[axis].values
@@ -107,3 +89,65 @@ def merge_time_series(
         {partitioning_dim: slice(index[0], index[-1] + 1, None)})
 
     return before.concat((inserted_ds, after), partitioning_dim)
+
+
+def merge_time_series(
+    existing_ds: dataset.Dataset,
+    inserted_ds: dataset.Dataset,
+    axis: str,
+    partitioning_dim: str,
+    *,
+    tolerance: Any = None,
+) -> dataset.Dataset:
+    """Merge two time series together.
+
+    Replaces only the intersection between the existing dataset and the new one,
+    but also keeps the existing records if they have not been updated.
+
+    The following figure illustrates the implemented algorithm. Column ``A``
+    represents the new data and column ``B``, the data already present. The
+    different cells in the columns represent the hours on the day of the
+    measurements. The merge result is shown in column ``C``. It contains the
+    measurements of the column ``A`` or column ``B`` if column ``A`` does not
+    replace them.
+
+    .. figure:: ../images/merge_time_series.svg
+        :align: center
+        :width: 50%
+
+    Args:
+        existing_ds: The existing dataset.
+        inserted_ds: The inserted dataset.
+        axis: The axis to merge on.
+        partitioning_dim: The name of the partitioning dimension.
+        tolerance: This parameter sets the tolerance level for detecting data
+            gaps in the inserted axis dataset. If set to ``None``, the
+            algorithm will not check for data gaps in the inserted dataset.
+
+    Returns:
+        The merged dataset.
+    """
+    index: NDArray
+
+    # Check if the inserted dataset contains data gaps.
+    if tolerance is not None:
+        inserted_axis: NDArray = inserted_ds.variables[axis].values
+        delta: NDArray = numpy.concatenate(
+            (numpy.array([0]), numpy.diff(numpy.roll(inserted_axis, 0))))
+        index = numpy.concatenate(
+            (numpy.array([0], numpy.int64), numpy.where(delta > tolerance)[0],
+             numpy.array([inserted_axis.size], numpy.int64)))
+    else:
+        index = numpy.array([], dtype=numpy.int64)
+
+    if index.size > 1:
+        # Split the inserted dataset into several datasets between the data
+        # gaps.
+        for ix in range(len(index) - 1):
+            existing_ds = _merge_time_series(
+                existing_ds,
+                inserted_ds.isel(
+                    {partitioning_dim: slice(index[ix], index[ix + 1], None)}),
+                axis, partitioning_dim)
+        return existing_ds
+    return _merge_time_series(existing_ds, inserted_ds, axis, partitioning_dim)
