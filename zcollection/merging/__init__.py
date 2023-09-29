@@ -40,6 +40,7 @@ class MergeCallable(Protocol):
         inserted_ds: dataset.Dataset,
         axis: str,
         partitioning_dim: str,
+        **kwargs,
     ) -> dataset.Dataset:  # pylint: disable=duplicate-code
         """Call the partition function.
 
@@ -48,6 +49,7 @@ class MergeCallable(Protocol):
             inserted_ds: The inserted dataset.
             axis: The axis to merge on.
             partitioning_dim: The partitioning dimension.
+            **kwargs: Additional keyword arguments.
 
         Returns:
             The merged dataset.
@@ -132,6 +134,7 @@ def perform(
     delayed: bool = True,
     merge_callable: MergeCallable | None,
     synchronizer: sync.Sync | None = None,
+    **kwargs,
 ) -> None:
     """Merges a new dataset with an existing partition.
 
@@ -148,8 +151,11 @@ def perform(
             Defaults to None.
         synchronizer: The instance handling access to critical resources.
             Defaults to None.
+        **kwargs: Additional keyword arguments are passed through to the merge
+            callable.
     """
     zds: dataset.Dataset = merge_callable(
-        storage.open_zarr_group(dirname, fs, delayed=delayed), ds_inserted,
-        axis, partitioning_dim) if merge_callable is not None else ds_inserted
+        storage.open_zarr_group(
+            dirname, fs, delayed=delayed), ds_inserted, axis, partitioning_dim,
+        **kwargs) if merge_callable is not None else ds_inserted
     _update_fs(dirname, zds, fs, synchronizer=synchronizer)

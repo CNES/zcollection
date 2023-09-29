@@ -637,12 +637,14 @@ def test_insert_validation(
         partition_handler=partitioning.Date(('time', ), 'M'),
         partition_base_dir=str(tested_fs.collection),
         filesystem=tested_fs.fs)
-    zcollection.insert(zds, merge_callable=merging.merge_time_series)
+    zcollection.insert(zds)
 
     zds = next(create_test_dataset_with_fillvalue())
 
     # Inserting a dataset containing valid attributes
-    zcollection.insert(zds)
+    zcollection.insert(zds,
+                       merge_callable=merging.merge_time_series,
+                       tolerance=numpy.timedelta64(1, 'm'))
 
     # Inserting a dataset containing an invalid attributes
     zds = next(create_test_dataset_with_fillvalue())

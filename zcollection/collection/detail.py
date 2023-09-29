@@ -393,6 +393,7 @@ def _insert(
     fs: fsspec.AbstractFileSystem,
     merge_callable: merging.MergeCallable | None,
     partitioning_properties: PartitioningProperties,
+    **kwargs,
 ) -> None:
     """Insert or update a partition in the collection.
 
@@ -403,6 +404,7 @@ def _insert(
         fs: The file system that the partition is stored on.
         merge_callable: The merge callable.
         partitioning_properties: The partitioning properties.
+        **kwargs: Additional keyword arguments to pass to the merge callable.
     """
     partition: tuple[str, ...]
     indexer: dict[str, slice]
@@ -421,7 +423,8 @@ def _insert(
                         fs,
                         partitioning_properties.dim,
                         delayed=zds.delayed,
-                        merge_callable=merge_callable)
+                        merge_callable=merge_callable,
+                        **kwargs)
         return
 
     # The current partition does not exist, so we need to create

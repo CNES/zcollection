@@ -87,22 +87,22 @@ def test_merge_intersection(
 
 def test_intersection_with_tolerance() -> None:
     """Test the update of two intersecting time series with a data gap."""
-    dates: NDArray = numpy.arange(
-        numpy.datetime64('2000-01-01', 'ns'),
-        numpy.datetime64('2000-01-01T23:59:59', 'ns'),
-        numpy.timedelta64(1, 's'))
-    measures = numpy.vstack((numpy.arange(dates.size), ) * 25).T
-    zds0 = data.make_dataset(dates, measures, delayed=False)
+    axis: NDArray = numpy.arange(numpy.datetime64('2000-01-01', 'ns'),
+                                 numpy.datetime64('2000-01-01T23:59:59', 'ns'),
+                                 numpy.timedelta64(1, 's'))
+    measures = numpy.vstack((numpy.arange(axis.size), ) * 25).T
+    zds0 = data.make_dataset(axis, measures, delayed=False)
 
-    dates = numpy.arange(numpy.datetime64('2000-01-01T10:00:00', 'ns'),
-                         numpy.datetime64('2000-01-01T14:59:59', 'ns'),
-                         numpy.timedelta64(1, 's'))
+    dates: NDArray = numpy.arange(
+        numpy.datetime64('2000-01-01T10:00:00', 'ns'),
+        numpy.datetime64('2000-01-01T14:59:59', 'ns'),
+        numpy.timedelta64(1, 's'))
 
     # Create a gap in the data by removing the data between 11:00 and 13:00
     mask = (dates > numpy.datetime64('2000-01-01T11:00:00', 'ns')) & (
         dates < numpy.datetime64('2000-01-01T13:00:00', 'ns'))
     dates = dates[~mask]
-    measures = numpy.vstack((numpy.arange(dates.size), ) * 25).T
+    measures = numpy.vstack((numpy.full(dates.size, -1), ) * 25).T
     zds1 = data.make_dataset(dates, measures, delayed=False)
 
     # Merge the two datasets with a tolerance of 1 minute to keep the
@@ -121,6 +121,48 @@ def test_intersection_with_tolerance() -> None:
         'time',
         'num_lines',
     )
+    assert zds_with_gap.time.size == zds0.time.size - mask.sum()
+
+    mask = (axis > numpy.datetime64('2000-01-01T11:00:00', 'ns')) & (
+        axis < numpy.datetime64('2000-01-01T13:00:00', 'ns'))
+    assert numpy.all(zds_gap_filled.variables['time'].values ==
+                     zds0.variables['time'].values)
+    assert numpy.all((zds_gap_filled.variables['var1'].values[:, 0] < 0
+                      ).sum() == zds1.dimensions['num_lines'])
+
+    # Create gaps in the data by removing the data between 11:00 to 13:00
+    # 15:00 to 17:00 and 19:00 to 21:00
+    mask = (axis > numpy.datetime64('2000-01-01T11:00:00', 'ns')) & (
+        axis < numpy.datetime64('2000-01-01T13:00:00', 'ns'))
+    mask |= (axis > numpy.datetime64('2000-01-01T15:00:00', 'ns')) & (
+        axis < numpy.datetime64('2000-01-01T17:00:00', 'ns'))
+    mask |= (axis > numpy.datetime64('2000-01-01T19:00:00', 'ns')) & (
+        axis < numpy.datetime64('2000-01-01T21:00:00', 'ns'))
+
+    dates = axis[~mask]
+
+    measures = numpy.vstack((numpy.full(dates.size, -1), ) * 25).T
+    zds1 = data.make_dataset(dates, measures, delayed=False)
+
+    # Merge the two datasets with a tolerance of 1 minute to keep the
+    # data gaps in the existing dataset.
+    zds_gap_filled = time_series.merge_time_series(zds0,
+                                                   zds1,
+                                                   'time',
+                                                   'num_lines',
+                                                   tolerance=numpy.timedelta64(
+                                                       1, 'm'))
+    # Merge the two datasets without a tolerance. The data gaps are
+    # kept and stored in the new dataset.
+    zds_with_gap = time_series.merge_time_series(
+        zds0,
+        zds1,
+        'time',
+        'num_lines',
+    )
+
     assert numpy.all(zds_gap_filled.variables['time'].values ==
                      zds0.variables['time'].values)
     assert zds_with_gap.time.size == zds0.time.size - mask.sum()
+    assert numpy.all((zds_gap_filled.variables['var1'].values[:, 0] < 0
+                      ).sum() == zds1.dimensions['num_lines'])

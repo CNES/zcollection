@@ -282,6 +282,7 @@ class Collection(ReadOnlyCollection):
         merge_callable: merging.MergeCallable | None = None,
         npartitions: int | None = None,
         validate: bool = False,
+        **kwargs,
     ) -> None:
         """Insert a dataset into the collection.
 
@@ -294,6 +295,7 @@ class Collection(ReadOnlyCollection):
                 partitioned data.
             npartitions: The maximum number of partitions to process in
                 parallel. By default, partitions are processed one by one.
+            kwargs: Additional keyword arguments passed to the merge callable.
 
                 .. note::
 
@@ -377,6 +379,7 @@ class Collection(ReadOnlyCollection):
                     fs=self.fs,
                     merge_callable=merge_callable,
                     partitioning_properties=self.partition_properties,
+                    **kwargs,
                 ) for partition in sequence
             ]
             storage.execute_transaction(client, self.synchronizer, futures)

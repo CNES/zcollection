@@ -6,8 +6,6 @@
 Merging a time series
 =====================
 """
-from typing import Any
-
 import numpy
 
 from . import period
@@ -96,8 +94,7 @@ def merge_time_series(
     inserted_ds: dataset.Dataset,
     axis: str,
     partitioning_dim: str,
-    *,
-    tolerance: Any = None,
+    **kwargs,
 ) -> dataset.Dataset:
     """Merge two time series together.
 
@@ -120,13 +117,16 @@ def merge_time_series(
         inserted_ds: The inserted dataset.
         axis: The axis to merge on.
         partitioning_dim: The name of the partitioning dimension.
-        tolerance: This parameter sets the tolerance level for detecting data
-            gaps in the inserted axis dataset. If set to ``None``, the
-            algorithm will not check for data gaps in the inserted dataset.
+        kwargs:
+            tolerance: This parameter sets the tolerance level for detecting
+                data gaps in the inserted axis dataset. If set to ``None``,
+                the algorithm will not check for data gaps in the inserted
+                dataset.
 
     Returns:
         The merged dataset.
     """
+    tolerance = kwargs.get('tolerance', None)
     index: NDArray
 
     # Check if the inserted dataset contains data gaps.
