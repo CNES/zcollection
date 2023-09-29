@@ -1,6 +1,15 @@
 Release notes
 =============
 
+2023.10.0
+---------
+* Merge time series with data gaps.
+* Fix Linux fork startup blocking test.
+* Correction of issues related to CI executions.
+* Added an option to specify the list of variables used by the callback
+  function for updating a partition.
+* Classmethods removed from indexers.
+
 2023.5.0
 --------
 * Add missing copyrights.

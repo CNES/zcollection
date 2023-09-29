@@ -91,6 +91,15 @@ collection.insert(zds)
 #         >>> collection.insert(
 #         ...     ds, merge_callable=zcollection.merging.merge_time_series)
 #
+#     If the time series has data gaps, it is possible to specify a tolerance
+#     level for detecting data gaps in the inserted axis dataset in order to
+#     keep the existing data. ::
+#
+#         >>> collection.insert(
+#         ...     ds, merge_callable=zcollection.merging.merge_time_series,
+#         ...     tolerance=numpy.timedelta64(1, 'h'))
+#
+#
 # Let's look at the different partitions thus created.
 pprint.pprint(fs.listdir('/my_collection/year=2000'))
 
