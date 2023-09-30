@@ -419,6 +419,8 @@ class Collection(ReadOnlyCollection):
             """Return whether the partition was created before the
             timedelta."""
             created: datetime.datetime = self.fs.created(path)
+            if created.tzinfo is not None:
+                created = created.replace(tzinfo=None)
             return now - created > timedelta
 
         if timedelta is not None:
