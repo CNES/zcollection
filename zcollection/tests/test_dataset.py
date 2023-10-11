@@ -46,6 +46,7 @@ def test_dataset(
     assert zds.variables['var1'].metadata() == var1.metadata()
     assert numpy.all(var1.values == zds['var1'].values)
     assert var1.metadata() == zds['var1'].metadata()
+    assert numpy.all(zds.variables['var1'][:] == var1.values)
     with pytest.raises(KeyError):
         print(zds['varX'])
 

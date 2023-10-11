@@ -215,7 +215,8 @@ class Array(Variable):
         Returns:
             The variable slice.
         """
-        return self.array[key]
+        return (self.array[key] if self.fill_value is None else
+                numpy.ma.masked_equal(self.array[key], self.fill_value))
 
     def rechunk(self, **_) -> Array:
         """Rechunk the variable.
