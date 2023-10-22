@@ -25,6 +25,7 @@ import dask.array.core
 import dask.array.routines
 import dask.array.wrap
 import dask.base
+import fsspec
 import numpy
 import xarray
 import xarray.conventions
@@ -746,27 +747,27 @@ class Dataset:
                        chunks=self.dims_chunk,
                        block_size_limit=self.block_size_limit)
 
-    # def to_zarr(self,
-    #             path: str,
-    #             fs: fsspec.AbstractFileSystem | None = None,
-    #             parallel: bool = True) -> None:
-    #     """Write the dataset to a Zarr store.
+    def to_zarr(self,
+                path: str,
+                fs: fsspec.AbstractFileSystem | None = None,
+                parallel: bool = True) -> None:
+        """Write the dataset to a Zarr store.
 
-    #     Args:
-    #         path: Path to the Zarr store.
-    #         fs: Filesystem to use.
-    #         parallel: If true, write the data in parallel.
-    #     """
-    #     if not self.delayed:
-    #         raise ValueError('cannot write a non-delayed dataset to Zarr')
-    #     # pylint: disable=import-outside-toplevel, import-error
-    #     # Avoid circular import
-    #     import storage
-    #     import sync
+        Args:
+            path: Path to the Zarr store.
+            fs: Filesystem to use.
+            parallel: If true, write the data in parallel.
+        """
+        if not self.delayed:
+            raise ValueError('cannot write a non-delayed dataset to Zarr')
+        # pylint: disable=import-outside-toplevel, import-error
+        # Avoid circular import
+        import storage
+        import sync
 
-    #     # pylint: enable=import-outside-toplevel, import-error
-    #     storage.write_zarr_group(self, path, fs or fsspec.filesystem('file'),
-    #                              sync.NoSync(), parallel)
+        # pylint: enable=import-outside-toplevel, import-error
+        storage.write_zarr_group(self, path, fs or fsspec.filesystem('file'),
+                                 sync.NoSync(), parallel)
 
     def __str__(self) -> str:
         return _dataset_repr(self)
