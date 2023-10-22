@@ -189,7 +189,7 @@ zds.variables['var2'].values
 
 
 # %%
-# ..note::
+# .. note::
 #
 #   The method :py:meth:`update<zcollection.collection.Collection.update>`
 #   supports the ``delayed`` parameter. If ``delayed=True``, the function
