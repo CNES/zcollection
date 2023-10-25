@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import (
     Any,
     Callable,
+    ClassVar,
     Dict,
     Iterable,
     Mapping,
@@ -19,7 +20,10 @@ from typing import (
     Tuple,
     Union,
 )
+import ast
 import collections
+import dataclasses
+import types
 
 import dask.array.core
 import dask.array.routines
@@ -813,3 +817,84 @@ def get_dataset_variable_properties(
               fill_value=v.fill_value,
               filters=v.filters) for k, v in metadata.variables.items()
         if k in selected_variables)
+
+
+@dataclasses.dataclass
+class Expression:
+    """Partitioning expressions.
+
+    Args:
+        expression: The expression to be evaluated
+    Raises:
+        NameError: If a variable is not defined.
+    Example:
+        >>> expr = Expression("a + b * sin(c)")
+    """
+    #: Compiled expression to be evaluated
+    code: types.CodeType
+
+    #: Known data members
+    __slots__: tuple[str, ...] = ('code', )
+
+    #: The builtins that are allowed in the expression.
+    BUILTINS: ClassVar[dict[str, Any]] = {
+        'sin': numpy.sin,
+        'cos': numpy.cos,
+        'tan': numpy.tan,
+        'pi': numpy.pi,
+        'e': numpy.e,
+        'exp': numpy.exp,
+        'log': numpy.log,
+        'log10': numpy.log10,
+        'log2': numpy.log2,
+        'sqrt': numpy.sqrt,
+        'arcsin': numpy.arcsin,
+        'arccos': numpy.arccos,
+        'arctan': numpy.arctan,
+        'arctan2': numpy.arctan2,
+        'sinh': numpy.sinh,
+        'cosh': numpy.cosh,
+        'tanh': numpy.tanh,
+        'arcsinh': numpy.arcsinh,
+        'arccosh': numpy.arccosh,
+        'arctanh': numpy.arctanh,
+        'ceil': numpy.ceil,
+        'floor': numpy.floor,
+        'round': numpy.round,
+        'abs': numpy.abs,
+        'min': numpy.min,
+        'max': numpy.max,
+        'sum': numpy.sum,
+        'prod': numpy.prod,
+        'mean': numpy.mean,
+        'std': numpy.std,
+        'var': numpy.var,
+        'median': numpy.median,
+        'percentile': numpy.percentile,
+        'power': numpy.power,
+        'mod': numpy.mod,
+        'fmod': numpy.fmod,
+        'remainder': numpy.remainder,
+        'isfinite': numpy.isfinite,
+        'isinf': numpy.isinf,
+        'isnan': numpy.isnan,
+        'isnat': numpy.isnat,
+    }
+
+    def __init__(self, expression: str) -> None:
+        self.code = compile(ast.parse(expression, mode='eval'), ' ', 'eval')
+
+    def __call__(self, zds: Dataset) -> NDArray:
+        try:
+            __locals: dict[str, Any] = {
+                name: zds.variables[name].data
+                for name in self.code.co_names if name not in self.BUILTINS
+            }
+            # pylint: disable=eval-used
+            # The eval function is used here to evaluate a simple expression.
+            # The only builtin functions allowed is the range function.
+            return eval(self.code, {'__builtins__': self.BUILTINS}, __locals)
+            # pylint: enable=eval-used
+        except KeyError as exc:
+            raise NameError(
+                f'Variable {exc} is not defined in the dataset') from exc

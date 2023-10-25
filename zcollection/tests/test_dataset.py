@@ -494,3 +494,27 @@ def test_dataset_select_variables_by_dims(
 
     selected = zds.select_variables_by_dims(('x', ), predicate=False)
     assert list(selected.variables) == ['var2', 'var4', 'var5', 'var6', 'var7']
+
+
+def test_dataset_expression():
+    """Test dataset expression."""
+    matrix = numpy.arange(100).reshape((10, 10))
+    vector = numpy.arange(10)
+    zds = dataset.Dataset([
+        dataset.DelayedArray('vec1', vector, ('x', )),
+        dataset.DelayedArray('vec2', vector, ('y', )),
+        dataset.DelayedArray('mat1', matrix, ('x', 'y')),
+        dataset.DelayedArray('mat2', matrix, ('x', 'y')),
+    ])
+    expr = dataset.Expression('vec1 + vec2')
+    assert isinstance(expr, dataset.Expression)
+    assert numpy.all(expr(zds).compute() == 2 * vector)
+    expr = dataset.Expression('mat1 + sin(mat2)')
+    assert isinstance(expr, dataset.Expression)
+    assert numpy.all(expr(zds).compute() == matrix + numpy.sin(matrix))
+
+    with pytest.raises(NameError):
+        dataset.Expression('vec1 + vec3')(zds)
+
+    with pytest.raises(SyntaxError):
+        dataset.Expression('vec1 +')(zds)
