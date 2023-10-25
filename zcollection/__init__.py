@@ -20,7 +20,7 @@ from .convenience import (
     open_collection,
     open_view,
 )
-from .dataset import Dataset
+from .dataset import Dataset, Expression
 from .meta import Attribute
 from .variable import Array, DelayedArray, Variable
 from .version import __version__
@@ -35,6 +35,7 @@ __all__ = (
     'create_view',
     'Dataset',
     'DelayedArray',
+    'Expression',
     'Indexer',
     'MapCallable',
     'merging',
