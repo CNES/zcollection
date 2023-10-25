@@ -884,7 +884,7 @@ class Expression:
     def __init__(self, expression: str) -> None:
         self.code = compile(ast.parse(expression, mode='eval'), ' ', 'eval')
 
-    def __call__(self, zds: Dataset) -> NDArray:
+    def __call__(self, zds: Dataset) -> dask.array.core.Array:
         try:
             __locals: dict[str, Any] = {
                 name: zds.variables[name].data
