@@ -496,7 +496,9 @@ def test_dataset_select_variables_by_dims(
     assert list(selected.variables) == ['var2', 'var4', 'var5', 'var6', 'var7']
 
 
-def test_dataset_expression():
+def test_dataset_expression(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+) -> None:
     """Test dataset expression."""
     matrix = numpy.arange(100).reshape((10, 10))
     vector = numpy.arange(10)
