@@ -105,6 +105,23 @@ def _infer_callable(
     return tuple(func_result)
 
 
+def _check_partition(
+    fs: fsspec.AbstractFileSystem,
+    partition: str,
+) -> tuple[str, bool]:
+    """Check if a given partition is a valid Zarr group.
+
+    Args:
+        fs: The file system to use.
+        partition: The partition to check.
+
+    Returns:
+        A tuple containing the partition and a boolean indicating whether it is
+        a valid Zarr group.
+    """
+    return partition, storage.check_zarr_group(partition, fs)
+
+
 class Collection(ReadOnlyCollection):
     """This class manages a collection of files in Zarr format stored in a set
     of subdirectories. These subdirectories split the data, by cycles or dates
@@ -722,3 +739,41 @@ class Collection(ReadOnlyCollection):
                                       mode=mode,
                                       filesystem=filesystem,
                                       synchronizer=synchronizer)
+
+    def validate_partitions(self,
+                            filters: PartitionFilter | None = None,
+                            fix: bool = False) -> list[str]:
+        """Validates partitions in the collection by checking if they exist and
+        are readable. If `fix` is True, invalid partitions will be removed from
+        the collection.
+
+        Args:
+            filters: The predicate used to filter the partitions to
+                validate. By default, all partitions are validated.
+            fix: Whether to fix invalid partitions by removing them from
+                the collection.
+
+        Returns:
+            A list of invalid partitions.
+        """
+        partitions = tuple(self.partitions(filters=filters))
+        if not partitions:
+            return []
+        client: dask.distributed.Client = dask_utils.get_client()
+        futures: list[dask.distributed.Future] = [
+            client.submit(_check_partition, self.fs, partition)
+            for partition in partitions
+        ]
+        invalid_partitions: list[str] = []
+        for item in dask.distributed.as_completed(futures):
+            partition, valid = item.result()  # type: ignore
+            if not valid:
+                warnings.warn(f'Invalid partition: {partition}',
+                              category=RuntimeWarning)
+                invalid_partitions.append(partition)
+
+        if fix and invalid_partitions:
+            for item in invalid_partitions:
+                _LOGGER.info('Removing invalid partition: %s', item)
+                self.fs.rm(item, recursive=True)
+        return invalid_partitions

@@ -1008,3 +1008,35 @@ def test_partition_modified(
 
     with pytest.raises(RuntimeError, match='Try to re-load'):
         _ = zds['time'].values
+
+
+def test_invalid_partitions(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        tmpdir) -> None:
+    fs = fsspec.filesystem('file')
+    datasets = list(create_test_dataset())
+    zds = datasets.pop(0)
+    zds.concat(datasets, 'num_lines')
+    base_dir = str(tmpdir / 'test')
+    zcollection = collection.Collection('time',
+                                        zds.metadata(),
+                                        partitioning.Date(('time', ), 'D'),
+                                        base_dir,
+                                        filesystem=fs)
+    zcollection.insert(zds)
+    partitions = tuple(zcollection.partitions())
+    choices = numpy.random.choice(len(partitions), size=2, replace=False)
+    for idx in choices:
+        var2 = fs.sep.join((partitions[idx], 'var2', '0.0'))
+        with fs.open(var2, 'wb') as file:
+            file.write(b'invalid')
+    with pytest.raises(ValueError):
+        _ = zcollection.load(delayed=False)
+    with pytest.warns(RuntimeWarning, match='Invalid partition'):
+        invalid_partitions = zcollection.validate_partitions()
+    assert len(invalid_partitions) == 2
+    assert sorted(invalid_partitions) == sorted(partitions[ix]
+                                                for ix in choices)
+    with pytest.warns(RuntimeWarning, match='Invalid partition'):
+        zcollection.validate_partitions(fix=True)
+    assert zcollection.load() is not None

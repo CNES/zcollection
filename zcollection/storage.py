@@ -26,7 +26,7 @@ import zarr
 
 from . import dataset, meta, sync
 from .fs_utils import join_path
-from .type_hints import ArrayLike
+from .type_hints import ArrayLike, NDArray
 
 #: Name of the attribute storing the names of the dimensions of an array.
 DIMENSIONS = '_ARRAY_DIMENSIONS'
@@ -439,3 +439,29 @@ def add_zarr_array(
         filters=variable.filters)
     write_zattrs(dirname, variable, fs)
     zarr.consolidate_metadata(fs.get_mapper(dirname))  # type: ignore[arg-type]
+
+
+def check_zarr_group(
+    dirname: str,
+    fs: fsspec.AbstractFileSystem,
+) -> bool:
+    """Check if a directory contains a valid Zarr group.
+
+    Args:
+        dirname The name of the directory containing the Zarr group to check.
+        fs: The file system to use.
+
+    Returns:
+        True if the directory contains a valid Zarr group, False otherwise.
+    """
+    try:
+        store: zarr.Group = zarr.open_consolidated(  # type: ignore
+            fs.get_mapper(dirname),
+            mode='r',
+        )
+        for _, array in store.arrays():
+            data: NDArray = array[...]  # type: ignore
+            del data
+    except (ValueError, TypeError, RuntimeError):
+        return False
+    return True
