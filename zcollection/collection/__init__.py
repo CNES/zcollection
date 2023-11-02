@@ -106,19 +106,25 @@ def _infer_callable(
 
 
 def _check_partition(
-    fs: fsspec.AbstractFileSystem,
     partition: str,
+    fs: fsspec.AbstractFileSystem,
+    partitioning: partitioning.Partitioning,
 ) -> tuple[str, bool]:
     """Check if a given partition is a valid Zarr group.
 
     Args:
-        fs: The file system to use.
         partition: The partition to check.
+        fs: The file system to use.
+        partitioning: The partitioning strategy.
 
     Returns:
         A tuple containing the partition and a boolean indicating whether it is
         a valid Zarr group.
     """
+    try:
+        partitioning.parse(partition)
+    except ValueError:
+        return partition, False
     return partition, storage.check_zarr_group(partition, fs)
 
 
@@ -760,10 +766,11 @@ class Collection(ReadOnlyCollection):
         if not partitions:
             return []
         client: dask.distributed.Client = dask_utils.get_client()
-        futures: list[dask.distributed.Future] = [
-            client.submit(_check_partition, self.fs, partition)
-            for partition in partitions
-        ]
+        futures: list[dask.distributed.Future] = client.map(
+            _check_partition,
+            partitions,
+            fs=self.fs,
+            partitioning=self.partitioning)
         invalid_partitions: list[str] = []
         for item in dask.distributed.as_completed(futures):
             partition, valid = item.result()  # type: ignore
