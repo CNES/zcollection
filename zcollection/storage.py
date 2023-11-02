@@ -178,13 +178,19 @@ def write_zarr_variable(
         block_size_limit=block_size_limit,
     )
 
-    _to_zarr(array=data,
-             mapper=fs.get_mapper(dirname),
-             path=name,
-             compressor=variable.compressor,
-             fill_value=variable.fill_value,
-             **kwargs)
-    write_zattrs(dirname, variable, fs)
+    try:
+        _to_zarr(array=data,
+                 mapper=fs.get_mapper(dirname),
+                 path=name,
+                 compressor=variable.compressor,
+                 fill_value=variable.fill_value,
+                 **kwargs)
+        write_zattrs(dirname, variable, fs)
+    except Exception:
+        # If an exception is thrown, we delete the variable from the Zarr
+        # dataset.
+        del_zarr_array(dirname, name, fs)
+        raise
 
 
 def _write_meta(
