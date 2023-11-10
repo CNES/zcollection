@@ -1,6 +1,12 @@
 Release notes
 =============
 
+2023.11.0
+---------
+* Evaluate an expression from a dataset.
+* Fix linter warning.
+* Validate partitions.
+
 2023.10.0
 ---------
 * Merge time series with data gaps.
