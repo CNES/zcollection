@@ -66,6 +66,28 @@ IndexerArgs = Tuple[Tuple[Tuple[str, int], ...], List[slice]]
 _IMMUTABLE = '.immutable'
 
 
+def list_partitions_from_indexer(
+    indexer: Indexer,
+    partition_handler: partitioning.Partitioning,
+    base_dir: str,
+    sep: str,
+) -> Iterator[str]:
+    """List the partitions from the indexer.
+
+    Args:
+        indexer: The indexer.
+        partition_handler: The partitioning strategy.
+        base_dir: The base directory.
+        sep: The separator.
+
+    Returns:
+        The list of partitions.
+    """
+    keys = sorted({key for key, _ in indexer})
+    yield from (sep.join((base_dir, partition_handler.join(key, sep)))
+                for key in keys)
+
+
 def build_indexer_args(
     collection: ReadOnlyCollection,
     filters: PartitionFilter,
@@ -287,6 +309,7 @@ class ReadOnlyCollection:
     def partitions(
         self,
         *,
+        cache: Iterable[str] | None = None,
         lock: bool = False,
         filters: PartitionFilter = None,
         relative: bool = False,
@@ -294,6 +317,8 @@ class ReadOnlyCollection:
         """List the partitions of the collection.
 
         Args:
+            cache: The list of partitions to use. If None, the partitions are
+                listed.
             lock: Whether to lock the collection or not to avoid listing
                 partitions while the collection is being modified.
             filters: The predicate used to filter the partitions to load. If
@@ -323,13 +348,16 @@ class ReadOnlyCollection:
 
         base_dir: str = self.partition_properties.dir
         sep: str = self.fs.sep
-
-        if lock:
-            with self.synchronizer:
-                partitions: Iterable[str] = tuple(
-                    self.partitioning.list_partitions(self.fs, base_dir))
+        if cache is not None:
+            partitions: Iterable[str] = cache
         else:
-            partitions = self.partitioning.list_partitions(self.fs, base_dir)
+            if lock:
+                with self.synchronizer:
+                    partitions = tuple(
+                        self.partitioning.list_partitions(self.fs, base_dir))
+            else:
+                partitions = self.partitioning.list_partitions(
+                    self.fs, base_dir)
 
         yield from (self._relative_path(item) if relative else item
                     for item in partitions
@@ -583,8 +611,21 @@ class ReadOnlyCollection:
                              fs=self.fs,
                              selected_variables=selected_variables).compute()
         else:
+            # We're going to reuse the indexer variable, so ensure it is
+            # an iterable not a generator.
+            indexer = tuple(indexer)
+
             # Build the indexer arguments.
-            args = tuple(build_indexer_args(self, filters, indexer))
+            partitions = self.partitions(filters=filters,
+                                         cache=list_partitions_from_indexer(
+                                             indexer, self.partitioning,
+                                             self.partition_properties.dir,
+                                             self.fs.sep))
+            args = tuple(
+                build_indexer_args(self,
+                                   filters,
+                                   indexer,
+                                   partitions=partitions))
             if len(args) == 0:
                 return None
 
