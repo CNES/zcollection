@@ -1,6 +1,11 @@
 Release notes
 =============
 
+2023.11.1
+---------
+* Skip filesystem scans: Queries utilizing an indexer reuse known partitions for
+  efficiency.
+
 2023.11.0
 ---------
 * Evaluate an expression from a dataset.
