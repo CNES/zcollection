@@ -306,7 +306,7 @@ class Collection(ReadOnlyCollection):
         npartitions: int | None = None,
         validate: bool = False,
         **kwargs,
-    ) -> None:
+    ) -> Iterable[str]:
         """Insert a dataset into the collection.
 
         Args:
@@ -332,6 +332,9 @@ class Collection(ReadOnlyCollection):
 
             validate: Whether to validate dataset metadata before insertion
                 or not.
+
+        Returns:
+            A list of the inserted partitions.
 
         Raises:
             ValueError:
@@ -407,13 +410,16 @@ class Collection(ReadOnlyCollection):
             ]
             storage.execute_transaction(client, self.synchronizer, futures)
 
+        return (fs_utils.join_path(*((self.partition_properties.dir, ) + item))
+                for item, _ in partitions)
+
     # pylint: disable=method-hidden
     def drop_partitions(
         self,
         *,
         filters: PartitionFilter = None,
         timedelta: datetime.timedelta | None = None,
-    ) -> None:
+    ) -> Iterable[str]:
         # pylint: disable=method-hidden
         """Drop the selected partitions.
 
@@ -423,6 +429,9 @@ class Collection(ReadOnlyCollection):
                 the :meth:`partitions` method.
             timedelta: Select the partitions created before the specified time
                 delta relative to the current time.
+
+        Returns:
+            A list of the dropped partitions.
 
         Example:
             >>> collection.drop_partitions(filters="year == 2019")
@@ -435,7 +444,7 @@ class Collection(ReadOnlyCollection):
 
         # No partition selected, nothing to do.
         if not folders:
-            return
+            return folders
 
         def is_created_before(path: str, now: datetime.datetime,
                               timedelta: datetime.timedelta) -> bool:
@@ -463,6 +472,7 @@ class Collection(ReadOnlyCollection):
             self.fs.invalidate_cache(path)
 
         tuple(map(invalidate_cache, folders))
+        return folders
 
     # pylint: disable=method-hidden
     def update(
