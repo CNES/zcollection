@@ -420,7 +420,7 @@ class Variable(IVariable):
                             name=self.name,
                             array=self.array,
                             dimensions=self.dimensions,
-                            attrs=tuple(),
+                            attrs=(),
                             compressor=self.compressor,
                             fill_value=self.fill_value,
                             filters=self.filters)

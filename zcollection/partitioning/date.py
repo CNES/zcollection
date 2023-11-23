@@ -193,7 +193,7 @@ class Date(abc.Partitioning):
             >>> partitioning.encode(fields)
             (numpy.datetime64('2020-01-01'),)
         """
-        return tuple((numpy.datetime64(self._stringify(partition)), ))
+        return (numpy.datetime64(self._stringify(partition)), )
 
     def decode(
         self,

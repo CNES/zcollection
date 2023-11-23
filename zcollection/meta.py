@@ -137,7 +137,7 @@ class Variable:
                  compressor: numcodecs.abc.Codec | None = None,
                  fill_value: Any | None = None,
                  filters: Sequence[numcodecs.abc.Codec] | None = None) -> None:
-        attrs = attrs or tuple()
+        attrs = attrs or ()
 
         #: Attributes of the variable.
         self.attrs = tuple(attrs)

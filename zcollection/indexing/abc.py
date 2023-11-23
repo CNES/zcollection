@@ -396,13 +396,10 @@ class Indexer(abc.ABC):
         # Finally, we build the list of indexes of the different chunks found.
         chunks = numpy.unique(numpy.concatenate(chunks))
 
-        return (
-            tuple(  # type:ignore
-                (tuple(
-                    (name, data[name][ix0])
-                    for name in column_names), slice(start[ix0],
-                                                     stop[ix1 - 1])), )
-            for ix0, ix1 in tuple(zip(chunks[:-1], chunks[1:])))
+        return (  # force yapf to respect the line break for flake8
+            (tuple((name, data[name][ix0])
+                   for name in column_names), slice(start[ix0], stop[ix1 - 1]))
+            for ix0, ix1 in zip(chunks[:-1], chunks[1:]))
 
     def query(
         self,
@@ -425,7 +422,7 @@ class Indexer(abc.ABC):
             Indexer.
         """
         if len(self._partition_keys) == 0:
-            return tuple()
+            return ()
 
         logical_op = logical_op or 'and'
         if logical_op not in ('and', 'and_not', 'invert', 'or', 'xor'):

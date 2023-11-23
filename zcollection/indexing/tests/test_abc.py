@@ -241,4 +241,4 @@ def test_indexer(
     )
 
     indexer = HalfOrbitIndexer('', filesystem=fsspec.filesystem('memory'))
-    assert indexer.query({'cycle_number': [2, 4]}) == tuple()
+    assert indexer.query({'cycle_number': [2, 4]}) == ()

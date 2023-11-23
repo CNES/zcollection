@@ -482,11 +482,11 @@ def test_dataset_select_variables_by_dims(
     assert list(selected.variables) == ['var1', 'var3', 'var4', 'var6']
     assert selected.dimensions == {'x': 10, 'y': 10, 'a': 20, 'b': 20}
 
-    selected = zds.select_variables_by_dims(tuple())
+    selected = zds.select_variables_by_dims(())
     assert list(selected.variables) == ['var7']
     assert selected.dimensions == {}
 
-    selected = zds.select_variables_by_dims(tuple(), predicate=False)
+    selected = zds.select_variables_by_dims((), predicate=False)
     assert list(selected.variables) == [
         'var1', 'var2', 'var3', 'var4', 'var5', 'var6'
     ]

@@ -86,7 +86,7 @@ def _infer_callable(
     try:
         one_partition: str = next(collection.partitions(filters=filters))
     except StopIteration:
-        return tuple()
+        return ()
 
     with collection.synchronizer:
         zds: dataset.Dataset = storage.open_zarr_group(

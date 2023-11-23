@@ -561,7 +561,7 @@ def test_insert_with_missing_variable(
     created by an algorithm.
     """
     tested_fs = request.getfixturevalue(arg)
-    zds = next(create_test_dataset_with_fillvalue()).to_xarray()
+    zds = next(create_test_dataset_with_fillvalue())
     zcollection = convenience.create_collection(
         axis='time',
         ds=zds,
