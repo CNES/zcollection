@@ -155,6 +155,7 @@ def list_partitions(
     fs: fsspec.AbstractFileSystem,
     path: str,
     depth: int,
+    *,
     root: bool = True,
 ) -> Iterator[str]:
     """The number of variables used for partitioning.
@@ -183,10 +184,10 @@ def list_partitions(
         )
         # If we're partitioning at top level (example: by year)
         if depth == 0:
-            yield from sorted(folders)
+            yield from folders
             return StopIteration()
 
-        for pathname in sorted(folders):
+        for pathname in folders:
             yield from list_partitions(fs,
                                        pathname,
                                        depth=depth - 1,
@@ -194,10 +195,10 @@ def list_partitions(
         return StopIteration()
 
     if depth == 0:
-        yield from sorted(fs.ls(path, detail=False))
+        yield from fs.ls(path, detail=False)
         return StopIteration()
 
-    for item in sorted(fs.ls(path, detail=False)):
+    for item in fs.ls(path, detail=False):
         yield from list_partitions(fs, item, depth=depth - 1, root=False)
     return StopIteration()
 
@@ -373,8 +374,7 @@ class Partitioning(metaclass=abc.ABCMeta):
             raise ValueError(
                 f'Partition is not driven by this instance: {partition}')
         groups: tuple[str, ...] = match.groups()
-        return tuple((groups[ix], int(groups[ix + 1]))
-                     for ix in range(0, len(groups), 2))
+        return tuple(zip(groups[::2], map(int, groups[1::2])))
 
     @abc.abstractmethod
     def encode(
@@ -424,4 +424,5 @@ class Partitioning(metaclass=abc.ABCMeta):
         Yields:
             The partitions.
         """
-        return list_partitions(fs, path, depth=len(self) - 1)
+        yield from sorted(list_partitions(fs, path, depth=len(self) - 1),
+                          key=self.parse)
