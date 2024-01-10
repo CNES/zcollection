@@ -1,6 +1,10 @@
 Release notes
 =============
 
+2024.1.0
+--------
+* Bug fix: Partitions must not be sorted lexicographically.
+
 2023.11.2
 ---------
 * Returns a list of added/deleted partitions.
