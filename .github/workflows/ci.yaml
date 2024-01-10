@@ -24,11 +24,13 @@ jobs:
       uses: mamba-org/setup-micromamba@v1
       with:
         cache-downloads: true
-        channels: conda-forge,defaults
+        condarc: |
+          channels:
+            - conda-forge
+        create-args: |
+          python=${{ matrix.python-version }}
         environment-name: ZCollection
         environment-file: conda/environment.yml
-        extra-specs: |
-          python=${{ matrix.python-version }}
 
     - name: Run Tests
       shell: bash -l {0}
@@ -61,11 +63,13 @@ jobs:
       uses: mamba-org/setup-micromamba@v1
       with:
         cache-downloads: true
-        channels: conda-forge,defaults
+        condarc: |
+          channels:
+            - conda-forge
+        create-args: |
+          python=3.9
         environment-name: ZCollection
         environment-file: conda/environment.yml
-        extra-specs: |
-          python=3.9
 
     - name: Run Tests
       shell: bash -l {0}
@@ -90,11 +94,13 @@ jobs:
       uses: mamba-org/setup-micromamba@v1
       with:
         cache-downloads: true
-        channels: conda-forge,defaults
+        condarc: |
+          channels:
+            - conda-forge
+        create-args: |
+          python=3.9
         environment-name: ZCollection
         environment-file: conda/environment.yml
-        extra-specs: |
-          python=3.9
 
     - name: Run Tests
       shell: bash -l {0}
