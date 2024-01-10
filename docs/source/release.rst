@@ -1,6 +1,10 @@
 Release notes
 =============
 
+2023.11.2
+---------
+* Returns a list of added/deleted partitions.
+
 2023.11.1
 ---------
 * Skip filesystem scans: Queries utilizing an indexer reuse known partitions for
