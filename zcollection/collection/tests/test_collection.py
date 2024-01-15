@@ -1040,3 +1040,43 @@ def test_invalid_partitions(
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         zcollection.validate_partitions(fix=True)
     assert zcollection.load() is not None
+
+
+# pylint: disable=too-many-statements
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_insert_with_chunks(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    fs,
+    request,
+    tmpdir,
+) -> None:
+    """Test the insertion of a dataset."""
+    tested_fs = request.getfixturevalue(fs)
+    datasets = list(create_test_dataset(delayed=False))[:2]
+
+    ds_meta = datasets[0].metadata()
+    chunk_size = 5
+    ds_meta.chunks = [meta.Dimension(name="num_pixels", value=chunk_size)]
+
+    zcollection = collection.Collection('time',
+                                        ds_meta,
+                                        partitioning.Date(('time', ), 'M'),
+                                        str(tested_fs.collection),
+                                        filesystem=tested_fs.fs,
+                                        synchronizer=sync.ProcessSync(
+                                            str(tmpdir / 'lock.lck')))
+
+    # First insertion
+    zcollection.insert(datasets[0], merge_callable=merging.merge_time_series)
+    data = zcollection.load()
+
+    assert data["var1"].data.chunksize[1] == chunk_size
+    assert data["var2"].data.chunksize[1] == chunk_size
+
+    # Insertion with merge
+    zcollection.insert(datasets[1], merge_callable=merging.merge_time_series)
+    data = zcollection.load()
+
+    # Insertion properties are kept
+    assert data["var1"].data.chunksize[1] == chunk_size
+    assert data["var2"].data.chunksize[1] == chunk_size

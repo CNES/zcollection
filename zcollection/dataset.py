@@ -237,8 +237,9 @@ class Dataset:
         #: <zcollection.variable.delayed_array.DelayedArray>` objects.
         #: Otherwise, the values are :py:class:`Array
         #: <zcollection.variable.array.Array>` objects.
-        self.variables = collections.OrderedDict(
-            (item.name, item) for item in variables)
+        self.variables: collections.OrderedDict[
+            str, Variable] = collections.OrderedDict(
+                (item.name, item) for item in variables)
 
         #: A dictionary of dimension names and their index in the dataset
         self.dimensions: DimensionType = {}
@@ -507,6 +508,15 @@ class Dataset:
             chunks=mds.chunks,
             block_size_limit=mds.block_size_limit,
         )
+
+    def copy_properties(self, ds: Dataset):
+        """Copy chunks and block properties from provided dataset.
+
+        Args:
+            ds: Dataset from which to copy properties..
+        """
+        self.chunks = ds.chunks
+        self.block_size_limit = ds.block_size_limit
 
     def fill_attrs(self, mds: meta.Dataset) -> None:
         """Fill the dataset and its variables attributes using the provided
