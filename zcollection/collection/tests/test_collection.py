@@ -1056,7 +1056,7 @@ def test_insert_with_chunks(
 
     ds_meta = datasets[0].metadata()
     chunk_size = 5
-    ds_meta.chunks = [meta.Dimension(name="num_pixels", value=chunk_size)]
+    ds_meta.chunks = [meta.Dimension(name='num_pixels', value=chunk_size)]
 
     zcollection = collection.Collection('time',
                                         ds_meta,
@@ -1070,13 +1070,15 @@ def test_insert_with_chunks(
     zcollection.insert(datasets[0], merge_callable=merging.merge_time_series)
     data = zcollection.load()
 
-    assert data["var1"].data.chunksize[1] == chunk_size
-    assert data["var2"].data.chunksize[1] == chunk_size
+    assert data is not None
+    assert data.variables['var1'].data.chunksize[1] == chunk_size
+    assert data.variables['var2'].data.chunksize[1] == chunk_size
 
     # Insertion with merge
     zcollection.insert(datasets[1], merge_callable=merging.merge_time_series)
     data = zcollection.load()
 
+    assert data is not None
     # Insertion properties are kept
-    assert data["var1"].data.chunksize[1] == chunk_size
-    assert data["var2"].data.chunksize[1] == chunk_size
+    assert data.variables['var1'].data.chunksize[1] == chunk_size
+    assert data.variables['var2'].data.chunksize[1] == chunk_size

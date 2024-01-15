@@ -162,6 +162,5 @@ def perform(
         # This properties might be loss in the merge_callable depending on which
         # dataset is used.
         ds.copy_properties(ds=ds_inserted)
-        zds: dataset.Dataset = merge_callable(ds, ds_inserted, axis,
-                                              partitioning_dim, **kwargs)
+        zds = merge_callable(ds, ds_inserted, axis, partitioning_dim, **kwargs)
     _update_fs(dirname, zds, fs, synchronizer=synchronizer)
