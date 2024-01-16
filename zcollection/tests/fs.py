@@ -8,6 +8,7 @@ Fixture for testing the file system.
 """
 from typing import Any, Iterator
 import pathlib
+import tempfile
 
 import fsspec
 import fsspec.implementations.memory
@@ -23,6 +24,11 @@ except ImportError as err:
     S3_IMPORT_EXCEPTION = str(err)
 
 
+def tempdir(tmpdir) -> pathlib.Path:
+    """Create a temporary directory."""
+    return pathlib.Path(tempfile.mkdtemp(dir=str(tmpdir)))
+
+
 class Local:
     """Local files system."""
 
@@ -30,7 +36,7 @@ class Local:
         #: The filesystem.
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(protocol)
         #: The root directory.
-        self.root = pathlib.Path(tmpdir)
+        self.root = tempdir(pathlib.Path(tmpdir))
         #: The collection directory.
         self.collection: pathlib.Path = self.root.joinpath('collection')
         #: The view directory.
