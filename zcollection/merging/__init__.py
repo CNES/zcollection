@@ -154,8 +154,13 @@ def perform(
         **kwargs: Additional keyword arguments are passed through to the merge
             callable.
     """
-    zds: dataset.Dataset = merge_callable(
-        storage.open_zarr_group(
-            dirname, fs, delayed=delayed), ds_inserted, axis, partitioning_dim,
-        **kwargs) if merge_callable is not None else ds_inserted
+    if merge_callable is None:
+        zds = ds_inserted
+    else:
+        ds = storage.open_zarr_group(dirname, fs, delayed=delayed)
+        # Read dataset does not contain insertion properties.
+        # This properties might be loss in the merge_callable depending on which
+        # dataset is used.
+        ds.copy_properties(ds=ds_inserted)
+        zds = merge_callable(ds, ds_inserted, axis, partitioning_dim, **kwargs)
     _update_fs(dirname, zds, fs, synchronizer=synchronizer)
