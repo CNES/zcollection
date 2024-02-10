@@ -121,7 +121,7 @@ def test_normalize_path() -> None:
 
     assert istrcmp(fs_utils.normalize_path(fs, '/'), root)
     assert istrcmp(fs_utils.normalize_path(fs, './foo'),
-                   str((pathlib.Path('.').resolve() / 'foo').as_posix()))
+                   str(pathlib.Path('.').resolve() / 'foo'))
 
     fs = fsspec.filesystem('memory')
     assert fs_utils.normalize_path(fs, '/') == os.path.sep
