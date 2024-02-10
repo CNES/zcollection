@@ -582,6 +582,7 @@ class Collection(ReadOnlyCollection):
         storage.execute_transaction(
             client, self.synchronizer,
             client.map(local_func, tuple(batches), key=func.__name__))
+        tuple(map(self.fs.invalidate_cache, selected_partitions))
 
     def drop_variable(
         self,
