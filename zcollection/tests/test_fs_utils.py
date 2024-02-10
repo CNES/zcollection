@@ -117,6 +117,9 @@ def test_normalize_path() -> None:
 
     def istrcmp(str1, str2):
         """Case insensitive string comparison."""
+        if platform.system() == 'Windows':
+            str1 = str1.replace('\\', '/')
+            str2 = str2.replace('\\', '/')
         return str1.lower() == str2.lower()
 
     assert istrcmp(fs_utils.normalize_path(fs, '/'), root)
