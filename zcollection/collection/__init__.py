@@ -108,21 +108,21 @@ def _infer_callable(
 def _check_partition(
     partition: str,
     fs: fsspec.AbstractFileSystem,
-    partitioning: partitioning.Partitioning,
+    partitioning_strategy: partitioning.Partitioning,
 ) -> tuple[str, bool]:
     """Check if a given partition is a valid Zarr group.
 
     Args:
         partition: The partition to check.
         fs: The file system to use.
-        partitioning: The partitioning strategy.
+        partitioning_strategy: The partitioning strategy.
 
     Returns:
         A tuple containing the partition and a boolean indicating whether it is
         a valid Zarr group.
     """
     try:
-        partitioning.parse(partition)
+        partitioning_strategy.parse(partition)
     except ValueError:
         return partition, False
     return partition, storage.check_zarr_group(partition, fs)
