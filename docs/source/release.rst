@@ -1,6 +1,11 @@
 Release notes
 =============
 
+2024.2.0
+--------
+* Refactor merging module and improve temporary directory handling.
+* Bug fix: Add cache invalidation for updated partitions.
+
 2024.1.0
 --------
 * Bug fix: Partitions must not be sorted lexicographically.
