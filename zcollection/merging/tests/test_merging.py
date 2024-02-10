@@ -46,7 +46,7 @@ def test_update_fs(
     generator = data.create_test_dataset(delayed=False)
     zds = next(generator)
 
-    partition_folder = local_fs.root.joinpath('partition_folder')
+    partition_folder = local_fs.root.joinpath('variable=1')
 
     zattrs = str(partition_folder.joinpath('.zattrs'))
     future = dask_client.submit(_update_fs, str(partition_folder),
@@ -82,7 +82,7 @@ def test_perform(
     generator = data.create_test_dataset(delayed=delayed)
     zds = next(generator)
 
-    path = str(local_fs.root.joinpath('folder'))
+    path = str(local_fs.root.joinpath('variable=1'))
 
     future = dask_client.submit(_update_fs, path, dask_client.scatter(zds),
                                 local_fs.fs)

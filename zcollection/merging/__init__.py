@@ -9,20 +9,19 @@ Handle merging of datasets of a partition.
 from __future__ import annotations
 
 from typing import Protocol
-import random
+import hashlib
 import shutil
 
 import fsspec
 import fsspec.implementations.local
 import zarr.storage
 
+from zcollection import fs_utils
+
 from .. import dataset, storage, sync
 from .time_series import merge_time_series
 
 __all__ = ('MergeCallable', 'perform', 'merge_time_series')
-
-#: Character set used to create a temporary directory.
-CHARACTERS = 'abcdefghijklmnopqrstuvwxyz0123456789_'
 
 
 #: pylint: disable=too-few-public-methods,duplicate-code
@@ -88,6 +87,12 @@ def _rename(
     fs.mv(source, dest, recursive=True)
 
 
+def _extract_root_dirname(dirname: str, sep: str) -> str:
+    """Extracts the root directory name from a partition name."""
+    parts = filter(lambda x: '=' not in x, dirname.split(sep))
+    return sep.join(parts)
+
+
 def _update_fs(
     dirname: str,
     zds: dataset.Dataset,
@@ -103,9 +108,13 @@ def _update_fs(
         fs: The file system that the partition is stored on.
         synchronizer: The instance handling access to critical resources.
     """
-    # Name of the temporary directory.
-    temp: str = dirname + '.' + ''.join(
-        random.choice(CHARACTERS) for _ in range(10))
+    # Building a temporary directory to store the new data. The name of the
+    # temporary directory is the hash of the partition name.
+    temp: str = fs_utils.join_path(
+        _extract_root_dirname(dirname, fs.sep),
+        hashlib.sha256(dirname.encode()).hexdigest())
+    if fs.exists(temp):
+        fs.rm(temp, recursive=True)
 
     # Initializing Zarr group
     zarr.storage.init_group(store=fs.get_mapper(temp))
