@@ -781,7 +781,7 @@ class Collection(ReadOnlyCollection):
             _check_partition,
             partitions,
             fs=self.fs,
-            partitioning=self.partitioning)
+            partitioning_strategy=self.partitioning)
         invalid_partitions: list[str] = []
         for item in dask.distributed.as_completed(futures):
             partition, valid = item.result()  # type: ignore
