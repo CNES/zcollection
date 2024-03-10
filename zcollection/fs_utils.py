@@ -90,16 +90,12 @@ def fs_walk(
         yield '', [], []
         return
 
-    for info in listing:
+    for is_dir, name in ((info['type'] == 'directory', info['name'])
+                         for info in listing):
         # each info name must be at least [path]/part , but here
         # we check also for names like [path]/part/
-        pathname: str = info['name'].rstrip(SEPARATOR)
-        name: str = pathname.rsplit(SEPARATOR, 1)[-1]
-        if info['type'] == 'directory' and pathname != path:
-            # do not include "self" path
-            dirs.append(pathname)
-        else:
-            files.append(name)
+        dirs.append(name) if is_dir else files.append(
+            name.rsplit(SEPARATOR, 1)[-1])
 
     def sort_sequence(sequence: list[str]) -> list[str]:
         """Sort the sequence if the user wishes."""
