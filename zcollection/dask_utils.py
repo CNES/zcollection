@@ -8,7 +8,8 @@ Dask utilities
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Iterator, Sequence
+from typing import Any
+from collections.abc import Callable, Iterator, Sequence
 import itertools
 import uuid
 

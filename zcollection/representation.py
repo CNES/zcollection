@@ -8,7 +8,8 @@ Representation of dataset objects.
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any
+from collections.abc import Iterable, Iterator, Sequence
 
 from .meta import Attribute
 

@@ -8,7 +8,8 @@ Delayed variable arrays.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping, MutableMapping, Sequence
+from typing import Any
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 import uuid
 
 import dask.array.core

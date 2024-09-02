@@ -8,7 +8,8 @@ View on a reference collection.
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar, Iterable, Iterator, Sequence
+from typing import Any, ClassVar
+from collections.abc import Iterable, Iterator, Sequence
 import copy
 import json
 import logging

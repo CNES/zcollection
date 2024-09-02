@@ -8,9 +8,11 @@ Time period
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Match
+from typing import Any
+from collections.abc import Callable
 import enum
 import re
+from re import Match
 
 import numpy
 

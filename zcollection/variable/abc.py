@@ -8,9 +8,10 @@ Dataset variable.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Iterator, Sequence, TypeVar
+from typing import Any, TypeVar
 import abc
 import collections
+from collections.abc import Callable, Iterator, Sequence
 
 import dask.array.core
 import numcodecs.abc

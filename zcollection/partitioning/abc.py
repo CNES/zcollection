@@ -8,20 +8,12 @@ Partitioning scheme.
 """
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Callable,
-    ClassVar,
-    Generator,
-    Iterator,
-    Match,
-    Optional,
-    Sequence,
-    Tuple,
-)
+from typing import Any, ClassVar, Optional
 import abc
 import collections
+from collections.abc import Callable, Generator, Iterator, Sequence
 import re
+from re import Match
 
 import dask.array.core
 import dask.array.creation
@@ -34,7 +26,7 @@ from .. import dataset
 from ..type_hints import ArrayLike, DTypeLike, NDArray
 
 #: Object that represents a partitioning scheme
-Partition = Tuple[Tuple[Tuple[str, Any], ...], slice]
+Partition = tuple[tuple[tuple[str, Any], ...], slice]
 
 #: The callable that parses the partitioning scheme
 PatternType = Callable[[str], Optional[Match[str]]]
@@ -171,7 +163,7 @@ def list_partitions(
         Iterator of (path, directories, files).
     """
     if depth == -1:
-        return StopIteration()
+        return StopIteration()  # type: ignore[return-value]
 
     if root:
         folders = map(
@@ -185,22 +177,22 @@ def list_partitions(
         # If we're partitioning at top level (example: by year)
         if depth == 0:
             yield from folders
-            return StopIteration()
+            return StopIteration()  # type: ignore[return-value]
 
         for pathname in folders:
             yield from list_partitions(fs,
                                        pathname,
                                        depth=depth - 1,
                                        root=False)
-        return StopIteration()
+        return StopIteration()  # type: ignore[return-value]
 
     if depth == 0:
         yield from fs.ls(path, detail=False)
-        return StopIteration()
+        return StopIteration()  # type: ignore[return-value]
 
     for item in fs.ls(path, detail=False):
         yield from list_partitions(fs, item, depth=depth - 1, root=False)
-    return StopIteration()
+    return StopIteration()  # type: ignore[return-value]
 
 
 class Partitioning(metaclass=abc.ABCMeta):
@@ -340,7 +332,7 @@ class Partitioning(metaclass=abc.ABCMeta):
             The configuration of the partitioning scheme.
         """
         config: dict[str, str | None] = {'id': self.ID}
-        slots: Generator[tuple[str, ...], None, None] = (getattr(
+        slots: Generator[tuple[str, ...]] = (getattr(
             _class, '__slots__',
             ()) for _class in reversed(self.__class__.__mro__))
         config.update((attr, getattr(self, attr)) for _class in slots

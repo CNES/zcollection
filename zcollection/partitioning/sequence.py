@@ -8,7 +8,8 @@ Partitioning a sequence of variables
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar, Iterator
+from typing import Any, ClassVar
+from collections.abc import Iterator
 
 import dask.array.core
 import dask.array.routines

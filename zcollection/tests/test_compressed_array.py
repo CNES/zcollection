@@ -108,7 +108,7 @@ def test_metadata(
     y: dask.array.core.Array = dask.array.random.random((10, 10),
                                                         chunks=(5, 5))
     z = CompressedArray(y.compute())
-    y = y.map_blocks(CompressedArray)  # type: ignore[assignment]
+    y = y.map_blocks(CompressedArray)  # type: ignore[arg-type,call-arg]
 
     # pylint: disable=protected-access
     assert isinstance(y._meta, numpy.ndarray)
@@ -156,9 +156,9 @@ def test_map_blocks(
 ) -> None:
     """Test map_blocks."""
     x: dask.array.core.Array = dask.array.creation.eye(
-        10, chunks=5)  # type: ignore[arg-type]
+        10, chunks=5)  # type: ignore[arg-type,call-arg]
     y: dask.array.core.Array = x.map_blocks(
-        CompressedArray)  # type: ignore[arg-type]
+        CompressedArray)  # type: ignore[arg-type,call-arg]
     # pylint: disable=protected-access
     assert isinstance(y._meta, numpy.ndarray)
     # pylint: enable=protected-access
@@ -172,7 +172,7 @@ def test_compressed_masked_array(
     x: dask.array.core.Array = dask.array.creation.eye(
         10, chunks=5)  # type: ignore[arg-type]
     y: dask.array.core.Array = x.map_blocks(
-        CompressedArray, fill_value=0)  # type: ignore[arg-type]
+        CompressedArray, fill_value=0)  # type: ignore[arg-type,call-arg]
     # assert isinstance(y._meta, CompressedArray)
     assert isinstance(y[...].compute(), numpy.ma.MaskedArray)
     assert isinstance(y.compute(), numpy.ma.MaskedArray)

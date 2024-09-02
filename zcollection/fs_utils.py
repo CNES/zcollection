@@ -8,7 +8,8 @@ File system tools
 """
 from __future__ import annotations
 
-from typing import Any, Iterator, Sequence
+from typing import Any
+from collections.abc import Iterator, Sequence
 import os
 
 import fsspec

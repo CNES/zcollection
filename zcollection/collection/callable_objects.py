@@ -8,7 +8,8 @@ Callable objects.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol, Sequence
+from typing import Any, Protocol
+from collections.abc import Callable, Sequence
 
 from .. import dataset
 from ..type_hints import ArrayLike

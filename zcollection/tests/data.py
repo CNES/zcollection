@@ -8,7 +8,7 @@ Make test datasets
 """
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterator
 import itertools
 
 import numpy

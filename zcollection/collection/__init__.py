@@ -8,7 +8,8 @@ Collection of Zarr groups
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, Iterator, Literal, NoReturn, Sequence
+from typing import Any, Literal, NoReturn
+from collections.abc import Iterable, Iterator, Sequence
 import datetime
 import functools
 import io

@@ -6,7 +6,7 @@
 Fixtures for testing Dask clusters using the pytest.
 ====================================================
 """
-from typing import Iterator
+from collections.abc import Iterator
 import contextlib
 import logging
 import weakref

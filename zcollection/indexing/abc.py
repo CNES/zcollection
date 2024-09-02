@@ -8,8 +8,9 @@ Abstract base class for indexing.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Protocol, Union
+from typing import Any, Protocol, Union
 import abc
+from collections.abc import Iterable
 import functools
 import pathlib
 
@@ -30,7 +31,7 @@ DType = Union[Scalar, Iterable[Scalar]]
 
 #: Type of associative dictionary used for index queries, which matches a
 #: column of the index to the requested values.
-QueryDict = Dict[str, DType]
+QueryDict = dict[str, DType]
 
 
 #: pylint: disable=too-few-public-methods

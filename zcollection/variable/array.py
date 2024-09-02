@@ -8,7 +8,8 @@ In memory variable arrays.
 """
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any
+from collections.abc import Sequence
 
 import dask.array.core
 import dask.array.ma

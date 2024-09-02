@@ -8,20 +8,11 @@ Dataset
 """
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Callable,
-    ClassVar,
-    Dict,
-    Iterable,
-    Mapping,
-    OrderedDict,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import Any, ClassVar, Union
 import ast
 import collections
+from collections import OrderedDict
+from collections.abc import Callable, Iterable, Mapping, Sequence
 import dataclasses
 import types
 
@@ -41,16 +32,16 @@ from .type_hints import ArrayLike, NDArray, NDMaskedArray
 from .variable import Array, DelayedArray, Variable, new_variable
 
 #: Alias to type hint for the dimensions of a dataset.
-DimensionType = Dict[str, int]
+DimensionType = dict[str, int]
 
 #: Alias to type hint for the variables of a dataset.
 VariableType = OrderedDict[str, Variable]
 
 #: Alias to type hint for the attributes of a dataset.
-AttributeType = Tuple[Attribute, ...]
+AttributeType = tuple[Attribute, ...]
 
 #: Alias to type hint for the chunk sizes for each dimension of a dataset.
-ChunkType = Dict[str, Union[int, str]]
+ChunkType = dict[str, Union[int, str]]
 
 
 def _dask_repr(array: dask.array.core.Array) -> str:

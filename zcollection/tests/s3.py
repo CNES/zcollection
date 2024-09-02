@@ -6,7 +6,8 @@
 Fixtures for testing S3 using the pytest and minio.
 ===================================================
 """
-from typing import Iterator, Literal
+from typing import Literal
+from collections.abc import Iterator
 import os
 import pathlib
 import shlex

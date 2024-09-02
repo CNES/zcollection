@@ -8,8 +8,8 @@ Implementation details.
 """
 from __future__ import annotations
 
-from typing import Callable, Iterable, Iterator, Sequence, Tuple
 import base64
+from collections.abc import Callable, Iterable, Iterator, Sequence
 import dataclasses
 import hashlib
 import io
@@ -38,7 +38,7 @@ from ..type_hints import ArrayLike, NDArray
 
 #: Type of the function used to update a view.
 ViewUpdateCallable = \
-    Callable[[Iterable[Tuple[dataset.Dataset, str]], str], None]
+    Callable[[Iterable[tuple[dataset.Dataset, str]], str], None]
 
 #: Name of the file that contains the checksum of the view.
 CHECKSUM_FILE = '.checksum'

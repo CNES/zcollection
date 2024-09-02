@@ -5,7 +5,7 @@ Overview of a View.
 This section outlines the steps required to get started with the main features
 of a ``View``.
 """
-from typing import Iterator
+from collections.abc import Iterator
 import pprint
 
 import dask.distributed

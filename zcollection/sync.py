@@ -8,8 +8,8 @@ Synchronization of concurrent accesses
 """
 from __future__ import annotations
 
-from typing import Callable
 import abc
+from collections.abc import Callable
 import threading
 
 import fasteners

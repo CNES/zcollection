@@ -44,7 +44,7 @@ except ImportError:
     # pylint: enable=ungrouped-imports
 
 try:
-    from typing_extensions import TypeAlias
+    from typing import TypeAlias
 except ImportError:
     # pylint: disable=ungrouped-imports
     # TypeAlias is defined in typing starting from 3.10
