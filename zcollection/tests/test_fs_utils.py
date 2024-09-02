@@ -120,6 +120,10 @@ def test_normalize_path() -> None:
         if platform.system() == 'Windows':
             str1 = str1.replace('\\', '/')
             str2 = str2.replace('\\', '/')
+            if str1.endswith(':'):
+                str1 += '/'
+            if str2.endswith(':'):
+                str2 += '/'
         return str1.lower() == str2.lower()
 
     assert istrcmp(fs_utils.normalize_path(fs, '/'), root)
