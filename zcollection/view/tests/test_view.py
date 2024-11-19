@@ -8,12 +8,13 @@ Test of views
 """
 from __future__ import annotations
 
+import logging
 import pathlib
 
 import numpy
 import pytest
 
-from ... import collection, convenience, meta, partitioning, view
+from ... import collection, convenience, dataset, meta, partitioning, view
 # pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster
 from ...tests.data import (
@@ -23,6 +24,7 @@ from ...tests.data import (
 )
 from ...tests.fixture import dask_arrays, numpy_arrays
 from ...tests.fs import local_fs, s3, s3_base, s3_fs
+from ...type_hints import ArrayLike
 from ...view.detail import _calculate_axis_reference
 
 # pylint: enable=unused-import
@@ -136,7 +138,7 @@ def test_view(
 
     zds = instance.load(delayed=delayed)
     assert zds is not None
-    numpy.all(zds.variables['var3'].values == 5)
+    assert numpy.all(zds.variables['var3'].values == 5)
 
     indexers = instance.map(
         lambda x: slice(0, x.dimensions['num_lines'])  # type: ignore
@@ -159,6 +161,69 @@ def test_view(
     with pytest.raises(ValueError):
         convenience.open_view(str(tested_fs.collection),
                               filesystem=tested_fs.fs)
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_view_update(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        fs,
+        request,
+        caplog):
+    """Test the creation of a view."""
+    tested_fs = request.getfixturevalue(fs)
+
+    create_test_collection(tested_fs, delayed=False)
+    instance = convenience.create_view(path=str(tested_fs.view),
+                                       view_ref=view.ViewReference(
+                                           str(tested_fs.collection),
+                                           tested_fs.fs),
+                                       filesystem=tested_fs.fs)
+
+    var_name = 'var3'
+    log_msg = 'Update called'
+
+    var = meta.Variable(name=var_name,
+                        dtype=numpy.float64,
+                        dimensions=('num_lines', 'num_pixels'))
+
+    instance.add_variable(var)
+
+    def to_zero(zds: dataset.Dataset, varname):
+        """Update function used to set a variable to 0."""
+        logging.info(log_msg)
+        return {varname: zds.variables['var1'].values * 0}
+
+    instance.update(to_zero, var_name)  # type: ignore
+
+    data = instance.load(delayed=False)
+    assert numpy.all(data.variables[var_name].values == 0)
+
+    def plus_one_with_log(zds: dataset.Dataset, varname):
+        """Update function increasing a variable by 1."""
+        logging.info(log_msg)
+        return {varname: zds.variables[var_name].values + 1}
+
+    caplog.set_level(logging.INFO)
+    caplog.clear()
+
+    instance.update(plus_one_with_log, var_name)  # type: ignore
+
+    # One log per partition + 1 log for the initial call
+    assert caplog.text.count(log_msg) == len(list(instance.partitions())) + 1
+
+    data = instance.load(delayed=False)
+    assert numpy.all(data.variables[var_name].values == 1)
+
+    caplog.clear()
+    instance.update(
+        plus_one_with_log,  # type: ignore
+        var_name,
+        variables=[var_name])
+
+    assert caplog.text.count(log_msg) == len(list(instance.partitions()))
+
+    data = instance.load(delayed=False)
+    assert numpy.all(data.variables[var_name].values == 2)
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])

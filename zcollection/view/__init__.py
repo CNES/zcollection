@@ -26,7 +26,6 @@ from .. import collection, dask_utils, dataset, fs_utils, meta, storage, sync
 from ..collection.callable_objects import MapCallable, PartitionCallable
 from ..collection.detail import _try_infer_callable
 from ..convenience import collection as convenience
-from ..type_hints import ArrayLike
 from .detail import (
     ViewReference,
     ViewUpdateCallable,
@@ -418,6 +417,7 @@ class View:
         npartitions: int | None = None,
         selected_variables: Iterable[str] | None = None,
         trim: bool = True,
+        variables: Sequence[str] | None = None,
         **kwargs,
     ) -> None:
         """Update a variable stored int the view.
@@ -446,6 +446,11 @@ class View:
             trim: Whether to trim ``depth`` items from each partition after
                 calling ``func``. Set it to ``False`` if your function does
                 this for you.
+            variables: The list of variables updated by the function. If None,
+                the variables are inferred by calling the function on the first
+                partition. In this case, it is important to ensure that the
+                function can be called twice on the same partition without
+                side effects. Default is None.
             args: The positional arguments to pass to the function.
             kwargs: The keyword arguments to pass to the function.
 
@@ -485,16 +490,17 @@ class View:
                           'data is selected with the given filters.')
             return
 
-        func_result: dict[str, ArrayLike] = _try_infer_callable(
-            func, datasets_list[0][0], self.view_ref.partition_properties.dim,
-            *args, **kwargs)
+        variables = variables or tuple(
+            _try_infer_callable(func, datasets_list[0][0],
+                                self.view_ref.partition_properties.dim, *args,
+                                **kwargs))
         tuple(
             map(
                 lambda varname: _assert_variable_handled(
                     self.view_ref.metadata, self.metadata, varname),
-                func_result))
+                variables))
         _LOGGER.info('Updating variable %s',
-                     ', '.join(repr(item) for item in func_result))
+                     ', '.join(repr(item) for item in variables))
 
         # Function to apply to each partition.
         wrap_function: ViewUpdateCallable
@@ -509,7 +515,7 @@ class View:
             )
         else:
             if selected_variables is not None and len(
-                    set(func_result) & set(selected_variables)) == 0:
+                    set(variables) & set(selected_variables)) == 0:
                 raise ValueError(
                     'If the depth is greater than 0, the selected variables '
                     'must contain the variables updated by the function.')

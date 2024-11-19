@@ -45,12 +45,13 @@ def test_update_fs(
     """Test the _update_fs function."""
     generator = data.create_test_dataset(delayed=False)
     zds = next(generator)
+    zds_sc = dask_client.scatter(zds)
 
     partition_folder = local_fs.root.joinpath('variable=1')
 
     zattrs = str(partition_folder.joinpath('.zattrs'))
-    future = dask_client.submit(_update_fs, str(partition_folder),
-                                dask_client.scatter(zds), local_fs.fs)
+    future = dask_client.submit(_update_fs, str(partition_folder), zds_sc,
+                                local_fs.fs)
     dask_client.gather(future)
     assert local_fs.exists(zattrs)
 
@@ -60,7 +61,7 @@ def test_update_fs(
     try:
         future = dask_client.submit(_update_fs,
                                     str(partition_folder),
-                                    dask_client.scatter(zds),
+                                    zds_sc,
                                     local_fs.fs,
                                     synchronizer=ThrowError())
         dask_client.gather(future)
@@ -83,13 +84,13 @@ def test_perform(
     zds = next(generator)
 
     path = str(local_fs.root.joinpath('variable=1'))
+    zds_sc = dask_client.scatter(zds)
 
-    future = dask_client.submit(_update_fs, path, dask_client.scatter(zds),
-                                local_fs.fs)
+    future = dask_client.submit(_update_fs, path, zds_sc, local_fs.fs)
     dask_client.gather(future)
 
     future = dask_client.submit(perform,
-                                dask_client.scatter(zds),
+                                zds_sc,
                                 path,
                                 'time',
                                 local_fs.fs,
