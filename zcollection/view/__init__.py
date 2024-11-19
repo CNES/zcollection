@@ -510,8 +510,6 @@ class View:
             wrap_function = _wrap_update_func(
                 func,
                 self.fs,
-                *args,
-                **kwargs,
             )
         else:
             if selected_variables is not None and len(
@@ -527,8 +525,6 @@ class View:
                 self.fs,
                 self.view_ref,
                 trim,
-                *args,
-                **kwargs,
             )
 
         batchs: Iterator[Sequence[Any]] = dask_utils.split_sequence(
@@ -538,7 +534,9 @@ class View:
             wrap_function,
             tuple(batchs),
             key=func.__name__,
-            base_dir=self.base_dir)
+            base_dir=self.base_dir,
+            func_args=args,
+            func_kwargs=kwargs)
         storage.execute_transaction(client, self.synchronizer, awaitables)
 
     # pylint: disable=duplicate-code
