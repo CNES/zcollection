@@ -113,20 +113,32 @@ def test_split_dataset(
         list(partitioning.split_dataset(zds, 'num_lines'))
 
 
-def test_config() -> None:
+VARIABLES_DTYPE_TEST_SET = [(('a', ), None), (('a', ), ('uint8', )),
+                            (('a', 'b'), None),
+                            (('a', 'b'), ('int8', 'int16'))]
+
+
+@pytest.mark.parametrize('variables, dtype', VARIABLES_DTYPE_TEST_SET)
+def test_config(variables, dtype) -> None:
     """Test the configuration of the Sequence class."""
-    partitioning = Sequence(('cycle_number', 'pass_number'))
+    partitioning = Sequence(variables=variables, dtype=dtype)
+
     config = partitioning.get_config()
-    partitioning = get_codecs(config)  # type: ignore[assignment]
-    assert isinstance(partitioning, Sequence)
+    other = get_codecs(config)  # type: ignore[assignment]
 
-
-def test_pickle() -> None:
-    """Test the pickling of the Date class."""
-    partitioning = Sequence(('cycle_number', 'pass_number'))
-    other = pickle.loads(pickle.dumps(partitioning))
     assert isinstance(other, Sequence)
-    assert other.variables == ('cycle_number', 'pass_number')
+    assert other.dtype() == partitioning.dtype()
+
+
+@pytest.mark.parametrize('variables, dtype', VARIABLES_DTYPE_TEST_SET)
+def test_pickle(variables, dtype) -> None:
+    """Test the pickling of the Date class."""
+    partitioning = Sequence(variables=variables, dtype=dtype)
+
+    other = pickle.loads(pickle.dumps(partitioning))
+
+    assert isinstance(other, Sequence)
+    assert other.dtype() == partitioning.dtype()
 
 
 # pylint: disable=protected-access

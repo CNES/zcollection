@@ -164,23 +164,43 @@ def test_construction() -> None:
         Date(('dates', ), 'W')
 
 
-def test_config():
+RESOLUTION_DTYPE_TEST_SET = [
+    ('Y', (('year', 'uint16'), )),
+    ('M', (('year', 'uint16'), ('month', 'uint8'))),
+    ('D', (('year', 'uint16'), ('month', 'uint8'), ('day', 'uint8'))),
+    ('h', (('year', 'uint16'), ('month', 'uint8'), ('day', 'uint8'),
+           ('hour', 'uint8'))),
+    ('m', (('year', 'uint16'), ('month', 'uint8'), ('day', 'uint8'),
+           ('hour', 'uint8'), ('minute', 'uint8'))),
+    ('s', (('year', 'uint16'), ('month', 'uint8'), ('day', 'uint8'),
+           ('hour', 'uint8'), ('minute', 'uint8'), ('second', 'uint8')))
+]
+
+
+@pytest.mark.parametrize('resolution, dtype', RESOLUTION_DTYPE_TEST_SET)
+def test_config(resolution, dtype):
     """Test the configuration of the Date class."""
-    partitioning = Date(('dates', ), 'D')
-    assert partitioning.dtype() == (('year', 'uint16'), ('month', 'uint8'),
-                                    ('day', 'uint8'))
+    partitioning = Date(variables=('dates', ), resolution=resolution)
+    assert partitioning.dtype() == dtype
+
     config = partitioning.get_config()
-    partitioning = get_codecs(config)
-    assert isinstance(partitioning, Date)
+    other = get_codecs(config)
 
-
-def test_pickle():
-    """Test the pickling of the Date class."""
-    partitioning = Date(('dates', ), 'D')
-    other = pickle.loads(pickle.dumps(partitioning))
     assert isinstance(other, Date)
-    assert other.resolution == 'D'
     assert other.variables == ('dates', )
+    assert other.dtype() == dtype
+
+
+@pytest.mark.parametrize('resolution, dtype', RESOLUTION_DTYPE_TEST_SET)
+def test_pickle(resolution, dtype):
+    """Test the pickling of the Date class."""
+    partitioning = Date(('dates', ), resolution=resolution)
+    other = pickle.loads(pickle.dumps(partitioning))
+
+    assert isinstance(other, Date)
+    assert other.resolution == resolution
+    assert other.variables == ('dates', )
+    assert other.dtype() == dtype
 
 
 @pytest.mark.parametrize('delayed', [False, True])

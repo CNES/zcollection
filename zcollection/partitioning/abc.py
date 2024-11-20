@@ -106,7 +106,6 @@ def unique_and_check_monotony(arr: ArrayLike) -> tuple[NDArray, NDArray]:
 
     Args:
         arr: Array of elements.
-        is_delayed: If True, the array is delayed.
     Returns:
         Tuple of unique elements and their indices.
     """
@@ -331,12 +330,13 @@ class Partitioning(metaclass=abc.ABCMeta):
         Returns:
             The configuration of the partitioning scheme.
         """
-        config: dict[str, str | None] = {'id': self.ID}
+        config: dict[str, str | tuple[str, ...] | None] = {'id': self.ID}
         slots: Generator[tuple[str, ...]] = (getattr(
             _class, '__slots__',
             ()) for _class in reversed(self.__class__.__mro__))
         config.update((attr, getattr(self, attr)) for _class in slots
                       for attr in _class if not attr.startswith('_'))
+        config['dtype'] = self._dtype
         return config
 
     @classmethod
