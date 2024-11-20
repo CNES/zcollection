@@ -57,17 +57,15 @@ def test_update_fs(
 
     local_fs.fs.rm(str(partition_folder), recursive=True)
     assert not local_fs.exists(zattrs)
-    seen_exception = False
-    try:
+
+    with pytest.raises(MyError):
         future = dask_client.submit(_update_fs,
                                     str(partition_folder),
                                     zds_sc,
                                     local_fs.fs,
                                     synchronizer=ThrowError())
         dask_client.gather(future)
-    except MyError:
-        seen_exception = True
-    assert seen_exception
+
     assert not local_fs.exists(zattrs)
 
 

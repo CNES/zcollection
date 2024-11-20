@@ -389,6 +389,7 @@ def _insert(
     fs: fsspec.AbstractFileSystem,
     merge_callable: merging.MergeCallable | None,
     partitioning_properties: PartitioningProperties,
+    distributed: bool = True,
     **kwargs,
 ) -> None:
     """Insert or update a partition in the collection.
@@ -400,6 +401,7 @@ def _insert(
         fs: The file system that the partition is stored on.
         merge_callable: The merge callable.
         partitioning_properties: The partitioning properties.
+        distributed: Whether to use dask or not. Default To True.
         **kwargs: Additional keyword arguments to pass to the merge callable.
     """
     partition: tuple[str, ...]
@@ -418,7 +420,8 @@ def _insert(
                         axis,
                         fs,
                         partitioning_properties.dim,
-                        delayed=zds.delayed,
+                        delayed=zds.delayed if distributed else False,
+                        distributed=distributed,
                         merge_callable=merge_callable,
                         **kwargs)
         return
@@ -429,7 +432,11 @@ def _insert(
         zarr.storage.init_group(store=fs.get_mapper(dirname))
 
         # The synchronization is done by the caller.
-        write_zarr_group(zds.isel(indexer), dirname, fs, sync.NoSync())
+        write_zarr_group(zds.isel(indexer),
+                         dirname,
+                         fs,
+                         sync.NoSync(),
+                         distributed=distributed)
     except:  # noqa: E722
         # If the construction of the new dataset fails, the created
         # partition is deleted, to guarantee the integrity of the
@@ -454,7 +461,7 @@ def _load_and_apply_indexer(
         fs: The file system that the partition is stored on.
         partition_handler: The partitioning handler.
         partition_properties: The partitioning properties.
-        selected_variable: The selected variables to load.
+        selected_variables: The selected variables to load.
 
     Returns:
         The list of loaded datasets.

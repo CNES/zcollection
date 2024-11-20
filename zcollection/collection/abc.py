@@ -553,6 +553,7 @@ class ReadOnlyCollection:
         filters: PartitionFilter = None,
         indexer: Indexer | None = None,
         selected_variables: Iterable[str] | None = None,
+        distributed: bool = True,
     ) -> dataset.Dataset | None:
         """Load the selected partitions.
 
@@ -564,6 +565,7 @@ class ReadOnlyCollection:
             indexer: The indexer to apply.
             selected_variables: A list of variables to retain from the
                 collection. If None, all variables are kept.
+            distributed: Whether to use dask or not. Default To True.
 
         Returns:
             The dataset containing the selected partitions, or None if no
@@ -582,22 +584,42 @@ class ReadOnlyCollection:
             ...     filters=lambda keys: keys["year"] == 2019 and
             ...     keys["month"] == 3 and keys["day"] % 2 == 0)
         """
-        client: dask.distributed.Client = dask_utils.get_client()
+        # Delayed has to be True of dask is disabled
+        if not distributed:
+            delayed = False
+
         arrays: list[dataset.Dataset]
+        client: dask.distributed.Client
+
         if indexer is None:
+            # No indexer, so the dataset is loaded directly for each
+            # selected partition.
             selected_partitions = tuple(self.partitions(filters=filters))
             if len(selected_partitions) == 0:
                 return None
 
-            # No indexer, so the dataset is loaded directly for each
-            # selected partition.
-            bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-                self.partitions(filters=filters),
-                npartitions=dask_utils.dask_workers(client, cores_only=True))
-            arrays = bag.map(storage.open_zarr_group,
-                             delayed=delayed,
-                             fs=self.fs,
-                             selected_variables=selected_variables).compute()
+            partitions = self.partitions(filters=filters)
+
+            if distributed:
+                client = dask_utils.get_client()
+                bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
+                    partitions,
+                    npartitions=dask_utils.dask_workers(client,
+                                                        cores_only=True))
+                arrays = bag.map(
+                    storage.open_zarr_group,
+                    delayed=delayed,
+                    fs=self.fs,
+                    selected_variables=selected_variables).compute()
+            else:
+                arrays = [
+                    storage.open_zarr_group(
+                        dirname=partition,
+                        delayed=delayed,
+                        fs=self.fs,
+                        selected_variables=selected_variables)
+                    for partition in partitions
+                ]
         else:
             # We're going to reuse the indexer variable, so ensure it is
             # an iterable not a generator.
@@ -617,21 +639,36 @@ class ReadOnlyCollection:
             if len(args) == 0:
                 return None
 
-            bag = dask.bag.core.from_sequence(
-                args,
-                npartitions=dask_utils.dask_workers(client, cores_only=True))
-
             # Finally, load the selected partitions and apply the indexer.
-            arrays = list(
-                itertools.chain.from_iterable(
-                    bag.map(
-                        _load_and_apply_indexer,
-                        delayed=delayed,
-                        fs=self.fs,
-                        partition_handler=self.partitioning,
-                        partition_properties=self.partition_properties,
-                        selected_variables=selected_variables,
-                    ).compute()))
+            if distributed:
+                client = dask_utils.get_client()
+                bag = dask.bag.core.from_sequence(
+                    args,
+                    npartitions=dask_utils.dask_workers(client,
+                                                        cores_only=True))
+
+                arrays = list(
+                    itertools.chain.from_iterable(
+                        bag.map(
+                            _load_and_apply_indexer,
+                            delayed=delayed,
+                            fs=self.fs,
+                            partition_handler=self.partitioning,
+                            partition_properties=self.partition_properties,
+                            selected_variables=selected_variables,
+                        ).compute()))
+            else:
+                arrays = list(
+                    itertools.chain.from_iterable([
+                        _load_and_apply_indexer(
+                            args=a,
+                            delayed=delayed,
+                            fs=self.fs,
+                            partition_handler=self.partitioning,
+                            partition_properties=self.partition_properties,
+                            selected_variables=selected_variables)
+                        for a in args
+                    ]))
 
         array: dataset.Dataset = arrays.pop(0)
         if arrays:

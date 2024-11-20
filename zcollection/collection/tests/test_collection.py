@@ -99,9 +99,11 @@ def test_collection_creation(
 # pylint: disable=too-many-statements
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('arrays_type', ['dask_arrays', 'numpy_arrays'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_insert(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arrays_type,
+    distributed,
     fs,
     request,
     tmpdir,
@@ -122,21 +124,22 @@ def test_insert(
     numpy.random.shuffle(indices)
     for idx in indices:
         zcollection.insert(datasets[idx],
-                           merge_callable=merging.merge_time_series)
+                           merge_callable=merging.merge_time_series,
+                           distributed=distributed)
 
-    data = zcollection.load(delayed=delayed)
+    data = zcollection.load(delayed=delayed, distributed=distributed)
     assert data is not None
     values = data.variables['time'].values
     assert numpy.all(values == numpy.arange(START_DATE, END_DATE, DELTA))
 
     # Adding same datasets once more (should not change anything)
     for idx in indices[:5]:
-        zcollection.insert(datasets[idx])
+        zcollection.insert(datasets[idx], distributed=distributed)
 
     assert list(zcollection.partitions()) == sorted(
         list(zcollection.partitions()))
 
-    data = zcollection.load(delayed=delayed)
+    data = zcollection.load(delayed=delayed, distributed=distributed)
     assert data is not None
     values = data.variables['time'].values
     assert numpy.all(values == numpy.arange(START_DATE, END_DATE, DELTA))
@@ -149,22 +152,29 @@ def test_insert(
     numpy.all(values == numpy.vstack((numpy.arange(values.shape[0]), ) *
                                      values.shape[1]).T)
 
-    data = zcollection.load(delayed=delayed, filters='year == 2020')
+    data = zcollection.load(delayed=delayed,
+                            filters='year == 2020',
+                            distributed=distributed)
     assert data is None
 
-    data = zcollection.load(delayed=delayed, filters='year == 2000')
+    data = zcollection.load(delayed=delayed,
+                            filters='year == 2000',
+                            distributed=distributed)
     assert data is not None
     assert data.variables['time'].shape[0] == 61
 
     data = zcollection.load(delayed=delayed,
-                            filters='year == 2000 and month == 4')
+                            filters='year == 2000 and month == 4',
+                            distributed=distributed)
     assert data is not None
     dates = data.variables['time'].values
     assert numpy.all(
         dates.astype('datetime64[M]') == numpy.datetime64('2000-04-01'))
 
     data = zcollection.load(
-        delayed=delayed, filters='year == 2000 and month == 4 and day == 15')
+        delayed=delayed,
+        filters='year == 2000 and month == 4 and day == 15',
+        distributed=distributed)
     assert data is not None
     dates = data.variables['time'].values
     assert numpy.all(
@@ -172,12 +182,14 @@ def test_insert(
 
     data = zcollection.load(
         delayed=delayed,
-        filters='year == 2000 and month == 4 and day in range(5, 25)')
+        filters='year == 2000 and month == 4 and day in range(5, 25)',
+        distributed=distributed)
     assert data is not None
     data = zcollection.load(delayed=delayed,
                             filters=lambda keys: datetime.date(2000, 4, 5) <=
                             datetime.date(keys['year'], keys['month'], keys[
-                                'day']) <= datetime.date(2000, 4, 24))
+                                'day']) <= datetime.date(2000, 4, 24),
+                            distributed=distributed)
     assert data is not None
     dates = data.variables['time'].values.astype('datetime64[D]')
     assert dates.min() == numpy.datetime64('2000-04-06')
@@ -190,16 +202,22 @@ def test_insert(
     zcollection = convenience.open_collection(str(tested_fs.collection),
                                               mode='r',
                                               filesystem=tested_fs.fs)
-    zds = zcollection.load(delayed=delayed, selected_variables=['var1'])
+    zds = zcollection.load(delayed=delayed,
+                           selected_variables=['var1'],
+                           distributed=distributed)
     assert zds is not None
     assert 'var1' in zds.variables
     assert 'var2' not in zds.variables
 
-    zds = zcollection.load(delayed=delayed, selected_variables=[])
+    zds = zcollection.load(delayed=delayed,
+                           selected_variables=[],
+                           distributed=distributed)
     assert zds is not None
     assert len(zds.variables) == 0
 
-    zds = zcollection.load(delayed=delayed, selected_variables=['varX'])
+    zds = zcollection.load(delayed=delayed,
+                           selected_variables=['varX'],
+                           distributed=distributed)
     assert zds is not None
     assert len(zds.variables) == 0
 
@@ -208,10 +226,12 @@ def test_insert(
 
 @pytest.mark.parametrize('fs,create_test_data', FILE_SYSTEM_DATASET)
 @pytest.mark.parametrize('arrays_type', ['dask_arrays', 'numpy_arrays'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_update(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     fs,
     arrays_type,
+    distributed,
     create_test_data,
     request,
 ) -> None:
@@ -224,15 +244,16 @@ def test_update(
                                         partitioning.Date(('time', ), 'D'),
                                         str(tested_fs.collection),
                                         filesystem=tested_fs.fs)
-    zcollection.insert(zds)
+    zcollection.insert(zds, distributed=distributed)
 
     def update(zds: dataset.Dataset, shift: int = 3):
         """Update function used for this test."""
         return {'var2': zds.variables['var1'].values * -1 + shift}
 
-    zcollection.update(update, delayed=delayed)  # type: ignore
+    zcollection.update(update, delayed=delayed,
+                       distributed=distributed)  # type: ignore
 
-    data = zcollection.load()
+    data = zcollection.load(distributed=distributed)
     assert data is not None
     assert numpy.allclose(data.variables['var2'].values,
                           data.variables['var1'].values * -1 + 3,
@@ -241,11 +262,12 @@ def test_update(
     zcollection.update(
         update,  # type: ignore
         delayed=delayed,
+        distributed=distributed,
         variables=('var2', ),
         depth=1,
         shift=5)
 
-    data = zcollection.load(delayed=delayed)
+    data = zcollection.load(delayed=delayed, distributed=distributed)
     assert data is not None
     assert numpy.allclose(data.variables['var2'].values,
                           data.variables['var1'].values * -1 + 5,
@@ -256,11 +278,12 @@ def test_update(
     zcollection.update(
         update,  # type: ignore
         delayed=delayed,
+        distributed=distributed,
         selected_variables=['var1'],
         depth=1,
         shift=5)
 
-    data = zcollection.load(delayed=delayed)
+    data = zcollection.load(delayed=delayed, distributed=distributed)
     assert data is not None
     assert numpy.allclose(data.variables['var2'].values,
                           data.variables['var1'].values * -1 + 5,
@@ -279,10 +302,11 @@ def test_update(
     zcollection.update(
         update_with_info,  # type: ignore
         delayed=delayed,
+        distributed=distributed,
         depth=1,
         shift=10)
 
-    data = zcollection.load(delayed=delayed)
+    data = zcollection.load(delayed=delayed, distributed=distributed)
     assert data is not None
     assert numpy.allclose(data.variables['var2'].values,
                           data.variables['var1'].values * -1 + 10,
@@ -298,10 +322,11 @@ def test_update(
     zcollection.update(
         update_and_trim,  # type: ignore
         delayed=delayed,
+        distributed=distributed,
         trim=False,
         depth=1)
 
-    data = zcollection.load(delayed=delayed)
+    data = zcollection.load(delayed=delayed, distributed=distributed)
     assert data is not None
     assert numpy.allclose(data.variables['var2'].values,
                           data.variables['var1'].values * -1,
@@ -313,13 +338,16 @@ def test_update(
         return {'var99': zds.variables['var1'].values * -1 + 3}
 
     with pytest.raises(ValueError):
-        zcollection.update(invalid_var_name)  # type: ignore
+        zcollection.update(invalid_var_name,
+                           distributed=distributed)  # type: ignore
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_drop_partitions(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
+    distributed,
     request,
 ) -> None:
     """Test the dropping of a dataset."""
@@ -331,18 +359,21 @@ def test_drop_partitions(
         item.split(zcollection.fs.sep)[-2] for item in all_partitions
     ]
 
-    zcollection.drop_partitions(filters='year == 2000 and month==1')
+    zcollection.drop_partitions(filters='year == 2000 and month==1',
+                                distributed=distributed)
     partitions = list(zcollection.partitions())
     assert 'month=01' not in [
         item.split(zcollection.fs.sep)[-2] for item in partitions
     ]
 
     npartitions = len(partitions)
-    zcollection.drop_partitions(timedelta=datetime.timedelta(days=1))
+    zcollection.drop_partitions(timedelta=datetime.timedelta(days=1),
+                                distributed=distributed)
     partitions = list(zcollection.partitions())
     assert len(partitions) == npartitions
 
-    zcollection.drop_partitions(timedelta=datetime.timedelta(0))
+    zcollection.drop_partitions(timedelta=datetime.timedelta(0),
+                                distributed=distributed)
     partitions = list(zcollection.partitions())
     assert len(partitions) == 0
 
@@ -350,13 +381,15 @@ def test_drop_partitions(
                                               mode='r',
                                               filesystem=tested_fs.fs)
     with pytest.raises(io.UnsupportedOperation):
-        zcollection.drop_partitions()
+        zcollection.drop_partitions(distributed=distributed)
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_drop_variable(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
+    distributed,
     request,
 ) -> None:
     """Test the dropping of a variable."""
@@ -364,13 +397,13 @@ def test_drop_variable(
     zcollection = create_test_collection(tested_fs, delayed=False)
 
     with pytest.raises(ValueError):
-        zcollection.drop_variable('time')
-    zcollection.drop_variable('var1')
+        zcollection.drop_variable('time', distributed=distributed)
+    zcollection.drop_variable('var1', distributed=distributed)
 
     with pytest.raises(ValueError):
-        zcollection.drop_variable('var1')
+        zcollection.drop_variable('var1', distributed=distributed)
 
-    zds = zcollection.load(delayed=False)
+    zds = zcollection.load(delayed=False, distributed=distributed)
     assert zds is not None
     assert 'var1' not in zds.variables
 
@@ -378,13 +411,15 @@ def test_drop_variable(
                                               mode='r',
                                               filesystem=tested_fs.fs)
     with pytest.raises(io.UnsupportedOperation):
-        zcollection.drop_partitions()
+        zcollection.drop_partitions(distributed=distributed)
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_add_variable(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
+    distributed,
     request,
 ) -> None:
     """Test the adding of a variable."""
@@ -396,21 +431,21 @@ def test_add_variable(
                         dtype=numpy.dtype('float64'),
                         dimensions=('time', ))
     with pytest.raises(ValueError):
-        zcollection.add_variable(new)
+        zcollection.add_variable(new, distributed=distributed)
 
     # Variable doesn't use the partitioning dimension.
     new = meta.Variable(name='x',
                         dtype=numpy.dtype('float64'),
                         dimensions=('x', ))
     with pytest.raises(ValueError):
-        zcollection.add_variable(new)
+        zcollection.add_variable(new, distributed=distributed)
 
     # Variable doesn't use the dataset dimension.
     new = meta.Variable(name='x',
                         dtype=numpy.dtype('float64'),
                         dimensions=('time', 'x'))
     with pytest.raises(ValueError):
-        zcollection.add_variable(new)
+        zcollection.add_variable(new, distributed=distributed)
 
     new = meta.Variable(
         name='var3',
@@ -419,7 +454,7 @@ def test_add_variable(
         fill_value=32267,
         attrs=(dataset.Attribute(name='attr', value=4), ),
     )
-    zcollection.add_variable(new)
+    zcollection.add_variable(new, distributed=distributed)
 
     assert new.name in zcollection.metadata.variables
 
@@ -430,7 +465,7 @@ def test_add_variable(
 
     assert new.name in zcollection.metadata.variables
 
-    zds = zcollection.load(delayed=False)
+    zds = zcollection.load(delayed=False, distributed=distributed)
     assert zds is not None
     values = zds.variables['var3'].values
     assert isinstance(values, numpy.ma.MaskedArray)
@@ -439,10 +474,12 @@ def test_add_variable(
 
 @pytest.mark.parametrize('fs,create_test_data', FILE_SYSTEM_DATASET)
 @pytest.mark.parametrize('arrays_type', ['dask_arrays', 'numpy_arrays'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_add_update(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     fs,
     arrays_type,
+    distributed,
     create_test_data,
     request,
 ) -> None:
@@ -455,7 +492,7 @@ def test_add_update(
                                         partitioning.Date(('time', ), 'D'),
                                         str(tested_fs.collection),
                                         filesystem=tested_fs.fs)
-    zcollection.insert(zds)
+    zcollection.insert(zds, distributed=distributed)
 
     new1 = meta.Variable(name='var3',
                          dtype=numpy.dtype('float64'),
@@ -470,10 +507,10 @@ def test_add_update(
         fill_value=32267,
         attrs=(dataset.Attribute(name='attr', value=4), ),
     )
-    zcollection.add_variable(new1)
-    zcollection.add_variable(new2)
+    zcollection.add_variable(new1, distributed=distributed)
+    zcollection.add_variable(new2, distributed=distributed)
 
-    data = zcollection.load(delayed=delayed)
+    data = zcollection.load(delayed=delayed, distributed=distributed)
     assert data is not None
 
     def update_1(zds, varname):
@@ -487,9 +524,9 @@ def test_add_update(
     zcollection.update(update_1, new1.name, delayed=delayed)  # type: ignore
     zcollection.update(update_2, new2.name, delayed=delayed)  # type: ignore
 
-    if delayed is False:
+    if not (delayed and distributed):
         # If the dataset is not delayed, we need to reload it.
-        data = zcollection.load(delayed=False)
+        data = zcollection.load(delayed=False, distributed=distributed)
         assert data is not None
 
     assert numpy.allclose(data.variables[new1.name].values,
@@ -532,9 +569,11 @@ def test_fillvalue(
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_degraded_tests(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
+    distributed,
     request,
 ) -> None:
     """Test the degraded functionality."""
@@ -546,13 +585,15 @@ def test_degraded_tests(
     fake_ds.variables['var3'].name = 'var3'
 
     with pytest.raises(ValueError):
-        zcollection.insert(fake_ds)
+        zcollection.insert(fake_ds, distributed=distributed)
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_insert_with_missing_variable(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
+    distributed,
     request,
 ) -> None:
     """Test of the insertion of a dataset in which a variable is missing.
@@ -568,11 +609,13 @@ def test_insert_with_missing_variable(
         partition_handler=partitioning.Date(('time', ), 'M'),
         partition_base_dir=str(tested_fs.collection),
         filesystem=tested_fs.fs)
-    zcollection.insert(zds, merge_callable=merging.merge_time_series)
+    zcollection.insert(zds,
+                       merge_callable=merging.merge_time_series,
+                       distributed=distributed)
 
     zds = next(create_test_dataset_with_fillvalue())
     zds.drops_vars('var1')
-    zcollection.insert(zds)
+    zcollection.insert(zds, distributed=distributed)
 
     data = zcollection.load()
     assert data is not None
@@ -587,10 +630,12 @@ def test_insert_with_missing_variable(
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('arrays_type', ['dask_arrays', 'numpy_arrays'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_insert_failed(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     fs,
     arrays_type,
+    distributed,
     request,
 ) -> None:
     """Test the insertion of a dataset in which the insertion failed."""
@@ -613,18 +658,20 @@ def test_insert_failed(
     zcollection.fs.touch(one_directory)
 
     with pytest.raises((OSError, ValueError)):
-        zcollection.insert(zds)
+        zcollection.insert(zds, distributed=distributed)
 
     # Because the insert failed, the partition that was supposed to be created
     # was deleted.
     assert not zcollection.fs.exists(one_directory)
-    zcollection.insert(zds)
+    zcollection.insert(zds, distributed=distributed)
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_insert_validation(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
+    distributed,
     request,
 ) -> None:
     """Test the insertion of a dataset with metadata validation."""
@@ -637,21 +684,22 @@ def test_insert_validation(
         partition_handler=partitioning.Date(('time', ), 'M'),
         partition_base_dir=str(tested_fs.collection),
         filesystem=tested_fs.fs)
-    zcollection.insert(zds)
+    zcollection.insert(zds, distributed=distributed)
 
     zds = next(create_test_dataset_with_fillvalue())
 
     # Inserting a dataset containing valid attributes
     zcollection.insert(zds,
                        merge_callable=merging.merge_time_series,
-                       tolerance=numpy.timedelta64(1, 'm'))
+                       tolerance=numpy.timedelta64(1, 'm'),
+                       distributed=distributed)
 
     # Inserting a dataset containing an invalid attributes
     zds = next(create_test_dataset_with_fillvalue())
     zds.attrs = (meta.Attribute('invalid', 1), )
 
     with pytest.raises(ValueError):
-        zcollection.insert(zds, validate=True)
+        zcollection.insert(zds, validate=True, distributed=distributed)
 
     # Inserting a dataset containing variables with invalid attributes
     zds = next(create_test_dataset_with_fillvalue())
@@ -660,7 +708,7 @@ def test_insert_validation(
         var.attrs = (meta.Attribute('invalid', 1), )
 
     with pytest.raises(ValueError):
-        zcollection.insert(zds, validate=True)
+        zcollection.insert(zds, validate=True, distributed=distributed)
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
@@ -689,10 +737,12 @@ def test_map_partition(
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('arrays_type', ['dask_arrays', 'numpy_arrays'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_indexer(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     fs,
     arrays_type,
+    distributed,
     request,
 ) -> None:
     """Test the update of a dataset."""
@@ -703,9 +753,11 @@ def test_indexer(
     indexers = zcollection.map(
         lambda x: slice(0, x.dimensions['num_lines'])  # type: ignore
     ).compute()
-    zds1 = zcollection.load(indexer=indexers, delayed=delayed)
+    zds1 = zcollection.load(indexer=indexers,
+                            delayed=delayed,
+                            distributed=distributed)
     assert zds1 is not None
-    zds2 = zcollection.load(delayed=delayed)
+    zds2 = zcollection.load(delayed=delayed, distributed=distributed)
     assert zds2 is not None
 
     assert numpy.allclose(zds1.variables['var1'].values,
@@ -768,9 +820,11 @@ def test_map_overlap(
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_insert_immutable(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
+    distributed,
     request,
 ) -> None:
     """Test the insertion of a dataset with variables that are immutable
@@ -815,10 +869,11 @@ def test_insert_immutable(
                                         filesystem=tested_fs.fs)
     assert zcollection.immutable
     assert not tested_fs.fs.exists(zcollection._immutable)
-    zcollection.insert(zds_reference)
+
+    zcollection.insert(zds_reference, distributed=distributed)
     assert tested_fs.fs.exists(zcollection._immutable)
 
-    zds = zcollection.load(delayed=False)
+    zds = zcollection.load(delayed=False, distributed=distributed)
     assert zds is not None
 
     assert numpy.all(
@@ -834,8 +889,12 @@ def test_insert_immutable(
         """Update function used for this test."""
         return {varname: zds.variables['grid'].values * -1}
 
-    zcollection.update(update, delayed=False, varname='grid')  # type: ignore
-    zds = zcollection.load(delayed=False)
+    zcollection.update(
+        update,  # type: ignore
+        delayed=False,
+        distributed=distributed,
+        varname='grid')
+    zds = zcollection.load(delayed=False, distributed=distributed)
     assert zds is not None
 
     assert numpy.all(zds.variables['grid'].values ==
@@ -853,9 +912,12 @@ def test_insert_immutable(
         dimensions=('time', 'lon', 'lat'),
         attrs=(meta.Attribute('units', 'm'), ),
     )
-    zcollection.add_variable(new_variable)
-    zcollection.update(update, varname='new_var')  # type: ignore
-    zds = zcollection.load()
+    zcollection.add_variable(new_variable, distributed=distributed)
+    zcollection.update(
+        update,  # type: ignore
+        distributed=distributed,
+        varname='new_var')
+    zds = zcollection.load(distributed=distributed)
     assert zds is not None
     assert numpy.all(zds.variables['new_var'].values ==
                      zds_reference.variables['grid'].values)
@@ -867,13 +929,15 @@ def test_insert_immutable(
         attrs=(meta.Attribute('units', 'm'), ),
     )
     with pytest.raises(ValueError):
-        zcollection.add_variable(new_variable)
+        zcollection.add_variable(new_variable, distributed=distributed)
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_copy_collection(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
         arg,
+        distributed,
         request,
         tmpdir) -> None:
     """Test the dropping of a dataset."""
@@ -881,10 +945,12 @@ def test_copy_collection(
     zcollection = create_test_collection(tested_fs)
 
     target = str(tmpdir / 'copy')
-    zcopy = zcollection.copy(target, filesystem=fsspec.filesystem('file'))
+    zcopy = zcollection.copy(target,
+                             filesystem=fsspec.filesystem('file'),
+                             distributed=distributed)
 
-    ds_before_copy = zcollection.load()
-    ds_after_copy = zcopy.load()
+    ds_before_copy = zcollection.load(distributed=distributed)
+    ds_after_copy = zcopy.load(distributed=distributed)
 
     assert ds_before_copy is not None
     assert ds_after_copy is not None
@@ -1010,8 +1076,10 @@ def test_partition_modified(
         _ = zds['time'].values
 
 
+@pytest.mark.parametrize('distributed', [False, True])
 def test_invalid_partitions(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        distributed,
         tmpdir) -> None:
     fs = fsspec.filesystem('file')
     datasets = list(create_test_dataset())
@@ -1031,22 +1099,25 @@ def test_invalid_partitions(
         with fs.open(var2, 'wb') as file:
             file.write(b'invalid')
     with pytest.raises(ValueError):
-        _ = zcollection.load(delayed=False)
+        _ = zcollection.load(delayed=False, distributed=distributed)
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
-        invalid_partitions = zcollection.validate_partitions()
+        invalid_partitions = zcollection.validate_partitions(
+            distributed=distributed)
     assert len(invalid_partitions) == 2
     assert sorted(invalid_partitions) == sorted(partitions[ix]
                                                 for ix in choices)
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
-        zcollection.validate_partitions(fix=True)
+        zcollection.validate_partitions(fix=True, distributed=distributed)
     assert zcollection.load() is not None
 
 
 # pylint: disable=too-many-statements
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_insert_with_chunks(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     fs,
+    distributed,
     request,
     tmpdir,
 ) -> None:
@@ -1067,7 +1138,11 @@ def test_insert_with_chunks(
                                             str(tmpdir / 'lock.lck')))
 
     # First insertion
-    zcollection.insert(datasets[0], merge_callable=merging.merge_time_series)
+    zcollection.insert(datasets[0],
+                       merge_callable=merging.merge_time_series,
+                       distributed=distributed)
+
+    # Not setting distributed to False when loading otherwise we won't have any chunk
     data = zcollection.load()
 
     assert data is not None
@@ -1075,7 +1150,9 @@ def test_insert_with_chunks(
     assert data.variables['var2'].data.chunksize[1] == chunk_size
 
     # Insertion with merge
-    zcollection.insert(datasets[1], merge_callable=merging.merge_time_series)
+    zcollection.insert(datasets[1],
+                       merge_callable=merging.merge_time_series,
+                       distributed=distributed)
     data = zcollection.load()
 
     assert data is not None

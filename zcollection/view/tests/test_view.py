@@ -32,10 +32,12 @@ from ...view.detail import _calculate_axis_reference
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('arrays_type', ['dask_arrays', 'numpy_arrays'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_view(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     fs,
     arrays_type,
+    distributed,
     request,
 ):
     """Test the creation of a view."""
@@ -47,13 +49,14 @@ def test_view(
                                        view.ViewReference(
                                            str(tested_fs.collection),
                                            tested_fs.fs),
-                                       filesystem=tested_fs.fs)
+                                       filesystem=tested_fs.fs,
+                                       distributed=distributed)
     assert isinstance(instance, view.View)
     assert isinstance(str(instance), str)
 
     # No variable recorded, so no data can be loaded
     with pytest.raises(ValueError):
-        instance.load(delayed=delayed)
+        instance.load(delayed=delayed, distributed=distributed)
 
     var = meta.Variable(
         name='var2',
@@ -63,17 +66,17 @@ def test_view(
     )
 
     with pytest.raises(ValueError):
-        instance.add_variable(var)
+        instance.add_variable(var, distributed=distributed)
 
     var.name = 'var3'
-    instance.add_variable(var)
+    instance.add_variable(var, distributed=distributed)
 
     with pytest.raises(ValueError):
-        instance.add_variable(var)
+        instance.add_variable(var, distributed=distributed)
 
     instance = convenience.open_view(str(tested_fs.view),
                                      filesystem=tested_fs.fs)
-    zds = instance.load(delayed=delayed)
+    zds = instance.load(delayed=delayed, distributed=distributed)
     assert zds is not None
     assert set(zds['time'].values.astype('datetime64[D]')) == {
         numpy.datetime64('2000-01-01'),
@@ -85,7 +88,9 @@ def test_view(
     }
 
     # Loading a variable existing only in the view.
-    zds = instance.load(delayed=delayed, selected_variables=('var3', ))
+    zds = instance.load(delayed=delayed,
+                        selected_variables=('var3', ),
+                        distributed=distributed)
     assert zds is not None
     assert tuple(zds.variables) == ('var3', )
     assert 'var3' in zds.metadata().variables.keys()
@@ -93,8 +98,10 @@ def test_view(
     # The metadata of the reference collection is not modified.
     assert 'var3' not in instance.view_ref.metadata.variables.keys()
 
-    # Loading a non existing variable.
-    zds = instance.load(delayed=delayed, selected_variables=('var55', ))
+    # Loading a non-existing variable.
+    zds = instance.load(delayed=delayed,
+                        selected_variables=('var55', ),
+                        distributed=distributed)
     assert zds is not None
     assert len(zds.variables) == 0
 
@@ -107,7 +114,7 @@ def test_view(
     assert len(tuple(instance.partitions())) == 5
     assert len(tuple(instance.view_ref.partitions())) == 6
 
-    zds = instance.load(delayed=delayed)
+    zds = instance.load(delayed=delayed, distributed=distributed)
     assert zds is not None
     assert set(zds['time'].values.astype('datetime64[D]')) == {
         numpy.datetime64('2000-01-01'),
@@ -119,39 +126,51 @@ def test_view(
 
     # Create a variable with the unsynchronized view
     var.name = 'var4'
-    instance.add_variable(var)
+    instance.add_variable(var, distributed=distributed)
 
-    zds = instance.load(delayed=delayed)
+    zds = instance.load(delayed=delayed, distributed=distributed)
     assert zds is not None
 
     def update(zds, varname):
         """Update function used for this test."""
         return {varname: zds.variables['var1'].values * 0 + 5}
 
-    instance.update(update, 'var3', delayed=delayed)  # type: ignore
+    instance.update(
+        update,  # type: ignore
+        'var3',
+        delayed=delayed,
+        distributed=distributed)
 
     with pytest.raises(ValueError):
-        instance.update(update, 'varX')  # type: ignore
+        instance.update(
+            update,  # type: ignore
+            'varX',
+            distributed=distributed)
 
     with pytest.raises(ValueError):
-        instance.update(update, 'var2')  # type: ignore
+        instance.update(
+            update,  # type: ignore
+            'var2',
+            distributed=distributed)
 
-    zds = instance.load(delayed=delayed)
+    zds = instance.load(delayed=delayed, distributed=distributed)
     assert zds is not None
     assert numpy.all(zds.variables['var3'].values == 5)
 
     indexers = instance.map(
         lambda x: slice(0, x.dimensions['num_lines'])  # type: ignore
     ).compute()
-    ds1 = instance.load(delayed=delayed, indexer=indexers)
+    ds1 = instance.load(delayed=delayed,
+                        indexer=indexers,
+                        distributed=distributed)
     assert ds1 is not None
-    ds2 = instance.load(delayed=delayed)
+    ds2 = instance.load(delayed=delayed, distributed=distributed)
     assert ds2 is not None
 
     assert numpy.allclose(ds1.variables['var1'].values,
                           ds2.variables['var1'].values)
 
-    instance.drop_variable('var3')
+    instance.drop_variable('var3', distributed=distributed)
 
     assert tuple(
         str(pathlib.Path(item))
@@ -345,9 +364,11 @@ def test_view_checksum(
 
 @pytest.mark.filterwarnings('ignore:.*cannot be serialized.*')
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('distributed', [False, True])
 def test_view_sync(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
     arg,
+    distributed,
     request,
 ):
     """Test the synchronization of a view."""
@@ -357,11 +378,12 @@ def test_view_sync(
                                        view.ViewReference(
                                            str(tested_fs.collection),
                                            tested_fs.fs),
-                                       filesystem=tested_fs.fs)
+                                       filesystem=tested_fs.fs,
+                                       distributed=distributed)
     var = meta.Variable(name='var3',
                         dtype=numpy.float64,
                         dimensions=('num_lines', 'num_pixels'))
-    instance.add_variable(var)
+    instance.add_variable(var, distributed=distributed)
     del instance
 
     zcollection = convenience.open_collection(str(tested_fs.collection),
@@ -382,7 +404,7 @@ def test_view_sync(
     instance = convenience.open_view(str(tested_fs.view),
                                      filesystem=tested_fs.fs)
     assert instance is not None
-    assert instance.is_synced() is False
-    instance.sync(filters=lambda keys: True)
-    zds = instance.load()
+    assert instance.is_synced(distributed=distributed) is False
+    instance.sync(filters=lambda keys: True, distributed=distributed)
+    zds = instance.load(distributed=distributed)
     assert zds is not None

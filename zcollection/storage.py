@@ -258,8 +258,8 @@ def write_zarr_group(
                 futures: list[dask.distributed.Future] = client.map(
                     write_zarr_variable,
                     iterables,
-                    block_size_limit=zds.block_size_limit,
                     chunks=zds.chunks,
+                    block_size_limit=zds.block_size_limit,
                     dirname=dirname,
                     fs=fs,
                 )
@@ -407,7 +407,7 @@ def add_zarr_array(
     template: str,
     fs: fsspec.AbstractFileSystem,
     *,
-    chunks: dict[str, int | str] | None = None,
+    chunks: dict[str, int] | None = None,
 ) -> None:
     """Add a variable to a Zarr dataset.
 

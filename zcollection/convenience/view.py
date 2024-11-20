@@ -13,14 +13,13 @@ import fsspec
 from .. import collection, fs_utils, sync, view
 
 
-def create_view(
-    path: str,
-    view_ref: view.ViewReference,
-    *,
-    filesystem: fsspec.AbstractFileSystem | str | None = None,
-    filters: collection.PartitionFilter = None,
-    synchronizer: sync.Sync | None = None,
-) -> view.View:
+def create_view(path: str,
+                view_ref: view.ViewReference,
+                *,
+                filesystem: fsspec.AbstractFileSystem | str | None = None,
+                filters: collection.PartitionFilter = None,
+                synchronizer: sync.Sync | None = None,
+                distributed: bool = True) -> view.View:
     """Create a new view.
 
     Args:
@@ -30,6 +29,7 @@ def create_view(
         filters: The filters used to select the partitions of the reference
             view. If not provided, all partitions are selected.
         synchronizer: The synchronizer used to synchronize the view.
+        distributed: Whether to use dask or not. Default To True.
 
     Example:
         >>> view_ref = ViewReference(
@@ -50,7 +50,8 @@ def create_view(
                      ds=None,
                      filesystem=filesystem,
                      filters=filters,
-                     synchronizer=synchronizer)
+                     synchronizer=synchronizer,
+                     distributed=distributed)
 
 
 def open_view(

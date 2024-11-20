@@ -61,6 +61,7 @@ class View:
         filters: The filters used to select the partitions of the reference. If
             not provided, all partitions are selected.
         synchronizer: The synchronizer used to synchronize the view.
+        distributed: Whether to use dask or not. Default To True.
 
     Note:
         Normally, you should not call this constructor directly. Instead, use
@@ -70,16 +71,15 @@ class View:
     #: Configuration filename of the view.
     CONFIG: ClassVar[str] = '.view'
 
-    def __init__(
-        self,
-        base_dir: str,
-        view_ref: ViewReference,
-        *,
-        ds: meta.Dataset | None,
-        filesystem: fsspec.AbstractFileSystem | str | None = None,
-        filters: collection.PartitionFilter = None,
-        synchronizer: sync.Sync | None = None,
-    ) -> None:
+    def __init__(self,
+                 base_dir: str,
+                 view_ref: ViewReference,
+                 *,
+                 ds: meta.Dataset | None,
+                 filesystem: fsspec.AbstractFileSystem | str | None = None,
+                 filters: collection.PartitionFilter = None,
+                 synchronizer: sync.Sync | None = None,
+                 distributed: bool = True) -> None:
         #: The file system used to access the view (default local file system).
         self.fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
         #: Path to the directory where the view is stored.
@@ -99,11 +99,13 @@ class View:
             _LOGGER.info('Creating view %s', self)
             self.fs.makedirs(self.base_dir)
             self._write_config()
-            self._init_partitions(filters)
+            self._init_partitions(filters, distributed=distributed)
         else:
             _LOGGER.info('Opening view %s', self)
 
-    def _init_partitions(self, filters: collection.PartitionFilter) -> None:
+    def _init_partitions(self,
+                         filters: collection.PartitionFilter,
+                         distributed: bool = True) -> None:
         """Initialize the partitions of the view."""
         _LOGGER.info('Populating view %s', self)
         args = tuple(
@@ -115,16 +117,24 @@ class View:
         args = tuple(filter(lambda item: not self.fs.exists(item), args))
         _LOGGER.info('%d partitions selected from %s', len(args),
                      self.view_ref)
-        client: dask.distributed.Client = dask_utils.get_client()
-        storage.execute_transaction(
-            client, self.synchronizer,
-            client.map(
-                _write_checksum,
-                tuple(args),
-                base_dir=self.base_dir,
-                view_ref=self.view_ref,
-                fs=self.fs,
-            ))
+
+        if distributed:
+            client: dask.distributed.Client = dask_utils.get_client()
+            storage.execute_transaction(
+                client, self.synchronizer,
+                client.map(
+                    _write_checksum,
+                    tuple(args),
+                    base_dir=self.base_dir,
+                    view_ref=self.view_ref,
+                    fs=self.fs,
+                ))
+        else:
+            for arg in args:
+                _write_checksum(arg,
+                                base_dir=self.base_dir,
+                                view_ref=self.view_ref,
+                                fs=self.fs)
 
     def __str__(self) -> str:
         return (f'{self.__class__.__name__}'
@@ -228,14 +238,14 @@ class View:
         return dataset.get_dataset_variable_properties(self.metadata,
                                                        selected_variables)
 
-    def add_variable(
-        self,
-        variable: meta.Variable | dataset.Variable,
-    ) -> None:
+    def add_variable(self,
+                     variable: meta.Variable | dataset.Variable,
+                     distributed: bool = True) -> None:
         """Add a variable to the view.
 
         Args:
             variable: The variable to add
+            distributed: Whether to use dask or not. Default To True.
 
         Raises:
             ValueError: If the variable already exists
@@ -257,7 +267,7 @@ class View:
         if (variable.name in self.view_ref.metadata.variables
                 or variable.name in self.metadata.variables):
             raise ValueError(f'Variable {variable.name} already exists')
-        client: dask.distributed.Client = dask_utils.get_client()
+
         self.metadata.add_variable(variable)
         template: meta.Variable = \
             self.view_ref.metadata.search_same_dimensions_as(variable)
@@ -280,24 +290,41 @@ class View:
         # from the collection metadata.
         variable = variable.set_for_insertion()
 
-        try:
-            storage.execute_transaction(
-                client, self.synchronizer,
-                client.map(_create_zarr_array,
-                           tuple(args),
-                           base_dir=self.base_dir,
-                           fs=self.fs,
-                           template=template.name,
-                           variable=variable))
-        except Exception:
-            storage.execute_transaction(
-                client, self.synchronizer,
-                client.map(_drop_zarr_zarr,
-                           tuple(self.partitions()),
-                           fs=self.fs,
-                           variable=variable.name,
-                           ignore_errors=True))
-            raise
+        if distributed:
+            client: dask.distributed.Client = dask_utils.get_client()
+            try:
+                storage.execute_transaction(
+                    client, self.synchronizer,
+                    client.map(_create_zarr_array,
+                               tuple(args),
+                               base_dir=self.base_dir,
+                               fs=self.fs,
+                               template=template.name,
+                               variable=variable))
+            except Exception:
+                storage.execute_transaction(
+                    client, self.synchronizer,
+                    client.map(_drop_zarr_zarr,
+                               tuple(self.partitions()),
+                               fs=self.fs,
+                               variable=variable.name,
+                               ignore_errors=True))
+                raise
+        else:
+            try:
+                for arg in args:
+                    _create_zarr_array(arg,
+                                       base_dir=self.base_dir,
+                                       fs=self.fs,
+                                       template=template.name,
+                                       variable=variable)
+            except Exception:
+                for partition in self.partitions():
+                    _drop_zarr_zarr(partition,
+                                    fs=self.fs,
+                                    variable=variable.name,
+                                    ignore_errors=True)
+                raise
 
         self._write_config()
         # pylint: enable=duplicate-code
@@ -305,11 +332,13 @@ class View:
     def drop_variable(
         self,
         varname: str,
+        distributed: bool = True,
     ) -> None:
         """Drop a variable from the view.
 
         Args:
             varname: The name of the variable to drop.
+            distributed: Whether to use dask or not. Default To True.
 
         Raise:
             ValueError: If the variable does not exist or if the variable
@@ -321,17 +350,21 @@ class View:
         _LOGGER.info('Dropping variable %r', varname)
         _assert_variable_handled(self.view_ref.metadata, self.metadata,
                                  varname)
-        client: dask.distributed.Client = dask_utils.get_client()
 
         variable: meta.Variable = self.metadata.variables.pop(varname)
         self._write_config()
 
-        storage.execute_transaction(
-            client, self.synchronizer,
-            client.map(_drop_zarr_zarr,
-                       tuple(self.partitions()),
-                       fs=self.fs,
-                       variable=variable.name))
+        if distributed:
+            client: dask.distributed.Client = dask_utils.get_client()
+            storage.execute_transaction(
+                client, self.synchronizer,
+                client.map(_drop_zarr_zarr,
+                           tuple(self.partitions()),
+                           fs=self.fs,
+                           variable=variable.name))
+        else:
+            for partition in self.partitions():
+                _drop_zarr_zarr(partition, fs=self.fs, variable=variable.name)
 
     def load(
         self,
@@ -340,6 +373,7 @@ class View:
         filters: collection.PartitionFilter = None,
         indexer: collection.abc.Indexer | None = None,
         selected_variables: Iterable[str] | None = None,
+        distributed: bool = True,
     ) -> dataset.Dataset | None:
         """Load the view.
 
@@ -352,6 +386,7 @@ class View:
             indexer: The indexer to apply.
             selected_variables: A list of variables to retain from the view.
                 If None, all variables are loaded.
+            distributed: Whether to use dask or not. Default To True.
 
         Returns:
             The dataset.
@@ -362,6 +397,12 @@ class View:
             >>> view.load(filters=lambda x: x["time"] == "2020-01-01")
         """
         _assert_have_variables(self.metadata)
+        # Delayed has to be True of dask is disabled
+        if not distributed:
+            delayed = False
+
+        datasets: list[tuple[dataset.Dataset, str] | None]
+
         if indexer is not None:
             arguments = tuple(
                 collection.abc.build_indexer_args(
@@ -375,26 +416,42 @@ class View:
             arguments = tuple((self.view_ref.partitioning.parse(item), [])
                               for item in self.partitions(filters=filters))
 
-        client: dask.distributed.Client = dask_utils.get_client()
-        futures: list[dask.distributed.Future] = client.map(
-            _load_one_dataset,
-            arguments,
-            base_dir=self.base_dir,
-            delayed=delayed,
-            fs=self.fs,
-            selected_variables=self.view_ref.metadata.select_variables(
-                selected_variables),
-            view_ref=client.scatter(self.view_ref),
-            variables=self.metadata.select_variables(selected_variables))
+        if distributed:
+            client: dask.distributed.Client = dask_utils.get_client()
+            futures: list[dask.distributed.Future] = client.map(
+                _load_one_dataset,
+                arguments,
+                base_dir=self.base_dir,
+                delayed=delayed,
+                fs=self.fs,
+                selected_variables=self.view_ref.metadata.select_variables(
+                    selected_variables),
+                view_ref=client.scatter(self.view_ref),
+                variables=self.metadata.select_variables(selected_variables))
+            datasets = client.gather(futures)
+        else:
+            datasets = [
+                _load_one_dataset(
+                    arg,
+                    base_dir=self.base_dir,
+                    delayed=delayed,
+                    fs=self.fs,
+                    selected_variables=self.view_ref.metadata.select_variables(
+                        selected_variables),
+                    view_ref=self.view_ref,
+                    variables=self.metadata.select_variables(
+                        selected_variables)) for arg in arguments
+            ]
 
         # The load function returns the path to the partitions and the loaded
         # datasets. Only the loaded datasets are retrieved here and filter None
         # values corresponding to empty partitions.
         arrays: list[dataset.Dataset] = list(
             map(
-                lambda item: item[0],  # type: ignore[arg-type]
+                lambda item: item[0],  # type: ignore[index]
                 filter(lambda item: item is not None,
-                       client.gather(futures))))  # type: ignore[arg-type]
+                       datasets)))  # type: ignore[arg-type]
+
         if arrays:
             array: dataset.Dataset = arrays.pop(0)
             if arrays:
@@ -418,6 +475,7 @@ class View:
         selected_variables: Iterable[str] | None = None,
         trim: bool = True,
         variables: Sequence[str] | None = None,
+        distributed: bool = True,
         **kwargs,
     ) -> None:
         """Update a variable stored int the view.
@@ -451,6 +509,7 @@ class View:
                 partition. In this case, it is important to ensure that the
                 function can be called twice on the same partition without
                 side effects. Default is None.
+            distributed: Whether to use dask or not. Default To True.
             args: The positional arguments to pass to the function.
             kwargs: The keyword arguments to pass to the function.
 
@@ -466,13 +525,18 @@ class View:
             ...     dataset: zcollection.dataset.Dataset,
             ... ) -> Dict[str, numpy.ndarray]:
             ...     return dict(
-            ...         temperature_kelvin=dataset["temperature"].values + 273,
-            ...         15)
-            >>> view.update(update_temperature)
+            ...         temperature_kelvin=dataset["temperature"].values +
+            ...         273.15)
+            >>> view.update(temp_celsius_to_kelvin)
         """
         _assert_have_variables(self.metadata)
 
-        client: dask.distributed.Client = dask_utils.get_client()
+        client: dask.distributed.Client | None
+
+        if distributed:
+            client = dask_utils.get_client()
+        else:
+            client = None
 
         datasets_list = tuple(
             _load_datasets_list(client=client,
@@ -527,17 +591,19 @@ class View:
                 trim,
             )
 
-        batchs: Iterator[Sequence[Any]] = dask_utils.split_sequence(
-            datasets_list, npartitions
-            or dask_utils.dask_workers(client, cores_only=True))
-        awaitables: list[dask.distributed.Future] = client.map(
-            wrap_function,
-            tuple(batchs),
-            key=func.__name__,
-            base_dir=self.base_dir,
+        if distributed:
+            batches: Iterator[Sequence[Any]] = dask_utils.split_sequence(
+                datasets_list, npartitions
+                or dask_utils.dask_workers(client, cores_only=True))
+            awaitables: list[dask.distributed.Future] = client.map(
+                wrap_function,
+                tuple(batches),
+                key=func.__name__,
+                base_dir=self.base_dir,
             func_args=args,
-            func_kwargs=kwargs)
-        storage.execute_transaction(client, self.synchronizer, awaitables)
+            func_kwargs=kwargs)storage.execute_transaction(client, self.synchronizer, awaitables)
+        else:
+            wrap_function(datasets_list, self.base_dir)
 
     # pylint: disable=duplicate-code
     # false positive, no code duplication
@@ -735,31 +801,47 @@ class View:
             npartitions=npartitions)
         return bag.map(_wrap, func, datasets_list, depth, *args, **kwargs)
 
-    def is_synced(self) -> bool:
+    def is_synced(self, distributed: bool = True) -> bool:
         """Check if the view is synchronized with the underlying collection.
+
+        Args:
+            distributed: Whether to use dask or not. Default To True.
 
         Returns:
             True if the view is synchronized, False otherwise.
         """
         partitions = tuple(self.view_ref.partitions(relative=True))
-        client: dask.distributed.Client = dask_utils.get_client()
-        unsynchronized_partition = storage.execute_transaction(
-            client, self.synchronizer,
-            client.map(_sync,
-                       partitions,
-                       base_dir=self.base_dir,
-                       fs=self.fs,
-                       view_ref=self.view_ref,
-                       metadata=self.metadata,
-                       dry_run=True))
+
+        if distributed:
+            client: dask.distributed.Client = dask_utils.get_client()
+            unsynchronized_partition = storage.execute_transaction(
+                client, self.synchronizer,
+                client.map(_sync,
+                           partitions,
+                           base_dir=self.base_dir,
+                           fs=self.fs,
+                           view_ref=self.view_ref,
+                           metadata=self.metadata,
+                           dry_run=True))
+        else:
+            unsynchronized_partition = [
+                _sync(partition,
+                      base_dir=self.base_dir,
+                      fs=self.fs,
+                      view_ref=self.view_ref,
+                      metadata=self.metadata,
+                      dry_run=True) for partition in partitions
+            ]
+
         return len(
             tuple(
                 filter(lambda item: item is not None,
                        unsynchronized_partition))) == 0
 
     def sync(
-        self,
-        filters: collection.PartitionFilter = None
+            self,
+            filters: collection.PartitionFilter = None,
+            distributed: bool = True
     ) -> collection.abc.PartitionFilterCallback:
         """Synchronize the view with the underlying collection.
 
@@ -777,6 +859,7 @@ class View:
                 selects the new partitions.
                 Existing partitions are not removed, even if they are not
                 selected by the predicate.
+            distributed: Whether to use dask or not. Default To True.
 
         Returns:
             A function that can be used as a predicate to get the partitions
@@ -788,20 +871,31 @@ class View:
         if filters is not None:
             self.filters = filters
             self._write_config()
-            self._init_partitions(filters)
+            self._init_partitions(filters, distributed=distributed)
 
         partitions = tuple(self.view_ref.partitions(relative=True))
         _LOGGER.info('%d partitions to synchronize', len(partitions))
 
-        client: dask.distributed.Client = dask_utils.get_client()
-        synchronized_partition: list[str | None] = storage.execute_transaction(
-            client, self.synchronizer,
-            client.map(_sync,
-                       partitions,
-                       base_dir=self.base_dir,
-                       fs=self.fs,
-                       view_ref=self.view_ref,
-                       metadata=self.metadata))
+        if distributed:
+            client: dask.distributed.Client = dask_utils.get_client()
+            synchronized_partition: list[str
+                                         | None] = storage.execute_transaction(
+                                             client, self.synchronizer,
+                                             client.map(
+                                                 _sync,
+                                                 partitions,
+                                                 base_dir=self.base_dir,
+                                                 fs=self.fs,
+                                                 view_ref=self.view_ref,
+                                                 metadata=self.metadata))
+        else:
+            synchronized_partition = [
+                _sync(partition,
+                      base_dir=self.base_dir,
+                      fs=self.fs,
+                      view_ref=self.view_ref,
+                      metadata=self.metadata) for partition in partitions
+            ]
 
         partition_ids = tuple(
             dict(self.view_ref.partitioning.parse(
