@@ -217,3 +217,10 @@ class Date(abc.Partitioning):
         py_datetime: datetime.datetime = datetime64.astype('M8[s]').item()
         return tuple((UNITS[ix], getattr(py_datetime, self._attrs[ix]))
                      for ix in self._index)
+
+    def get_config(self) -> dict[str, Any]:
+        config = super().get_config()
+
+        # dtype are automatically computed by this partitioning
+        config.pop('dtype')
+        return config
