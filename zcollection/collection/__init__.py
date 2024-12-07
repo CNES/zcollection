@@ -35,7 +35,7 @@ from .. import (
     storage,
     sync,
 )
-from .abc import PartitionFilter, ReadOnlyCollection
+from .abc import Indexer, PartitionFilter, ReadOnlyCollection
 from .callable_objects import UpdateCallable, WrappedPartitionCallable
 from .detail import (
     PartitionSlice,
@@ -44,6 +44,12 @@ from .detail import (
     _wrap_update_func,
     _wrap_update_func_with_overlap,
 )
+
+__all__ = ('dask_utils', 'dataset', 'fs_utils', 'merging', 'meta',
+           'partitioning', 'storage', 'sync', 'Indexer', 'PartitionFilter',
+           'ReadOnlyCollection', 'UpdateCallable', 'WrappedPartitionCallable',
+           'PartitionSlice', '_insert', '_try_infer_callable',
+           '_wrap_update_func', '_wrap_update_func_with_overlap')
 
 #: Module logger.
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -874,6 +880,14 @@ class Collection(ReadOnlyCollection):
 
         invalid_partitions: list[str] = []
 
+        def _validity_check(_partition, _valid):
+            """Check partition validity and add it to invalid partitions if not
+            valid."""
+            if not _valid:
+                warnings.warn(f'Invalid partition: {_partition}',
+                              category=RuntimeWarning)
+                invalid_partitions.append(_partition)
+
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()
             futures: list[dask.distributed.Future] = client.map(
@@ -884,20 +898,14 @@ class Collection(ReadOnlyCollection):
 
             for item in dask.distributed.as_completed(futures):
                 partition, valid = item.result()  # type: ignore
-                if not valid:
-                    warnings.warn(f'Invalid partition: {partition}',
-                                  category=RuntimeWarning)
-                    invalid_partitions.append(partition)
+                _validity_check(_partition=partition, _valid=valid)
         else:
             for partition in partitions:
                 partition, valid = _check_partition(
                     partition,
                     fs=self.fs,
                     partitioning_strategy=self.partitioning)
-                if not valid:
-                    warnings.warn(f'Invalid partition: {partition}',
-                                  category=RuntimeWarning)
-                    invalid_partitions.append(partition)
+                _validity_check(_partition=partition, _valid=valid)
 
         if fix and invalid_partitions:
             for item in invalid_partitions:

@@ -343,6 +343,62 @@ def test_update(
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+def test_list_partitions(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    arg,
+    request,
+) -> None:
+    """Test the dropping of a dataset."""
+    tested_fs = request.getfixturevalue(arg)
+    zcollection = create_test_collection(tested_fs, delayed=False)
+
+    all_partitions = list(zcollection.partitions())
+    assert len(all_partitions) == 6
+
+    full_path = lambda partition: zcollection.fs.sep.join(
+        (zcollection.partition_properties.dir, partition))
+
+    selected_partitions = ['year=2000/month=01/day=01']
+    partitions = list(
+        zcollection.partitions(selected_partitions=selected_partitions))
+    assert partitions == list(map(full_path, selected_partitions))
+
+    selected_partitions = [
+        'year=2000/month=01/day=01', 'year=2000/month=01/day=01'
+    ]
+    partitions = list(
+        zcollection.partitions(selected_partitions=selected_partitions))
+    assert partitions == list(map(full_path, selected_partitions[:1]))
+
+    selected_partitions = ['year=2000/month=01/day=02']
+    partitions = list(
+        zcollection.partitions(selected_partitions=selected_partitions))
+    assert not partitions
+
+    selected_partitions = [
+        'year=2000/month=01/day=01', 'year=2000/month=01/day=02',
+        'year=2000/month=01/day=07'
+    ]
+    partitions = list(
+        zcollection.partitions(selected_partitions=selected_partitions))
+    assert partitions == list(
+        map(full_path, [selected_partitions[0], selected_partitions[2]]))
+
+    indexer = zcollection.map(
+        lambda x: slice(0, x.dimensions['num_lines'])  # type: ignore
+    ).compute()[3:]
+
+    selected_partitions = [
+        'year=2000/month=01/day=01', 'year=2000/month=01/day=02',
+        'year=2000/month=01/day=13'
+    ]
+    partitions = list(
+        zcollection.partitions(indexer=indexer,
+                               selected_partitions=selected_partitions))
+    assert partitions == list(map(full_path, selected_partitions[-1:]))
+
+
+@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('distributed', [False, True])
 def test_drop_partitions(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
@@ -900,11 +956,11 @@ def test_insert_immutable(
     assert numpy.all(zds.variables['grid'].values ==
                      zds_reference.variables['grid'].values * -1)
     assert numpy.all(
-        zds.variables['time'].values == zds.variables['time'].values)
+        zds.variables['time'].values == zds_reference.variables['time'].values)
     assert numpy.all(
-        zds.variables['lon'].values == zds.variables['lon'].values)
+        zds.variables['lon'].values == zds_reference.variables['lon'].values)
     assert numpy.all(
-        zds.variables['lat'].values == zds.variables['lat'].values)
+        zds.variables['lat'].values == zds_reference.variables['lat'].values)
 
     new_variable = meta.Variable(
         'new_var',

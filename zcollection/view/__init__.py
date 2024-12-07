@@ -208,19 +208,29 @@ class View:
     def partitions(
         self,
         filters: collection.PartitionFilter = None,
+        indexer: collection.Indexer | None = None,
+        selected_partitions: Iterable[str] | None = None,
     ) -> Iterator[str]:
         """Returns the list of partitions in the view.
 
         Args:
             filters: The partition filters.
+            indexer: The indexer to apply.
+            selected_partitions: A list of partitions to load (using the
+                partition relative path).
 
         Returns:
             The list of partitions.
         """
         return filter(
             self.fs.exists,
-            map(lambda item: fs_utils.join_path(self.base_dir, item),
-                self.view_ref.partitions(filters=filters, relative=True)))
+            map(
+                lambda item: fs_utils.join_path(self.base_dir, item),
+                self.view_ref.partitions(
+                    filters=filters,
+                    indexer=indexer,
+                    selected_partitions=selected_partitions,
+                    relative=True)))
 
     def variables(
         self,
@@ -371,8 +381,9 @@ class View:
         *,
         delayed: bool = True,
         filters: collection.PartitionFilter = None,
-        indexer: collection.abc.Indexer | None = None,
+        indexer: collection.Indexer | None = None,
         selected_variables: Iterable[str] | None = None,
+        selected_partitions: Iterable[str] | None = None,
         distributed: bool = True,
     ) -> dataset.Dataset | None:
         """Load the view.
@@ -386,6 +397,8 @@ class View:
             indexer: The indexer to apply.
             selected_variables: A list of variables to retain from the view.
                 If None, all variables are loaded.
+            selected_partitions: A list of partitions to load (using the
+                partition relative path).
             distributed: Whether to use dask or not. Default To True.
 
         Returns:
@@ -402,19 +415,21 @@ class View:
             delayed = False
 
         datasets: list[tuple[dataset.Dataset, str] | None]
+        partitions = self.partitions(selected_partitions=selected_partitions,
+                                     filters=filters,
+                                     indexer=indexer)
 
         if indexer is not None:
             arguments = tuple(
-                collection.abc.build_indexer_args(
-                    self.view_ref,
-                    filters,
-                    indexer,
-                    partitions=self.partitions()))
+                collection.abc.build_indexer_args(collection=self.view_ref,
+                                                  filters=filters,
+                                                  indexer=indexer,
+                                                  partitions=partitions))
             if len(arguments) == 0:
                 return None
         else:
             arguments = tuple((self.view_ref.partitioning.parse(item), [])
-                              for item in self.partitions(filters=filters))
+                              for item in partitions)
 
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()

@@ -294,27 +294,47 @@ class ReadOnlyCollection:
         return pathlib.Path(path).relative_to(
             self.partition_properties.dir).as_posix()
 
+    def _normalize_partitions(self,
+                              partitions: Iterable[str]) -> Iterable[str]:
+        """Normalize the provided list of partitions to include the full
+        partition's path.
+
+        Args:
+            partitions: The list of partitions to normalize.
+
+        Returns:
+            The list of partitions.
+        """
+        return filter(
+            self.fs.exists,
+            map(
+                lambda partition: self.fs.sep.join(
+                    (self.partition_properties.dir, partition)),
+                sorted(set(partitions))))
+
     def partitions(
         self,
         *,
-        cache: Iterable[str] | None = None,
-        lock: bool = False,
         filters: PartitionFilter = None,
+        indexer: Indexer | None = None,
+        selected_partitions: Iterable[str] | None = None,
         relative: bool = False,
+        lock: bool = False,
     ) -> Iterator[str]:
         """List the partitions of the collection.
 
         Args:
-            cache: The list of partitions to use. If None, the partitions are
-                listed.
-            lock: Whether to lock the collection or not to avoid listing
-                partitions while the collection is being modified.
             filters: The predicate used to filter the partitions to load. If
                 the predicate is a string, it is a valid python expression to
                 filter the partitions, using the partitioning scheme as
                 variables. If the predicate is a function, it is a function that
                 takes the partition scheme as input and returns a boolean.
+            indexer: The indexer to apply.
+            selected_partitions: A list of partitions to load (using the
+                partition relative path).
             relative: Whether to return the relative path.
+            lock: Whether to lock the collection or not to avoid listing
+                partitions while the collection is being modified.
 
         Returns:
             The list of partitions.
@@ -336,8 +356,9 @@ class ReadOnlyCollection:
 
         base_dir: str = self.partition_properties.dir
         sep: str = self.fs.sep
-        if cache is not None:
-            partitions: Iterable[str] = cache
+        if selected_partitions is not None:
+            partitions: Iterable[str] = self._normalize_partitions(
+                partitions=selected_partitions)
         else:
             if lock:
                 with self.synchronizer:
@@ -346,6 +367,17 @@ class ReadOnlyCollection:
             else:
                 partitions = self.partitioning.list_partitions(
                     self.fs, base_dir)
+
+        if indexer is not None:
+            # List of partitions existing in the indexer and partitions list
+            partitions = list(partitions)
+            partitions = [
+                p for p in list_partitions_from_indexer(
+                    indexer=indexer,
+                    partition_handler=self.partitioning,
+                    base_dir=self.partition_properties.dir,
+                    sep=self.fs.sep) if p in partitions
+            ]
 
         yield from (self._relative_path(item) if relative else item
                     for item in partitions
@@ -553,9 +585,11 @@ class ReadOnlyCollection:
         filters: PartitionFilter = None,
         indexer: Indexer | None = None,
         selected_variables: Iterable[str] | None = None,
+        selected_partitions: Iterable[str] | None = None,
         distributed: bool = True,
     ) -> dataset.Dataset | None:
-        """Load the selected partitions.
+        """Load collection's data, respecting filters, indexer, and selected
+        partitions constraints.
 
         Args:
             delayed: Whether to load data in a dask array or not.
@@ -565,6 +599,8 @@ class ReadOnlyCollection:
             indexer: The indexer to apply.
             selected_variables: A list of variables to retain from the
                 collection. If None, all variables are kept.
+            selected_partitions: A list of partitions to load (using the
+                partition relative path).
             distributed: Whether to use dask or not. Default To True.
 
         Returns:
@@ -588,87 +624,24 @@ class ReadOnlyCollection:
         if not distributed:
             delayed = False
 
-        arrays: list[dataset.Dataset]
-        client: dask.distributed.Client
-
         if indexer is None:
-            # No indexer, so the dataset is loaded directly for each
-            # selected partition.
-            selected_partitions = tuple(self.partitions(filters=filters))
-            if len(selected_partitions) == 0:
-                return None
-
-            partitions = self.partitions(filters=filters)
-
-            if distributed:
-                client = dask_utils.get_client()
-                bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-                    partitions,
-                    npartitions=dask_utils.dask_workers(client,
-                                                        cores_only=True))
-                arrays = bag.map(
-                    storage.open_zarr_group,
-                    delayed=delayed,
-                    fs=self.fs,
-                    selected_variables=selected_variables).compute()
-            else:
-                arrays = [
-                    storage.open_zarr_group(
-                        dirname=partition,
-                        delayed=delayed,
-                        fs=self.fs,
-                        selected_variables=selected_variables)
-                    for partition in partitions
-                ]
+            arrays = self._load_partitions(
+                delayed=delayed,
+                filters=filters,
+                selected_variables=selected_variables,
+                selected_partitions=selected_partitions,
+                distributed=distributed)
         else:
-            # We're going to reuse the indexer variable, so ensure it is
-            # an iterable not a generator.
-            indexer = tuple(indexer)
+            arrays = self._load_partitions_indexer(
+                indexer=indexer,
+                delayed=delayed,
+                filters=filters,
+                selected_variables=selected_variables,
+                selected_partitions=selected_partitions,
+                distributed=distributed)
 
-            # Build the indexer arguments.
-            partitions = self.partitions(filters=filters,
-                                         cache=list_partitions_from_indexer(
-                                             indexer, self.partitioning,
-                                             self.partition_properties.dir,
-                                             self.fs.sep))
-            args = tuple(
-                build_indexer_args(self,
-                                   filters,
-                                   indexer,
-                                   partitions=partitions))
-            if len(args) == 0:
-                return None
-
-            # Finally, load the selected partitions and apply the indexer.
-            if distributed:
-                client = dask_utils.get_client()
-                bag = dask.bag.core.from_sequence(
-                    args,
-                    npartitions=dask_utils.dask_workers(client,
-                                                        cores_only=True))
-
-                arrays = list(
-                    itertools.chain.from_iterable(
-                        bag.map(
-                            _load_and_apply_indexer,
-                            delayed=delayed,
-                            fs=self.fs,
-                            partition_handler=self.partitioning,
-                            partition_properties=self.partition_properties,
-                            selected_variables=selected_variables,
-                        ).compute()))
-            else:
-                arrays = list(
-                    itertools.chain.from_iterable([
-                        _load_and_apply_indexer(
-                            args=a,
-                            delayed=delayed,
-                            fs=self.fs,
-                            partition_handler=self.partitioning,
-                            partition_properties=self.partition_properties,
-                            selected_variables=selected_variables)
-                        for a in args
-                    ]))
+        if arrays is None:
+            return None
 
         array: dataset.Dataset = arrays.pop(0)
         if arrays:
@@ -681,6 +654,138 @@ class ReadOnlyCollection:
                                         selected_variables=selected_variables))
         array.fill_attrs(self.metadata)
         return array
+
+    def _load_partitions(
+        self,
+        *,
+        delayed: bool = True,
+        filters: PartitionFilter = None,
+        selected_variables: Iterable[str] | None = None,
+        selected_partitions: Iterable[str] | None = None,
+        distributed: bool = True,
+    ) -> list[dataset.Dataset] | None:
+        """Load collection's partitions, respecting filters, and selected
+        partitions constraints.
+
+        Args:
+            delayed: Whether to load data in a dask array or not.
+            filters: The predicate used to filter the partitions to load. To
+                get more information on the predicate, see the documentation of
+                the :meth:`partitions` method.
+            selected_variables: A list of variables to retain from the
+                collection. If None, all variables are kept.
+            selected_partitions: A list of partitions to load (using the
+                partition relative path).
+            distributed: Whether to use dask or not. Default To True.
+
+        Returns:
+            The list of dataset for each partition, or None if no
+            partitions were selected.
+        """
+        # No indexer, so the dataset is loaded directly for each
+        # selected partition.
+        selected_partitions = tuple(
+            self.partitions(filters=filters,
+                            selected_partitions=selected_partitions))
+
+        if len(selected_partitions) == 0:
+            return None
+
+        if distributed:
+            client = dask_utils.get_client()
+            bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
+                selected_partitions,
+                npartitions=dask_utils.dask_workers(client, cores_only=True))
+            arrays = bag.map(storage.open_zarr_group,
+                             delayed=delayed,
+                             fs=self.fs,
+                             selected_variables=selected_variables).compute()
+        else:
+            arrays = [
+                storage.open_zarr_group(dirname=partition,
+                                        delayed=delayed,
+                                        fs=self.fs,
+                                        selected_variables=selected_variables)
+                for partition in selected_partitions
+            ]
+
+        return arrays
+
+    def _load_partitions_indexer(
+        self,
+        *,
+        indexer: Indexer,
+        delayed: bool = True,
+        filters: PartitionFilter = None,
+        selected_variables: Iterable[str] | None = None,
+        selected_partitions: Iterable[str] | None = None,
+        distributed: bool = True,
+    ) -> list[dataset.Dataset] | None:
+        """Load collection's partitions, respecting filters, indexer, and
+        selected partitions constraints.
+
+        Args:
+            indexer: The indexer to apply.
+            delayed: Whether to load data in a dask array or not.
+            filters: The predicate used to filter the partitions to load. To
+                get more information on the predicate, see the documentation of
+                the :meth:`partitions` method.
+            selected_variables: A list of variables to retain from the
+                collection. If None, all variables are kept.
+            selected_partitions: A list of partitions to load (using the
+                partition relative path).
+            distributed: Whether to use dask or not. Default To True.
+
+        Returns:
+            The list of dataset for each partition, or None if no
+            partitions were selected.
+        """
+        # We're going to reuse the indexer variable, so ensure it is
+        # an iterable not a generator.
+        indexer = tuple(indexer)
+
+        # Build the indexer arguments.
+        partitions = self.partitions(selected_partitions=selected_partitions,
+                                     filters=filters,
+                                     indexer=indexer)
+        args = tuple(
+            build_indexer_args(collection=self,
+                               filters=filters,
+                               indexer=indexer,
+                               partitions=partitions))
+        if len(args) == 0:
+            return None
+
+        # Finally, load the selected partitions and apply the indexer.
+        if distributed:
+            client = dask_utils.get_client()
+            bag = dask.bag.core.from_sequence(
+                args,
+                npartitions=dask_utils.dask_workers(client, cores_only=True))
+
+            arrays = list(
+                itertools.chain.from_iterable(
+                    bag.map(
+                        _load_and_apply_indexer,
+                        delayed=delayed,
+                        fs=self.fs,
+                        partition_handler=self.partitioning,
+                        partition_properties=self.partition_properties,
+                        selected_variables=selected_variables,
+                    ).compute()))
+        else:
+            arrays = list(
+                itertools.chain.from_iterable([
+                    _load_and_apply_indexer(
+                        args=a,
+                        delayed=delayed,
+                        fs=self.fs,
+                        partition_handler=self.partitioning,
+                        partition_properties=self.partition_properties,
+                        selected_variables=selected_variables) for a in args
+                ]))
+
+        return arrays
 
     def _bag_from_partitions(
         self,

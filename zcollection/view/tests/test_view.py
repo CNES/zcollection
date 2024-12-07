@@ -114,6 +114,18 @@ def test_view(
     assert len(tuple(instance.partitions())) == 5
     assert len(tuple(instance.view_ref.partitions())) == 6
 
+    selected_partitions = [
+        'year=2000/month=01/day=01', 'year=2000/month=01/day=07',
+        'year=2000/month=01/day=13'
+    ]
+    assert len(
+        tuple(
+            instance.partitions(selected_partitions=selected_partitions))) == 2
+    assert len(
+        tuple(
+            instance.view_ref.partitions(
+                selected_partitions=selected_partitions))) == 3
+
     zds = instance.load(delayed=delayed, distributed=distributed)
     assert zds is not None
     assert set(zds['time'].values.astype('datetime64[D]')) == {
