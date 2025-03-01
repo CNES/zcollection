@@ -23,7 +23,7 @@ requirements:
     - numpy >=1.20
     - python
     - xarray
-    - zarr
+    - zarr < 3
 test:
   requires:
     - pytest

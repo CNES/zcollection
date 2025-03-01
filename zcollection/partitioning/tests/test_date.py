@@ -8,6 +8,7 @@ Test partitioning by date.
 """
 from __future__ import annotations
 
+from typing import Literal
 import dataclasses
 import pickle
 import random
@@ -84,29 +85,30 @@ def test_split_dataset(
     delayed: bool,
 ) -> None:
     """Test the split_dataset method."""
-    for end_date, indices, resolution in [
-        (
-            numpy.datetime64('2001-12-31', 'Y'),
-            slice(0, 1),
-            'Y',
-        ),
-        (
-            numpy.datetime64('2000-12-31', 'M'),
-            slice(0, 2),
-            'M',
-        ),
-        (
-            numpy.datetime64('2000-12-31', 'D'),
-            slice(0, 3),
-            'D',
-        ),
-        (
-            numpy.datetime64('2000-01-31', 'h'),
-            slice(0, 4),
-            'h',
-        ),
-    ]:
-
+    splits: list[tuple[numpy.datetime64, slice,
+                       Literal['Y', 'M', 'D', 'h']]] = [
+                           (
+                               numpy.datetime64('2001-12-31', 'Y'),
+                               slice(0, 1),
+                               'Y',
+                           ),
+                           (
+                               numpy.datetime64('2000-12-31', 'M'),
+                               slice(0, 2),
+                               'M',
+                           ),
+                           (
+                               numpy.datetime64('2000-12-31', 'D'),
+                               slice(0, 3),
+                               'D',
+                           ),
+                           (
+                               numpy.datetime64('2000-01-31', 'h'),
+                               slice(0, 4),
+                               'h',
+                           ),
+                       ]
+    for end_date, indices, resolution in splits:
         # Time delta between two partitions
         timedelta = numpy.timedelta64(1, resolution)
 
@@ -128,7 +130,7 @@ def test_split_dataset(
         assert len(partitioning) == len(range(indices.start, indices.stop))
 
         # Date of the current partition
-        date = numpy.datetime64(START_DATE, resolution)
+        date = START_DATE.astype(f'datetime64[{resolution}]')
 
         # Build the test dataset
         zds = dataset.Dataset.from_xarray(xds)

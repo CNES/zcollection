@@ -8,7 +8,7 @@ Time period
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final, Literal
 from collections.abc import Callable
 import enum
 import re
@@ -23,8 +23,8 @@ PATTERN: Callable[[str], Match[str] | None] = re.compile(
     r'(?:datetime|timedelta)64\[(\w+)\]').search
 
 #: Numpy time units
-RESOLUTION = ('as', 'fs', 'ps', 'ns', 'us', 'ms', 's', 'm', 'h', 'D', 'W', 'M',
-              'Y')
+RESOLUTION: Final = ('as', 'fs', 'ps', 'ns', 'us', 'ms', 's', 'm', 'h', 'D',
+                     'W', 'M', 'Y')
 
 
 def _time64_unit(dtype: DType[Any]) -> str:
@@ -35,7 +35,10 @@ def _time64_unit(dtype: DType[Any]) -> str:
     return match.group(1)
 
 
-def _min_time64_unit(*args: DType[Any]) -> str:
+def _min_time64_unit(
+    *args: DType[Any]
+) -> Literal['as', 'fs', 'ps', 'ns', 'us', 'ms', 's', 'm', 'h', 'D', 'W', 'M',
+             'Y']:
     """Get the minimum unit of time."""
     index = min(RESOLUTION.index(_time64_unit(item)) for item in args)
     return RESOLUTION[index]
@@ -212,7 +215,7 @@ class Period:
                  end: numpy.datetime64,
                  *,
                  within: bool = False) -> None:
-        duration_unit: str = _min_time64_unit(begin.dtype, end.dtype)
+        duration_unit = _min_time64_unit(begin.dtype, end.dtype)
 
         #: The beginning of the period.
         self._begin: numpy.datetime64 = begin
