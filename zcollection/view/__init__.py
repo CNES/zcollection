@@ -610,15 +610,17 @@ class View:
             batches: Iterator[Sequence[Any]] = dask_utils.split_sequence(
                 datasets_list, npartitions
                 or dask_utils.dask_workers(client, cores_only=True))
+
             awaitables: list[dask.distributed.Future] = client.map(
                 wrap_function,
                 tuple(batches),
                 key=func.__name__,
                 base_dir=self.base_dir,
-            func_args=args,
-            func_kwargs=kwargs)storage.execute_transaction(client, self.synchronizer, awaitables)
+                func_args=args,
+                func_kwargs=kwargs)
+            storage.execute_transaction(client, self.synchronizer, awaitables)
         else:
-            wrap_function(datasets_list, self.base_dir)
+            wrap_function(datasets_list, self.base_dir, args, kwargs)
 
     # pylint: disable=duplicate-code
     # false positive, no code duplication

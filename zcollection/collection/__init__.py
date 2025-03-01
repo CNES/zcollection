@@ -635,12 +635,12 @@ class Collection(ReadOnlyCollection):
             storage.execute_transaction(
                 client, self.synchronizer,
                 client.map(local_func,
-                       tuple(batches),
-                       key=func.__name__,
-                       func_args=args,
-                       func_kwargs=kwargs))
+                           tuple(batches),
+                           key=func.__name__,
+                           func_args=args,
+                           func_kwargs=kwargs))
         else:
-            local_func(selected_partitions)
+            local_func(selected_partitions, args, kwargs)
         tuple(map(self.fs.invalidate_cache, selected_partitions))
 
     def drop_variable(

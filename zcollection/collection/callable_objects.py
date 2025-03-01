@@ -16,8 +16,8 @@ from ..type_hints import ArrayLike
 
 #: Function type to load and call a callback function of type
 #: :class:`PartitionCallable`.
-WrappedPartitionCallable = Callable[[Sequence[str], list[Any], dict[str, Any]],
-                                    None]
+WrappedPartitionCallable = Callable[
+    [Sequence[str], tuple[Any, ...], dict[str, Any]], None]
 
 
 #: pylint: disable=too-few-public-methods

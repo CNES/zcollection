@@ -276,7 +276,7 @@ def _wrap_update_func(
         array.
     """
 
-    def wrap_function(partitions: Iterable[str], func_args: list[Any],
+    def wrap_function(partitions: Iterable[str], func_args: tuple[Any, ...],
                       func_kwargs: dict[str, Any]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
@@ -328,7 +328,7 @@ def _wrap_update_func_with_overlap(
     if depth < 0:
         raise ValueError('Depth must be non-negative.')
 
-    def wrap_function(partitions: Sequence[str], func_args: list[Any],
+    def wrap_function(partitions: Sequence[str], func_args: tuple[Any, ...],
                       func_kwargs: dict[str, Any]) -> None:
         # Applying function for each partition's data
         for partition in partitions:

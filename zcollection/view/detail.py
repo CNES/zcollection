@@ -38,9 +38,9 @@ from ..storage import (
 from ..type_hints import ArrayLike, NDArray
 
 #: Type of the function used to update a view.
-ViewUpdateCallable = Callable[
-    [Iterable[tuple[dataset.Dataset, str]], str, list[Any], dict[str,
-                                                                 Any]], None]
+ViewUpdateCallable = Callable[[
+    Iterable[tuple[dataset.Dataset, str]], str, tuple[Any, ...], dict[str, Any]
+], None]
 
 #: Name of the file that contains the checksum of the view.
 CHECKSUM_FILE = '.checksum'
@@ -383,7 +383,7 @@ def _wrap_update_func(
     """
 
     def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
-                      base_dir: str, func_args: list[Any],
+                      base_dir: str, func_args: tuple[Any, ...],
                       func_kwargs: dict[str, Any]) -> None:
         """Wrap the function to be applied to the dataset."""
         for zds, partition in parameters:
@@ -428,7 +428,7 @@ def _wrap_update_func_overlap(
         raise ValueError('The depth must be positive')
 
     def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
-                      base_dir: str, func_args: list[Any],
+                      base_dir: str, func_args: tuple[Any, ...],
                       func_kwargs: dict[str, Any]) -> None:
         """Wrap the function to be applied to the dataset."""
         zds: dataset.Dataset
