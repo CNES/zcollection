@@ -8,6 +8,7 @@ Implementation details.
 """
 from __future__ import annotations
 
+from typing import Any
 import base64
 from collections.abc import Callable, Iterable, Iterator, Sequence
 import dataclasses
@@ -37,8 +38,9 @@ from ..storage import (
 from ..type_hints import ArrayLike, NDArray
 
 #: Type of the function used to update a view.
-ViewUpdateCallable = \
-    Callable[[Iterable[tuple[dataset.Dataset, str]], str], None]
+ViewUpdateCallable = Callable[
+    [Iterable[tuple[dataset.Dataset, str]], str, list[Any], dict[str,
+                                                                 Any]], None]
 
 #: Name of the file that contains the checksum of the view.
 CHECKSUM_FILE = '.checksum'
@@ -350,8 +352,6 @@ def _select_overlap(
 def _wrap_update_func(
     func: collection.UpdateCallable,
     fs: fsspec.AbstractFileSystem,
-    *args,
-    **kwargs,
 ) -> ViewUpdateCallable:
     """Wrap an update function taking a list of partition's dataset and
     partition's path as input and returning None.
@@ -359,19 +359,19 @@ def _wrap_update_func(
     Args:
         func: The update function.
         fs: The file system used to access the variables in the view.
-        *args: The arguments of the update function.
-        **kwargs: The keyword arguments of the update function.
 
     Returns:
         The wrapped function.
     """
 
     def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
-                      base_dir: str) -> None:
+                      base_dir: str, func_args: list[Any],
+                      func_kwargs: dict[str, Any]) -> None:
         """Wrap the function to be applied to the dataset."""
         for zds, partition in parameters:
             # Applying function on partition's data
-            dictionary: dict[str, ArrayLike] = func(zds, *args, **kwargs)
+            dictionary: dict[str, ArrayLike] = func(zds, *func_args,
+                                                    **func_kwargs)
             tuple(
                 update_zarr_array(  # type: ignore[func-returns-value]
                     dirname=join_path(base_dir, partition, varname),
@@ -389,8 +389,6 @@ def _wrap_update_func_overlap(
     fs: fsspec.AbstractFileSystem,
     view_ref: collection.Collection,
     trim: bool,
-    *args,
-    **kwargs,
 ) -> ViewUpdateCallable:
     """Wrap an update function taking a list of partition's dataset and
     partition's path as input and returning None.
@@ -402,8 +400,6 @@ def _wrap_update_func_overlap(
         fs: The file system used to access the variables in the view.
         view_ref: The view reference.
         trim: If True, trim the dataset to the overlap.
-        *args: The arguments of the update function.
-        **kwargs: The keyword arguments of the update function.
 
     Returns:
         The wrapped function.
@@ -414,7 +410,8 @@ def _wrap_update_func_overlap(
         raise ValueError('The depth must be positive')
 
     def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
-                      base_dir: str) -> None:
+                      base_dir: str, func_args: list[Any],
+                      func_kwargs: dict[str, Any]) -> None:
         """Wrap the function to be applied to the dataset."""
         zds: dataset.Dataset
         indices: slice
@@ -425,7 +422,7 @@ def _wrap_update_func_overlap(
             # pylint: disable=duplicate-code
             # False positive with the function _wrap_update_func_with_overlap
             # defined in the module zcollection.collection.detail
-            _update_with_overlap(*args,
+            _update_with_overlap(*func_args,
                                  func=func,
                                  zds=zds,
                                  indices=indices,
@@ -433,7 +430,7 @@ def _wrap_update_func_overlap(
                                  fs=fs,
                                  path=join_path(base_dir, partition),
                                  trim=trim,
-                                 **kwargs)
+                                 **func_kwargs)
             # pylint: enable=duplicate-code
 
     return wrap_function

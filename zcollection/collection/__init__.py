@@ -556,24 +556,21 @@ class Collection(ReadOnlyCollection):
                                                     lock=True))
 
         local_func: WrappedPartitionCallable = _wrap_update_func(
-            *args,
             delayed=delayed,
             func=func,
             fs=self.fs,
             immutable=self._immutable,
+            selected_variables=selected_variables
+        ) if depth == 0 else _wrap_update_func_with_overlap(
+            delayed=delayed,
+            depth=depth,
+            dim=self.partition_properties.dim,
+            func=func,
+            fs=self.fs,
+            immutable=self._immutable,
+            selected_partitions=selected_partitions,
             selected_variables=selected_variables,
-            **kwargs) if depth == 0 else _wrap_update_func_with_overlap(
-                *args,
-                delayed=delayed,
-                depth=depth,
-                dim=self.partition_properties.dim,
-                func=func,
-                fs=self.fs,
-                immutable=self._immutable,
-                selected_partitions=selected_partitions,
-                selected_variables=selected_variables,
-                trim=trim,
-                **kwargs)
+            trim=trim)
 
         client: dask.distributed.Client = dask_utils.get_client()
 
@@ -582,7 +579,11 @@ class Collection(ReadOnlyCollection):
             or dask_utils.dask_workers(client, cores_only=True))
         storage.execute_transaction(
             client, self.synchronizer,
-            client.map(local_func, tuple(batches), key=func.__name__))
+            client.map(local_func,
+                       tuple(batches),
+                       key=func.__name__,
+                       func_args=args,
+                       func_kwargs=kwargs))
         tuple(map(self.fs.invalidate_cache, selected_partitions))
 
     def drop_variable(

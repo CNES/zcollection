@@ -252,13 +252,11 @@ def _load_dataset_with_overlap(
 
 
 def _wrap_update_func(
-    *args,
     delayed: bool,
     func: UpdateCallable,
     fs: fsspec.AbstractFileSystem,
     immutable: str | None,
     selected_variables: Iterable[str] | None,
-    **kwargs,
 ) -> WrappedPartitionCallable:
     """Wrap an update function taking a partition's dataset as input and
     returning variable's values as a numpy array.
@@ -271,8 +269,6 @@ def _wrap_update_func(
         selected_variables: Name of the variables to load from the dataset.
             If None, all variables are loaded.
         trim: Whether to trim the overlap.
-        *args: Positional arguments to pass to the function.
-        **kwargs: Keyword arguments to pass to the function.
 
     Returns:
         The wrapped function that takes a set of dataset partitions and the
@@ -280,12 +276,14 @@ def _wrap_update_func(
         array.
     """
 
-    def wrap_function(partitions: Iterable[str]) -> None:
+    def wrap_function(partitions: Iterable[str], func_args: list[Any],
+                      func_kwargs: dict[str, Any]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
             zds: dataset.Dataset = _load_dataset(delayed, fs, immutable,
                                                  partition, selected_variables)
-            dictionary: dict[str, ArrayLike] = func(zds, *args, **kwargs)
+            dictionary: dict[str, ArrayLike] = func(zds, *func_args,
+                                                    **func_kwargs)
             tuple(
                 update_zarr_array(  # type: ignore[func-returns-value]
                     dirname=join_path(partition, varname),
@@ -297,7 +295,6 @@ def _wrap_update_func(
 
 
 def _wrap_update_func_with_overlap(
-    *args,
     delayed: bool,
     depth: int,
     dim: str,
@@ -307,7 +304,6 @@ def _wrap_update_func_with_overlap(
     selected_partitions: Sequence[str],
     selected_variables: Iterable[str] | None,
     trim: bool,
-    **kwargs,
 ) -> WrappedPartitionCallable:
     """Wrap an update function taking a partition's dataset as input and
     returning variable's values as a numpy array.
@@ -323,8 +319,6 @@ def _wrap_update_func_with_overlap(
         selected_variables: Name of the variables to load from the dataset.
             If None, all variables are loaded.
         trim: Whether to trim the overlap.
-        *args: Positional arguments to pass to the function.
-        **kwargs: Keyword arguments to pass to the function.
 
     Returns:
         The wrapped function that takes a set of dataset partitions and the
@@ -334,7 +328,8 @@ def _wrap_update_func_with_overlap(
     if depth < 0:
         raise ValueError('Depth must be non-negative.')
 
-    def wrap_function(partitions: Sequence[str]) -> None:
+    def wrap_function(partitions: Sequence[str], func_args: list[Any],
+                      func_kwargs: dict[str, Any]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
 
@@ -353,7 +348,7 @@ def _wrap_update_func_with_overlap(
                 selected_variables=selected_variables)
             # pylint: enable=duplicate-code
 
-            _update_with_overlap(*args,
+            _update_with_overlap(*func_args,
                                  func=func,
                                  zds=zds,
                                  indices=indices,
@@ -361,7 +356,7 @@ def _wrap_update_func_with_overlap(
                                  fs=fs,
                                  path=partition,
                                  trim=trim,
-                                 **kwargs)
+                                 **func_kwargs)
 
     return wrap_function
 
