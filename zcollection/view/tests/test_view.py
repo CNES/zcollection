@@ -8,9 +8,9 @@ Test of views
 """
 from __future__ import annotations
 
-import logging
 import pathlib
 
+import distributed
 import numpy
 import pytest
 
@@ -168,7 +168,7 @@ def test_view_update(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
         fs,
         request,
-        caplog):
+        tmpdir):
     """Test the creation of a view."""
     tested_fs = request.getfixturevalue(fs)
 
@@ -190,7 +190,6 @@ def test_view_update(
 
     def to_zero(zds: dataset.Dataset, varname):
         """Update function used to set a variable to 0."""
-        logging.info(log_msg)
         return {varname: zds.variables['var1'].values * 0}
 
     instance.update(to_zero, var_name)  # type: ignore
@@ -198,29 +197,42 @@ def test_view_update(
     data = instance.load(delayed=False)
     assert numpy.all(data.variables[var_name].values == 0)
 
-    def plus_one_with_log(zds: dataset.Dataset, varname):
-        """Update function increasing a variable by 1."""
-        logging.info(log_msg)
-        return {varname: zds.variables[var_name].values + 1}
+    test_dir = tmpdir / 'test'
+    test_dir.mkdir()
 
-    caplog.set_level(logging.INFO)
-    caplog.clear()
+    def plus_one_with_log(zds: dataset.Dataset, varname):
+        """Update function increasing a variable by 1.
+
+        This update function create a new file each time its called.
+        """
+        with distributed.Lock('update'):
+            i = 0
+            f = test_dir / f'file_{i}'
+            while f.exists():
+                i += 1
+                f = test_dir / f'file_{i}'
+
+            pathlib.Path(f).touch()
+
+        return {varname: zds.variables[var_name].values + 1}
 
     instance.update(plus_one_with_log, var_name)  # type: ignore
 
     # One log per partition + 1 log for the initial call
-    assert caplog.text.count(log_msg) == len(list(instance.partitions())) + 1
+    assert len(test_dir.listdir()) == len(list(instance.partitions())) + 1
+
+    test_dir.remove()
+    test_dir.mkdir()
 
     data = instance.load(delayed=False)
     assert numpy.all(data.variables[var_name].values == 1)
 
-    caplog.clear()
     instance.update(
         plus_one_with_log,  # type: ignore
         var_name,
         variables=[var_name])
 
-    assert caplog.text.count(log_msg) == len(list(instance.partitions()))
+    assert len(test_dir.listdir()) == len(list(instance.partitions()))
 
     data = instance.load(delayed=False)
     assert numpy.all(data.variables[var_name].values == 2)
