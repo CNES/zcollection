@@ -517,7 +517,7 @@ class Collection(ReadOnlyCollection):
                 the variables are inferred by calling the function on the first
                 partition. In this case, it is important to ensure that the
                 function can be called twice on the same partition without
-                side-effects. Default is None.
+                side effects. Default is None.
             **kwargs: The keyword arguments to pass to the function.
 
         Raises:
