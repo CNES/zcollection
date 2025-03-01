@@ -38,6 +38,9 @@ def _as_numpy_array(
         with masked data replaced by its fill value and the fill value of the
         offered masked array. Otherwise, the provided array and fill value.
     """
+    if isinstance(arr, dask.array.core.Array):
+        arr = arr.compute()
+
     result: NDArray = numpy.asanyarray(arr)
     if isinstance(result, numpy.ma.MaskedArray):
         if fill_value is not None and not_equal(fill_value, result.fill_value):
