@@ -620,7 +620,7 @@ class ReadOnlyCollection:
             ...     filters=lambda keys: keys["year"] == 2019 and
             ...     keys["month"] == 3 and keys["day"] % 2 == 0)
         """
-        # Delayed has to be True of dask is disabled
+        # Delayed has to be True if dask is disabled
         if not distributed:
             delayed = False
 

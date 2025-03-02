@@ -410,7 +410,7 @@ class View:
             >>> view.load(filters=lambda x: x["time"] == "2020-01-01")
         """
         _assert_have_variables(self.metadata)
-        # Delayed has to be True of dask is disabled
+        # Delayed has to be True if dask is disabled
         if not distributed:
             delayed = False
 

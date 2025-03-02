@@ -584,7 +584,7 @@ class Collection(ReadOnlyCollection):
         if not callable(func):
             raise TypeError('func must be a callable')
 
-        # Delayed has to be True of dask is disabled
+        # Delayed has to be True if dask is disabled
         if not distributed:
             delayed = False
 
