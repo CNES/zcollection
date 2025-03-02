@@ -98,6 +98,7 @@ def _update_fs(
     zds: dataset.Dataset,
     fs: fsspec.AbstractFileSystem,
     *,
+    distributed: bool = True,
     synchronizer: sync.Sync | None = None,
 ) -> None:
     """Updates a dataset stored in a partition.
@@ -106,6 +107,7 @@ def _update_fs(
         dirname: The name of the partition.
         zds: The dataset to update.
         fs: The file system that the partition is stored on.
+        distributed: Whether to use dask or not. Default To True.
         synchronizer: The instance handling access to critical resources.
     """
     # Building a temporary directory to store the new data. The name of the
@@ -122,7 +124,11 @@ def _update_fs(
     # Writing new data.
     try:
         # The synchronization is done by the caller.
-        storage.write_zarr_group(zds, temp, fs, synchronizer or sync.NoSync())
+        storage.write_zarr_group(zds=zds,
+                                 dirname=temp,
+                                 fs=fs,
+                                 synchronizer=synchronizer or sync.NoSync(),
+                                 distributed=distributed)
     except Exception:
         # The "write_zarr_group" method throws the exception if all scheduled
         # tasks are finished. So here we can delete the temporary directory.
@@ -141,6 +147,7 @@ def perform(
     partitioning_dim: str,
     *,
     delayed: bool = True,
+    distributed: bool = True,
     merge_callable: MergeCallable | None,
     synchronizer: sync.Sync | None = None,
     **kwargs,
@@ -155,6 +162,7 @@ def perform(
         partitioning_dim: The partitioning dimension.
         delayed: If True, the existing dataset is loaded lazily. Defaults to
             True.
+        distributed: Whether to use dask or not. Default To True.
         merge_callable: The merge callable. If None, the inserted dataset
             overwrites the existing dataset stored in the partition.
             Defaults to None.
@@ -166,10 +174,16 @@ def perform(
     if merge_callable is None:
         zds = ds_inserted
     else:
-        ds = storage.open_zarr_group(dirname, fs, delayed=delayed)
+        ds = storage.open_zarr_group(dirname,
+                                     fs,
+                                     delayed=delayed if distributed else False)
         # Read dataset does not contain insertion properties.
         # This properties might be loss in the merge_callable depending on which
         # dataset is used.
         ds.copy_properties(ds=ds_inserted)
         zds = merge_callable(ds, ds_inserted, axis, partitioning_dim, **kwargs)
-    _update_fs(dirname, zds, fs, synchronizer=synchronizer)
+    _update_fs(dirname,
+               zds,
+               fs,
+               distributed=distributed,
+               synchronizer=synchronizer)

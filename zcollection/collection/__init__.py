@@ -35,14 +35,21 @@ from .. import (
     storage,
     sync,
 )
-from .abc import PartitionFilter, ReadOnlyCollection
+from .abc import Indexer, PartitionFilter, ReadOnlyCollection
 from .callable_objects import UpdateCallable, WrappedPartitionCallable
 from .detail import (
+    PartitionSlice,
     _insert,
     _try_infer_callable,
     _wrap_update_func,
     _wrap_update_func_with_overlap,
 )
+
+__all__ = ('dask_utils', 'dataset', 'fs_utils', 'merging', 'meta',
+           'partitioning', 'storage', 'sync', 'Indexer', 'PartitionFilter',
+           'ReadOnlyCollection', 'UpdateCallable', 'WrappedPartitionCallable',
+           'PartitionSlice', '_insert', '_try_infer_callable',
+           '_wrap_update_func', '_wrap_update_func_with_overlap')
 
 #: Module logger.
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -306,12 +313,13 @@ class Collection(ReadOnlyCollection):
         merge_callable: merging.MergeCallable | None = None,
         npartitions: int | None = None,
         validate: bool = False,
+        distributed: bool = True,
         **kwargs,
     ) -> Iterable[str]:
         """Insert a dataset into the collection.
 
         Args:
-            ds: The dataset to insert. It can be either an xarray.Dataset or a
+            ds: The dataset to insert. It can be either a xarray.Dataset or a
                 dataset.Dataset object.
             merge_callable: A function to use to merge the existing data set
                 already stored in partitions with the new partitioned data. If
@@ -319,6 +327,9 @@ class Collection(ReadOnlyCollection):
                 partitioned data.
             npartitions: The maximum number of partitions to process in
                 parallel. By default, partitions are processed one by one.
+            validate: Whether to validate dataset metadata before insertion
+                or not.
+            distributed: Whether to use dask or not. Default To True.
             kwargs: Additional keyword arguments passed to the merge callable.
 
                 .. note::
@@ -330,9 +341,6 @@ class Collection(ReadOnlyCollection):
                     multiple threads. If you're using a single Dask worker,
                     partition insertion will happen sequentially and changing
                     this parameter will have no effect.
-
-            validate: Whether to validate dataset metadata before insertion
-                or not.
 
         Returns:
             A list of the inserted partitions.
@@ -372,7 +380,6 @@ class Collection(ReadOnlyCollection):
                 "Provided dataset's metadata do not match the collection's ones"
             )
         ds = ds.set_for_insertion(self.metadata)
-        client: dask.distributed.Client = dask_utils.get_client()
 
         # If the dataset contains variables that should not be partitioned.
         if self._immutable is not None:
@@ -391,11 +398,33 @@ class Collection(ReadOnlyCollection):
         partitions = tuple(
             self.partitioning.split_dataset(ds, self.partition_properties.dim))
 
+        if distributed:
+            self._insert_distributed(ds=ds,
+                                     partitions=partitions,
+                                     npartitions=npartitions,
+                                     merge_callable=merge_callable,
+                                     **kwargs)
+        else:
+            self._insert_sequential(ds=ds,
+                                    partitions=partitions,
+                                    merge_callable=merge_callable,
+                                    **kwargs)
+
+        return (fs_utils.join_path(*((self.partition_properties.dir, ) + item))
+                for item, _ in partitions)
+
+    def _insert_distributed(self, ds: xarray.Dataset | dataset.Dataset,
+                            partitions: tuple[PartitionSlice,
+                                              ...], npartitions: int | None,
+                            merge_callable: merging.MergeCallable | None,
+                            **kwargs):
+        """Insert a dataset into the collection using dask."""
         if npartitions is not None:
             if npartitions < 1:
                 raise ValueError('The number of partitions must be positive')
             npartitions = len(partitions) // npartitions + 1
 
+        client: dask.distributed.Client = dask_utils.get_client()
         scattered_ds: Any = client.scatter(ds)
         for sequence in dask_utils.split_sequence(partitions, npartitions):
             futures: list[dask.distributed.Future] = [
@@ -411,8 +440,21 @@ class Collection(ReadOnlyCollection):
             ]
             storage.execute_transaction(client, self.synchronizer, futures)
 
-        return (fs_utils.join_path(*((self.partition_properties.dir, ) + item))
-                for item, _ in partitions)
+    def _insert_sequential(self, ds: xarray.Dataset | dataset.Dataset,
+                           partitions: tuple[PartitionSlice, ...],
+                           merge_callable: merging.MergeCallable | None,
+                           **kwargs):
+        """Insert a dataset into the collection without using dask."""
+        ds = ds.compute()
+        for partition in partitions:
+            _insert(args=partition,
+                    axis=self.axis,
+                    zds=ds,
+                    fs=self.fs,
+                    merge_callable=merge_callable,
+                    partitioning_properties=self.partition_properties,
+                    distributed=False,
+                    **kwargs)
 
     # pylint: disable=method-hidden
     def drop_partitions(
@@ -420,6 +462,7 @@ class Collection(ReadOnlyCollection):
         *,
         filters: PartitionFilter = None,
         timedelta: datetime.timedelta | None = None,
+        distributed: bool = True,
     ) -> Iterable[str]:
         # pylint: disable=method-hidden
         """Drop the selected partitions.
@@ -430,6 +473,7 @@ class Collection(ReadOnlyCollection):
                 the :meth:`partitions` method.
             timedelta: Select the partitions created before the specified time
                 delta relative to the current time.
+            distributed: Whether to use dask or not. Default To True.
 
         Returns:
             A list of the dropped partitions.
@@ -440,7 +484,6 @@ class Collection(ReadOnlyCollection):
             ...     timedelta=datetime.timedelta(days=30))
         """
         now: datetime.datetime = datetime.datetime.now()
-        client: dask.distributed.Client = dask_utils.get_client()
         folders = list(self.partitions(filters=filters, lock=True))
 
         # No partition selected, nothing to do.
@@ -463,9 +506,14 @@ class Collection(ReadOnlyCollection):
                         folder, now, timedelta),
                     folders))
 
-        storage.execute_transaction(
-            client, self.synchronizer,
-            client.map(self.fs.rm, folders, recursive=True))
+        if distributed:
+            client: dask.distributed.Client = dask_utils.get_client()
+            storage.execute_transaction(
+                client, self.synchronizer,
+                client.map(self.fs.rm, folders, recursive=True))
+        else:
+            for folder in folders:
+                self.fs.rm(path=folder, recursive=True)
 
         def invalidate_cache(path) -> None:
             """Invalidate the cache."""
@@ -488,6 +536,7 @@ class Collection(ReadOnlyCollection):
         selected_variables: list[str] | None = None,
         trim: bool = True,
         variables: Sequence[str] | None = None,
+        distributed: bool = True,
         **kwargs,
     ) -> None:
         # pylint: disable=method-hidden
@@ -518,6 +567,7 @@ class Collection(ReadOnlyCollection):
                 partition. In this case, it is important to ensure that the
                 function can be called twice on the same partition without
                 side effects. Default is None.
+            distributed: Whether to use dask or not. Default To True.
             **kwargs: The keyword arguments to pass to the function.
 
         Raises:
@@ -533,6 +583,10 @@ class Collection(ReadOnlyCollection):
         """
         if not callable(func):
             raise TypeError('func must be a callable')
+
+        # Delayed has to be True if dask is disabled
+        if not distributed:
+            delayed = False
 
         variables = variables or _infer_callable(
             self, func, filters, delayed, selected_variables, *args, **kwargs)
@@ -572,28 +626,33 @@ class Collection(ReadOnlyCollection):
             selected_variables=selected_variables,
             trim=trim)
 
-        client: dask.distributed.Client = dask_utils.get_client()
+        if distributed:
+            client: dask.distributed.Client = dask_utils.get_client()
 
-        batches: Iterator[Sequence[str]] = dask_utils.split_sequence(
-            selected_partitions, npartitions
-            or dask_utils.dask_workers(client, cores_only=True))
-        storage.execute_transaction(
-            client, self.synchronizer,
-            client.map(local_func,
-                       tuple(batches),
-                       key=func.__name__,
-                       func_args=args,
-                       func_kwargs=kwargs))
+            batches: Iterator[Sequence[str]] = dask_utils.split_sequence(
+                selected_partitions, npartitions
+                or dask_utils.dask_workers(client, cores_only=True))
+            storage.execute_transaction(
+                client, self.synchronizer,
+                client.map(local_func,
+                           tuple(batches),
+                           key=func.__name__,
+                           func_args=args,
+                           func_kwargs=kwargs))
+        else:
+            local_func(selected_partitions, args, kwargs)
         tuple(map(self.fs.invalidate_cache, selected_partitions))
 
     def drop_variable(
         self,
         variable: str,
+        distributed: bool = True,
     ) -> None:
         """Delete the variable from the collection.
 
         Args:
             variable: The variable to delete.
+            distributed: Whether to use dask or not. Default To True.
 
         Raises:
             ValueError: If the variable doesn't exist in the collection or is
@@ -619,23 +678,34 @@ class Collection(ReadOnlyCollection):
                 raise ValueError(
                     f'The variable {variable!r} is part of the immutable '
                     'dataset.')
-        client: dask.distributed.Client = dask_utils.get_client()
-        bag: dask.bag.core.Bag = self._bag_from_partitions(lock=True)
-        awaitables: list[
-            dask.distributed.Future] = dask.distributed.futures_of(
-                bag.map(storage.del_zarr_array, variable, self.fs).persist())
-        storage.execute_transaction(client, self.synchronizer, awaitables)
+
+        if distributed:
+            client: dask.distributed.Client = dask_utils.get_client()
+            bag: dask.bag.core.Bag = self._bag_from_partitions(lock=True)
+            awaitables: list[
+                dask.distributed.Future] = dask.distributed.futures_of(
+                    bag.map(storage.del_zarr_array, variable,
+                            self.fs).persist())
+            storage.execute_transaction(client, self.synchronizer, awaitables)
+        else:
+            for partition in self.partitions(lock=True):
+                storage.del_zarr_array(dirname=partition,
+                                       name=variable,
+                                       fs=self.fs)
+
         del self.metadata.variables[variable]
         self._write_config()
 
     def add_variable(
         self,
         variable: meta.Variable | dataset.Variable,
+        distributed: bool = True,
     ) -> None:
         """Add a variable to the collection.
 
         Args:
             variable: The variable to add.
+            distributed: Whether to use dask or not. Default To True.
 
         Raises:
             ValueError: if the variable is already part of the collection, it
@@ -644,6 +714,7 @@ class Collection(ReadOnlyCollection):
 
         Example:
             >>> import zcollection
+            >>> import numpy
             >>> collection = zcollection.open_collection(
             ...     "my_collection", mode="w")
             >>> new_variable = meta.Variable(
@@ -668,8 +739,6 @@ class Collection(ReadOnlyCollection):
         # from the collection metadata.
         variable = variable.set_for_insertion()
 
-        client: dask.distributed.Client = dask_utils.get_client()
-
         template: meta.Variable = self.metadata.search_same_dimensions_as(
             variable)
         chunks: dict[str, int] = {
@@ -677,17 +746,26 @@ class Collection(ReadOnlyCollection):
             for dim in self.metadata.chunks
         }
         try:
-            bag: dask.bag.core.Bag = self._bag_from_partitions(lock=True)
-            futures: list[
-                dask.distributed.Future] = dask.distributed.futures_of(
-                    bag.map(storage.add_zarr_array,
-                            variable,
-                            template.name,
-                            self.fs,
-                            chunks=chunks).persist())
-            storage.execute_transaction(client, self.synchronizer, futures)
+            if distributed:
+                client: dask.distributed.Client = dask_utils.get_client()
+                bag: dask.bag.core.Bag = self._bag_from_partitions(lock=True)
+                futures: list[
+                    dask.distributed.Future] = dask.distributed.futures_of(
+                        bag.map(storage.add_zarr_array,
+                                variable,
+                                template.name,
+                                self.fs,
+                                chunks=chunks).persist())
+                storage.execute_transaction(client, self.synchronizer, futures)
+            else:
+                for partition in self.partitions(lock=True):
+                    storage.add_zarr_array(dirname=partition,
+                                           variable=variable,
+                                           template=template.name,
+                                           fs=self.fs,
+                                           chunks=chunks)
         except Exception:
-            self.drop_variable(variable.name)
+            self.drop_variable(variable.name, distributed=distributed)
             raise
 
     def copy(
@@ -699,6 +777,7 @@ class Collection(ReadOnlyCollection):
         mode: Literal['r', 'w'] = 'w',
         npartitions: int | None = None,
         synchronizer: sync.Sync | None = None,
+        distributed: bool = True,
     ) -> Collection:
         """Copy the collection to a new location.
 
@@ -712,6 +791,7 @@ class Collection(ReadOnlyCollection):
                 is number of cores.
             synchronizer: The synchronizer used to synchronize the collection
                 copied. Default is None.
+            distributed: Whether to use dask or not. Default To True.
 
         Returns:
             The new collection.
@@ -725,28 +805,44 @@ class Collection(ReadOnlyCollection):
         _LOGGER.info('Copying of the collection to %r', target)
         if filesystem is None:
             filesystem = fs_utils.get_fs(target)
-        client: dask.distributed.Client = dask_utils.get_client()
-        npartitions = npartitions or dask_utils.dask_workers(client,
-                                                             cores_only=True)
 
-        # Sequence of (source, target) to copy split in npartitions
-        args = tuple(
-            dask_utils.split_sequence(
-                [(item,
-                  fs_utils.join_path(
-                      target,
-                      os.path.relpath(item, self.partition_properties.dir)))
-                 for item in self.partitions(filters=filters)], npartitions))
-        # Copy the selected partitions
-        partial = functools.partial(fs_utils.copy_tree,
-                                    fs_source=self.fs,
-                                    fs_target=filesystem)
+        partitions = self.partitions(filters=filters)
 
-        def worker_task(args: Sequence[tuple[str, str]]) -> None:
-            """Function call on each worker to copy the partitions."""
-            tuple(map(lambda arg: partial(*arg), args))
+        if distributed:
+            client: dask.distributed.Client = dask_utils.get_client()
+            npartitions = npartitions or dask_utils.dask_workers(
+                client, cores_only=True)
 
-        client.gather(client.map(worker_task, args))
+            # Sequence of (source, target) to copy split in npartitions
+            args = tuple(
+                dask_utils.split_sequence([
+                    (item,
+                     fs_utils.join_path(
+                         target,
+                         os.path.relpath(item, self.partition_properties.dir)))
+                    for item in partitions
+                ], npartitions))
+            # Copy the selected partitions
+            partial = functools.partial(fs_utils.copy_tree,
+                                        fs_source=self.fs,
+                                        fs_target=filesystem)
+
+            def worker_task(args: Sequence[tuple[str, str]]) -> None:
+                """Function call on each worker to copy the partitions."""
+                tuple(map(lambda arg: partial(*arg), args))
+
+            client.gather(client.map(worker_task, args))
+        else:
+            for source_path in partitions:
+                target_path = fs_utils.join_path(
+                    target,
+                    os.path.relpath(source_path,
+                                    self.partition_properties.dir))
+                fs_utils.copy_tree(source=source_path,
+                                   target=target_path,
+                                   fs_source=self.fs,
+                                   fs_target=filesystem)
+
         # Then the remaining files in the root directory (config, metadata,
         # etc.)
         fs_utils.copy_files([
@@ -754,6 +850,7 @@ class Collection(ReadOnlyCollection):
             for item in self.fs.listdir(self.partition_properties.dir,
                                         detail=True) if item['type'] == 'file'
         ], target, self.fs, filesystem)
+
         return Collection.from_config(target,
                                       mode=mode,
                                       filesystem=filesystem,
@@ -761,6 +858,7 @@ class Collection(ReadOnlyCollection):
 
     def validate_partitions(self,
                             filters: PartitionFilter | None = None,
+                            distributed: bool = True,
                             fix: bool = False) -> list[str]:
         """Validates partitions in the collection by checking if they exist and
         are readable. If `fix` is True, invalid partitions will be removed from
@@ -771,6 +869,7 @@ class Collection(ReadOnlyCollection):
                 validate. By default, all partitions are validated.
             fix: Whether to fix invalid partitions by removing them from
                 the collection.
+            distributed: Whether to use dask or not. Default To True.
 
         Returns:
             A list of invalid partitions.
@@ -778,19 +877,35 @@ class Collection(ReadOnlyCollection):
         partitions = tuple(self.partitions(filters=filters))
         if not partitions:
             return []
-        client: dask.distributed.Client = dask_utils.get_client()
-        futures: list[dask.distributed.Future] = client.map(
-            _check_partition,
-            partitions,
-            fs=self.fs,
-            partitioning_strategy=self.partitioning)
+
         invalid_partitions: list[str] = []
-        for item in dask.distributed.as_completed(futures):
-            partition, valid = item.result()  # type: ignore
-            if not valid:
-                warnings.warn(f'Invalid partition: {partition}',
+
+        def _validity_check(_partition, _valid):
+            """Check partition validity and add it to invalid partitions if not
+            valid."""
+            if not _valid:
+                warnings.warn(f'Invalid partition: {_partition}',
                               category=RuntimeWarning)
-                invalid_partitions.append(partition)
+                invalid_partitions.append(_partition)
+
+        if distributed:
+            client: dask.distributed.Client = dask_utils.get_client()
+            futures: list[dask.distributed.Future] = client.map(
+                _check_partition,
+                partitions,
+                fs=self.fs,
+                partitioning_strategy=self.partitioning)
+
+            for item in dask.distributed.as_completed(futures):
+                partition, valid = item.result()  # type: ignore
+                _validity_check(_partition=partition, _valid=valid)
+        else:
+            for partition in partitions:
+                partition, valid = _check_partition(
+                    partition,
+                    fs=self.fs,
+                    partitioning_strategy=self.partitioning)
+                _validity_check(_partition=partition, _valid=valid)
 
         if fix and invalid_partitions:
             for item in invalid_partitions:

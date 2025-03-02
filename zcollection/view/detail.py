@@ -38,9 +38,9 @@ from ..storage import (
 from ..type_hints import ArrayLike, NDArray
 
 #: Type of the function used to update a view.
-ViewUpdateCallable = Callable[
-    [Iterable[tuple[dataset.Dataset, str]], str, list[Any], dict[str,
-                                                                 Any]], None]
+ViewUpdateCallable = Callable[[
+    Iterable[tuple[dataset.Dataset, str]], str, tuple[Any, ...], dict[str, Any]
+], None]
 
 #: Name of the file that contains the checksum of the view.
 CHECKSUM_FILE = '.checksum'
@@ -129,7 +129,6 @@ def _drop_zarr_zarr(partition: str,
 
     Args:
         partition: The partition that contains the array to drop.
-        base_dir: Base directory for the Zarr array.
         fs: The filesystem used to delete the Zarr array.
         variable: The name of the variable to drop.
         ignore_errors: If True, ignore errors when dropping the array.
@@ -153,7 +152,7 @@ def _load_one_dataset(
     fs: fsspec.AbstractFileSystem,
     selected_variables: Iterable[str] | None,
     view_ref: collection.Collection,
-    variables: Sequence[str],
+    variables: Iterable[str],
 ) -> tuple[dataset.Dataset, str] | None:
     """Load a dataset from a partition stored in the reference collection and
     merge it with the variables defined in this view.
@@ -247,7 +246,7 @@ def _assert_variable_handled(reference: meta.Dataset, view: meta.Dataset,
 
 def _load_datasets_list(
     *,
-    client: dask.distributed.Client,
+    client: dask.distributed.Client | None,
     base_dir: str,
     delayed: bool,
     fs: fsspec.AbstractFileSystem,
@@ -259,7 +258,8 @@ def _load_datasets_list(
     """Load datasets from a list of partitions.
 
     Args:
-        client: The client used to load the datasets.
+        client: The client used to load the datasets (or None to
+            avoid dask usage).
         base_dir: Base directory of the view.
         delayed: If True, load the dataset lazily.
         fs: The file system used to access the variables in the view.
@@ -273,19 +273,37 @@ def _load_datasets_list(
     """
     arguments: tuple[tuple[tuple[tuple[str, int], ...], list], ...] = tuple(
         (view_ref.partitioning.parse(item), []) for item in partitions)
-    futures: list[dask.distributed.Future] = client.map(
-        _load_one_dataset,
-        arguments,
-        base_dir=base_dir,
-        delayed=delayed,
-        fs=fs,
-        selected_variables=view_ref.metadata.select_variables(
-            keep_variables=selected_variables),
-        view_ref=client.scatter(view_ref),
-        variables=metadata.select_variables(selected_variables))
 
-    return filter(lambda item: item is not None,
-                  client.gather(futures))  # type: ignore[arg-type]
+    datasets: list[tuple[dataset.Dataset, str] | None]
+
+    if client is not None:
+        futures: list[dask.distributed.Future] = client.map(
+            _load_one_dataset,
+            arguments,
+            base_dir=base_dir,
+            delayed=delayed,
+            fs=fs,
+            selected_variables=view_ref.metadata.select_variables(
+                keep_variables=selected_variables),
+            view_ref=client.scatter(view_ref),
+            variables=metadata.select_variables(selected_variables))
+        datasets = client.gather(futures)
+    else:
+        datasets = [
+            _load_one_dataset(
+                arg,
+                base_dir=base_dir,
+                delayed=False,
+                fs=fs,
+                selected_variables=view_ref.metadata.select_variables(
+                    keep_variables=selected_variables),
+                view_ref=view_ref,
+                variables=metadata.select_variables(selected_variables))
+            for arg in arguments
+        ]
+    return filter(
+        lambda item: item is not None,  # type: ignore[arg-type]
+        datasets)
 
 
 def _assert_have_variables(metadata: meta.Dataset) -> None:
@@ -365,7 +383,7 @@ def _wrap_update_func(
     """
 
     def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
-                      base_dir: str, func_args: list[Any],
+                      base_dir: str, func_args: tuple[Any, ...],
                       func_kwargs: dict[str, Any]) -> None:
         """Wrap the function to be applied to the dataset."""
         for zds, partition in parameters:
@@ -410,7 +428,7 @@ def _wrap_update_func_overlap(
         raise ValueError('The depth must be positive')
 
     def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
-                      base_dir: str, func_args: list[Any],
+                      base_dir: str, func_args: tuple[Any, ...],
                       func_kwargs: dict[str, Any]) -> None:
         """Wrap the function to be applied to the dataset."""
         zds: dataset.Dataset

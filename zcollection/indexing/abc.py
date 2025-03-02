@@ -356,7 +356,7 @@ class Indexer(abc.ABC):
         return self._table
 
     def _table_2_indexer(self, table: pyarrow.Table,
-                         only_partition_keys: bool) -> collection.abc.Indexer:
+                         only_partition_keys: bool) -> collection.Indexer:
         """Convert a table to an indexer.
 
         Args:
@@ -409,7 +409,7 @@ class Indexer(abc.ABC):
         logical_op: str | None = None,
         mask: pyarrow.ChunkedArray | None = None,
         only_partition_keys: bool = True,
-    ) -> collection.abc.Indexer:
+    ) -> collection.Indexer:
         """Query the index.
 
         Args:
