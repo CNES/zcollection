@@ -9,6 +9,7 @@ Test of the collections
 from __future__ import annotations
 
 import concurrent.futures
+import copy
 import datetime
 import io
 import multiprocessing
@@ -195,9 +196,10 @@ def test_insert(
     assert dates.min() == numpy.datetime64('2000-04-06')
     assert dates.max() == numpy.datetime64('2000-04-24')
 
-    for path, item in zcollection.iterate_on_records(relative=True):
-        assert isinstance(path, str)
-        assert isinstance(item, zarr.Group)
+    for path_relative, path_absolute in zcollection.iterate_on_records():
+        assert isinstance(path_relative, str)
+        assert isinstance(path_absolute, str)
+        assert path_relative in path_absolute
 
     zcollection = convenience.open_collection(str(tested_fs.collection),
                                               mode='r',
@@ -722,49 +724,60 @@ def test_insert_failed(
     zcollection.insert(zds, distributed=distributed)
 
 
-@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
-@pytest.mark.parametrize('distributed', [False, True])
-def test_insert_validation(
+def test_insert_invalid_dimensions(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-    arg,
-    distributed,
     request,
 ) -> None:
-    """Test the insertion of a dataset with metadata validation."""
-    tested_fs = request.getfixturevalue(arg)
-    zds = next(create_test_dataset_with_fillvalue())
+    """Test the insertion of a dataset with invalid dimensions properties."""
+    tested_fs = request.getfixturevalue('local_fs')
+    delayed = False
+    zds = next(create_test_dataset(delayed=delayed))
+    zcollection = collection.Collection('time',
+                                        zds.metadata(),
+                                        partitioning.Date(('time', ), 'D'),
+                                        str(tested_fs.collection),
+                                        filesystem=tested_fs.fs)
 
-    zcollection = convenience.create_collection(
+    # Swapping dimensions names to create invalid ones
+    ds = zds.to_xarray().rename({
+        'num_lines': 'num_pixels',
+        'num_pixels': 'num_lines'
+    })
+
+    with pytest.raises(ValueError, match='Inserted dimension '):
+        zcollection.insert(ds)
+
+
+def test_insert_invalid_variable(
+    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    request,
+) -> None:
+    """Test the insertion of a dataset containing a variable with invalid
+    properties."""
+    tested_fs = request.getfixturevalue('local_fs')
+    delayed = False
+    zds = next(create_test_dataset(delayed=delayed))
+    zds_x = copy.deepcopy(zds)
+
+    # Changing variable dtype and fill value
+    zds_x['var1'].fill_value = 10
+    zds_x['var1'].array = zds_x['var1'].array.astype('int8')
+
+    zcollection = collection.Collection(
         axis='time',
-        ds=zds,
-        partition_handler=partitioning.Date(('time', ), 'M'),
+        ds=zds_x.metadata(),
+        partition_handler=partitioning.Date(('time', ), 'D'),
         partition_base_dir=str(tested_fs.collection),
         filesystem=tested_fs.fs)
-    zcollection.insert(zds, distributed=distributed)
 
-    zds = next(create_test_dataset_with_fillvalue())
+    with pytest.raises(ValueError, match='has invalid dtype'):
+        zcollection.insert(zds)
 
-    # Inserting a dataset containing valid attributes
-    zcollection.insert(zds,
-                       merge_callable=merging.merge_time_series,
-                       tolerance=numpy.timedelta64(1, 'm'),
-                       distributed=distributed)
+    # Fixing dtype
+    zds['var1'].array = zds['var1'].array.astype('int8')
 
-    # Inserting a dataset containing an invalid attributes
-    zds = next(create_test_dataset_with_fillvalue())
-    zds.attrs = (meta.Attribute('invalid', 1), )
-
-    with pytest.raises(ValueError):
-        zcollection.insert(zds, validate=True, distributed=distributed)
-
-    # Inserting a dataset containing variables with invalid attributes
-    zds = next(create_test_dataset_with_fillvalue())
-
-    for var in zds.variables.values():
-        var.attrs = (meta.Attribute('invalid', 1), )
-
-    with pytest.raises(ValueError):
-        zcollection.insert(zds, validate=True, distributed=distributed)
+    with pytest.raises(ValueError, match='has invalid fill_value'):
+        zcollection.insert(zds)
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
@@ -888,32 +901,32 @@ def test_insert_immutable(
     tested_fs = request.getfixturevalue(arg)
 
     zds_reference = dataset.Dataset(
-        [
+        variables=[
             dataset.Array(
-                'time',
-                numpy.arange(numpy.datetime64('2000-01-01'),
-                             numpy.datetime64('2000-01-30'),
-                             numpy.timedelta64(1, 'D')),
-                ('time', ),
+                name='time',
+                data=numpy.arange(numpy.datetime64('2000-01-01'),
+                                  numpy.datetime64('2000-01-30'),
+                                  numpy.timedelta64(1, 'D')),
+                dimensions=('time', ),
             ),
             dataset.Array(
-                'lon',
-                numpy.arange(0, 360, 1),
-                ('lon', ),
+                name='lon',
+                data=numpy.arange(0, 360, 1),
+                dimensions=('lon', ),
             ),
             dataset.Array(
-                'lat',
-                numpy.arange(-90, 90, 1),
-                ('lat', ),
+                name='lat',
+                data=numpy.arange(-90, 90, 1),
+                dimensions=('lat', ),
             ),
             dataset.Array(
-                'grid',
-                numpy.random.rand(
+                name='grid',
+                data=numpy.random.rand(
                     29,
                     360,
                     180,
                 ),
-                ('time', 'lon', 'lat'),
+                dimensions=('time', 'lon', 'lat'),
             ),
         ],
         attrs=(dataset.Attribute('history', 'Created for testing'), ),
@@ -1183,7 +1196,7 @@ def test_insert_with_chunks(
 
     ds_meta = datasets[0].metadata()
     chunk_size = 5
-    ds_meta.chunks = [meta.Dimension(name='num_pixels', value=chunk_size)]
+    ds_meta.dimensions['num_pixels'].chunks = chunk_size
 
     zcollection = collection.Collection('time',
                                         ds_meta,

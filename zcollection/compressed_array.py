@@ -8,7 +8,7 @@ Compressed array class
 """
 from __future__ import annotations
 
-from typing import Any, Union
+from typing import Any
 from collections.abc import Callable, Sequence
 
 import dask.array.backends
@@ -24,7 +24,7 @@ import zarr
 from .type_hints import DType, NDArray, NDMaskedArray
 
 #: Type of arrays returned when a compressed array is decompressed.
-Array = Union[NDArray, NDMaskedArray]
+Array = NDArray | NDMaskedArray
 
 
 class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):

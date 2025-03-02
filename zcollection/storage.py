@@ -139,7 +139,7 @@ def write_zarr_variable(
     fs: fsspec.AbstractFileSystem,
     *,
     block_size_limit: int | None = None,
-    chunks: dict[str, int | str] | None = None,
+    chunks: meta.DimensionType | None = None,
 ) -> None:
     """Write a variable to a Zarr dataset.
 
@@ -258,7 +258,7 @@ def write_zarr_group(
                 futures: list[dask.distributed.Future] = client.map(
                     write_zarr_variable,
                     iterables,
-                    chunks=zds.chunks,
+                    chunks=zds.dim_chunks,
                     block_size_limit=zds.block_size_limit,
                     dirname=dirname,
                     fs=fs,
@@ -275,7 +275,7 @@ def write_zarr_group(
                         item,
                         dirname,
                         fs,
-                        chunks=zds.chunks,
+                        chunks=zds.dim_chunks,
                         block_size_limit=zds.block_size_limit,
                     ), zds.variables.items()))
         _write_meta(zds, dirname, fs)
@@ -391,7 +391,7 @@ def del_zarr_array(
         fs: The file system that the dataset is stored on.
     """
     _LOGGER.debug('Deleting Zarr array %r', dirname)
-    path: str = join_path(dirname, name)
+    path = join_path(dirname, name)
     if fs.exists(path):
         fs.rm(path, recursive=True)
         zarr.consolidate_metadata(
@@ -401,12 +401,45 @@ def del_zarr_array(
         fs.invalidate_cache(dirname)
 
 
+def variable_shape(
+    *,
+    variable: meta.Variable,
+    dimensions: meta.DimensionType,
+    axis: str | None,
+    fs: fsspec.AbstractFileSystem,
+) -> tuple[int, ...]:
+    """Compute the shape of a variable.
+
+    Args:
+        variable: Variable for which to compute the shape.
+        dimensions: Known dimensions and their size.
+        axis: Main axis path.
+        fs: The file system that the dataset is stored on.
+
+    Returns:
+        Tuple containing the shape of the variable.
+    """
+    dims = set(variable.dimensions) - set(dimensions)
+    if dims:
+        # Only a single dimension might be missing : the main axis
+        if len(dims) > 1 or axis is None:
+            raise ValueError(f'Variable {variable.name} contains'
+                             f' unknown dimensions: {dims}.')
+        # We do not want to change to original dimensions
+        dimensions = dimensions.copy()
+        dim_main, = dims
+        dimensions[dim_main] = zarr.open(store=fs.get_mapper(axis)).size
+
+    return tuple(dimensions[x] for x in variable.dimensions)
+
+
 def add_zarr_array(
     dirname: str,
     variable: meta.Variable,
-    template: str,
+    dimensions: meta.DimensionType,
     fs: fsspec.AbstractFileSystem,
     *,
+    axis: str | None = None,
     chunks: dict[str, int] | None = None,
 ) -> None:
     """Add a variable to a Zarr dataset.
@@ -414,31 +447,34 @@ def add_zarr_array(
     Args:
         dirname: The name of the dataset.
         variable: The variable to add.
-        template: The name of the template variable.
+        dimensions: Known dimensions and their size.
         fs: The file system that the dataset is stored on.
+        axis: Axis containing the main dimension data and size.
         chunks: Chunk size for each dimension. Defaults to None. See
             :func:`zarr.create` for more information.
 
     Notes:
         This function adds a new variable to an existing Zarr dataset. The new
-        variable is created with the same shape as the template variable, and
-        with the specified chunk size (if provided). The function also writes
-        the variable's attributes to the dataset, and consolidates the
-        dataset's metadata.
+        variable is created with the specified chunk size (if provided).
+        The function also writes the variable's attributes to the dataset,
+        and consolidates the dataset's metadata.
     """
     _LOGGER.debug('Adding variable %r to Zarr dataset %r', variable.name,
                   dirname)
-    shape: tuple[int, ...] = zarr.open(  # type: ignore[arg-type]
-        fs.get_mapper(join_path(dirname, template))).shape
+    var_shape = variable_shape(
+        variable=variable,
+        dimensions=dimensions,
+        axis=join_path(dirname, axis) if axis is not None else None,
+        fs=fs)
 
-    var_chunks: tuple[int | str, ...] = shape if chunks is None else tuple(
-        chunks.get(dim, shape[ix])  # type: ignore[misc]
+    var_chunks: tuple[int, ...] = var_shape if chunks is None else tuple(
+        chunks.get(dim, var_shape[ix])
         for ix, dim in enumerate(variable.dimensions))
 
     store: fsspec.FSMap = fs.get_mapper(join_path(dirname, variable.name))
     zarr.create(
-        shape,
-        chunks=var_chunks,  # type: ignore[arg-type]
+        var_shape,
+        chunks=var_chunks,
         dtype=variable.dtype,
         compressor=variable.compressor,  # type: ignore[arg-type]
         fill_value=variable.fill_value,  # type: ignore[arg-type]
@@ -455,7 +491,7 @@ def check_zarr_group(
     """Check if a directory contains a valid Zarr group.
 
     Args:
-        dirname The name of the directory containing the Zarr group to check.
+        dirname: The name of the directory containing the Zarr group to check.
         fs: The file system to use.
 
     Returns:

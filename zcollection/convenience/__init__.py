@@ -6,12 +6,17 @@
 Convenience functions
 =====================
 """
-from .collection import create_collection, open_collection
+from .collection import (
+    create_collection,
+    open_collection,
+    update_deprecated_collection,
+)
 from .view import create_view, open_view
 
 __all__ = (
     'create_collection',
     'open_collection',
+    'update_deprecated_collection',
     'create_view',
     'open_view',
 )

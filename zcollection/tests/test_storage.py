@@ -341,10 +341,13 @@ def test_add_zarr_array(
                                 local_fs.fs,
                                 chunks=chunks)
     var.name = 'var2'
-    storage.add_zarr_array(root,
-                           var.metadata(),
-                           'var1',
-                           local_fs.fs,
+    storage.add_zarr_array(dirname=root,
+                           variable=var.metadata(),
+                           dimensions={
+                               'x': dim_size,
+                               'y': dim_size
+                           },
+                           fs=local_fs.fs,
                            chunks=chunks)
     mapper = local_fs.get_mapper(root)
     zarray = zarr.open(mapper)
@@ -357,3 +360,26 @@ def test_add_zarr_array(
         var_array = zarray[varname]
         assert var_array.chunks == chunks_expected
         assert var_array.nchunks == chunks_number
+
+    var.name = 'var3'
+    var.fill_value = 30
+    with pytest.raises(ValueError, match='unknown dimensions'):
+        storage.add_zarr_array(dirname=root,
+                               variable=var.metadata(),
+                               dimensions={
+                                   'x': dim_size,
+                               },
+                               fs=local_fs.fs,
+                               chunks=chunks)
+
+    # We'll try to read 'y' from existing data and generate a zarr
+    # exception
+    with pytest.raises(Exception):
+        storage.add_zarr_array(dirname=root,
+                               variable=var.metadata(),
+                               dimensions={
+                                   'x': dim_size,
+                               },
+                               fs=local_fs.fs,
+                               axis='y',
+                               chunks=chunks)

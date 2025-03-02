@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 from collections.abc import Iterable, Iterator, Sequence
 import copy
+import importlib.metadata
 import json
 import logging
 import pathlib
@@ -88,8 +89,11 @@ class View:
         self.view_ref: collection.Collection = convenience.open_collection(
             view_ref.path, mode='r', filesystem=view_ref.filesystem)
         #: The metadata of the variables handled by the view.
-        self.metadata: meta.Dataset = ds or meta.Dataset(
-            self.view_ref.metadata.dimensions, variables=[], attrs=[])
+        self.metadata = ds or meta.Dataset(
+            dimensions=list(self.view_ref.metadata.dimensions.values()),
+            variables=[],
+            attrs=[],
+        )
         #: The synchronizer used to synchronize the view.
         self.synchronizer: sync.Sync = synchronizer or sync.NoSync()
         #: The filters used to select the partitions of the reference.
@@ -99,7 +103,7 @@ class View:
             _LOGGER.info('Creating view %s', self)
             self.fs.makedirs(self.base_dir)
             self._write_config()
-            self._init_partitions(filters, distributed=distributed)
+            self._init_partitions(filters=filters, distributed=distributed)
         else:
             _LOGGER.info('Opening view %s', self)
 
@@ -131,7 +135,7 @@ class View:
                 ))
         else:
             for arg in args:
-                _write_checksum(arg,
+                _write_checksum(partition=arg,
                                 base_dir=self.base_dir,
                                 view_ref=self.view_ref,
                                 fs=self.fs)
@@ -160,6 +164,7 @@ class View:
                         'path': self.view_ref.partition_properties.dir,
                         'fs': fs,
                     },
+                    'version': importlib.metadata.version('zcollection'),
                 },
                 stream,  # type: ignore[arg-type]
                 indent=4)
@@ -187,16 +192,25 @@ class View:
             ValueError: If the provided directory does not contain a view.
         """
         _LOGGER.info('Opening view %r', path)
-        fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
-        config: str = cls._config(path)
+        fs = fs_utils.get_fs(filesystem)
+        config = cls._config(path)
+
         if not fs.exists(config):
             raise ValueError(f'zarr view not found at path {path!r}')
+
         with fs.open(config) as stream:
             data: dict[str, Any] = json.load(stream)
 
+        version = data.get('version', '0')
+
+        if version == '0':
+            raise ValueError('View configuration needs to be updated. '
+                             "Use the 'zcollection.update_deprecated_view' "
+                             'function to update it.')
+
         view_ref: dict[str, Any] = data['view_ref']
-        return View(data['base_dir'],
-                    ViewReference(
+        return View(base_dir=data['base_dir'],
+                    view_ref=ViewReference(
                         view_ref['path'],
                         fsspec.AbstractFileSystem.from_json(
                             json.dumps(view_ref['fs']))),
@@ -245,8 +259,8 @@ class View:
         Returns:
             The variables of the view.
         """
-        return dataset.get_dataset_variable_properties(self.metadata,
-                                                       selected_variables)
+        return dataset.get_dataset_variable_properties(
+            metadata=self.metadata, selected_variables=selected_variables)
 
     def add_variable(self,
                      variable: meta.Variable | dataset.Variable,
@@ -278,9 +292,10 @@ class View:
                 or variable.name in self.metadata.variables):
             raise ValueError(f'Variable {variable.name} already exists')
 
+        # TODO: Block the possibility to add immutable variables
         self.metadata.add_variable(variable)
-        template: meta.Variable = \
-            self.view_ref.metadata.search_same_dimensions_as(variable)
+
+        dimensions, chunks = self.view_ref.dimensions_properties()
 
         existing_partitions: set[str] = {
             pathlib.Path(path).relative_to(self.base_dir).as_posix()
@@ -292,7 +307,7 @@ class View:
             return
 
         args = filter(lambda item: item[0] in existing_partitions,
-                      self.view_ref.iterate_on_records(relative=True))
+                      self.view_ref.iterate_on_records())
 
         # Remove the attribute from the variable. The attribute will be added
         # from the view metadata.
@@ -305,12 +320,16 @@ class View:
             try:
                 storage.execute_transaction(
                     client, self.synchronizer,
-                    client.map(_create_zarr_array,
-                               tuple(args),
-                               base_dir=self.base_dir,
-                               fs=self.fs,
-                               template=template.name,
-                               variable=variable))
+                    client.map(
+                        _create_zarr_array,
+                        tuple(args),
+                        base_dir=self.base_dir,
+                        variable=variable,
+                        dimensions=dimensions,
+                        chunks=chunks,
+                        axis=self.view_ref.axis,
+                        fs=self.fs,
+                    ))
             except Exception:
                 storage.execute_transaction(
                     client, self.synchronizer,
@@ -325,9 +344,11 @@ class View:
                 for arg in args:
                     _create_zarr_array(arg,
                                        base_dir=self.base_dir,
-                                       fs=self.fs,
-                                       template=template.name,
-                                       variable=variable)
+                                       variable=variable,
+                                       dimensions=dimensions,
+                                       chunks=chunks,
+                                       axis=self.view_ref.axis,
+                                       fs=self.fs)
             except Exception:
                 for partition in self.partitions():
                     _drop_zarr_zarr(partition,
@@ -470,8 +491,8 @@ class View:
         if arrays:
             array: dataset.Dataset = arrays.pop(0)
             if arrays:
-                array = array.concat(arrays,
-                                     self.view_ref.partition_properties.dim)
+                array = array.concat(
+                    other=arrays, dim=self.view_ref.partition_properties.dim)
             metadata: meta.Dataset = copy.deepcopy(self.view_ref.metadata)
             metadata.variables.update(self.metadata.variables.items())
             array.fill_attrs(metadata)

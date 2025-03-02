@@ -34,17 +34,15 @@ def new_variable(cls: type[I], **kwargs: Any) -> I:
     """Create a new variable.
 
     Args:
-        constructor: Variable constructor.
+        cls: Variable constructor.
         kwargs: Keyword arguments passed to the constructor.
     """
     self: I = cls.__new__(cls)
-    # pylint: disable=expression-not-assigned
     # We use the set notation to evaluate the generator
-    {
+    _ = {
         setattr(self, key, value)  # type: ignore[func-returns-value]
         for key, value in kwargs.items()
     }
-    # pylint: enable=expression-not-assigned
     return self
 
 
@@ -303,8 +301,8 @@ class IVariable(abc.ABC):
         """
 
 
-class Variable(IVariable):
-    """Variables hold multi-dimensional arrays of data.
+class Variable(IVariable, abc.ABC):
+    """Variables hold multidimensional arrays of data.
 
     Args:
         name: Name of the variable
@@ -389,7 +387,7 @@ class Variable(IVariable):
                                fill_value=self.fill_value,
                                filters=self.filters)
         if len(result.shape) != len(self.dimensions):
-            raise ValueError('data shape does not match variable dimensions')
+            raise ValueError('Data shape does not match variable dimensions')
         return result
 
     def isel(self: T, key: tuple[slice, ...]) -> T:
@@ -407,21 +405,6 @@ class Variable(IVariable):
                             array=self.array[key],
                             dimensions=self.dimensions,
                             attrs=self.attrs,
-                            compressor=self.compressor,
-                            fill_value=self.fill_value,
-                            filters=self.filters)
-
-    def set_for_insertion(self: T) -> T:
-        """Create a new variable without any attribute.
-
-        Returns:
-            The variable.
-        """
-        return new_variable(type(self),
-                            name=self.name,
-                            array=self.array,
-                            dimensions=self.dimensions,
-                            attrs=(),
                             compressor=self.compressor,
                             fill_value=self.fill_value,
                             filters=self.filters)
@@ -472,7 +455,8 @@ class Variable(IVariable):
         return self.metadata() == other.metadata()
 
     def dimension_index(self) -> Iterator[tuple[str, int]]:
-        """Return an iterator over the variable dimensions and their index.
+        """Return an iterator over the variable known dimensions and their
+        index.
 
         Returns:
             An iterator over the variable dimensions

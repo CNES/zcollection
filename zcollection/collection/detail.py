@@ -408,7 +408,7 @@ def _insert(
     indexer: dict[str, slice]
 
     partition, indexer = args
-    dirname: str = join_path(*((partitioning_properties.dir, ) + partition))
+    dirname = join_path(*((partitioning_properties.dir, ) + partition))
 
     # If the consolidated zarr metadata does not exist, we consider the
     # partition as empty.
@@ -470,9 +470,8 @@ def _load_and_apply_indexer(
     partition_scheme: tuple[tuple[str, int], ...]
 
     partition_scheme, items = args
-    partition: str = join_path(
-        partition_properties.dir,
-        partition_handler.join(partition_scheme, fs.sep))
+    partition = join_path(partition_properties.dir,
+                          partition_handler.join(partition_scheme, fs.sep))
     zds: dataset.Dataset = open_zarr_group(
         partition, fs, delayed=delayed, selected_variables=selected_variables)
     return [zds.isel({partition_properties.dim: indexer}) for indexer in items]

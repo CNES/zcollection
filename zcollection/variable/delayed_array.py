@@ -225,7 +225,7 @@ class DelayedArray(Variable):
                 the stored data.
         """
         if len(data.shape) != len(self.dimensions):
-            raise ValueError('data shape does not match variable dimensions')
+            raise ValueError('Data shape does not match variable dimensions')
         self.array, self.fill_value = _as_dask_array(
             data, fill_value=self.fill_value)
 

@@ -44,11 +44,11 @@ def test_attribute() -> None:
 
 def test_dimension() -> None:
     """Test dimension creation."""
-    dim = meta.Dimension('a', 12)
+    dim = meta.Dimension(name='a', value=12)
     assert isinstance(dim, meta.Dimension)
     assert dim.name == 'a'
     assert dim.value == 12
-    assert str(dim) == "Dimension('a', 12)"
+    assert str(dim) == "Dimension('a', 12, -1)"
     # pylint: disable=comparison-with-itself
     assert dim == dim
     # pylint: enable=comparison-with-itself
@@ -91,8 +91,15 @@ def test_dataset() -> None:
     assert ds == other
     assert (ds == 2) is False
     assert (ds != other) is False
-    ds.dimensions = ds.dimensions + ('dummy', )
+
+    ds.add_dimension(dimension=meta.Dimension('dummy', 20))
     assert ds != other
+
+    with pytest.raises(TypeError, match='dimension must be a Dimension'):
+        ds.add_dimension(dimension=('dummy', 0))  # type: ignore
+
+    with pytest.raises(ValueError, match='already exists in the'):
+        ds.add_dimension(dimension=meta.Dimension('dummy', 0))
 
 
 def test_select_variables() -> None:
@@ -109,22 +116,6 @@ def test_select_variables() -> None:
                                                     'time'),
                                     drop_variables=('time', ))
     assert variables == {'longitude', 'latitude'}
-
-
-def test_search_same_dimensions_as() -> None:
-    """Test search_same_dimensions_as."""
-    root: pathlib.Path = pathlib.Path(__file__).parent
-    with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
-        first: dict[str, Any] = json.load(stream)
-    ds: meta.Dataset = meta.Dataset.from_config(first)
-    other: meta.Variable = ds.search_same_dimensions_as(
-        ds.variables['simulated_error_karin'])
-    assert other.dimensions == ds.variables['simulated_error_karin'].dimensions
-
-    other = meta.Variable.from_config(other.get_config())
-    other.dimensions = other.dimensions + ('dummy', )
-    with pytest.raises(ValueError):
-        ds.search_same_dimensions_as(other)
 
 
 def test_pickle() -> None:
@@ -162,7 +153,9 @@ def test_missing_variables() -> None:
 
 def test_add_variable() -> None:
     """Test adding a variable."""
-    ds = meta.Dataset(('x', 'y'), [])
+    ds = meta.Dataset(dimensions=(meta.Dimension('x',
+                                                 0), meta.Dimension('y', 10)),
+                      variables=[])
     ds.add_variable(meta.Variable('a', numpy.float64, dimensions=('x', 'y')))
 
     with pytest.raises(ValueError):
@@ -188,7 +181,11 @@ def test_add_variable() -> None:
 
 def test_select_variables_by_dims() -> None:
     """Test select_variable_by_dims."""
-    ds = meta.Dataset(('a', 'b', 'x', 'y'), [])
+    ds = meta.Dataset(dimensions=(meta.Dimension('a',
+                                                 0), meta.Dimension('b', 10),
+                                  meta.Dimension('x',
+                                                 10), meta.Dimension('y', 10)),
+                      variables=[])
     ds.add_variable(meta.Variable('a', numpy.float64, dimensions=('x', 'y')))
     ds.add_variable(meta.Variable('b', numpy.float64, dimensions=('x', )))
     ds.add_variable(meta.Variable('c', numpy.float64, dimensions=('y', )))

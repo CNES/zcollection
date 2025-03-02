@@ -171,7 +171,7 @@ def copy_tree(
     fs_target.mkdir(target)
     for root, dirs, files in tuple(fs_walk(fs_source, source)):
         for name in files:
-            source_path: str = join_path(root, name)
+            source_path = join_path(root, name)
             copy_file(source_path,
                       join_path(target, os.path.relpath(source_path, source)),
                       fs_source, fs_target)

@@ -8,9 +8,10 @@ Base classes for collections.
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal, Optional, Union
+from typing import Any, ClassVar, Literal, Optional
 from collections.abc import Callable, Iterable, Iterator, Sequence
 import dataclasses
+import importlib.metadata
 import itertools
 import pathlib
 
@@ -18,7 +19,6 @@ import dask.bag.core
 import dask.distributed
 import dask.utils
 import fsspec
-import zarr
 
 from .. import (
     dask_utils,
@@ -42,7 +42,7 @@ from .detail import (
 PartitionFilterCallback = Callable[[dict[str, int]], bool]
 
 #: Type of argument to filter the partitions.
-PartitionFilter = Optional[Union[str, PartitionFilterCallback]]
+PartitionFilter = Optional[str | PartitionFilterCallback]
 
 #: Indexer's type.
 Indexer = Iterable[tuple[tuple[tuple[str, int], ...], slice]]
@@ -51,7 +51,7 @@ Indexer = Iterable[tuple[tuple[tuple[str, int], ...], slice]]
 IndexerArgs = tuple[tuple[tuple[str, int], ...], list[slice]]
 
 #: Name of the directory storing the immutable dataset.
-_IMMUTABLE = '.immutable'
+IMMUTABLE = '.immutable'
 
 
 def list_partitions_from_indexer(
@@ -131,7 +131,7 @@ def _immutable_path(
         immutable data.
     """
     return fs_utils.join_path(
-        partition_properties.dir, _IMMUTABLE) if zds.select_variables_by_dims(
+        partition_properties.dir, IMMUTABLE) if zds.select_variables_by_dims(
             (partition_properties.dim, ), predicate=False) else None
 
 
@@ -149,6 +149,11 @@ class CollectionProperties:
 
     #: The partitioning properties (base directory and dimension).
     partition: PartitioningProperties
+
+    @property
+    def dimension(self) -> str:
+        """The name of the partitioning dimension."""
+        return self.partition.dim
 
 
 @dataclasses.dataclass(frozen=True)
@@ -199,21 +204,26 @@ class ReadOnlyCollection:
                     f'The partitioning key {varname!r} is not defined in '
                     'the dataset.')
 
-        self._settings = CollectionSettings(mode or 'w',
-                                            fs_utils.get_fs(filesystem),
-                                            synchronizer or sync.NoSync())
+        self._settings = CollectionSettings(
+            mode=mode or 'w',
+            filesystem=fs_utils.get_fs(filesystem),
+            synchronizer=synchronizer or sync.NoSync())
 
         self._properties = CollectionProperties(
-            axis, ds, partition_handler,
-            PartitioningProperties(
-                fs_utils.normalize_path(self._settings.filesystem,
-                                        partition_base_dir),
-                ds.variables[axis].dimensions[0]))
+            axis=axis,
+            metadata=ds,
+            partition_strategy=partition_handler,
+            partition=PartitioningProperties(
+                dir=fs_utils.normalize_path(fs=self._settings.filesystem,
+                                            path=partition_base_dir),
+                dim=ds.variables[axis].dimensions[0]))
 
         #: The path to the dataset that contains the immutable data relative
         #: to the partitioning.
         self._immutable: str | None = _immutable_path(
-            ds, self._properties.partition)
+            zds=ds, partition_properties=self._properties.partition)
+
+        self.version = importlib.metadata.version('zcollection')
 
     @property
     def axis(self) -> str:
@@ -311,6 +321,24 @@ class ReadOnlyCollection:
                 lambda partition: self.fs.sep.join(
                     (self.partition_properties.dir, partition)),
                 sorted(set(partitions))))
+
+    def dimensions_properties(self) -> tuple[dict[str, int], dict[str, int]]:
+        """Extract dimension properties (size and chunks).
+
+        Returns:
+            A tuple of dictionaries containing the dimensions associated
+            to their size and the dimensions associated to their chunks.
+        """
+        chunks: dict[str, int] = {}
+        dimensions: dict[str, int] = {}
+
+        for dim in self.metadata.dimensions.values():
+            chunks[dim.name] = dim.chunks
+
+            if dim.name != self._properties.dimension:
+                dimensions[dim.name] = dim.value
+
+        return dimensions, chunks
 
     def partitions(
         self,
@@ -427,31 +455,34 @@ class ReadOnlyCollection:
         """
 
         def _wrap(
-            partition: str,
-            func: PartitionCallable,
-            selected_variables: Sequence[str] | None,
-            delayed: bool,
-            *args,
-            **kwargs,
+            _partition: str,
+            _func: PartitionCallable,
+            _selected_variables: Sequence[str] | None,
+            _delayed: bool,
+            *_args,
+            **_kwargs,
         ) -> tuple[tuple[tuple[str, int], ...], Any]:
             """Wraps the function to apply on the partition.
 
             Args:
-                func: The function to apply.
-                partition: The partition to apply the function on.
-                selected_variables: The list of variables to retain from the
+                _func: The function to apply.
+                _partition: The partition to apply the function on.
+                _selected_variables: The list of variables to retain from the
                     partition.
-                *args: The positional arguments to pass to the function.
-                **kwargs: The keyword arguments to pass to the function.
+                *_args: The positional arguments to pass to the function.
+                **_kwargs: The keyword arguments to pass to the function.
 
             Returns:
                 The result of the function.
             """
-            zds: dataset.Dataset = _load_dataset(delayed, self.fs,
-                                                 self._immutable, partition,
-                                                 selected_variables)
-            return self.partitioning.parse(partition), func(
-                zds, *args, **kwargs)
+            zds: dataset.Dataset = _load_dataset(
+                delayed=_delayed,
+                fs=self.fs,
+                immutable=self._immutable,
+                partition=_partition,
+                selected_variables=_selected_variables)
+            return self.partitioning.parse(_partition), _func(
+                zds, *_args, **_kwargs)
 
         if not callable(func):
             raise TypeError('func must be a callable')
@@ -460,7 +491,12 @@ class ReadOnlyCollection:
             self.partitions(filters=filters),
             partition_size=partition_size,
             npartitions=npartitions)
-        return bag.map(_wrap, func, selected_variables, delayed, *args,
+
+        return bag.map(_wrap,
+                       _func=func,
+                       _selected_variables=selected_variables,
+                       _delayed=delayed,
+                       *args,
                        **kwargs)
         # pylint: enable=duplicate-code
 
@@ -519,27 +555,27 @@ class ReadOnlyCollection:
             func, 'partition_info')
 
         def _wrap(
-            partition: str,
-            *args,
-            delayed: bool,
-            depth: int,
-            partitions: tuple[str, ...],
-            selected_variables: Sequence[str] | None,
-            wrapped_func: PartitionCallable,
-            **kwargs,
+            _partition: str,
+            _delayed: bool,
+            _depth: int,
+            _partitions: tuple[str, ...],
+            _selected_variables: Sequence[str] | None,
+            _wrapped_func: PartitionCallable,
+            *_args,
+            **_kwargs,
         ) -> tuple[tuple[tuple[str, int], ...], Any]:
             """Wraps the function to apply on the partition.
 
             Args:
-                *args: The positional arguments to pass to the function.
-                delayed: Whether to load the data lazily or not.
-                depth: The depth of the overlap between the partitions.
-                partition: The partition to apply the function on.
-                partitions: The partitions to apply the function on.
-                selected_variables: The list of variables to retain from the
+                *_args: The positional arguments to pass to the function.
+                _delayed: Whether to load the data lazily or not.
+                _depth: The depth of the overlap between the partitions.
+                _partition: The partition to apply the function on.
+                _partitions: The partitions to apply the function on.
+                _selected_variables: The list of variables to retain from the
                     partition.
-                wrapped_func: The function to apply.
-                **kwargs: The keyword arguments to pass to the function.
+                _wrapped_func: The function to apply.
+                **_kwargs: The keyword arguments to pass to the function.
 
             Returns:
                 The result of the function.
@@ -548,34 +584,35 @@ class ReadOnlyCollection:
             indices: slice
 
             zds, indices = _load_dataset_with_overlap(
-                delayed=delayed,
-                depth=depth,
+                delayed=_delayed,
+                depth=_depth,
                 dim=self.partition_properties.dim,
                 fs=self.fs,
                 immutable=self._immutable,
-                partition=partition,
-                partitions=partitions,
-                selected_variables=selected_variables)
+                partition=_partition,
+                partitions=_partitions,
+                selected_variables=_selected_variables)
 
             if add_partition_info:
-                kwargs = kwargs.copy()
-                kwargs['partition_info'] = (self.partition_properties.dim,
-                                            indices)
+                _kwargs = _kwargs.copy()
+                _kwargs['partition_info'] = (self.partition_properties.dim,
+                                             indices)
 
             # Finally, apply the function.
-            return (self.partitioning.parse(partition),
-                    wrapped_func(zds, *args, **kwargs))
+            return (self.partitioning.parse(_partition),
+                    _wrapped_func(zds, *_args, **_kwargs))
 
         partitions = tuple(self.partitions(filters=filters))
         bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
             partitions, partition_size=partition_size, npartitions=npartition)
+
         return bag.map(_wrap,
+                       _delayed=delayed,
+                       _depth=depth,
+                       _partitions=partitions,
+                       _selected_variables=selected_variables,
+                       _wrapped_func=func,
                        *args,
-                       delayed=delayed,
-                       depth=depth,
-                       partitions=partitions,
-                       selected_variables=selected_variables,
-                       wrapped_func=func,
                        **kwargs)
 
     def load(
@@ -648,8 +685,8 @@ class ReadOnlyCollection:
             array = array.concat(arrays, self.partition_properties.dim)
         if self._immutable:
             array.merge(
-                storage.open_zarr_group(self._immutable,
-                                        self.fs,
+                storage.open_zarr_group(dirname=self._immutable,
+                                        fs=self.fs,
                                         delayed=delayed,
                                         selected_variables=selected_variables))
         array.fill_attrs(self.metadata)
@@ -806,26 +843,14 @@ class ReadOnlyCollection:
         return dask.bag.core.from_sequence(seq=partitions,
                                            npartitions=len(partitions))
 
-    def iterate_on_records(
-        self,
-        *,
-        relative: bool = False,
-    ) -> Iterator[tuple[str, zarr.Group]]:
-        """Iterate over the partitions and the zarr groups.
+    def iterate_on_records(self) -> Iterator[tuple[str, str]]:
+        """Iterate over the relative and absolute partitions' path.
 
-        Args:
-            relative: If True, the paths are relative to the base directory.
-
-        Returns
-            The iterator over the partitions and the zarr groups.
+        Returns     The iterator over the relative and absolute
+        partitions' path.
         """
-        yield from (
-            (
-                self._relative_path(item) if relative else item,
-                zarr.open_consolidated(
-                    self.fs.get_mapper(item),  # type: ignore
-                    mode='r',
-                )) for item in self.partitions())
+        yield from ((self._relative_path(item), item)
+                    for item in self.partitions())
 
     def variables(
         self,

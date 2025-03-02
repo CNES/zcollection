@@ -8,7 +8,7 @@ Abstract base class for indexing.
 """
 from __future__ import annotations
 
-from typing import Any, Protocol, Union
+from typing import Any, Protocol
 import abc
 from collections.abc import Iterable
 import functools
@@ -24,10 +24,10 @@ from ..collection.callable_objects import MapCallable
 from ..type_hints import NDArray
 
 #: Scalar data type for the index.
-Scalar = Union[int, float, bytes]
+Scalar = int | float | bytes
 
 #: Index data type.
-DType = Union[Scalar, Iterable[Scalar]]
+DType = Scalar | Iterable[Scalar]
 
 #: Type of associative dictionary used for index queries, which matches a
 #: column of the index to the requested values.

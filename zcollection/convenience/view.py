@@ -45,8 +45,8 @@ def create_view(path: str,
     filesystem = fs_utils.get_fs(filesystem)
     if filesystem.exists(path):
         raise ValueError(f'path {path!r} already exists.')
-    return view.View(path,
-                     view_ref,
+    return view.View(base_dir=path,
+                     view_ref=view_ref,
                      ds=None,
                      filesystem=filesystem,
                      filters=filters,
