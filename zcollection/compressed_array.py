@@ -31,7 +31,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
     """Hold a compressed array and provide a numpy.ndarray interface to it.
 
     Each operation on the array uncompresses the data, performs the operation,
-    an returns a numpy array. For the rechunk operation, the array is
+    and returns a numpy array. For the rechunk operation, the array is
     rechunked and the compressor is applied to the new chunks.
 
     Data is compressed using zarr and numcodecs.
@@ -227,7 +227,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
 
         Args:
             func: The numpy function.
-            types: The types of the arguments.
+            _types: The types of the arguments.
             args: The arguments.
             kwargs: The keyword arguments.
 

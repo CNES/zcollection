@@ -264,21 +264,22 @@ def write_zarr_group(
                     fs=fs,
                 )
                 execute_transaction(
-                    client,
-                    sync.NoSync(),
-                    futures,
+                    client=client,
+                    synchronizer=sync.NoSync(),
+                    futures=futures,
                     workers=dask.distributed.get_worker().address)
         else:
             tuple(
                 map(
                     lambda item: write_zarr_variable(
-                        item,
-                        dirname,
-                        fs,
+                        args=item,
+                        dirname=dirname,
+                        fs=fs,
                         chunks=zds.dim_chunks,
                         block_size_limit=zds.block_size_limit,
                     ), zds.variables.items()))
-        _write_meta(zds, dirname, fs)
+
+        _write_meta(zds=zds, dirname=dirname, fs=fs)
 
 
 def open_zarr_array(
@@ -331,8 +332,8 @@ def open_zarr_group(
         store) if selected_variables is not None else set(store)
     variables: list[dataset.Variable] = [
         open_zarr_array(
-            store[name],  # type: ignore[arg-type]
-            name,
+            array=store[name],  # type: ignore[arg-type]
+            name=name,
             delayed=delayed) for name in selected_variables
     ]
 
@@ -480,7 +481,7 @@ def add_zarr_array(
         fill_value=variable.fill_value,  # type: ignore[arg-type]
         store=store,
         filters=variable.filters)
-    write_zattrs(dirname, variable, fs)
+    write_zattrs(dirname=dirname, variable=variable, fs=fs)
     zarr.consolidate_metadata(fs.get_mapper(dirname))  # type: ignore[arg-type]
 
 

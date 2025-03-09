@@ -108,7 +108,6 @@ def _create_zarr_array(args: tuple[str, str],
             containing the Zarr array.
     """
     partition, partition_ref = args
-
     dirname = join_path(base_dir, partition)
 
     _LOGGER.debug('Adding variable %r to Zarr dataset %r', variable.name,
@@ -124,7 +123,7 @@ def _create_zarr_array(args: tuple[str, str],
         for ix, dim in enumerate(variable.dimensions))
 
     store: fsspec.FSMap = fs.get_mapper(join_path(dirname, variable.name))
-    zarr.full(var_shape,
+    zarr.full(shape=var_shape,
               chunks=var_chunks,
               dtype=variable.dtype,
               compressor=variable.compressor,
@@ -132,7 +131,7 @@ def _create_zarr_array(args: tuple[str, str],
               store=store,
               overwrite=True,
               filters=variable.filters)
-    write_zattrs(dirname, variable, fs)
+    write_zattrs(dirname=dirname, variable=variable, fs=fs)
     if invalidate_cache:
         fs.invalidate_cache(dirname)
 
@@ -342,7 +341,7 @@ def _select_overlap(
         start = 0
         indices = slice(0, 0, None)
         for zds, selected_partition in selected_datasets:
-            size = zds.dimensions[view_ref.partition_properties.dim]
+            size = zds.dimensions[view_ref.dimension]
             indices = slice(start, start + size, None)
             if partition == selected_partition:
                 break
@@ -364,7 +363,7 @@ def _select_overlap(
     # Build the dataset for the selected partitions.
     groups: list[dataset.Dataset] = [ds for ds, _ in selected_datasets]
     zds: dataset.Dataset = groups.pop(0)
-    zds = zds.concat(groups, view_ref.partition_properties.dim)
+    zds = zds.concat(groups, view_ref.dimension)
 
     return zds, calculate_slice(selected_datasets)
 
@@ -424,7 +423,7 @@ def _wrap_update_func_overlap(
     Returns:
         The wrapped function.
     """
-    dim = view_ref.partition_properties.dim
+    dim = view_ref.dimension
 
     if depth < 0:
         raise ValueError('The depth must be positive')

@@ -29,29 +29,9 @@ Type hints for the zcollection package.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, TypeVar
+from types import GenericAlias  # type: ignore[attr-defined]
 
-try:
-    from types import GenericAlias  # type: ignore[attr-defined]
-except ImportError:
-    # pylint: disable=ungrouped-imports
-    # For Python < 3.9 we use a backport of GenericAlias provided by
-    # numpy
-    # isort: off
-    from numpy._typing._generic_alias import (  # type: ignore[no-redef]
-        _GenericAlias as GenericAlias, )
-    # isort: on
-    # pylint: enable=ungrouped-imports
-
-try:
-    from typing import TypeAlias
-except ImportError:
-    # pylint: disable=ungrouped-imports
-    # TypeAlias is defined in typing starting from 3.10
-    from typing import TypeAlias  # type: ignore[attr-defined,no-redef]
-    # pylint: enable=ungrouped-imports
-
-import numpy
 import numpy.typing
 
 # pylint: disable=invalid-name

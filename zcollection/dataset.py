@@ -776,9 +776,9 @@ def get_dataset_variable_properties(
     """
     selected_variables = selected_variables or metadata.variables.keys()
     return tuple(
-        Array(v.name,
-              numpy.ndarray((0, ) * len(v.dimensions), v.dtype),
-              v.dimensions,
+        Array(name=v.name,
+              data=numpy.ndarray((0, ) * len(v.dimensions), v.dtype),
+              dimensions=v.dimensions,
               attrs=v.attrs,
               compressor=v.compressor,
               fill_value=v.fill_value,

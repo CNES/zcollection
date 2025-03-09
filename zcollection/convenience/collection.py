@@ -110,6 +110,7 @@ def update_deprecated_collection(
                 If the provided directory does not contain a valid collection
                 configuration file.
     """
+    # pylint: disable=import-outside-toplevel
     import json
 
     import zarr
@@ -117,20 +118,19 @@ def update_deprecated_collection(
     from ..fs_utils import join_path
 
     _LOGGER.warning('Updating collection: %r', path)
-    fs = fs_utils.get_fs(filesystem)
-    # noinspection PyProtectedMember
-    config: str = collection.Collection._config(path)
+    filesystem = fs_utils.get_fs(filesystem)
+    # pylint: disable=protected-access
+    config = collection.Collection._config(path)
 
-    if not fs.exists(config):
+    if not filesystem.exists(config):
         raise ValueError(f'zarr collection not found at path {path!r}')
 
-    with fs.open(config) as stream:
+    with filesystem.open(config) as stream:
         data: dict[str, Any] = json.load(stream)
 
-    version = data.get('version', '0')
-
-    if version != '0':
+    if data.get('version', '0') != '0':
         _LOGGER.error('Collection already updated.')
+        return
 
     ds = meta.Dataset.from_deprecated_config(data['dataset'])
     axis = data['axis']
@@ -140,7 +140,8 @@ def update_deprecated_collection(
                                            main_dimension=main_dimension)
 
     zcol_partitioning = partitioning.get_codecs(data['partitioning'])
-    partitions = list(zcol_partitioning.list_partitions(fs=fs, path=path))
+    partitions = list(
+        zcol_partitioning.list_partitions(fs=filesystem, path=path))
 
     if not partitions:
         raise ValueError(
@@ -161,7 +162,7 @@ def update_deprecated_collection(
                             variable.name)
             var_path = join_path(path, collection.IMMUTABLE, variable.name)
 
-        var_shape = zarr.open(store=fs.get_mapper(var_path)).shape
+        var_shape = zarr.open(store=filesystem.get_mapper(var_path)).shape
 
         dim_size = var_shape[dim_index]
         _LOGGER.warning('Assigning size %r to dimension %r.', dim_size,
@@ -180,17 +181,24 @@ def update_deprecated_collection(
         partition_handler=zcol_partitioning,
         partition_base_dir=path,
         mode='w',
-        filesystem=fs,
+        filesystem=filesystem,
     )
-    # noinspection PyProtectedMember
+
+    # pylint: disable=protected-access
+    immutable_path = zcol._immutable
+    if not filesystem.exists(immutable_path):
+        _LOGGER.warning('Creating immutable directory %r', immutable_path)
+        zarr.storage.init_group(store=filesystem.get_mapper(immutable_path))
+
+    # pylint: disable=protected-access
     config = zcol._config(path)
 
     config_back = f'{config}.bak'
     _LOGGER.warning('Copying old configuration to: %r', config_back)
-    fs.copy(config, config_back)
+    filesystem.copy(config, config_back)
 
     _LOGGER.warning('Writing new configuration: %r', path)
-    # noinspection PyProtectedMember
+    # pylint: disable=protected-access
     zcol._write_config()
 
 

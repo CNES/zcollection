@@ -441,8 +441,8 @@ class Variable(IVariable, abc.ABC):
         Returns:
             Variable metadata
         """
-        return meta.Variable(self.name,
-                             self.dtype,
+        return meta.Variable(name=self.name,
+                             dtype=self.dtype,
                              dimensions=self.dimensions,
                              attrs=self.attrs,
                              compressor=self.compressor,

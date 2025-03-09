@@ -84,16 +84,13 @@ class View:
         #: The file system used to access the view (default local file system).
         self.fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
         #: Path to the directory where the view is stored.
-        self.base_dir: str = fs_utils.normalize_path(self.fs, base_dir)
+        self.base_dir: str = fs_utils.normalize_path(fs=self.fs, path=base_dir)
         #: The reference collection of the view.
         self.view_ref: collection.Collection = convenience.open_collection(
-            view_ref.path, mode='r', filesystem=view_ref.filesystem)
+            path=view_ref.path, mode='r', filesystem=view_ref.filesystem)
         #: The metadata of the variables handled by the view.
         self.metadata = ds or meta.Dataset(
-            dimensions=list(self.view_ref.metadata.dimensions.values()),
-            variables=[],
-            attrs=[],
-        )
+            dimensions=[], variables=[], attrs=[])
         #: The synchronizer used to synchronize the view.
         self.synchronizer: sync.Sync = synchronizer or sync.NoSync()
         #: The filters used to select the partitions of the reference.
@@ -152,22 +149,23 @@ class View:
 
     def _write_config(self) -> None:
         """Write the configuration file for the view."""
-        config: str = self._config(self.base_dir)
+        config = self._config(self.base_dir)
         fs: dict[str, Any] = json.loads(self.view_ref.fs.to_json())
+
+        params = {
+            'base_dir': self.base_dir,
+            'filters': _serialize_filters(self.filters),
+            'metadata': self.metadata.get_config(),
+            'view_ref': {
+                'path': self.view_ref.partition_properties.dir,
+                'fs': fs,
+            },
+            'version': importlib.metadata.version('zcollection'),
+        }
+
         with self.fs.open(config, mode='w') as stream:
-            json.dump(
-                {
-                    'base_dir': self.base_dir,
-                    'filters': _serialize_filters(self.filters),
-                    'metadata': self.metadata.get_config(),
-                    'view_ref': {
-                        'path': self.view_ref.partition_properties.dir,
-                        'fs': fs,
-                    },
-                    'version': importlib.metadata.version('zcollection'),
-                },
-                stream,  # type: ignore[arg-type]
-                indent=4)
+            json.dump(params, stream, indent=4)  # type: ignore[arg-type]
+
         self.fs.invalidate_cache(config)
 
     @classmethod
@@ -286,18 +284,22 @@ class View:
         # pylint: disable=duplicate-code
         # false positive, no code duplication
 
+        ref_zcol = self.view_ref
+        ref_meta = ref_zcol.metadata
+
         variable = dataset.get_variable_metadata(variable)
         _LOGGER.info('Adding variable %r in the view', variable.name)
-        if (variable.name in self.view_ref.metadata.variables
-                or variable.name in self.metadata.variables):
+
+        if variable.name in ref_meta.variables:
             raise ValueError(f'Variable {variable.name} already exists')
 
-        # TODO: Block the possibility to add immutable variables
-        self.metadata.add_variable(variable)
+        if ref_zcol.dimension not in variable.dimensions:
+            raise ValueError('Immutable variable cannot be added to views.')
 
-        dimensions, chunks = self.view_ref.dimensions_properties()
+        self.metadata.add_variable(variable=variable,
+                                   dimensions=set(ref_meta.dimensions))
 
-        existing_partitions: set[str] = {
+        existing_partitions = {
             pathlib.Path(path).relative_to(self.base_dir).as_posix()
             for path in self.partitions()
         }
@@ -307,69 +309,76 @@ class View:
             return
 
         args = filter(lambda item: item[0] in existing_partitions,
-                      self.view_ref.iterate_on_records())
+                      ref_zcol.iterate_on_records())
 
-        # Remove the attribute from the variable. The attribute will be added
-        # from the view metadata.
-        # Remove the attribute from the variable. The attribute will be added
-        # from the collection metadata.
+        # Attributes are not stored at variable's level
         variable = variable.set_for_insertion()
 
-        if distributed:
-            client: dask.distributed.Client = dask_utils.get_client()
-            try:
-                storage.execute_transaction(
-                    client, self.synchronizer,
-                    client.map(
-                        _create_zarr_array,
-                        tuple(args),
-                        base_dir=self.base_dir,
-                        variable=variable,
-                        dimensions=dimensions,
-                        chunks=chunks,
-                        axis=self.view_ref.axis,
-                        fs=self.fs,
-                    ))
-            except Exception:
-                storage.execute_transaction(
-                    client, self.synchronizer,
-                    client.map(_drop_zarr_zarr,
-                               tuple(self.partitions()),
-                               fs=self.fs,
-                               variable=variable.name,
-                               ignore_errors=True))
-                raise
-        else:
-            try:
-                for arg in args:
-                    _create_zarr_array(arg,
-                                       base_dir=self.base_dir,
-                                       variable=variable,
-                                       dimensions=dimensions,
-                                       chunks=chunks,
-                                       axis=self.view_ref.axis,
-                                       fs=self.fs)
-            except Exception:
-                for partition in self.partitions():
-                    _drop_zarr_zarr(partition,
-                                    fs=self.fs,
-                                    variable=variable.name,
-                                    ignore_errors=True)
-                raise
+        try:
+            if distributed:
+                self._add_variable_distributed(variable=variable,
+                                               partitions=args)
+            else:
+                self._add_variable(variable=variable, partitions=args)
+
+        except Exception:
+            self.drop_variable(variable=variable.name,
+                               distributed=distributed,
+                               ignore_errors=True)
+            raise
 
         self._write_config()
         # pylint: enable=duplicate-code
 
+    def _add_variable(self, variable: meta.Variable,
+                      partitions: Iterator[tuple[str, str]]):
+        """Add the provided variable to the collection."""
+        dimensions, chunks = self.view_ref.dimensions_properties()
+
+        for partition in partitions:
+            _create_zarr_array(
+                partition,
+                base_dir=self.base_dir,
+                variable=variable,
+                dimensions=dimensions,
+                chunks=chunks,
+                axis=self.view_ref.axis,
+                fs=self.fs,
+            )
+
+    def _add_variable_distributed(self, variable: meta.Variable,
+                                  partitions: Iterator[tuple[str, str]]):
+        """Add the provided variable to the collection using dask."""
+        dimensions, chunks = self.view_ref.dimensions_properties()
+        client: dask.distributed.Client = dask_utils.get_client()
+
+        storage.execute_transaction(
+            client=client,
+            synchronizer=self.synchronizer,
+            futures=client.map(
+                _create_zarr_array,
+                tuple(partitions),
+                base_dir=self.base_dir,
+                variable=variable,
+                dimensions=dimensions,
+                chunks=chunks,
+                axis=self.view_ref.axis,
+                fs=self.fs,
+            ),
+        )
+
     def drop_variable(
         self,
-        varname: str,
+        variable: str,
         distributed: bool = True,
+        ignore_errors: bool = False,
     ) -> None:
         """Drop a variable from the view.
 
         Args:
-            varname: The name of the variable to drop.
+            variable: The name of the variable to drop.
             distributed: Whether to use dask or not. Default To True.
+            ignore_errors: Whether to ignore any errors. Default To False.
 
         Raise:
             ValueError: If the variable does not exist or if the variable
@@ -378,24 +387,37 @@ class View:
         Example:
             >>> view.drop_variable("temperature")
         """
-        _LOGGER.info('Dropping variable %r', varname)
-        _assert_variable_handled(self.view_ref.metadata, self.metadata,
-                                 varname)
+        _LOGGER.info('Dropping variable %r', variable)
+        _assert_variable_handled(
+            reference=self.view_ref.metadata,
+            view=self.metadata,
+            variable=variable,
+        )
 
-        variable: meta.Variable = self.metadata.variables.pop(varname)
+        del self.metadata.variables[variable]
         self._write_config()
 
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()
             storage.execute_transaction(
-                client, self.synchronizer,
-                client.map(_drop_zarr_zarr,
-                           tuple(self.partitions()),
-                           fs=self.fs,
-                           variable=variable.name))
+                client=client,
+                synchronizer=self.synchronizer,
+                futures=client.map(
+                    _drop_zarr_zarr,
+                    tuple(self.partitions()),
+                    fs=self.fs,
+                    variable=variable,
+                    ignore_errors=ignore_errors,
+                ),
+            )
         else:
             for partition in self.partitions():
-                _drop_zarr_zarr(partition, fs=self.fs, variable=variable.name)
+                _drop_zarr_zarr(
+                    partition=partition,
+                    fs=self.fs,
+                    variable=variable,
+                    ignore_errors=ignore_errors,
+                )
 
     def load(
         self,
@@ -431,7 +453,7 @@ class View:
             >>> view.load(filters=lambda x: x["time"] == "2020-01-01")
         """
         _assert_have_variables(self.metadata)
-        # Delayed has to be True if dask is disabled
+        # Delayed has to be False if dask is disabled
         if not distributed:
             delayed = False
 
@@ -491,8 +513,7 @@ class View:
         if arrays:
             array: dataset.Dataset = arrays.pop(0)
             if arrays:
-                array = array.concat(
-                    other=arrays, dim=self.view_ref.partition_properties.dim)
+                array = array.concat(other=arrays, dim=self.view_ref.dimension)
             metadata: meta.Dataset = copy.deepcopy(self.view_ref.metadata)
             metadata.variables.update(self.metadata.variables.items())
             array.fill_attrs(metadata)
@@ -592,8 +613,7 @@ class View:
 
         variables = variables or tuple(
             _try_infer_callable(func, datasets_list[0][0],
-                                self.view_ref.partition_properties.dim, *args,
-                                **kwargs))
+                                self.view_ref.dimension, *args, **kwargs))
         tuple(
             map(
                 lambda varname: _assert_variable_handled(
@@ -607,10 +627,7 @@ class View:
 
         # Wrap the function to apply to each partition.
         if depth == 0:
-            wrap_function = _wrap_update_func(
-                func,
-                self.fs,
-            )
+            wrap_function = _wrap_update_func(func, self.fs)
         else:
             if selected_variables is not None and len(
                     set(variables) & set(selected_variables)) == 0:
@@ -619,12 +636,12 @@ class View:
                     'must contain the variables updated by the function.')
 
             wrap_function = _wrap_update_func_overlap(
-                datasets_list,
-                depth,
-                func,
-                self.fs,
-                self.view_ref,
-                trim,
+                datasets_list=datasets_list,
+                depth=depth,
+                func=func,
+                fs=self.fs,
+                view_ref=self.view_ref,
+                trim=trim,
             )
 
         if distributed:
@@ -689,17 +706,17 @@ class View:
 
         def _wrap(
             arguments: tuple[dataset.Dataset, str],
-            func: PartitionCallable,
-            *args,
-            **kwargs,
+            _func: PartitionCallable,
+            *_args,
+            **_kwargs,
         ) -> tuple[tuple[tuple[str, int], ...], Any]:
             """Wraps the function to apply on the partition.
 
             Args:
                 arguments: The partition scheme and the dataset.
-                func: The function to apply.
-                *args: The positional arguments to pass to the function.
-                **kwargs: The keyword arguments to pass to the function.
+                _func: The function to apply.
+                *_args: The positional arguments to pass to the function.
+                **_kwargs: The keyword arguments to pass to the function.
 
             Returns:
                 The result of the function.
@@ -708,8 +725,8 @@ class View:
             partition: str
 
             zds, partition = arguments
-            return self.view_ref.partitioning.parse(partition), func(
-                zds, *args, **kwargs)
+            return self.view_ref.partitioning.parse(partition), _func(
+                zds, *_args, **_kwargs)
 
         _assert_have_variables(self.metadata)
 
@@ -787,21 +804,21 @@ class View:
 
         def _wrap(
             arguments: tuple[dataset.Dataset, str],
-            func: PartitionCallable,
-            datasets_list: tuple[tuple[dataset.Dataset, str]],
-            depth: int,
-            *args,
-            **kwargs,
+            _func: PartitionCallable,
+            _datasets_list: tuple[tuple[dataset.Dataset, str]],
+            _depth: int,
+            *_args,
+            **_kwargs,
         ) -> tuple[tuple[tuple[str, int], ...], Any]:
             """Wraps the function to apply on the partition.
 
             Args:
                 arguments: The partition scheme and the dataset.
-                func: The function to apply.
+                _func: The function to apply.
                 datasets: The datasets to apply the function on.
-                depth: The depth of the overlap between the partitions.
-                *args: The positional arguments to pass to the function.
-                **kwargs: The keyword arguments to pass to the function.
+                _depth: The depth of the overlap between the partitions.
+                *_args: The positional arguments to pass to the function.
+                **_kwargs: The keyword arguments to pass to the function.
 
             Returns:
                 The result of the function.
@@ -809,17 +826,16 @@ class View:
             zds: dataset.Dataset
             indices: slice
 
-            zds, indices = _select_overlap(arguments, datasets_list, depth,
+            zds, indices = _select_overlap(arguments, _datasets_list, _depth,
                                            self.view_ref)
 
             if add_partition_info:
-                kwargs = kwargs.copy()
-                kwargs['partition_info'] = (
-                    self.view_ref.partition_properties.dim, indices)
+                _kwargs = _kwargs.copy()
+                _kwargs['partition_info'] = (self.view_ref.dimension, indices)
 
             # Finally, apply the function.
             return (self.view_ref.partitioning.parse(arguments[1]),
-                    func(zds, *args, **kwargs))
+                    _func(zds, *_args, **_kwargs))
 
         _assert_have_variables(self.metadata)
 

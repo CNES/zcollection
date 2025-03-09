@@ -76,9 +76,9 @@ class Array(Variable):
         array: NDArray
         array, fill_value = _as_numpy_array(data, fill_value=fill_value)
         super().__init__(
-            name,
-            array,
-            dimensions,
+            name=name,
+            data=array,
+            dimensions=dimensions,
             attrs=attrs,
             compressor=compressor,
             fill_value=fill_value,

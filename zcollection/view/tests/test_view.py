@@ -14,7 +14,15 @@ import distributed
 import numpy
 import pytest
 
-from ... import collection, convenience, dataset, meta, partitioning, view
+from ... import (
+    collection,
+    convenience,
+    dataset,
+    meta,
+    partitioning,
+    variable,
+    view,
+)
 # pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster
 from ...tests.data import (
@@ -192,6 +200,34 @@ def test_view(
     with pytest.raises(ValueError):
         convenience.open_view(str(tested_fs.collection),
                               filesystem=tested_fs.fs)
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_view_add_variable_immutable(fs, request):
+    """Test the creation of a view."""
+    tested_fs = request.getfixturevalue(fs)
+
+    create_test_collection(tested_fs, delayed=False)
+    instance = convenience.create_view(
+        path=str(tested_fs.view),
+        view_ref=view.ViewReference(str(tested_fs.collection), tested_fs.fs),
+        filesystem=tested_fs.fs,
+        distributed=False,
+    )
+
+    # Cannot add an immutable variable to a view
+    known_dimensions, _ = instance.view_ref.dimensions_properties()
+    dim = 'num_pixels'
+
+    new = variable.Array(
+        name='var_immutable',
+        data=numpy.arange(known_dimensions[dim], dtype='int16'),
+        dimensions=(dim, ),
+    )
+
+    with pytest.raises(ValueError,
+                       match='Immutable variable cannot be added to views'):
+        instance.add_variable(variable=new, distributed=False)
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])

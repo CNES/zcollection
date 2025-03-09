@@ -231,8 +231,8 @@ class Variable:
         Returns:
             The variable.
         """
-        return Variable(self.name,
-                        self.dtype,
+        return Variable(name=self.name,
+                        dtype=self.dtype,
                         dimensions=self.dimensions,
                         compressor=self.compressor,
                         fill_value=self.fill_value,
@@ -305,10 +305,13 @@ class Dataset:
             The selected variables.
         """
         result = set(self.variables)
+
         if keep_variables is not None:
             result &= set(keep_variables)
+
         if drop_variables is not None:
             result -= set(drop_variables)
+
         return result
 
     def __eq__(self, other: object) -> bool:
@@ -325,9 +328,6 @@ class Dataset:
         Returns:
             Dataset configuration.
         """
-        attributes: list[tuple[str, Any]]
-        variables: tuple[dict[str, Any], ...]
-
         attributes = sorted(attr.get_config() for attr in self.attrs)
         variables = tuple(self.variables[name].get_config()
                           for name in sorted(self.variables))
@@ -357,7 +357,7 @@ class Dataset:
         """
         if not isinstance(dimension, Dimension):
             raise TypeError(
-                f'dimension must be a Dimension, not {type(dimension)}')
+                f'Dimension must be a Dimension, not {type(dimension)}')
         if dimension.name in self.dimensions:
             raise ValueError(
                 f'The dimension {dimension.name!r} already exists in the '
@@ -365,11 +365,14 @@ class Dataset:
 
         self.dimensions[dimension.name] = dimension
 
-    def add_variable(self, variable: Variable) -> None:
+    def add_variable(self,
+                     variable: Variable,
+                     dimensions: set[str] | None = None) -> None:
         """Add a variable to the dataset.
 
         Args:
             variable: variable to add.
+            dimensions: set of known dimensions.
 
         Raises:
             TypeError: If the variable is not a Variable object.
@@ -379,16 +382,19 @@ class Dataset:
         """
         if not isinstance(variable, Variable):
             raise TypeError(
-                f'variable must be a Variable, not {type(variable)}')
+                f'Variable must be a Variable, not {type(variable)}')
+
         if variable.name in self.variables:
             raise ValueError(
                 f'The variable {variable.name!r} already exists in the '
                 'collection.')
-        dimensions = set(self.dimensions)
+
+        dimensions = dimensions or set(self.dimensions)
         # Looking for unknown dimensions.
         if (set(variable.dimensions) | dimensions) != dimensions:
             raise ValueError(
                 'The new variable must use the dataset dimensions.')
+
         self.variables[variable.name] = variable
 
     @staticmethod

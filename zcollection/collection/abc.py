@@ -115,14 +115,10 @@ def build_indexer_args(
     return ((item, indexers_map[item]) for item in sorted(selected_partitions))
 
 
-def _immutable_path(
-    zds: meta.Dataset,
-    partition_properties: PartitioningProperties,
-) -> str | None:
+def _immutable_path(partition_properties: PartitioningProperties, ) -> str:
     """Return the immutable path of the dataset.
 
     Args:
-        zds: The dataset to process.
         partition_properties: The partitioning properties.
 
     Returns:
@@ -130,9 +126,7 @@ def _immutable_path(
         relative to the partitioning or None if the dataset does not contain
         immutable data.
     """
-    return fs_utils.join_path(
-        partition_properties.dir, IMMUTABLE) if zds.select_variables_by_dims(
-            (partition_properties.dim, ), predicate=False) else None
+    return fs_utils.join_path(partition_properties.dir, IMMUTABLE)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -220,8 +214,8 @@ class ReadOnlyCollection:
 
         #: The path to the dataset that contains the immutable data relative
         #: to the partitioning.
-        self._immutable: str | None = _immutable_path(
-            zds=ds, partition_properties=self._properties.partition)
+        self._immutable: str = _immutable_path(
+            partition_properties=self._properties.partition)
 
         self.version = importlib.metadata.version('zcollection')
 
@@ -229,6 +223,12 @@ class ReadOnlyCollection:
     def axis(self) -> str:
         """Return the axis of the collection."""
         return self._properties.axis
+
+    @property
+    def dimension(self) -> str:
+        """Return the main dimension (dimension of the axis) of the
+        collection."""
+        return self._properties.dimension
 
     @property
     def metadata(self) -> meta.Dataset:
@@ -264,7 +264,11 @@ class ReadOnlyCollection:
     def immutable(self) -> bool:
         """Return True if the collection contains immutable data relative to
         the partitioning."""
-        return self._immutable is not None
+        return len(
+            self.metadata.select_variables_by_dims(
+                dims=(self.dimension, ),
+                predicate=False,
+            )) > 0
 
     @classmethod
     def _config(cls, partition_base_dir: str) -> str:
@@ -335,7 +339,7 @@ class ReadOnlyCollection:
         for dim in self.metadata.dimensions.values():
             chunks[dim.name] = dim.chunks
 
-            if dim.name != self._properties.dimension:
+            if dim.name != self.dimension:
                 dimensions[dim.name] = dim.value
 
         return dimensions, chunks
@@ -407,10 +411,11 @@ class ReadOnlyCollection:
                     sep=self.fs.sep) if p in partitions
             ]
 
-        yield from (self._relative_path(item) if relative else item
-                    for item in partitions
-                    if (item != self._immutable and self._is_selected(
-                        item.replace(base_dir, '').split(sep), expr)))
+        yield from (
+            self._relative_path(item) if relative else item
+            for item in partitions
+            if (item != self._immutable and self._is_selected(
+                partition=item.replace(base_dir, '').split(sep), expr=expr)))
 
     # pylint: disable=duplicate-code
     # false positive, no code duplication
@@ -478,7 +483,7 @@ class ReadOnlyCollection:
             zds: dataset.Dataset = _load_dataset(
                 delayed=_delayed,
                 fs=self.fs,
-                immutable=self._immutable,
+                immutable=self._immutable if self.immutable else None,
                 partition=_partition,
                 selected_variables=_selected_variables)
             return self.partitioning.parse(_partition), _func(
@@ -586,17 +591,16 @@ class ReadOnlyCollection:
             zds, indices = _load_dataset_with_overlap(
                 delayed=_delayed,
                 depth=_depth,
-                dim=self.partition_properties.dim,
+                dim=self.dimension,
                 fs=self.fs,
-                immutable=self._immutable,
+                immutable=self._immutable if self.immutable else None,
                 partition=_partition,
                 partitions=_partitions,
                 selected_variables=_selected_variables)
 
             if add_partition_info:
                 _kwargs = _kwargs.copy()
-                _kwargs['partition_info'] = (self.partition_properties.dim,
-                                             indices)
+                _kwargs['partition_info'] = (self.dimension, indices)
 
             # Finally, apply the function.
             return (self.partitioning.parse(_partition),
@@ -657,7 +661,7 @@ class ReadOnlyCollection:
             ...     filters=lambda keys: keys["year"] == 2019 and
             ...     keys["month"] == 3 and keys["day"] % 2 == 0)
         """
-        # Delayed has to be True if dask is disabled
+        # Delayed has to be False if dask is disabled
         if not distributed:
             delayed = False
 
@@ -682,8 +686,9 @@ class ReadOnlyCollection:
 
         array: dataset.Dataset = arrays.pop(0)
         if arrays:
-            array = array.concat(arrays, self.partition_properties.dim)
-        if self._immutable:
+            array = array.concat(arrays, self.dimension)
+
+        if self.immutable:
             array.merge(
                 storage.open_zarr_group(dirname=self._immutable,
                                         fs=self.fs,

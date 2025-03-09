@@ -18,8 +18,8 @@ import dask.array.core
 import dask.distributed
 import fsspec
 import numpy
+import numpy as np
 import pytest
-import zarr
 
 from ... import (
     collection,
@@ -438,6 +438,7 @@ def test_drop_partitions(
     zcollection = convenience.open_collection(str(tested_fs.collection),
                                               mode='r',
                                               filesystem=tested_fs.fs)
+    assert zcollection.is_readonly()
     with pytest.raises(io.UnsupportedOperation):
         zcollection.drop_partitions(distributed=distributed)
 
@@ -465,11 +466,13 @@ def test_drop_variable(
     assert zds is not None
     assert 'var1' not in zds.variables
 
-    zcollection = convenience.open_collection(str(tested_fs.collection),
+    zcollection = convenience.open_collection(path=str(tested_fs.collection),
                                               mode='r',
                                               filesystem=tested_fs.fs)
-    with pytest.raises(io.UnsupportedOperation):
-        zcollection.drop_partitions(distributed=distributed)
+
+    zds = zcollection.load(delayed=False, distributed=distributed)
+    assert zds is not None
+    assert 'var1' not in zds.variables
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
@@ -480,30 +483,23 @@ def test_add_variable(
     distributed,
     request,
 ) -> None:
-    """Test the adding of a variable."""
+    """Test adding a variable."""
     tested_fs = request.getfixturevalue(arg)
-    zcollection = create_test_collection(tested_fs, delayed=False)
+    zcol = create_test_collection(tested_fs, delayed=False)
 
     # Variable already exists
     new = meta.Variable(name='time',
                         dtype=numpy.dtype('float64'),
-                        dimensions=('time', ))
-    with pytest.raises(ValueError):
-        zcollection.add_variable(new, distributed=distributed)
+                        dimensions=('num_lines', ))
+    with pytest.raises(ValueError, match='already exists'):
+        zcol.add_variable(new, distributed=distributed)
 
-    # Variable doesn't use the partitioning dimension.
+    # Variable have unknown dimension.
     new = meta.Variable(name='x',
                         dtype=numpy.dtype('float64'),
-                        dimensions=('x', ))
-    with pytest.raises(ValueError):
-        zcollection.add_variable(new, distributed=distributed)
-
-    # Variable doesn't use the dataset dimension.
-    new = meta.Variable(name='x',
-                        dtype=numpy.dtype('float64'),
-                        dimensions=('time', 'x'))
-    with pytest.raises(ValueError):
-        zcollection.add_variable(new, distributed=distributed)
+                        dimensions=('num_lines', 'x'))
+    with pytest.raises(ValueError, match='must use the dataset dimensions'):
+        zcol.add_variable(new, distributed=distributed)
 
     new = meta.Variable(
         name='var3',
@@ -512,22 +508,197 @@ def test_add_variable(
         fill_value=32267,
         attrs=(dataset.Attribute(name='attr', value=4), ),
     )
-    zcollection.add_variable(new, distributed=distributed)
+    zcol.add_variable(new, distributed=distributed)
 
-    assert new.name in zcollection.metadata.variables
+    assert new.name in zcol.metadata.variables
 
     # Testing the configuration update by reopening the collection
-    zcollection = collection.Collection.from_config(path=str(
-        tested_fs.collection),
-                                                    filesystem=tested_fs.fs)
+    zcol = collection.Collection.from_config(path=str(tested_fs.collection),
+                                             filesystem=tested_fs.fs)
 
-    assert new.name in zcollection.metadata.variables
+    assert new.name in zcol.metadata.variables
 
-    zds = zcollection.load(delayed=False, distributed=distributed)
+    zds = zcol.load(delayed=False, distributed=distributed)
     assert zds is not None
     values = zds.variables['var3'].values
     assert isinstance(values, numpy.ma.MaskedArray)
     assert numpy.all(values.mask)  # type: ignore
+
+
+@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+def test_variable_immutable_add_drop(
+        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        arg,
+        request) -> None:
+    """Test the adding of a variable."""
+    tested_fs = request.getfixturevalue(arg)
+    zcol = create_test_collection(tested_fs, delayed=False)
+
+    # Just a metadata, we need a real variable
+    new = meta.Variable(
+        name='var_immutable',
+        dtype=numpy.dtype('int16'),
+        dimensions=('num_pixels', ),
+        fill_value=32267,
+        attrs=(dataset.Attribute(name='attr', value=4), ),
+    )
+
+    with pytest.raises(ValueError,
+                       match='Immutable variable must contain their data'):
+        zcol.add_variable(variable=new, distributed=False)
+
+    assert new.name not in zcol.metadata.variables
+
+    # Invalid dimension size
+    known_dimensions, _ = zcol.dimensions_properties()
+    dim = 'num_pixels'
+
+    new_arr = variable.Array(
+        name='var_immutable',
+        data=numpy.arange(known_dimensions[dim] * 2, dtype='int16'),
+        dimensions=(dim, ),
+        fill_value=32267,
+        attrs=(dataset.Attribute(name='attr', value=4), ),
+    )
+
+    with pytest.raises(ValueError, match='with an invalid size'):
+        zcol.add_variable(variable=new_arr, distributed=False)
+
+    assert new_arr.name not in zcol.metadata.variables
+
+    # Unknown dimension
+    known_dimensions, _ = zcol.dimensions_properties()
+    dim = 'num_pixels'
+
+    new_arr = variable.Array(
+        name='var_immutable',
+        data=numpy.arange(known_dimensions[dim] * 2,
+                          dtype='int16').reshape(known_dimensions[dim], 2),
+        dimensions=(dim, 'x'),
+        fill_value=32267,
+        attrs=(dataset.Attribute(name='attr', value=4), ),
+    )
+
+    with pytest.raises(ValueError, match='must use the dataset dimensions'):
+        zcol.add_variable(variable=new_arr, distributed=False)
+
+    assert new_arr.name not in zcol.metadata.variables
+
+    # Everything ok
+    known_dimensions, _ = zcol.dimensions_properties()
+    dim = 'num_pixels'
+
+    new_arr = variable.Array(
+        name='var_immutable',
+        data=numpy.arange(known_dimensions[dim], dtype='int16'),
+        dimensions=(dim, ),
+        fill_value=32267,
+        attrs=(dataset.Attribute(name='attr', value=4), ),
+    )
+
+    zcol.add_variable(variable=new_arr, distributed=False)
+
+    # Reopening collection
+    zcol = convenience.open_collection(path=str(tested_fs.collection),
+                                       mode='w',
+                                       filesystem=tested_fs.fs)
+    assert new_arr.name in zcol.metadata.variables
+
+    data = zcol.load(selected_variables=[new_arr.name],
+                     delayed=False,
+                     distributed=False)
+
+    assert data is not None
+    assert np.array_equal(data[new_arr.name].values, new_arr.data)
+    assert data[new_arr.name].attrs == new_arr.attrs
+    assert data[new_arr.name].fill_value == new_arr.fill_value
+
+    # Adding missing dimension
+    new_dim = meta.Dimension(name='x', value=2, chunks=1)
+    zcol.add_dimension(dimension=new_dim)
+
+    new_data = numpy.arange(known_dimensions[dim] * new_dim.value,
+                            dtype='int16').reshape(known_dimensions[dim],
+                                                   new_dim.value)
+
+    new_x = variable.Array(name='var_immutable_x',
+                           data=new_data,
+                           dimensions=(dim, new_dim.name))
+
+    zcol.add_variable(variable=new_x, distributed=False)
+
+    # Reopening collection
+    zcol = convenience.open_collection(path=str(tested_fs.collection),
+                                       mode='w',
+                                       filesystem=tested_fs.fs)
+    assert new_x.name in zcol.metadata.variables
+
+    data = zcol.load(selected_variables=[new_x.name],
+                     delayed=True,
+                     distributed=True)
+
+    assert data is not None
+    new_data_r = data[new_x.name]
+
+    assert np.array_equal(new_data_r.values, new_x.data)
+    assert new_data_r.attrs == new_x.attrs
+    assert new_data_r.fill_value == new_x.fill_value
+    assert new_data_r.data.chunksize[1] == new_dim.chunks
+
+    zcol.drop_variable(variable=new_x.name)
+
+    # Reopening collection
+    zcol = convenience.open_collection(path=str(tested_fs.collection),
+                                       mode='w',
+                                       filesystem=tested_fs.fs)
+    assert new_arr.name in zcol.metadata.variables
+    assert new_x.name not in zcol.metadata.variables
+
+    zcol.drop_variable(variable=new_arr.name)
+
+    assert new_arr.name not in zcol.metadata.variables
+
+    data = zcol.load(selected_variables=[new_x.name],
+                     delayed=True,
+                     distributed=True)
+
+    assert data is not None
+
+    assert new_x.name not in data.variables
+    assert new_arr.name not in data.variables
+
+
+@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+def test_dimension_add_drop(arg, request) -> None:
+    """Test the adding of a variable."""
+    tested_fs = request.getfixturevalue(arg)
+    zcol = create_test_collection(tested_fs, delayed=False)
+
+    dim_dum = meta.Dimension(name='dummy', value=20, chunks=2)
+    zcol.add_dimension(dimension=dim_dum)
+
+    with pytest.raises(ValueError, match='already exists in the'):
+        zcol.add_dimension(dimension=dim_dum)
+
+    # Reopening collection
+    zcol = convenience.open_collection(path=str(tested_fs.collection),
+                                       mode='w',
+                                       filesystem=tested_fs.fs)
+
+    assert dim_dum.name in zcol.metadata.dimensions
+    assert dim_dum.name in zcol.metadata.dim_size
+    assert dim_dum.name in zcol.metadata.dim_chunks
+
+    zcol.drop_dimension(dimension=dim_dum.name)
+
+    # Reopening collection
+    zcol = convenience.open_collection(path=str(tested_fs.collection),
+                                       mode='w',
+                                       filesystem=tested_fs.fs)
+
+    assert dim_dum.name not in zcol.metadata.dimensions
+    assert dim_dum.name not in zcol.metadata.dim_size
+    assert dim_dum.name not in zcol.metadata.dim_chunks
 
 
 @pytest.mark.parametrize('fs,create_test_data', FILE_SYSTEM_DATASET)
@@ -1051,12 +1222,14 @@ def test_concurrent_insert(
     lock_file = str(tmpdir / 'lock.lck')
     synchronizer = sync.ProcessSync(lock_file)
     base_dir = str(tmpdir / 'test')
-    zcollection = collection.Collection('time',
-                                        zds.metadata(),
-                                        partitioning.Date(('time', ), 'D'),
-                                        base_dir,
-                                        filesystem=fs,
-                                        synchronizer=synchronizer)
+    zcollection = collection.Collection(
+        axis='time',
+        ds=zds.metadata(),
+        partition_handler=partitioning.Date(('time', ), 'D'),
+        partition_base_dir=base_dir,
+        filesystem=fs,
+        synchronizer=synchronizer,
+    )
 
     pool = concurrent.futures.ProcessPoolExecutor(
         max_workers=32, mp_context=multiprocessing.get_context('spawn'))
@@ -1155,11 +1328,14 @@ def test_invalid_partitions(
     zds = datasets.pop(0)
     zds.concat(datasets, 'num_lines')
     base_dir = str(tmpdir / 'test')
-    zcollection = collection.Collection('time',
-                                        zds.metadata(),
-                                        partitioning.Date(('time', ), 'D'),
-                                        base_dir,
-                                        filesystem=fs)
+    zcollection = collection.Collection(
+        axis='time',
+        ds=zds.metadata(),
+        partition_handler=partitioning.Date(variables=('time', ),
+                                            resolution='D'),
+        partition_base_dir=base_dir,
+        filesystem=fs,
+    )
     zcollection.insert(zds)
     partitions = tuple(zcollection.partitions())
     choices = numpy.random.choice(len(partitions), size=2, replace=False)
@@ -1167,17 +1343,25 @@ def test_invalid_partitions(
         var2 = fs.sep.join((partitions[idx], 'var2', '0.0'))
         with fs.open(var2, 'wb') as file:
             file.write(b'invalid')
+
     with pytest.raises(ValueError):
         _ = zcollection.load(delayed=False, distributed=distributed)
+
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         invalid_partitions = zcollection.validate_partitions(
             distributed=distributed)
+
     assert len(invalid_partitions) == 2
     assert sorted(invalid_partitions) == sorted(partitions[ix]
                                                 for ix in choices)
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         zcollection.validate_partitions(fix=True, distributed=distributed)
+
     assert zcollection.load() is not None
+
+    # Filters excludes all partitions
+    assert not zcollection.validate_partitions(filters='day==36',
+                                               distributed=distributed)
 
 
 # pylint: disable=too-many-statements

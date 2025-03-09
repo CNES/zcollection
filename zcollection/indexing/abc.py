@@ -119,7 +119,7 @@ class Indexer(abc.ABC):
         """Return the columns of the index.
 
         Args:
-            **kwargs: Additional arguments to pass to the function.
+            **_kwargs: Additional arguments to pass to the function.
 
         Returns:
             A tuple of (name, type) pairs.
