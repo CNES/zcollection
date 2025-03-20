@@ -12,6 +12,7 @@ import concurrent.futures
 import copy
 import datetime
 import io
+import logging
 import multiprocessing
 
 import dask.array.core
@@ -20,6 +21,8 @@ import fsspec
 import numpy
 import numpy as np
 import pytest
+
+import zcollection
 
 from ... import (
     collection,
@@ -64,7 +67,8 @@ def test_collection_creation(
         partition_base_dir=str(tested_fs.collection),
         filesystem=tested_fs.fs)
     assert isinstance(str(zcollection), str)
-    assert zcollection.immutable is False
+    assert zcollection.have_immutable is False
+    assert zcollection.load(distributed=False) is None
 
     serialized = collection.Collection.from_config(str(tested_fs.collection),
                                                    filesystem=tested_fs.fs)
@@ -275,7 +279,7 @@ def test_update(
                           data.variables['var1'].values * -1 + 5,
                           rtol=0)
 
-    # Test case if the selected variables does not contains the variable
+    # Test case if the selected variables do not contain the variable
     # to update.
     zcollection.update(
         update,  # type: ignore
@@ -340,8 +344,9 @@ def test_update(
         return {'var99': zds.variables['var1'].values * -1 + 3}
 
     with pytest.raises(ValueError):
-        zcollection.update(invalid_var_name,
-                           distributed=distributed)  # type: ignore
+        zcollection.update(
+            invalid_var_name,  # type: ignore
+            distributed=distributed)
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
@@ -526,7 +531,7 @@ def test_add_variable(
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
-def test_variable_immutable_add_drop(
+def test_variable_immutable(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
         arg,
         request) -> None:
@@ -534,46 +539,13 @@ def test_variable_immutable_add_drop(
     tested_fs = request.getfixturevalue(arg)
     zcol = create_test_collection(tested_fs, delayed=False)
 
-    # Just a metadata, we need a real variable
-    new = meta.Variable(
-        name='var_immutable',
-        dtype=numpy.dtype('int16'),
-        dimensions=('num_pixels', ),
-        fill_value=32267,
-        attrs=(dataset.Attribute(name='attr', value=4), ),
-    )
-
-    with pytest.raises(ValueError,
-                       match='Immutable variable must contain their data'):
-        zcol.add_variable(variable=new, distributed=False)
-
-    assert new.name not in zcol.metadata.variables
-
-    # Invalid dimension size
-    known_dimensions, _ = zcol.dimensions_properties()
-    dim = 'num_pixels'
-
-    new_arr = variable.Array(
-        name='var_immutable',
-        data=numpy.arange(known_dimensions[dim] * 2, dtype='int16'),
-        dimensions=(dim, ),
-        fill_value=32267,
-        attrs=(dataset.Attribute(name='attr', value=4), ),
-    )
-
-    with pytest.raises(ValueError, match='with an invalid size'):
-        zcol.add_variable(variable=new_arr, distributed=False)
-
-    assert new_arr.name not in zcol.metadata.variables
-
     # Unknown dimension
     known_dimensions, _ = zcol.dimensions_properties()
     dim = 'num_pixels'
 
-    new_arr = variable.Array(
+    new_arr = meta.Variable(
         name='var_immutable',
-        data=numpy.arange(known_dimensions[dim] * 2,
-                          dtype='int16').reshape(known_dimensions[dim], 2),
+        dtype=numpy.dtype('int16'),
         dimensions=(dim, 'x'),
         fill_value=32267,
         attrs=(dataset.Attribute(name='attr', value=4), ),
@@ -584,19 +556,36 @@ def test_variable_immutable_add_drop(
 
     assert new_arr.name not in zcol.metadata.variables
 
-    # Everything ok
-    known_dimensions, _ = zcol.dimensions_properties()
-    dim = 'num_pixels'
-
-    new_arr = variable.Array(
+    new = meta.Variable(
         name='var_immutable',
-        data=numpy.arange(known_dimensions[dim], dtype='int16'),
+        dtype=numpy.dtype('int16'),
         dimensions=(dim, ),
         fill_value=32267,
         attrs=(dataset.Attribute(name='attr', value=4), ),
     )
 
-    zcol.add_variable(variable=new_arr, distributed=False)
+    zcol.add_variable(variable=new, distributed=False)
+
+    assert new.name in zcol.metadata.variables
+
+    # Invalid dimension size
+    with pytest.raises(ValueError, match='with an invalid size'):
+        zcol.update_immutable(
+            name=new.name,
+            data=numpy.arange(known_dimensions[dim] * 2, dtype='int16'),
+        )
+
+    data = zcol.load(selected_variables=[new_arr.name],
+                     delayed=False,
+                     distributed=False)
+
+    assert data is not None
+    assert np.array_equal(
+        data[new_arr.name].values,
+        numpy.full(shape=known_dimensions[dim], fill_value=new.fill_value))
+
+    arr_data = numpy.arange(known_dimensions[dim], dtype='int16')
+    zcol.update_immutable(name=new.name, data=arr_data)
 
     # Reopening collection
     zcol = convenience.open_collection(path=str(tested_fs.collection),
@@ -609,7 +598,7 @@ def test_variable_immutable_add_drop(
                      distributed=False)
 
     assert data is not None
-    assert np.array_equal(data[new_arr.name].values, new_arr.data)
+    assert np.array_equal(data[new_arr.name].values, arr_data)
     assert data[new_arr.name].attrs == new_arr.attrs
     assert data[new_arr.name].fill_value == new_arr.fill_value
 
@@ -626,6 +615,7 @@ def test_variable_immutable_add_drop(
                            dimensions=(dim, new_dim.name))
 
     zcol.add_variable(variable=new_x, distributed=False)
+    zcol.update_immutable(name=new_x.name, data=new_x.values)
 
     # Reopening collection
     zcol = convenience.open_collection(path=str(tested_fs.collection),
@@ -716,11 +706,12 @@ def test_add_update(
     tested_fs = request.getfixturevalue(fs)
     delayed = request.getfixturevalue(arrays_type)
     zds = next(create_test_data(delayed=delayed))
-    zcollection = collection.Collection('time',
-                                        zds.metadata(),
-                                        partitioning.Date(('time', ), 'D'),
-                                        str(tested_fs.collection),
-                                        filesystem=tested_fs.fs)
+    zcollection = collection.Collection(
+        axis='time',
+        ds=zds.metadata(),
+        partition_handler=partitioning.Date(('time', ), 'D'),
+        partition_base_dir=str(tested_fs.collection),
+        filesystem=tested_fs.fs)
     zcollection.insert(zds, distributed=distributed)
 
     new1 = meta.Variable(name='var3',
@@ -813,7 +804,7 @@ def test_degraded_tests(
     fake_ds.variables['var3'] = fake_ds.variables['var1']
     fake_ds.variables['var3'].name = 'var3'
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='is unknown'):
         zcollection.insert(fake_ds, distributed=distributed)
 
 
@@ -838,11 +829,14 @@ def test_insert_with_missing_variable(
         partition_handler=partitioning.Date(('time', ), 'M'),
         partition_base_dir=str(tested_fs.collection),
         filesystem=tested_fs.fs)
-    zcollection.insert(zds,
-                       merge_callable=merging.merge_time_series,
-                       distributed=distributed)
+    zcollection.insert(
+        ds=zds,
+        merge_callable=merging.merge_time_series,  # type: ignore
+        distributed=distributed)
 
     zds = next(create_test_dataset_with_fillvalue())
+
+    zds_v1 = zds.variables['var1']
     zds.drops_vars('var1')
     zcollection.insert(zds, distributed=distributed)
 
@@ -851,10 +845,63 @@ def test_insert_with_missing_variable(
     assert numpy.ma.allequal(
         data.variables['var1'].values,
         numpy.ma.masked_equal(
-            numpy.full(zds.variables['var1'].shape,
-                       zds.variables['var1'].fill_value,
-                       zds.variables['var1'].dtype),
-            zds.variables['var1'].fill_value))
+            x=numpy.full(shape=zds_v1.shape,
+                         fill_value=zds_v1.fill_value,
+                         dtype=zds_v1.dtype),
+            value=zds_v1.fill_value,
+        ))
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_insert_missing_dimensions(fs, request) -> None:
+    """Test the insertion of data with missing dimensions and variables."""
+    tested_fs = request.getfixturevalue(fs)
+    zds_reference = dataset.Dataset(
+        variables=[
+            dataset.Array(
+                name='time',
+                data=numpy.arange(numpy.datetime64('2000-01-01'),
+                                  numpy.datetime64('2000-01-30'),
+                                  numpy.timedelta64(1, 'D')),
+                dimensions=('time', ),
+            ),
+            dataset.Array(
+                name='grid',
+                data=numpy.arange(29 * 360 * 180).reshape(29, 360, 180),
+                dimensions=('time', 'lon', 'lat'),
+            ),
+        ],
+        attrs=(dataset.Attribute('history', 'Created for testing'), ),
+    )
+    zcol = collection.Collection(axis='time',
+                                 ds=zds_reference.metadata(),
+                                 partition_handler=partitioning.Date(
+                                     variables=('time', ), resolution='D'),
+                                 partition_base_dir=str(tested_fs.collection),
+                                 filesystem=tested_fs.fs)
+
+    # Adding a new dimension and a variable with this dimension so we
+    # can test the insertion of a dataset not containing all dimensions
+    new_dim = meta.Dimension(name='x', value=2, chunks=1)
+    new_var = meta.Variable(name='new_var',
+                            dtype=numpy.dtype('int8'),
+                            dimensions=(zcol.dimension, new_dim.name),
+                            fill_value=0)
+
+    zcol.add_dimension(dimension=new_dim)
+    zcol.add_variable(variable=new_var, distributed=False)
+
+    zcol.insert(ds=zds_reference, distributed=False)
+
+    data = zcol.load(distributed=False)
+
+    assert data is not None
+    assert set(data.variables) == {'time', 'grid', new_var.name}
+    assert set(data.dimensions) == {'lat', 'lon', 'time', new_dim.name}
+
+    data_ins = zcol._set_ds_for_insertion(ds=data)
+    assert set(data_ins.variables) == {'time', 'grid', new_var.name}
+    assert set(data_ins.dimensions) == {'lat', 'lon', 'time', new_dim.name}
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
@@ -871,11 +918,12 @@ def test_insert_failed(
     tested_fs = request.getfixturevalue(fs)
     delayed = request.getfixturevalue(arrays_type)
     zds = next(create_test_dataset(delayed=delayed))
-    zcollection = collection.Collection('time',
-                                        zds.metadata(),
-                                        partitioning.Date(('time', ), 'D'),
-                                        str(tested_fs.collection),
-                                        filesystem=tested_fs.fs)
+    zcollection = collection.Collection(
+        axis='time',
+        ds=zds.metadata(),
+        partition_handler=partitioning.Date(('time', ), 'D'),
+        partition_base_dir=str(tested_fs.collection),
+        filesystem=tested_fs.fs)
     partitions = list(zcollection.partitioning.split_dataset(zds, 'time'))
 
     # Create a file in the directory where the dataset should be written. This
@@ -1107,11 +1155,10 @@ def test_insert_immutable(
                                         partitioning.Date(('time', ), 'D'),
                                         str(tested_fs.collection),
                                         filesystem=tested_fs.fs)
-    assert zcollection.immutable
-    assert not tested_fs.fs.exists(zcollection._immutable)
+    assert zcollection.have_immutable
+    assert tested_fs.fs.exists(zcollection._immutable)
 
     zcollection.insert(zds_reference, distributed=distributed)
-    assert tested_fs.fs.exists(zcollection._immutable)
 
     zds = zcollection.load(delayed=False, distributed=distributed)
     assert zds is not None
@@ -1170,6 +1217,67 @@ def test_insert_immutable(
     )
     with pytest.raises(ValueError):
         zcollection.add_variable(new_variable, distributed=distributed)
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_insert_immutable_only(fs, request, caplog) -> None:
+    """Test insertion of data only containing immutable variables."""
+    tested_fs = request.getfixturevalue(fs)
+    zds_reference = dataset.Dataset(
+        variables=[
+            dataset.Array(
+                name='time',
+                data=numpy.arange(numpy.datetime64('2000-01-01'),
+                                  numpy.datetime64('2000-01-30'),
+                                  numpy.timedelta64(1, 'D')),
+                dimensions=('time', ),
+            ),
+            dataset.Array(
+                name='lat',
+                data=numpy.arange(-90, 90, 1),
+                dimensions=('lat', ),
+            ),
+            dataset.Array(
+                name='grid',
+                data=numpy.arange(29 * 360 * 180).reshape(29, 360, 180),
+                dimensions=('time', 'lon', 'lat'),
+            ),
+        ],
+        attrs=(dataset.Attribute('history', 'Created for testing'), ),
+    )
+    zcol = collection.Collection(axis='time',
+                                 ds=zds_reference.metadata(),
+                                 partition_handler=partitioning.Date(
+                                     variables=('time', ), resolution='D'),
+                                 partition_base_dir=str(tested_fs.collection),
+                                 filesystem=tested_fs.fs)
+    assert zcol.have_immutable
+    assert zcol.load(distributed=False) is None
+
+    caplog.set_level(logging.DEBUG)
+    partitions = zcol.insert(ds=zds_reference.select_vars(names='lat'),
+                             distributed=False)
+
+    assert "Writing Zarr variable 'lat'" in caplog.text
+    assert partitions == tuple()
+
+    data = zcol.load(distributed=False)
+
+    assert data is not None
+    assert zcol.dimension not in data.variables
+    assert numpy.array_equal(data['lat'].values, zds_reference['lat'].values)
+
+    caplog.clear()
+    zcol.insert(ds=zds_reference, distributed=False)
+
+    assert "Writing Zarr variable 'lat'" not in caplog.text
+
+    data = zcol.load(distributed=False)
+
+    assert data is not None
+    assert numpy.array_equal(data['time'].values, zds_reference['time'].values)
+    assert numpy.array_equal(data['grid'].values, zds_reference['grid'].values)
+    assert numpy.array_equal(data['lat'].values, zds_reference['lat'].values)
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])

@@ -52,7 +52,7 @@ def test_view(
     tested_fs = request.getfixturevalue(fs)
     delayed = request.getfixturevalue(arrays_type)
 
-    create_test_collection(tested_fs, delayed=False)
+    create_test_collection(tested_fs, delayed=False, distributed=distributed)
     instance = convenience.create_view(str(tested_fs.view),
                                        view.ViewReference(
                                            str(tested_fs.collection),
@@ -62,9 +62,14 @@ def test_view(
     assert isinstance(instance, view.View)
     assert isinstance(str(instance), str)
 
-    # No variable recorded, so no data can be loaded
-    with pytest.raises(ValueError):
-        instance.load(delayed=delayed, distributed=distributed)
+    # No variable recorded
+    assert not instance.variables()
+
+    # Only reading reference variables
+    zds = instance.load(delayed=delayed, distributed=distributed)
+    assert set(
+        zds.variables) == {v.name
+                           for v in instance.view_ref.variables()}
 
     var = meta.Variable(
         name='var2',
@@ -76,8 +81,12 @@ def test_view(
     with pytest.raises(ValueError):
         instance.add_variable(var, distributed=distributed)
 
+    assert not instance.variables()
+
     var.name = 'var3'
     instance.add_variable(var, distributed=distributed)
+
+    assert {v.name for v in instance.variables()} == {var.name}
 
     with pytest.raises(ValueError):
         instance.add_variable(var, distributed=distributed)
@@ -105,6 +114,15 @@ def test_view(
 
     # The metadata of the reference collection is not modified.
     assert 'var3' not in instance.view_ref.metadata.variables.keys()
+
+    # Loading a set of variables one from the view and another from
+    # the reference having different dimensions.
+    zds = instance.load(delayed=delayed,
+                        selected_variables=('time', 'var3'),
+                        distributed=distributed)
+    assert zds is not None
+    assert tuple(zds.variables) == ('time', 'var3')
+    assert 'var3' in zds.metadata().variables.keys()
 
     # Loading a non-existing variable.
     zds = instance.load(delayed=delayed,
@@ -147,6 +165,12 @@ def test_view(
     # Create a variable with the unsynchronized view
     var.name = 'var4'
     instance.add_variable(var, distributed=distributed)
+
+    # Testing variables method
+    assert {v.name for v in instance.variables()} == {'var3', 'var4'}
+    assert {v.name
+            for v in instance.variables(selected_variables=[var.name])
+            } == {var.name}
 
     zds = instance.load(delayed=delayed, distributed=distributed)
     assert zds is not None
@@ -204,10 +228,10 @@ def test_view(
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_view_add_variable_immutable(fs, request):
-    """Test the creation of a view."""
+    """Test the addition of an immutable variable."""
     tested_fs = request.getfixturevalue(fs)
 
-    create_test_collection(tested_fs, delayed=False)
+    create_test_collection(tested_fs, delayed=False, distributed=False)
     instance = convenience.create_view(
         path=str(tested_fs.view),
         view_ref=view.ViewReference(str(tested_fs.collection), tested_fs.fs),
@@ -231,12 +255,111 @@ def test_view_add_variable_immutable(fs, request):
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_view_read_immutable(fs, request):
+    """Test the reading of an immutable variable."""
+    tested_fs = request.getfixturevalue(fs)
+
+    create_test_collection(tested_fs, delayed=False, distributed=False)
+    view_ref = view.ViewReference(str(tested_fs.collection), tested_fs.fs)
+    col_ref = convenience.open_collection(path=view_ref.path, mode='w')
+
+    # Cannot add an immutable variable to a view
+    known_dimensions, _ = col_ref.dimensions_properties()
+    dim = 'num_pixels'
+    var_data = numpy.arange(known_dimensions[dim], dtype='int16')
+
+    new = variable.Array(
+        name='var_immutable',
+        data=var_data,
+        dimensions=(dim, ),
+    )
+
+    col_ref.add_variable(variable=new, distributed=False)
+    col_ref.update_immutable(name=new.name, data=var_data)
+
+    instance = convenience.create_view(
+        path=str(tested_fs.view),
+        view_ref=view_ref,
+        filesystem=tested_fs.fs,
+        distributed=False,
+    )
+
+    # Reading immutable variable from the view
+    ds = instance.load(selected_variables=[new.name], distributed=False)
+
+    assert numpy.array_equal(ds[new.name].values, var_data)
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_view_read_immutable_only(fs, request):
+    """Test the reading in a view based on a collection only containing
+    immutable variables.."""
+    tested_fs = request.getfixturevalue(fs)
+    zds_reference = dataset.Dataset(
+        variables=[
+            dataset.Array(
+                name='time',
+                data=numpy.arange(numpy.datetime64('2000-01-01'),
+                                  numpy.datetime64('2000-01-30'),
+                                  numpy.timedelta64(1, 'D')),
+                dimensions=('time', ),
+            ),
+            dataset.Array(
+                name='lat',
+                data=numpy.arange(-90, 90, 1),
+                dimensions=('lat', ),
+            ),
+            dataset.Array(
+                name='grid',
+                data=numpy.arange(29 * 360 * 180).reshape(29, 360, 180),
+                dimensions=('time', 'lon', 'lat'),
+            ),
+        ],
+        attrs=(dataset.Attribute('history', 'Created for testing'), ),
+    )
+    zcol = collection.Collection(axis='time',
+                                 ds=zds_reference.metadata(),
+                                 partition_handler=partitioning.Date(
+                                     variables=('time', ), resolution='D'),
+                                 partition_base_dir=str(tested_fs.collection),
+                                 filesystem=tested_fs.fs)
+
+    view_ref = view.ViewReference(str(tested_fs.collection), tested_fs.fs)
+    instance = convenience.create_view(
+        path=str(tested_fs.view),
+        view_ref=view_ref,
+        filesystem=tested_fs.fs,
+        distributed=False,
+    )
+    assert instance.load(distributed=False) is None
+
+    zcol.insert(ds=zds_reference.select_vars(names='lat'), distributed=False)
+
+    # Reading immutable variable from the view
+    data = instance.load(distributed=False)
+
+    assert set(data.variables) == {'lat'}
+    assert numpy.array_equal(data['lat'].values, zds_reference['lat'].values)
+
+    zcol.insert(ds=zds_reference, distributed=False)
+
+    assert not instance.is_synced(distributed=False)
+    instance.sync(distributed=False)
+
+    data = instance.load(distributed=False)
+
+    assert set(data.variables) == {'lat', 'grid', 'time'}
+    assert numpy.array_equal(data['lat'].values, zds_reference['lat'].values)
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_view_update(
         dask_client,  # pylint: disable=redefined-outer-name,unused-argument
         fs,
         request,
-        tmpdir):
-    """Test the creation of a view."""
+        tmpdir,
+        caplog):
+    """Test updating variable."""
     tested_fs = request.getfixturevalue(fs)
 
     create_test_collection(tested_fs, delayed=False)
@@ -247,7 +370,6 @@ def test_view_update(
                                        filesystem=tested_fs.fs)
 
     var_name = 'var3'
-    log_msg = 'Update called'
 
     var = meta.Variable(name=var_name,
                         dtype=numpy.float64,
@@ -311,7 +433,7 @@ def test_view_overlap(
     arg,
     request,
 ):
-    """Test the creation of a view."""
+    """Test the map_overlap function."""
     tested_fs = request.getfixturevalue(arg)
 
     create_test_collection(tested_fs)

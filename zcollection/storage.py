@@ -94,6 +94,8 @@ def _to_zarr(array: dask.array.core.Array, mapper: fsspec.FSMap, path: str,
         **kwargs: Additional keyword arguments to pass to the `zarr.create`
             function.
     """
+    _LOGGER.debug('Writing Zarr variable %r', path)
+
     chunks: list[tuple[int, ...]] = [chunk[0] for chunk in array.chunks]
     target: dask.array.core.Array = zarr.create(
         shape=array.shape,
@@ -154,8 +156,6 @@ def write_zarr_variable(
         chunks: Chunk size for each dimension. Defaults to ``None`` (i.e. the
             default chunk size is used).
     """
-    name: str
-    variable: dataset.Variable
     kwargs: dict[str, tuple[numcodecs.abc.Codec, ...]]
 
     name, variable = args
@@ -174,10 +174,7 @@ def write_zarr_variable(
         ix: chunks.get(dim, -1)
         for ix, dim in enumerate(variable.dimensions)
     }
-    data = data.rechunk(
-        var_chunks,  # type: ignore[arg-type]
-        block_size_limit=block_size_limit,
-    )
+    data = data.rechunk(chunks=var_chunks, block_size_limit=block_size_limit)
 
     try:
         _to_zarr(array=data,
@@ -282,6 +279,43 @@ def write_zarr_group(
         _write_meta(zds=zds, dirname=dirname, fs=fs)
 
 
+def write_zarr_group_missing(
+    zds: dataset.Dataset,
+    dirname: str,
+    fs: fsspec.AbstractFileSystem,
+    synchronizer: sync.Sync,
+    *,
+    distributed: bool = True,
+) -> None:
+    """Write variables from the provided dataset that are missing from the Zarr
+    group.
+
+    Args:
+        zds: The dataset to write.
+        dirname: The name of the partition.
+        fs: The file system that the partition is stored on.
+        synchronizer: The instance handling access to critical resources.
+        distributed: Whether to use Dask distributed to write the variables
+            in parallel. Defaults to ``True``.
+    """
+
+    _LOGGER.debug('Opening Zarr group %r', dirname)
+    store = zarr.open_consolidated(store=fs.get_mapper(dirname), mode='r')
+    selected_variables = set(zds.variables) - set(store)
+
+    if not selected_variables:
+        return
+
+    zds = zds.select_vars(names=list(selected_variables))
+    write_zarr_group(
+        zds=zds,
+        dirname=dirname,
+        fs=fs,
+        synchronizer=synchronizer,
+        distributed=distributed,
+    )
+
+
 def open_zarr_array(
     array: zarr.Array,
     name: str,
@@ -304,6 +338,23 @@ def open_zarr_array(
     return dataset.Array.from_zarr(array, name, DIMENSIONS)
 
 
+def init_zarr_group(dirname, fs: fsspec.AbstractFileSystem) -> None:
+    """Initialize an empty zarr group.
+
+    Args:
+        dirname: Group's path.
+        fs: The file system that the partition is stored on.
+    """
+    if fs.exists(dirname):
+        return
+
+    _LOGGER.debug('Initializing zarr group: %s', dirname)
+    store = fs.get_mapper(dirname)
+
+    zarr.storage.init_group(store=store)
+    zarr.consolidate_metadata(store=store)
+
+
 def open_zarr_group(
     dirname,
     fs: fsspec.AbstractFileSystem,
@@ -323,13 +374,14 @@ def open_zarr_group(
     Returns:
         The Zarr group stored in the partition, with the specified variables
         and attributes.
+        If an error occurs, None will be returned.
     """
     _LOGGER.debug('Opening Zarr group %r', dirname)
-    store: zarr.Group = zarr.open_consolidated(  # type: ignore[arg-type]
-        fs.get_mapper(dirname), mode='r')
+    store = zarr.open_consolidated(store=fs.get_mapper(dirname), mode='r')
     # Ignore unknown variables to retain.
     selected_variables = set(selected_variables) & set(
         store) if selected_variables is not None else set(store)
+
     variables: list[dataset.Variable] = [
         open_zarr_array(
             array=store[name],  # type: ignore[arg-type]
@@ -499,8 +551,8 @@ def check_zarr_group(
         True if the directory contains a valid Zarr group, False otherwise.
     """
     try:
-        store: zarr.Group = zarr.open_consolidated(  # type: ignore
-            fs.get_mapper(dirname),
+        store: zarr.Group = zarr.open_consolidated(
+            store=fs.get_mapper(dirname),
             mode='r',
         )
         for _, array in store.arrays():

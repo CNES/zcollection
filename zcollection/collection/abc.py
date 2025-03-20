@@ -214,7 +214,7 @@ class ReadOnlyCollection:
 
         #: The path to the dataset that contains the immutable data relative
         #: to the partitioning.
-        self._immutable: str = _immutable_path(
+        self._immutable = _immutable_path(
             partition_properties=self._properties.partition)
 
         self.version = importlib.metadata.version('zcollection')
@@ -261,23 +261,25 @@ class ReadOnlyCollection:
         return self._settings.synchronizer
 
     @property
-    def immutable(self) -> bool:
+    def have_immutable(self) -> bool:
         """Return True if the collection contains immutable data relative to
         the partitioning."""
-        return len(
-            self.metadata.select_variables_by_dims(
-                dims=(self.dimension, ),
-                predicate=False,
-            )) > 0
+        return len(self.immutable_variables) > 0
+
+    @property
+    def immutable_variables(self) -> set[str]:
+        """Return the immutable variables of the collection."""
+        return self.metadata.select_variables_by_dims(dims=(self.dimension, ),
+                                                      predicate=False)
+
+    def is_locked(self) -> bool:
+        """Return True if the collection is locked."""
+        return self.synchronizer.is_locked()
 
     @classmethod
     def _config(cls, partition_base_dir: str) -> str:
         """Return the configuration path."""
         return fs_utils.join_path(partition_base_dir, cls.CONFIG)
-
-    def is_locked(self) -> bool:
-        """Return True if the collection is locked."""
-        return self.synchronizer.is_locked()
 
     def _is_selected(
         self,
@@ -483,7 +485,7 @@ class ReadOnlyCollection:
             zds: dataset.Dataset = _load_dataset(
                 delayed=_delayed,
                 fs=self.fs,
-                immutable=self._immutable if self.immutable else None,
+                immutable=self._immutable if self.have_immutable else None,
                 partition=_partition,
                 selected_variables=_selected_variables)
             return self.partitioning.parse(_partition), _func(
@@ -593,7 +595,7 @@ class ReadOnlyCollection:
                 depth=_depth,
                 dim=self.dimension,
                 fs=self.fs,
-                immutable=self._immutable if self.immutable else None,
+                immutable=self._immutable if self.have_immutable else None,
                 partition=_partition,
                 partitions=_partitions,
                 selected_variables=_selected_variables)
@@ -661,6 +663,8 @@ class ReadOnlyCollection:
             ...     filters=lambda keys: keys["year"] == 2019 and
             ...     keys["month"] == 3 and keys["day"] % 2 == 0)
         """
+        array: dataset.Dataset | None = None
+
         # Delayed has to be False if dask is disabled
         if not distributed:
             delayed = False
@@ -681,21 +685,52 @@ class ReadOnlyCollection:
                 selected_partitions=selected_partitions,
                 distributed=distributed)
 
-        if arrays is None:
-            return None
+        if arrays is not None:
+            array = arrays.pop(0)
+            if arrays:
+                array = array.concat(arrays, self.dimension)
 
-        array: dataset.Dataset = arrays.pop(0)
-        if arrays:
-            array = array.concat(arrays, self.dimension)
+        array = self.merge_immutable(ds=array,
+                                     selected_variables=selected_variables,
+                                     delayed=delayed)
 
-        if self.immutable:
-            array.merge(
-                storage.open_zarr_group(dirname=self._immutable,
+        if array is not None:
+            array.fill_attrs(self.metadata)
+
+        return array
+
+    def merge_immutable(self, ds: dataset.Dataset | None,
+                        selected_variables: Iterable[str] | None,
+                        delayed: bool) -> dataset.Dataset | None:
+        """Read and merge immutable variables to the provided dataset.
+
+        Args:
+            ds: Dataset in which to merge immutable variables.
+            selected_variables: List of variables to read.
+            delayed: Whether to load data in a dask array or not.
+
+        Returns:
+            The merged dataset or None if the provided dataset was
+            None and no immutable variables were read.
+        """
+        var_im = self.immutable_variables
+
+        if selected_variables is not None:
+            var_im = var_im.intersection(selected_variables)
+
+        if not var_im:
+            return ds
+
+        ds_im = storage.open_zarr_group(dirname=self._immutable,
                                         fs=self.fs,
                                         delayed=delayed,
-                                        selected_variables=selected_variables))
-        array.fill_attrs(self.metadata)
-        return array
+                                        selected_variables=selected_variables)
+        if not ds_im.variables:
+            return ds
+
+        ds_im.merge(ds)
+
+        return ds_im
 
     def _load_partitions(
         self,

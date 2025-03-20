@@ -452,11 +452,11 @@ class View:
             >>> view.load(filters="time == '2020-01-01'")
             >>> view.load(filters=lambda x: x["time"] == "2020-01-01")
         """
-        _assert_have_variables(self.metadata)
         # Delayed has to be False if dask is disabled
         if not distributed:
             delayed = False
 
+        array: dataset.Dataset | None = None
         datasets: list[tuple[dataset.Dataset, str] | None]
         partitions = self.partitions(selected_partitions=selected_partitions,
                                      filters=filters,
@@ -511,14 +511,21 @@ class View:
                        datasets)))  # type: ignore[arg-type]
 
         if arrays:
-            array: dataset.Dataset = arrays.pop(0)
+            array = arrays.pop(0)
             if arrays:
                 array = array.concat(other=arrays, dim=self.view_ref.dimension)
+
+        array = self.view_ref.merge_immutable(
+            ds=array, selected_variables=selected_variables, delayed=delayed)
+
+        if array is not None:
             metadata: meta.Dataset = copy.deepcopy(self.view_ref.metadata)
             metadata.variables.update(self.metadata.variables.items())
             array.fill_attrs(metadata)
+
             return array
-        return None
+
+        return array
 
     def update(
         self,
@@ -617,8 +624,9 @@ class View:
         tuple(
             map(
                 lambda varname: _assert_variable_handled(
-                    self.view_ref.metadata, self.metadata, varname),
-                variables))
+                    reference=self.view_ref.metadata,
+                    view=self.metadata,
+                    variable=varname), variables))
         _LOGGER.info('Updating variable %s',
                      ', '.join(repr(item) for item in variables))
 

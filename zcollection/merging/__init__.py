@@ -174,8 +174,8 @@ def perform(
     if merge_callable is None:
         zds = ds_inserted
     else:
-        ds = storage.open_zarr_group(dirname,
-                                     fs,
+        ds = storage.open_zarr_group(dirname=dirname,
+                                     fs=fs,
                                      delayed=delayed if distributed else False)
         # Read dataset does not contain insertion properties.
         # This properties might be loss in the merge_callable depending on which

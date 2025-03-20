@@ -202,8 +202,8 @@ def _load_one_dataset(
 
     # Filling missing dimensions
     mds = view_ref.metadata
-    axis = mds.variables[view_ref.axis].dimensions[0]
-    missing_dimensions = set(mds.dimensions) - {*zds.dimensions, axis}
+    missing_dimensions = set(
+        mds.dimensions) - {*zds.dimensions, view_ref.dimension}
     for name in missing_dimensions:
         zds.dimensions[name] = mds.dimensions[name].value
 
@@ -216,16 +216,17 @@ def _load_one_dataset(
             name=variable,
             delayed=delayed) for variable in variables
     ]
-    zds = dataset.Dataset(variables=data, attrs=zds.attrs)
+
+    zds = dataset.Dataset(variables=data, attrs=zds.attrs, delayed=zds.delayed)
 
     # Apply indexing if needed.
     if len(slices):
         ds_list: list[dataset.Dataset] = [
-            zds.isel({axis: indexer}) for indexer in slices
+            zds.isel({view_ref.dimension: indexer}) for indexer in slices
         ]
         zds = ds_list.pop(0)
         if ds_list:
-            zds = zds.concat(other=ds_list, dim=axis)
+            zds = zds.concat(other=ds_list, dim=view_ref.dimension)
 
     return zds, partition
 
@@ -671,13 +672,19 @@ def _sync(
             # So we extend the view partition to the reference partition.
             # fs_invalid_cache is done by _extend_partition
             if not dry_run:
-                _extend_partition(partition_view, fs, axis_ref)
+                _extend_partition(partition=partition_view,
+                                  fs=fs,
+                                  axis_ref=axis_ref)
             return partition
         # The partition is not synced, so we remove it.
         if not dry_run:
-            fs.rm(partition_view, recursive=True)
+            fs.rm(path=partition_view, recursive=True)
             fs.invalidate_cache(partition_view)
-            _sync_partition(metadata, partition, base_dir, fs, view_ref)
+            _sync_partition(metadata=metadata,
+                            partition=partition,
+                            base_dir=base_dir,
+                            fs=fs,
+                            view_ref=view_ref)
         return partition
     return None
 

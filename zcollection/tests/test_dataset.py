@@ -408,6 +408,10 @@ def test_dataset_merge(
         attrs=[dataset.Attribute('attr3', 3),
                dataset.Attribute('attr4', 4)])
     zds1 = pickle.loads(pickle.dumps(template))
+
+    zds2.merge(None)
+    assert list(zds2.variables) == ['var5']
+
     zds1.merge(zds2)
     assert list(zds1.variables) == ['var1', 'var2', 'var3', 'var4', 'var5']
     assert zds1.dimensions == {'x': 10, 'y': 10, 'z': 10}

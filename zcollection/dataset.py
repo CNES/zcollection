@@ -361,8 +361,9 @@ class Dataset:
         """
         if isinstance(names, str) or not isinstance(names, Iterable):
             names = [names]
-        zds = Dataset((self.variables[name] for name in names),
-                      attrs=self.attrs)
+        zds = Dataset(variables=(self.variables[name] for name in names),
+                      attrs=self.attrs,
+                      delayed=self.delayed)
         zds.copy_properties(ds=self)
         return zds
 
@@ -581,7 +582,9 @@ class Dataset:
         variables: list[Variable] = [
             var.rechunk(**kwargs) for var in self.variables.values()
         ]
-        zds = Dataset(variables=variables, attrs=self.attrs)
+        zds = Dataset(variables=variables,
+                      attrs=self.attrs,
+                      delayed=self.delayed)
         zds.copy_properties(ds=self)
         return zds
 
@@ -645,12 +648,15 @@ class Dataset:
         zds.copy_properties(ds=self)
         return zds
 
-    def merge(self, other: Dataset) -> None:
+    def merge(self, other: Dataset | None) -> None:
         """Merge the provided dataset into this dataset.
 
         Args:
             other: Dataset to merge into this dataset.
         """
+        if other is None:
+            return
+
         if self.delayed != other.delayed:
             raise ValueError('cannot merge delayed and non-delayed data')
 
