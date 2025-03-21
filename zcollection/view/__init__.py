@@ -603,14 +603,17 @@ class View:
             client = None
 
         datasets_list = tuple(
-            _load_datasets_list(client=client,
-                                base_dir=self.base_dir,
-                                delayed=delayed,
-                                fs=self.fs,
-                                view_ref=self.view_ref,
-                                metadata=self.metadata,
-                                partitions=self.partitions(filters),
-                                selected_variables=selected_variables))
+            _load_datasets_list(
+                client=client,
+                base_dir=self.base_dir,
+                delayed=delayed,
+                fs=self.fs,
+                view_ref=self.view_ref,
+                metadata=self.metadata,
+                partitions=self.partitions(filters),
+                selected_variables=selected_variables,
+                with_immutable=True,
+            ))
 
         # If no dataset is selected, we have nothing to do.
         if not datasets_list:
@@ -740,14 +743,17 @@ class View:
 
         client: dask.distributed.Client = dask_utils.get_client()
         datasets_list = tuple(
-            _load_datasets_list(client=client,
-                                base_dir=self.base_dir,
-                                delayed=delayed,
-                                fs=self.fs,
-                                view_ref=self.view_ref,
-                                metadata=self.metadata,
-                                partitions=self.partitions(filters),
-                                selected_variables=selected_variables))
+            _load_datasets_list(
+                client=client,
+                base_dir=self.base_dir,
+                delayed=delayed,
+                fs=self.fs,
+                view_ref=self.view_ref,
+                metadata=self.metadata,
+                partitions=self.partitions(filters),
+                selected_variables=selected_variables,
+                with_immutable=True,
+            ))
         bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
             datasets_list,
             partition_size=partition_size,
@@ -849,14 +855,17 @@ class View:
 
         client: dask.distributed.Client = dask_utils.get_client()
         datasets_list = tuple(
-            _load_datasets_list(client=client,
-                                base_dir=self.base_dir,
-                                delayed=delayed,
-                                fs=self.fs,
-                                view_ref=self.view_ref,
-                                metadata=self.metadata,
-                                partitions=self.partitions(filters),
-                                selected_variables=selected_variables))
+            _load_datasets_list(
+                client=client,
+                base_dir=self.base_dir,
+                delayed=delayed,
+                fs=self.fs,
+                view_ref=self.view_ref,
+                metadata=self.metadata,
+                partitions=self.partitions(filters),
+                selected_variables=selected_variables,
+                with_immutable=True,
+            ))
         bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
             datasets_list,
             partition_size=partition_size,

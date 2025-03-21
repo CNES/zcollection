@@ -8,6 +8,7 @@ Test of views
 """
 from __future__ import annotations
 
+import logging
 import pathlib
 
 import distributed
@@ -208,12 +209,21 @@ def test_view(
                         indexer=indexers,
                         distributed=distributed)
     assert ds1 is not None
+
     ds2 = instance.load(delayed=delayed, distributed=distributed)
     assert ds2 is not None
 
     assert numpy.allclose(ds1.variables['var1'].values,
                           ds2.variables['var1'].values)
 
+    # Filters will eliminate all partition allowing to test a
+    # branch handling this case
+    ds1 = instance.load(delayed=delayed,
+                        indexer=indexers,
+                        filters='day > 60',
+                        distributed=distributed)
+
+    assert ds1 is None
     instance.drop_variable('var3', distributed=distributed)
 
     assert tuple(
@@ -293,14 +303,14 @@ def test_view_read_immutable(fs, request):
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_view_read_immutable_only(fs, request):
     """Test the reading in a view based on a collection only containing
-    immutable variables.."""
+    immutable variables."""
     tested_fs = request.getfixturevalue(fs)
     zds_reference = dataset.Dataset(
         variables=[
             dataset.Array(
                 name='time',
                 data=numpy.arange(numpy.datetime64('2000-01-01'),
-                                  numpy.datetime64('2000-01-30'),
+                                  numpy.datetime64('2000-01-05'),
                                   numpy.timedelta64(1, 'D')),
                 dimensions=('time', ),
             ),
@@ -311,7 +321,7 @@ def test_view_read_immutable_only(fs, request):
             ),
             dataset.Array(
                 name='grid',
-                data=numpy.arange(29 * 360 * 180).reshape(29, 360, 180),
+                data=numpy.arange(4 * 360 * 180).reshape(4, 360, 180),
                 dimensions=('time', 'lon', 'lat'),
             ),
         ],
@@ -427,6 +437,69 @@ def test_view_update(
     assert numpy.all(data.variables[var_name].values == 2)
 
 
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_view_update_with_immutable(fs, request) -> None:
+    """Test the inclusion of immutable variables in the dataset provided to the
+    update callback function."""
+    tested_fs = request.getfixturevalue(fs)
+
+    create_test_collection(tested_fs=tested_fs,
+                           delayed=False,
+                           distributed=False)
+    view_ref = view.ViewReference(str(tested_fs.collection), tested_fs.fs)
+    zcol = convenience.open_collection(path=view_ref.path, mode='w')
+
+    new_im = meta.Variable(
+        name='var_immutable',
+        dtype=numpy.dtype('int16'),
+        dimensions=('num_pixels', ),
+        fill_value=32267,
+        attrs=(dataset.Attribute(name='attr', value=4), ),
+    )
+    zcol.add_variable(variable=new_im, distributed=False)
+
+    zview = convenience.create_view(path=str(tested_fs.view),
+                                    view_ref=view_ref,
+                                    filesystem=tested_fs.fs,
+                                    distributed=False)
+
+    new_var = meta.Variable(
+        name='var4',
+        dtype=numpy.dtype('int16'),
+        dimensions=('num_lines', 'num_pixels'),
+        fill_value=32267,
+        attrs=(dataset.Attribute(name='attr', value=4), ),
+    )
+    zview.add_variable(variable=new_var, distributed=False)
+
+    # Immutable variables are included
+    def update_1(_zds):
+        """Update function used for this test."""
+        assert new_im.name in _zds.variables
+
+        return {new_var.name: _zds.variables['var1'].values * 201.5}
+
+    zview.update(
+        update_1,  # type: ignore
+        delayed=False,
+        distributed=False,
+    )
+
+    # Immutable variables are not included if excluded
+    def update_2(_zds):
+        """Update function used for this test."""
+        assert new_im.name not in _zds.variables
+
+        return {new_var.name: _zds.variables['var1'].values * 201.5}
+
+    zview.update(
+        update_2,  # type: ignore
+        selected_variables=['var1'],
+        delayed=False,
+        distributed=False,
+    )
+
+
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
 def test_view_overlap(
     dask_client,  # pylint: disable=redefined-outer-name,unused-argument
@@ -499,6 +572,12 @@ def test_view_overlap(
         assert partition_info[0] == 'num_lines'
         return partition_info
 
+    with pytest.raises(ValueError, match='must be greater than or equal to 0'):
+        instance.map_overlap(
+            map_func,  # type: ignore
+            depth=-1,
+        )
+
     indexers = instance.map_overlap(
         map_func,  # type: ignore
         depth=1,
@@ -543,7 +622,7 @@ def test_view_sync(
 ):
     """Test the synchronization of a view."""
     tested_fs = request.getfixturevalue(arg)
-    create_test_collection(tested_fs)
+    create_test_collection(tested_fs, distributed=distributed)
     instance = convenience.create_view(str(tested_fs.view),
                                        view.ViewReference(
                                            str(tested_fs.collection),
@@ -578,3 +657,63 @@ def test_view_sync(
     instance.sync(filters=lambda keys: True, distributed=distributed)
     zds = instance.load(distributed=distributed)
     assert zds is not None
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_view_with_empty_collection(fs, request, caplog):
+    """Test the behavior when working with an empty collection."""
+    caplog.set_level(logging.INFO)
+
+    tested_fs = request.getfixturevalue(fs)
+    zds_reference = dataset.Dataset(
+        variables=[
+            dataset.Array(
+                name='time',
+                data=numpy.arange(numpy.datetime64('2000-01-01'),
+                                  numpy.datetime64('2000-01-05'),
+                                  numpy.timedelta64(1, 'D')),
+                dimensions=('time', ),
+            ),
+            dataset.Array(
+                name='grid',
+                data=numpy.arange(4 * 360 * 180).reshape(4, 360, 180),
+                dimensions=('time', 'lon', 'lat'),
+            ),
+        ],
+        attrs=(dataset.Attribute('history', 'Created for testing'), ),
+    )
+    convenience.create_collection(axis='time',
+                                  ds=zds_reference,
+                                  partition_handler=partitioning.Date(
+                                      variables=('time', ), resolution='D'),
+                                  partition_base_dir=str(tested_fs.collection),
+                                  filesystem=tested_fs.fs)
+
+    view_ref = view.ViewReference(str(tested_fs.collection), tested_fs.fs)
+
+    zview = convenience.create_view(
+        path=str(tested_fs.view),
+        view_ref=view_ref,
+        filesystem=tested_fs.fs,
+        distributed=False,
+    )
+    var = meta.Variable(name='var2',
+                        dtype=numpy.float64,
+                        dimensions=('time', 'lat'))
+
+    caplog.clear()
+    zview.add_variable(variable=var, distributed=False)
+
+    assert 'skipping variable creation' in caplog.text
+
+    assert var.name in zview.metadata.variables
+
+    def update(zds, varname):
+        """Update function used for this test."""
+        return {varname: zds.variables['var1'].values * 0 + 5}
+
+    with pytest.warns(Warning, match='function is not applied'):
+        zview.update(
+            update,  # type: ignore
+            varname=var.name,
+            distributed=False)

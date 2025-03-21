@@ -43,6 +43,7 @@ from .callable_objects import UpdateCallable, WrappedPartitionCallable
 from .detail import (
     PartitionSlice,
     _insert,
+    _load_dataset,
     _try_infer_callable,
     _wrap_update_func,
     _wrap_update_func_with_overlap,
@@ -76,12 +77,14 @@ def _infer_callable(
     except StopIteration:
         return ()
 
+    immutable = collection.immutable_path if collection.have_immutable else None
+
     with collection.synchronizer:
-        zds: dataset.Dataset = storage.open_zarr_group(
-            dirname=one_partition,
-            fs=collection.fs,
-            delayed=delayed,
-            selected_variables=selected_variables)
+        zds = _load_dataset(delayed=delayed,
+                            fs=collection.fs,
+                            immutable=immutable,
+                            partition=one_partition,
+                            selected_variables=selected_variables)
     func_result: dict[str, Any]
     func_result = _try_infer_callable(func, zds, collection.dimension, *args,
                                       **kwargs)
@@ -570,16 +573,17 @@ class Collection(ReadOnlyCollection):
         if not folders:
             return folders
 
-        def _is_created_before(_path: str, _now: datetime.datetime,
-                               _timedelta: datetime.timedelta) -> bool:
-            """Return whether the partition was created before the
-            timedelta."""
-            created: datetime.datetime = self.fs.created(_path)
-            if created.tzinfo is not None:
-                created = created.replace(tzinfo=None)
-            return _now - created > _timedelta
-
         if timedelta is not None:
+
+            def _is_created_before(_path: str, _now: datetime.datetime,
+                                   _timedelta: datetime.timedelta) -> bool:
+                """Return whether the partition was created before the
+                timedelta."""
+                created: datetime.datetime = self.fs.created(_path)
+                if created.tzinfo is not None:
+                    created = created.replace(tzinfo=None)
+                return _now - created > _timedelta
+
             folders = list(
                 filter(
                     lambda _folder: _is_created_before(
@@ -589,8 +593,10 @@ class Collection(ReadOnlyCollection):
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()
             storage.execute_transaction(
-                client, self.synchronizer,
-                client.map(self.fs.rm, folders, recursive=True))
+                client=client,
+                synchronizer=self.synchronizer,
+                futures=client.map(self.fs.rm, folders, recursive=True),
+            )
         else:
             for folder in folders:
                 self.fs.rm(path=folder, recursive=True)

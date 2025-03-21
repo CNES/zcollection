@@ -168,6 +168,7 @@ def _load_one_dataset(
     selected_variables: Iterable[str] | None,
     view_ref: collection.Collection,
     variables: Iterable[str],
+    with_immutable: bool = False,
 ) -> tuple[dataset.Dataset, str] | None:
     """Load a dataset from a partition stored in the reference collection and
     merge it with the variables defined in this view.
@@ -181,6 +182,7 @@ def _load_one_dataset(
             reference.
         view_ref: The view reference.
         variables: The variables to retain from the view
+        with_immutable: Whether to include immutable variables or not.
 
     Returns:
         The dataset and the partition's path.
@@ -219,6 +221,14 @@ def _load_one_dataset(
 
     zds = dataset.Dataset(variables=data, attrs=zds.attrs, delayed=zds.delayed)
 
+    # Adding immutable variables
+    if with_immutable and view_ref.have_immutable:
+        zds.merge(
+            open_zarr_group(dirname=view_ref.immutable_path,
+                            fs=fs,
+                            delayed=delayed,
+                            selected_variables=selected_variables))
+
     # Apply indexing if needed.
     if len(slices):
         ds_list: list[dataset.Dataset] = [
@@ -256,6 +266,7 @@ def _load_datasets_list(
     metadata: meta.Dataset,
     partitions: Iterable[str],
     selected_variables: Iterable[str] | None = None,
+    with_immutable: bool = False,
 ) -> Iterator[tuple[dataset.Dataset, str]]:
     """Load datasets from a list of partitions.
 
@@ -269,6 +280,7 @@ def _load_datasets_list(
         metadata: The metadata of the dataset.
         partitions: The list of partitions to load.
         selected_variables: The list of variable to retain from the view
+        with_immutable: Whether to include immutable variables or not.
 
     Returns:
         The datasets and their paths.
@@ -288,7 +300,8 @@ def _load_datasets_list(
             selected_variables=view_ref.metadata.select_variables(
                 keep_variables=selected_variables),
             view_ref=client.scatter(view_ref),
-            variables=metadata.select_variables(selected_variables))
+            variables=metadata.select_variables(selected_variables),
+            with_immutable=with_immutable)
         datasets = client.gather(futures)
     else:
         datasets = [
@@ -300,8 +313,8 @@ def _load_datasets_list(
                 selected_variables=view_ref.metadata.select_variables(
                     keep_variables=selected_variables),
                 view_ref=view_ref,
-                variables=metadata.select_variables(selected_variables))
-            for arg in arguments
+                variables=metadata.select_variables(selected_variables),
+                with_immutable=with_immutable) for arg in arguments
         ]
     return filter(
         lambda item: item is not None,  # type: ignore[arg-type]

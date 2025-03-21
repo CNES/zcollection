@@ -261,6 +261,11 @@ class ReadOnlyCollection:
         return self._settings.synchronizer
 
     @property
+    def immutable_path(self) -> str:
+        """Return the immutable path of the collection."""
+        return self._immutable
+
+    @property
     def have_immutable(self) -> bool:
         """Return True if the collection contains immutable data relative to
         the partitioning."""
