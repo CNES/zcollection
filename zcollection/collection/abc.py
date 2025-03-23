@@ -198,6 +198,11 @@ class ReadOnlyCollection:
                     f'The partitioning key {varname!r} is not defined in '
                     'the dataset.')
 
+        # Working on a copy to fix the main dimension size.
+        main_dimension = ds.variables[axis].dimensions[0]
+        ds = meta.Dataset.from_config(data=ds.get_config())
+        ds.dimensions[main_dimension].value = -1
+
         self._settings = CollectionSettings(
             mode=mode or 'w',
             filesystem=fs_utils.get_fs(filesystem),
@@ -210,7 +215,8 @@ class ReadOnlyCollection:
             partition=PartitioningProperties(
                 dir=fs_utils.normalize_path(fs=self._settings.filesystem,
                                             path=partition_base_dir),
-                dim=ds.variables[axis].dimensions[0]))
+                dim=main_dimension,
+            ))
 
         #: The path to the dataset that contains the immutable data relative
         #: to the partitioning.

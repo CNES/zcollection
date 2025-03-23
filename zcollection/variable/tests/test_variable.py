@@ -18,7 +18,9 @@ import zarr
 
 from ... import meta
 # pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_client, dask_cluster
+from ...tests.cluster import \
+    dask_client  # pylint: disable=redefined-outer-name,unused-argument
+from ...tests.cluster import dask_cluster  # noqa: F401
 from ..abc import Variable
 from ..array import Array
 from ..delayed_array import DelayedArray

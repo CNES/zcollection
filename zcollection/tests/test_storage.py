@@ -19,7 +19,7 @@ import zarr
 
 from .. import dataset, storage, sync
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_client, dask_cluster
+from .cluster import dask_client, dask_cluster  # noqa: F401
 from .fs import local_fs
 
 # pylint: enable=unused-import

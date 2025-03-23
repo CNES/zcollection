@@ -11,7 +11,7 @@ import pytest
 
 from .. import dask_utils
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_client, dask_cluster
+from .cluster import dask_client, dask_cluster  # noqa: F401
 
 # pylint: disable=unused-import
 

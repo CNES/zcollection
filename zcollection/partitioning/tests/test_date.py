@@ -24,7 +24,7 @@ import xarray
 from .. import Date, get_codecs
 from ... import dataset
 # pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_client, dask_cluster
+from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 from ...type_hints import NDArray
 
 # pylint: disable=disable=unused-argument

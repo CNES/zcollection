@@ -118,7 +118,7 @@ def update_deprecated_view(
         _LOGGER.error('View already updated.')
         return
 
-    ds = meta.Dataset.from_deprecated_config(data['dataset'])
+    ds = meta.Dataset.from_deprecated_config(data['metadata'])
     # Views do not contain dimensions
     ds.dimensions = {}
 

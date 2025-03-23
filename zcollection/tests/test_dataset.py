@@ -17,7 +17,7 @@ from .. import dataset, meta
 from ..variable import Variable
 from ..variable.tests.data import array, delayed_array
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_client, dask_cluster
+from .cluster import dask_client, dask_cluster  # noqa: F401
 
 # pylint enable=unused-import
 

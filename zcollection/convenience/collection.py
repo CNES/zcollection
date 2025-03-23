@@ -134,7 +134,7 @@ def update_deprecated_collection(
 
     ds = meta.Dataset.from_deprecated_config(data['dataset'])
     axis = data['axis']
-    main_dimension = ds.dimensions[axis].name
+    main_dimension = ds.variables[axis].dimensions[0]
 
     dimensions_source = _dimensions_source(ds=ds,
                                            main_dimension=main_dimension)
@@ -152,7 +152,7 @@ def update_deprecated_collection(
 
     for dimension, variable in dimensions_source.items():
         dim_index = variable.dimensions.index(dimension)
-        if axis in variable.dimensions:
+        if main_dimension in variable.dimensions:
             _LOGGER.warning('Extracting %r size from %r variable.', dimension,
                             variable.name)
             var_path = join_path(partition, variable.name)
@@ -183,12 +183,6 @@ def update_deprecated_collection(
         mode='w',
         filesystem=filesystem,
     )
-
-    # pylint: disable=protected-access
-    immutable_path = zcol._immutable
-    if not filesystem.exists(immutable_path):
-        _LOGGER.warning('Creating immutable directory %r', immutable_path)
-        zarr.storage.init_group(store=filesystem.get_mapper(immutable_path))
 
     # pylint: disable=protected-access
     config = zcol._config(path)

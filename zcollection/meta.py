@@ -427,7 +427,7 @@ class Dataset:
         Returns:
             New dataset.
         """
-        chunks = {dim: size for dim, size in data.get('chunks', [])}
+        chunks = dict(data.get('chunks', []))
         return Dataset(
             dimensions=tuple(
                 Dimension.from_config((item, -1, chunks.get(item, -1)))

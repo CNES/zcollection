@@ -79,7 +79,8 @@ def test_cmp() -> None:
     assert period1 < period3
 
     with pytest.raises(TypeError):
-        assert period1 < 1
+        _ = period1 < 1
+
     assert not period1 == 1  # pylint: disable=unneeded-not
     assert period1 != 1
 

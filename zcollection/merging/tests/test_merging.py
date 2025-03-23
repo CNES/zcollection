@@ -14,8 +14,8 @@ from .. import _update_fs, merge_time_series, perform
 from ... import sync
 from ...tests import data
 # pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_client, dask_cluster
-from ...tests.fixture import dask_arrays, numpy_arrays
+from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
+from ...tests.fixture import dask_arrays, numpy_arrays  # noqa: F401
 from ...tests.fs import local_fs
 
 # pylint: enable=unused-import

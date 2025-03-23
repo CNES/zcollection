@@ -186,8 +186,8 @@ class Collection(ReadOnlyCollection):
             self._read_only_mode()
             # pylint: enable=method-hidden
         else:
-            self._write_config(skip_if_exists=True)
             storage.init_zarr_group(dirname=self._immutable, fs=self.fs)
+            self._write_config(skip_if_exists=True)
 
     def __str__(self) -> str:
         return (f'<{self.__class__.__name__} '

@@ -11,7 +11,6 @@ from __future__ import annotations
 import timeit
 
 import numpy
-import numpy as np
 import pytest
 import xarray
 
@@ -19,17 +18,17 @@ from .. import dataset
 from ..expression import Expression
 from ..partitioning import Date
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_client, dask_cluster
+from .cluster import dask_client, dask_cluster  # noqa: F401
 
 # pylint enable=unused-import
 
 
 def make_dataset(num_samples: int | None = None) -> dataset.Dataset:
     """Creation of a data set for testing purposes."""
-    dates: np.ndarray = numpy.arange(numpy.datetime64('2000-01-01', 'ns'),
-                                     numpy.datetime64('2009-12-31', 'ns'),
-                                     numpy.timedelta64(
-                                         1, 'h')).astype('datetime64[ns]')
+    dates: numpy.ndarray = numpy.arange(numpy.datetime64('2000-01-01', 'ns'),
+                                        numpy.datetime64('2009-12-31', 'ns'),
+                                        numpy.timedelta64(
+                                            1, 'h')).astype('datetime64[ns]')
     if num_samples is not None:
         dates = dates[0:num_samples + 1]
     observation = numpy.random.rand(dates.size)  # type: ignore
