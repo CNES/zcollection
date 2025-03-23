@@ -91,7 +91,7 @@ def test_update_deprecated_view(fs, request, caplog):
     assert 'Copying old configuration to' in caplog.text
     assert 'Writing new configuration' in caplog.text
 
-    conf_zview_old = f"{conf_zview}.bak"
+    conf_zview_old = f'{conf_zview}.bak'
 
     assert tested_fs.exists(conf_zview_old)
 
@@ -206,7 +206,7 @@ def test_update_deprecated_collection(fs, request, caplog):
     assert 'Copying old configuration to' in caplog.text
     assert 'Writing new configuration' in caplog.text
 
-    conf_zcol_old = f"{conf_zcol}.bak"
+    conf_zcol_old = f'{conf_zcol}.bak'
 
     assert tested_fs.exists(conf_zcol_old)
 
