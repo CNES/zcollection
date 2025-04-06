@@ -54,7 +54,7 @@ def _merge_time_series(
     # between the two datasets.
     if relation.is_before_overlapping():
         # pylint: disable=comparison-with-callable
-        indices = numpy.where(
+        indices = numpy.nonzero(
             # comparison between ndarray and datetime64
             existing_axis > intersection.end())[0]  # type: ignore
         # pylint: enable=comparison-with-callable
@@ -65,7 +65,7 @@ def _merge_time_series(
     # between the two datasets.
     if relation.is_after_overlapping():
         # pylint: disable=comparison-with-callable
-        indices = numpy.where(
+        indices = numpy.nonzero(
             # comparison between ndarray and datetime64
             existing_axis < intersection.begin)[0]  # type: ignore
         # pylint: enable=comparison-with-callable
@@ -75,13 +75,15 @@ def _merge_time_series(
 
     assert relation.is_inside()
     # comparison between ndarray and datetime64
-    index = numpy.where(existing_axis < intersection.begin)[0]  # type: ignore
+    index = numpy.nonzero(
+        existing_axis < intersection.begin)[0]  # type: ignore
     before: dataset.Dataset = existing_ds.isel(
         {partitioning_dim: slice(0, index[-1] + 1, None)})
 
     # pylint: disable=comparison-with-callable
     # comparison between ndarray and datetime64
-    index = numpy.where(existing_axis > intersection.end())[0]  # type: ignore
+    index = numpy.nonzero(
+        existing_axis > intersection.end())[0]  # type: ignore
     # pylint: enable=comparison-with-callable
     after: dataset.Dataset = existing_ds.isel(
         {partitioning_dim: slice(index[0], index[-1] + 1, None)})
@@ -132,11 +134,15 @@ def merge_time_series(
     # Check if the inserted dataset contains data gaps.
     if tolerance is not None:
         inserted_axis: NDArray = inserted_ds.variables[axis].values
-        delta: NDArray = numpy.concatenate(
-            (numpy.array([0]), numpy.diff(numpy.roll(inserted_axis, 0))))
-        index = numpy.concatenate(
-            (numpy.array([0], numpy.int64), numpy.where(delta > tolerance)[0],
-             numpy.array([inserted_axis.size], numpy.int64)))
+        delta: NDArray = numpy.concatenate((
+            numpy.array([0]),
+            numpy.diff(numpy.roll(inserted_axis, shift=0)),
+        ))
+        index = numpy.concatenate((
+            numpy.array([0], dtype=numpy.int64),
+            numpy.nonzero(delta > tolerance)[0],
+            numpy.array([inserted_axis.size], dtype=numpy.int64),
+        ))
     else:
         index = numpy.array([], dtype=numpy.int64)
 
@@ -145,9 +151,17 @@ def merge_time_series(
         # gaps.
         for ix in range(len(index) - 1):
             existing_ds = _merge_time_series(
-                existing_ds,
-                inserted_ds.isel(
+                existing_ds=existing_ds,
+                inserted_ds=inserted_ds.isel(
                     {partitioning_dim: slice(index[ix], index[ix + 1], None)}),
-                axis, partitioning_dim)
+                axis=axis,
+                partitioning_dim=partitioning_dim,
+            )
         return existing_ds
-    return _merge_time_series(existing_ds, inserted_ds, axis, partitioning_dim)
+
+    return _merge_time_series(
+        existing_ds=existing_ds,
+        inserted_ds=inserted_ds,
+        axis=axis,
+        partitioning_dim=partitioning_dim,
+    )

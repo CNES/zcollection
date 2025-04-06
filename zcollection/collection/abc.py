@@ -332,12 +332,21 @@ class ReadOnlyCollection:
         Returns:
             The list of partitions.
         """
+        # Partitions have to be parsed in order to be correctly sorted
+        partitions_scheme = sorted(
+            {self.partitioning.parse(item)
+             for item in partitions})
         return filter(
             self.fs.exists,
             map(
                 lambda partition: self.fs.sep.join(
-                    (self.partition_properties.dir, partition)),
-                sorted(set(partitions))))
+                    (self.partition_properties.dir,
+                     self.partitioning.join(
+                         partition_scheme=partition,
+                         sep=self.fs.sep,
+                     ))),
+                partitions_scheme,
+            ))
 
     def dimensions_properties(self) -> tuple[dict[str, int], dict[str, int]]:
         """Extract dimension properties (size and chunks).
@@ -402,7 +411,7 @@ class ReadOnlyCollection:
         base_dir: str = self.partition_properties.dir
         sep: str = self.fs.sep
         if selected_partitions is not None:
-            partitions: Iterable[str] = self._normalize_partitions(
+            partitions = self._normalize_partitions(
                 partitions=selected_partitions)
         else:
             if lock:
@@ -410,8 +419,8 @@ class ReadOnlyCollection:
                     partitions = tuple(
                         self.partitioning.list_partitions(self.fs, base_dir))
             else:
-                partitions = self.partitioning.list_partitions(
-                    self.fs, base_dir)
+                partitions = self.partitioning.list_partitions(fs=self.fs,
+                                                               path=base_dir)
 
         if indexer is not None:
             # List of partitions existing in the indexer and partitions list
@@ -493,7 +502,7 @@ class ReadOnlyCollection:
             Returns:
                 The result of the function.
             """
-            zds: dataset.Dataset = _load_dataset(
+            zds = _load_dataset(
                 delayed=_delayed,
                 fs=self.fs,
                 immutable=self._immutable if self.have_immutable else None,
@@ -699,7 +708,7 @@ class ReadOnlyCollection:
         if arrays is not None:
             array = arrays.pop(0)
             if arrays:
-                array = array.concat(arrays, self.dimension)
+                array = array.concat(other=arrays, dim=self.dimension)
 
         array = self.merge_immutable(ds=array,
                                      selected_variables=selected_variables,

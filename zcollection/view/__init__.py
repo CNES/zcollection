@@ -533,12 +533,13 @@ class View:
         /,
         *args,
         depth: int = 0,
-        delayed: bool = True,
         filters: collection.PartitionFilter = None,
-        npartitions: int | None = None,
-        selected_variables: Iterable[str] | None = None,
-        trim: bool = True,
         variables: Sequence[str] | None = None,
+        selected_variables: Iterable[str] | None = None,
+        selected_partitions: Iterable[str] | None = None,
+        trim: bool = True,
+        npartitions: int | None = None,
+        delayed: bool = True,
         distributed: bool = True,
         **kwargs,
     ) -> None:
@@ -547,6 +548,7 @@ class View:
         Args:
             func: The function to apply to calculate the new values for the
                 target variables.
+            args: The positional arguments to pass to the function.
             depth: The depth of the overlap between the partitions. Default is
                 0 (no overlap). If depth is greater than 0, the function is
                 applied on the partition and its neighbors selected by the
@@ -554,27 +556,25 @@ class View:
                 argument, it will be passed a tuple with the name of the
                 partitioned dimension and the slice allowing getting in the
                 dataset the selected partition without the overlap.
-            delayed: Whether to load data in a dask array or in memory.
-            filters: The predicate used to filter the partitions to drop.
-                To get more information on the predicate, see the
-                documentation of the :meth:`Collection.partitions
-                <zcollection.collection.Collection.partitions>` method.
-            npartitions: The number of partitions to update in parallel. By
-                default, it is equal to the number of Dask workers available
-                when calling this method.
-            selected_variables: A list of variables to retain from the view.
-                If None, all variables are loaded. Useful to load only a
-                subset of the view.
-            trim: Whether to trim ``depth`` items from each partition after
-                calling ``func``. Set it to ``False`` if your function does
-                this for you.
             variables: The list of variables updated by the function. If None,
                 the variables are inferred by calling the function on the first
                 partition. In this case, it is important to ensure that the
                 function can be called twice on the same partition without
                 side effects. Default is None.
+            selected_variables: A list of variables to retain from the view.
+                If None, all variables are loaded. Useful to load only a
+                subset of the view.
+            selected_partitions: A list of partitions to load (using the
+                partition relative path).
+            filters: The expression used to filter the partitions to update.
+            trim: Whether to trim ``depth`` items from each partition after
+                calling ``func``. Set it to ``False`` if your function does
+                this for you.
+            npartitions: The number of partitions to update in parallel. By
+                default, it is equal to the number of Dask workers available
+                when calling this method.
+            delayed: Whether to load data in a dask array or in memory.
             distributed: Whether to use dask or not. Default To True.
-            args: The positional arguments to pass to the function.
             kwargs: The keyword arguments to pass to the function.
 
         Raises:
@@ -610,7 +610,8 @@ class View:
                 fs=self.fs,
                 view_ref=self.view_ref,
                 metadata=self.metadata,
-                partitions=self.partitions(filters),
+                partitions=self.partitions(
+                    filters=filters, selected_partitions=selected_partitions),
                 selected_variables=selected_variables,
                 with_immutable=True,
             ))

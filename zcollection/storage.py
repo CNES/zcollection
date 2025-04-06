@@ -382,7 +382,7 @@ def open_zarr_group(
     selected_variables = set(selected_variables) & set(
         store) if selected_variables is not None else set(store)
 
-    variables: list[dataset.Variable] = [
+    variables = [
         open_zarr_array(
             array=store[name],  # type: ignore[arg-type]
             name=name,

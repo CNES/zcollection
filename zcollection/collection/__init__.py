@@ -454,7 +454,7 @@ class Collection(ReadOnlyCollection):
 
         for item in missing_variables:
             variable = mds.variables[item]
-            ds.add_variable(variable)
+            ds.add_variable(variable, filler=True)
 
         ds.copy_properties(ds=mds)
 
@@ -615,13 +615,14 @@ class Collection(ReadOnlyCollection):
         func: UpdateCallable,
         /,
         *args,
-        delayed: bool = True,
         depth: int = 0,
-        filters: PartitionFilter | None = None,
-        npartitions: int | None = None,
         selected_variables: list[str] | None = None,
-        trim: bool = True,
         variables: Sequence[str] | None = None,
+        selected_partitions: Iterable[str] | None = None,
+        filters: PartitionFilter | None = None,
+        trim: bool = True,
+        npartitions: int | None = None,
+        delayed: bool = True,
         distributed: bool = True,
         **kwargs,
     ) -> None:
@@ -631,7 +632,6 @@ class Collection(ReadOnlyCollection):
         Args:
             func: The function to apply on each partition.
             *args: The positional arguments to pass to the function.
-            delayed: Whether to load data in a dask array or not.
             depth: The depth of the overlap between the partitions. Default is
                 0 (no overlap). If depth is greater than 0, the function is
                 applied on the partition and its neighbors selected by the
@@ -639,20 +639,23 @@ class Collection(ReadOnlyCollection):
                 argument, it will be passed a tuple with the name of the
                 partitioned dimension and the slice allowing getting in the
                 dataset the selected partition.
-            filters: The expression used to filter the partitions to update.
-            npartitions: The number of partitions to update in parallel. By
-                default, it is equal to the number of Dask workers available
-                when calling this method.
-            selected_variables: A list of variables to load from the collection.
-                If None, all variables are loaded.
-            trim: Whether to trim ``depth`` items from each partition after
-                calling ``func``. Set it to ``False`` if your function does
-                this for you.
             variables: The list of variables updated by the function. If None,
                 the variables are inferred by calling the function on the first
                 partition. In this case, it is important to ensure that the
                 function can be called twice on the same partition without
                 side effects. Default is None.
+            selected_variables: A list of variables to load from the collection.
+                If None, all variables are loaded.
+            selected_partitions: A list of partitions to load (using the
+                partition relative path).
+            filters: The expression used to filter the partitions to update.
+            trim: Whether to trim ``depth`` items from each partition after
+                calling ``func``. Set it to ``False`` if your function does
+                this for you.
+            npartitions: The number of partitions to update in parallel. By
+                default, it is equal to the number of Dask workers available
+                when calling this method.
+            delayed: Whether to load data in a dask array or not.
             distributed: Whether to use dask or not. Default To True.
             **kwargs: The keyword arguments to pass to the function.
 
@@ -699,8 +702,10 @@ class Collection(ReadOnlyCollection):
         _LOGGER.info('Updating of the (%s) variable in the collection',
                      ', '.join(repr(item) for item in variables))
 
-        selected_partitions = tuple(self.partitions(filters=filters,
-                                                    lock=True))
+        selected_partitions = tuple(
+            self.partitions(filters=filters,
+                            selected_partitions=selected_partitions,
+                            lock=True))
 
         immutable = self._immutable if self.have_immutable else None
 

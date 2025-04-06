@@ -90,9 +90,9 @@ def test_perform(
     future = dask_client.submit(perform,
                                 zds_sc,
                                 path,
-                                'time',
-                                local_fs.fs,
-                                'time',
+                                axis='time',
+                                fs=local_fs.fs,
+                                partitioning_dim='num_lines',
                                 delayed=delayed,
                                 merge_callable=merge_time_series)
     dask_client.gather(future)

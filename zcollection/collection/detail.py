@@ -477,6 +477,8 @@ def _load_and_apply_indexer(
     partition_scheme, items = args
     partition = join_path(partition_properties.dir,
                           partition_handler.join(partition_scheme, fs.sep))
-    zds: dataset.Dataset = open_zarr_group(
-        partition, fs, delayed=delayed, selected_variables=selected_variables)
+    zds = open_zarr_group(dirname=partition,
+                          fs=fs,
+                          delayed=delayed,
+                          selected_variables=selected_variables)
     return [zds.isel({partition_properties.dim: indexer}) for indexer in items]
