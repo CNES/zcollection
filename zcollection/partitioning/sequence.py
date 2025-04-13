@@ -9,7 +9,7 @@ Partitioning a sequence of variables
 from __future__ import annotations
 
 from typing import Any, ClassVar
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence as SequenceType
 
 import dask.array.core
 import dask.array.routines
@@ -86,10 +86,7 @@ class Sequence(abc.Partitioning):
     #: The ID of the partitioning scheme.
     ID: ClassVar[str] = 'Sequence'
 
-    # pylint: disable=arguments-differ
-    # False positive: `self` is used in the signature.
-    @staticmethod
-    def _split(variables: dict[str, ArrayLike]) -> Iterator[abc.Partition]:
+    def _split(self, variables: dict[str, NDArray]) -> Iterator[abc.Partition]:
         """Split the variables constituting the partitioning into partitioning
         schemes."""
         index: NDArray
@@ -123,7 +120,6 @@ class Sequence(abc.Partitioning):
         return ((concat(fields,
                         tuple(item)), slice(start, indices[ix + 1], None))
                 for item, (ix, start) in zip(index, enumerate(indices[:-1])))
-        # pylint: enable=arguments-differ
 
     def encode(
         self,
@@ -164,3 +160,58 @@ class Sequence(abc.Partitioning):
         """
         return tuple(
             (key, value) for key, value in zip(self.variables, values))
+
+
+class GroupedSequence(Sequence):
+    """Initialize a partitioning scheme for a sequence of variables where the
+    last variable values will be grouped according to the provided size
+    parameter.
+
+    A sequence is a combination of variables constituting unique monotonic keys.
+
+    Args
+        variables: Sequence of variables on which to partition.
+        size: Number of values of the last variable contained in each partition.
+            The size must be at least 2 (1 sized sequence should use the
+            Sequence partitioning scheme).
+        dtype: An optional sequence of strings representing the data type used
+            to store variable values in a binary representation without data
+            loss. Must be one of the following allowed data types: ``int8``,
+            ``int16``, ``int32``, ``int64``, ``uint8``, ``uint16``, ``uint32``,
+            ``uint64``. If not provided, defaults to ``int64`` for all
+            variables.
+    """
+
+    __slots__ = ('_dtype', '_pattern', 'variables', 'size')
+
+    #: The ID of the partitioning scheme.
+    ID: ClassVar[str] = 'GroupedSequence'
+
+    def __init__(
+        self,
+        variables: SequenceType[str],
+        size: int,
+        dtype: SequenceType[str] | None = None,
+    ) -> None:
+        if size < 2:
+            raise ValueError(
+                f"Parameter 'size' must be at least 2 ('{size}' was provided)."
+            )
+
+        super().__init__(variables=variables, dtype=dtype)
+
+        self.size = size
+
+    def _split(
+        self,
+        variables: dict[str, NDArray],
+    ) -> Iterator[abc.Partition]:
+        """Split the variables constituting the partitioning into partitioning
+        schemes."""
+        last_field = list(variables)[-1]
+
+        variables = variables.copy()
+        variables[last_field] = (variables[last_field] //
+                                 self.size) * self.size
+
+        return super()._split(variables=variables)

@@ -122,7 +122,7 @@ class Date(abc.Partitioning):
 
     def _split(
         self,
-        variables: dict[str, ArrayLike],
+        variables: dict[str, NDArray],
     ) -> Iterator[abc.Partition]:
         """Return the partitioning scheme for the given variables."""
         index: NDArray

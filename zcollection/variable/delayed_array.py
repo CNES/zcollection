@@ -307,7 +307,7 @@ class DelayedArray(Variable):
             **kwargs,
         )
         # pylint: disable=duplicate-code
-        # This call is similar to the one in array.py but it's not the same
+        # This call is similar to the one in array.py, but it's not the same
         # behaviour.
         return new_variable(cls,
                             name=name,

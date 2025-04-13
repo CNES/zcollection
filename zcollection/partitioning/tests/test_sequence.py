@@ -132,7 +132,7 @@ def test_config(variables, dtype) -> None:
 
 @pytest.mark.parametrize('variables, dtype', VARIABLES_DTYPE_TEST_SET)
 def test_pickle(variables, dtype) -> None:
-    """Test the pickling of the Date class."""
+    """Test the pickling of the Sequence class."""
     partitioning = Sequence(variables=variables, dtype=dtype)
 
     other = pickle.loads(pickle.dumps(partitioning))

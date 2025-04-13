@@ -20,9 +20,10 @@ Entry point of the implemented partitioning schemes.
 from .abc import Partitioning
 from .date import Date
 from .registry import get_codecs, register_codec
-from .sequence import Sequence
+from .sequence import GroupedSequence, Sequence
 
 register_codec(Date)
 register_codec(Sequence)
+register_codec(GroupedSequence)
 
-__all__ = ('Partitioning', 'Date', 'Sequence', 'get_codecs')
+__all__ = ('Partitioning', 'Date', 'Sequence', 'GroupedSequence', 'get_codecs')
