@@ -644,7 +644,7 @@ class ReadOnlyCollection:
     def load(
         self,
         *,
-        delayed: bool = True,
+        delayed: bool | None = None,
         filters: PartitionFilter = None,
         indexer: Indexer | None = None,
         selected_variables: Iterable[str] | None = None,
@@ -656,6 +656,7 @@ class ReadOnlyCollection:
 
         Args:
             delayed: Whether to load data in a dask array or not.
+                Default value is True if distributed is True, False otherwise.
             filters: The predicate used to filter the partitions to load. To
                 get more information on the predicate, see the documentation of
                 the :meth:`partitions` method.
@@ -683,11 +684,10 @@ class ReadOnlyCollection:
             ...     filters=lambda keys: keys["year"] == 2019 and
             ...     keys["month"] == 3 and keys["day"] % 2 == 0)
         """
-        array: dataset.Dataset | None = None
+        if delayed is None:
+            delayed = distributed
 
-        # Delayed has to be False if dask is disabled
-        if not distributed:
-            delayed = False
+        array: dataset.Dataset | None = None
 
         if indexer is None:
             arrays = self._load_partitions(

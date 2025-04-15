@@ -422,7 +422,7 @@ class View:
     def load(
         self,
         *,
-        delayed: bool = True,
+        delayed: bool | None = None,
         filters: collection.PartitionFilter = None,
         indexer: collection.Indexer | None = None,
         selected_variables: Iterable[str] | None = None,
@@ -433,6 +433,7 @@ class View:
 
         Args:
             delayed: Whether to load data in a dask array or not.
+                Default value is True if distributed is True, False otherwise.
             filters: The predicate used to filter the partitions to select.
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
@@ -452,9 +453,8 @@ class View:
             >>> view.load(filters="time == '2020-01-01'")
             >>> view.load(filters=lambda x: x["time"] == "2020-01-01")
         """
-        # Delayed has to be False if dask is disabled
-        if not distributed:
-            delayed = False
+        if delayed is None:
+            delayed = distributed
 
         array: dataset.Dataset | None = None
         datasets: list[tuple[dataset.Dataset, str] | None]

@@ -622,7 +622,7 @@ class Collection(ReadOnlyCollection):
         filters: PartitionFilter | None = None,
         trim: bool = True,
         npartitions: int | None = None,
-        delayed: bool = True,
+        delayed: bool | None = None,
         distributed: bool = True,
         **kwargs,
     ) -> None:
@@ -656,6 +656,7 @@ class Collection(ReadOnlyCollection):
                 default, it is equal to the number of Dask workers available
                 when calling this method.
             delayed: Whether to load data in a dask array or not.
+                Default value is True if distributed is True, False otherwise.
             distributed: Whether to use dask or not. Default To True.
             **kwargs: The keyword arguments to pass to the function.
 
@@ -673,9 +674,8 @@ class Collection(ReadOnlyCollection):
         if not callable(func):
             raise TypeError('func must be a callable')
 
-        # Delayed has to be False if dask is disabled
-        if not distributed:
-            delayed = False
+        if delayed is None:
+            delayed = distributed
 
         variables = variables or _infer_callable(
             self, func, filters, delayed, selected_variables, *args, **kwargs)
