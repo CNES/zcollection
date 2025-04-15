@@ -12,6 +12,7 @@ from collections.abc import Iterator
 import pickle
 
 import numpy
+import numpy as np
 import pytest
 import xarray
 
@@ -161,3 +162,33 @@ def test_pickle(variables, dtype, part_size) -> None:
 
     assert isinstance(other, GroupedSequence)
     assert other.dtype() == partitioning.dtype()
+
+
+@pytest.mark.parametrize('start', [-10, 0, 10, 100])
+def test_splits(start):
+    """Test the _split method with different sets of parameters."""
+    v1 = 'v1'
+    v2 = 'v2'
+
+    partitioning = GroupedSequence(variables=[v1, v2], size=5, start=start)
+
+    vdata = {
+        v1: np.array([1, 1, 1, 1, 1, 1, 1, 2, 2, 2]),
+        v2: np.array([0, 1, 5, 15, 50, 100, 102, 0, 2, 4]) + start
+    }
+    expected_groups = [((1, 0 + start), slice(0, 2)),
+                       ((1, 5 + start), slice(2, 3)),
+                       ((1, 15 + start), slice(3, 4)),
+                       ((1, 50 + start), slice(4, 5)),
+                       ((1, 100 + start), slice(5, 7)),
+                       ((2, 0 + start), slice(7, 10))]
+
+    split_data = partitioning._split(variables=vdata)
+
+    for split, res in zip(split_data, expected_groups):
+        s = split[1]
+        values = split[0]
+
+        assert s == res[1]
+        assert values[0][1] == res[0][0]
+        assert values[1][1] == res[0][1]

@@ -174,6 +174,8 @@ class GroupedSequence(Sequence):
         size: Number of values of the last variable contained in each partition.
             The size must be at least 2 (1 sized sequence should use the
             Sequence partitioning scheme).
+        start: Starting value of the grouped variable.
+            Partitioning every(Default to 0).
         dtype: An optional sequence of strings representing the data type used
             to store variable values in a binary representation without data
             loss. Must be one of the following allowed data types: ``int8``,
@@ -182,7 +184,7 @@ class GroupedSequence(Sequence):
             variables.
     """
 
-    __slots__ = ('_dtype', '_pattern', 'variables', 'size')
+    __slots__ = ('_dtype', '_pattern', 'variables', 'size', 'start')
 
     #: The ID of the partitioning scheme.
     ID: ClassVar[str] = 'GroupedSequence'
@@ -191,6 +193,7 @@ class GroupedSequence(Sequence):
         self,
         variables: SequenceType[str],
         size: int,
+        start: int = 0,
         dtype: SequenceType[str] | None = None,
     ) -> None:
         if size < 2:
@@ -198,9 +201,10 @@ class GroupedSequence(Sequence):
                 f"Parameter 'size' must be at least 2 ('{size}' was provided)."
             )
 
-        super().__init__(variables=variables, dtype=dtype)
-
         self.size = size
+        self.start = start
+
+        super().__init__(variables=variables, dtype=dtype)
 
     def _split(
         self,
@@ -211,7 +215,7 @@ class GroupedSequence(Sequence):
         last_field = list(variables)[-1]
 
         variables = variables.copy()
-        variables[last_field] = (variables[last_field] //
-                                 self.size) * self.size
+        variables[last_field] = ((variables[last_field] - self.start) //
+                                 self.size * self.size) + self.start
 
         return super()._split(variables=variables)

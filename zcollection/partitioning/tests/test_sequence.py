@@ -21,10 +21,6 @@ from zcollection.type_hints import ArrayLike
 from . import data
 from .. import Sequence, get_codecs
 from ... import dataset
-# pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
-
-# pylint: enable=unused-import # Need to import for fixtures
 
 
 def test_construction() -> None:
@@ -55,10 +51,7 @@ def test_construction() -> None:
 
 
 @pytest.mark.parametrize('delayed', [False, True])
-def test_split_dataset(
-    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-    delayed: bool,
-) -> None:
+def test_split_dataset(delayed: bool) -> None:
     """Test the split_dataset method."""
     repeatability = 5
     xds = data.create_test_sequence(repeatability, 20, 10)
@@ -143,10 +136,7 @@ def test_pickle(variables, dtype) -> None:
 
 # pylint: disable=protected-access
 @pytest.mark.parametrize('delayed', [False, True])
-def test_multiple_sequence(
-    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-    delayed: bool,
-) -> None:
+def test_multiple_sequence(delayed: bool) -> None:
     """Test the creation of a sequence with multiple variables."""
     arrays = {
         '_a': numpy.array([], dtype='i8'),
