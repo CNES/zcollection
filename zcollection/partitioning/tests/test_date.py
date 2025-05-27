@@ -62,9 +62,9 @@ class PartitionTestData:
         assert parsed_date == numpy.datetime64(date).astype(
             f'datetime64[{self.resolution}]')
 
-        expected_selection = self.dates[
-            (self.dates >= parsed_date)
-            & (self.dates < parsed_date + self.timedelta)]
+        expected_selection = self.dates[(self.dates >= parsed_date)
+                                        & (self.dates < parsed_date +
+                                           self.timedelta)]
         assert numpy.all(zds.variables['dates'].compute(
             scheduler=dask.local.get_sync) == expected_selection)
 
