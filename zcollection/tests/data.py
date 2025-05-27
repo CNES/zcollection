@@ -94,19 +94,22 @@ def create_test_dataset_with_fillvalue(
 
 def create_test_collection(tested_fs,
                            with_fillvalue=False,
-                           delayed=True) -> collection.Collection:
+                           delayed=True,
+                           distributed=True) -> collection.Collection:
     """Create a collection."""
     zds: dataset.Dataset = next(
         create_test_dataset_with_fillvalue(
             delayed=delayed) if with_fillvalue else create_test_dataset(
                 delayed=delayed))
-    zcollection = collection.Collection('time',
-                                        zds.metadata(),
-                                        partitioning.Date(('time', ), 'D'),
-                                        str(tested_fs.collection),
-                                        filesystem=tested_fs.fs)
-    zcollection.insert(zds)
-    return zcollection
+    zcol = collection.Collection(
+        axis='time',
+        ds=zds.metadata(),
+        partition_handler=partitioning.Date(('time', ), 'D'),
+        partition_base_dir=str(tested_fs.collection),
+        filesystem=tested_fs.fs,
+    )
+    zcol.insert(zds, distributed=distributed)
+    return zcol
 
 
 #: List of filesystems and datasets to test.

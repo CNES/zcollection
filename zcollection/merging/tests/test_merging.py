@@ -14,8 +14,8 @@ from .. import _update_fs, merge_time_series, perform
 from ... import sync
 from ...tests import data
 # pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_client, dask_cluster
-from ...tests.fixture import dask_arrays, numpy_arrays
+from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
+from ...tests.fixture import dask_arrays, numpy_arrays  # noqa: F401
 from ...tests.fs import local_fs
 
 # pylint: enable=unused-import
@@ -90,9 +90,9 @@ def test_perform(
     future = dask_client.submit(perform,
                                 zds_sc,
                                 path,
-                                'time',
-                                local_fs.fs,
-                                'time',
+                                axis='time',
+                                fs=local_fs.fs,
+                                partitioning_dim='num_lines',
                                 delayed=delayed,
                                 merge_callable=merge_time_series)
     dask_client.gather(future)

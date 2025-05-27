@@ -19,10 +19,11 @@ from .convenience import (
     create_view,
     open_collection,
     open_view,
+    update_deprecated_collection,
 )
 from .dataset import Dataset, Expression
 from .meta import Attribute
-from .variable import Array, DelayedArray, Variable
+from .variable import Array, DelayedArray, Variable, new_variable
 from .version import __version__
 from .view import View, ViewReference, ViewUpdateCallable
 
@@ -41,12 +42,14 @@ __all__ = (
     'merging',
     'open_collection',
     'open_view',
+    'update_deprecated_collection',
     'PartitionCallable',
     'PartitionFilter',
     'PartitionFilterCallback',
     'partitioning',
     'UpdateCallable',
     'Variable',
+    'new_variable',
     'version',
     'View',
     'ViewReference',

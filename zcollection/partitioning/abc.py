@@ -256,7 +256,7 @@ class Partitioning(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def _split(
         self,
-        variables: dict[str, ArrayLike],
+        variables: dict[str, NDArray],
     ) -> Iterator[Partition]:
         """Split the variables constituting the partitioning into partitioning
         schemes.

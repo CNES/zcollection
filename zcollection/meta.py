@@ -9,7 +9,6 @@ Configuration metadata
 from __future__ import annotations
 
 from typing import Any
-import abc
 from collections.abc import Iterable, Sequence
 
 import numcodecs.abc
@@ -22,13 +21,16 @@ from .type_hints import DTypeLike
 #: Block size limit used with dask arrays. (128 MiB)
 BLOCK_SIZE_LIMIT = 134217728
 
+#: Alias to type hint for the dimensions of a dataset.
+DimensionType = dict[str, int]
 
-class Pair(abc.ABC):
-    """Handle pair key/value.
+
+class Attribute:
+    """Handle the metadata of a dataset attribute.
 
     Args:
-        name: name of the key.
-        value: value of the key.
+        name: name of the attribute.
+        value: value of the attribute.
     """
     __slots__ = ('name', 'value')
 
@@ -54,45 +56,13 @@ class Pair(abc.ABC):
         return f'{self.__class__.__name__}({self.name!r}, {self.value})'
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Pair):
+        if not isinstance(other, Attribute):
             return False
         return self.get_config() == other.get_config()
 
     def get_config(self) -> tuple[str, Any]:
         """Get the key/value pair configuration."""
         return self.name, self.value
-
-    @staticmethod
-    @abc.abstractmethod
-    def from_config(data: tuple[str, Any]) -> Pair:
-        """Create a new Pair from the given key/value pair configuration."""
-
-
-class Dimension(Pair):
-    """Handle the metadata of a dataset dimension.
-
-    Args:
-        name: name of the dimension.
-        value: value of the dimension.
-    """
-
-    @staticmethod
-    def from_config(data: tuple[str, Any]) -> Dimension:
-        """Creates a new instance from its metadata.
-
-        Returns:
-            Dimension: a new dimension.
-        """
-        return Dimension(*data)
-
-
-class Attribute(Pair):
-    """Handle the metadata of a dataset attribute.
-
-    Args:
-        name: name of the attribute.
-        value: value of the attribute.
-    """
 
     @staticmethod
     def from_config(data: tuple[str, Any]) -> Attribute:
@@ -105,6 +75,44 @@ class Attribute(Pair):
             Attribute: a new attribute.
         """
         return Attribute(*data)
+
+
+class Dimension:
+    """Handle the metadata of a dataset dimension.
+
+    Args:
+        name: name of the dimension.
+        value: size of the dimension.
+        chunks: size of the dimension's chunks.
+    """
+    __slots__ = ('name', 'value', 'chunks')
+
+    def __init__(self, name: str, value: int, chunks: int = -1) -> None:
+        self.name: str = name
+        self.value: int = value
+        self.chunks: int = chunks
+
+    @staticmethod
+    def from_config(data: tuple[str, int, int]) -> Dimension:
+        """Creates a new instance from its metadata.
+
+        Returns:
+            Dimension: a new dimension.
+        """
+        return Dimension(*data)
+
+    def get_config(self) -> tuple[str, int, int]:
+        """Get the key/value/chunk values configuration."""
+        return self.name, self.value, self.chunks
+
+    def __repr__(self) -> str:
+        return (f'{self.__class__.__name__}({self.name!r}, '
+                f'{self.value}, {self.chunks})')
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Dimension):
+            return False
+        return self.get_config() == other.get_config()
 
 
 class Variable:
@@ -223,8 +231,8 @@ class Variable:
         Returns:
             The variable.
         """
-        return Variable(self.name,
-                        self.dtype,
+        return Variable(name=self.name,
+                        dtype=self.dtype,
                         dimensions=self.dimensions,
                         compressor=self.compressor,
                         fill_value=self.fill_value,
@@ -235,29 +243,28 @@ class Dataset:
     """Handle the metadata of a dataset.
 
     Args:
-        dimensions: A sequence of strings representing the dimensions of the
-            dataset.
+        dimensions: A sequence of :py:class:`Dimension` objects representing
+            the dimensions of the dataset associated to their size.
         variables: A sequence of :py:class:`Variable` objects representing the
             variables of the dataset.
         attrs: An optional sequence of :py:class:`Attribute` objects
             representing the attributes of the dataset. Defaults to None.
-        chunks: An optional sequence of :py:class:`Dimension` objects
-            representing the chunk size for each dimension. Defaults to None.
         block_size_limit: An optional integer representing the maximum size
             (in bytes) of a block/chunk of variable's data.
     """
-    __slots__ = ('dimensions', 'variables', 'attrs', 'chunks',
-                 'block_size_limit')
+    __slots__ = ('dimensions', 'variables', 'attrs', 'block_size_limit')
 
     def __init__(self,
-                 dimensions: Sequence[str],
+                 dimensions: Sequence[Dimension],
                  variables: Sequence[Variable],
                  *,
                  attrs: Sequence[Attribute] | None = None,
-                 chunks: Sequence[Dimension] | None = None,
                  block_size_limit: int | None = None) -> None:
         #: Dimensions of the dataset.
-        self.dimensions = tuple(dimensions)
+        self.dimensions: dict[str, Dimension] = {
+            item.name: item
+            for item in dimensions
+        }
 
         #: Variables of the dataset.
         self.variables: dict[str, Variable] = {
@@ -271,8 +278,15 @@ class Dataset:
         #: Maximum data chunk size
         self.block_size_limit: int = block_size_limit or BLOCK_SIZE_LIMIT
 
-        #: Chunk size for each dimension
-        self.chunks = list(chunks or [])
+    @property
+    def dim_chunks(self) -> DimensionType:
+        """Dimensions' chunks properties."""
+        return {dim.name: dim.chunks for dim in self.dimensions.values()}
+
+    @property
+    def dim_size(self) -> DimensionType:
+        """Dimensions' size properties."""
+        return {dim.name: dim.value for dim in self.dimensions.values()}
 
     def select_variables(
         self,
@@ -291,10 +305,13 @@ class Dataset:
             The selected variables.
         """
         result = set(self.variables)
+
         if keep_variables is not None:
             result &= set(keep_variables)
+
         if drop_variables is not None:
             result -= set(drop_variables)
+
         return result
 
     def __eq__(self, other: object) -> bool:
@@ -311,26 +328,51 @@ class Dataset:
         Returns:
             Dataset configuration.
         """
-        attrs: list[tuple[str, Any]]
-        variables: tuple[dict[str, Any], ...]
-
-        attrs = sorted(item.get_config() for item in self.attrs)
+        attributes = sorted(attr.get_config() for attr in self.attrs)
         variables = tuple(self.variables[name].get_config()
                           for name in sorted(self.variables))
 
         return {
-            'attrs': attrs,
-            'dimensions': self.dimensions,
-            'variables': variables,
-            'chunks': tuple(item.get_config() for item in self.chunks),
-            'block_size_limit': self.block_size_limit
+            'attrs':
+            attributes,
+            'dimensions':
+            tuple(item.get_config() for item in self.dimensions.values()),
+            'variables':
+            variables,
+            'block_size_limit':
+            self.block_size_limit,
         }
 
-    def add_variable(self, variable: Variable) -> None:
+    def add_dimension(self, dimension: Dimension) -> None:
+        """Add a dimension to the dataset.
+
+        Args:
+            dimension: dimension to add.
+
+        Raises:
+            TypeError: If the dimension is not a Dimension object.
+            ValueError: If the variable already exists in the dataset or if
+                the variable's dimensions do not match the dataset's
+                dimensions.
+        """
+        if not isinstance(dimension, Dimension):
+            raise TypeError(
+                f'Dimension must be a Dimension, not {type(dimension)}')
+        if dimension.name in self.dimensions:
+            raise ValueError(
+                f'The dimension {dimension.name!r} already exists in the '
+                'collection.')
+
+        self.dimensions[dimension.name] = dimension
+
+    def add_variable(self,
+                     variable: Variable,
+                     dimensions: set[str] | None = None) -> None:
         """Add a variable to the dataset.
 
         Args:
             variable: variable to add.
+            dimensions: set of known dimensions.
 
         Raises:
             TypeError: If the variable is not a Variable object.
@@ -340,16 +382,19 @@ class Dataset:
         """
         if not isinstance(variable, Variable):
             raise TypeError(
-                f'variable must be a Variable, not {type(variable)}')
+                f'Variable must be a Variable, not {type(variable)}')
+
         if variable.name in self.variables:
             raise ValueError(
                 f'The variable {variable.name!r} already exists in the '
                 'collection.')
-        dimensions = set(self.dimensions)
+
+        dimensions = dimensions or set(self.dimensions)
         # Looking for unknown dimensions.
         if (set(variable.dimensions) | dimensions) != dimensions:
             raise ValueError(
                 'The new variable must use the dataset dimensions.')
+
         self.variables[variable.name] = variable
 
     @staticmethod
@@ -363,35 +408,35 @@ class Dataset:
             New dataset.
         """
         return Dataset(
-            dimensions=data['dimensions'],
+            dimensions=tuple(
+                Dimension.from_config(item)
+                for item in data.get('dimensions', [])),
             variables=tuple(
                 Variable.from_config(item) for item in data['variables']),
             attrs=tuple(Attribute.from_config(item) for item in data['attrs']),
-            chunks=tuple(
-                Dimension.from_config(item)
-                for item in data.get('chunks', [])),
-            block_size_limit=data.get('block_size_limit'),
-        )
+            block_size_limit=data.get('block_size_limit'))
 
-    def search_same_dimensions_as(self, variable: Variable) -> Variable:
-        """Searches for a variable in this dataset that has the same dimensions
-        as the given variable.
+    @staticmethod
+    def from_deprecated_config(data: dict[str, Any]) -> Dataset:
+        """Create a new dataset from the given deprecated dataset
+        configuration.
 
         Args:
-            variable: The variable used for searching.
+            data: dataset configuration.
 
         Returns:
-            The variable that has the same dimensions as the supplied
-            variable.
-
-        Raises:
-            ValueError: If no variable with the same dimensions as the given
-            variable is found.
+            New dataset.
         """
-        for item in self.variables.values():
-            if item.dimensions == variable.dimensions:
-                return item
-        raise ValueError('No variable using the same dimensions exists.')
+        chunks = dict(data.get('chunks', []))
+        return Dataset(
+            dimensions=tuple(
+                Dimension.from_config((item, -1, chunks.get(item, -1)))
+                for item in data['dimensions']),
+            variables=tuple(
+                Variable.from_config(item) for item in data['variables']),
+            attrs=tuple(Attribute.from_config(item) for item in data['attrs']),
+            block_size_limit=data.get('block_size_limit'),
+        )
 
     def missing_variables(self, other: Dataset) -> tuple[str, ...]:
         """Finds the variables in the provided dataset that are not in this

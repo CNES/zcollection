@@ -46,8 +46,14 @@
         ]
     ],
     "dimensions": [
-        "num_lines",
-        "num_pixels"
+        [
+            "num_lines",
+            0
+        ],
+        [
+            "num_pixels",
+            0
+        ]
     ],
     "variables": [
         {

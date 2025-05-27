@@ -66,6 +66,7 @@ def split_half_orbit(
     """Calculate the indexes of the start and stop of each half-orbit.
 
     Args:
+        cycle_number: Cycle numbers.
         pass_number: Pass numbers.
     Returns:
         Iterator of start and stop indexes.
@@ -95,7 +96,7 @@ def _half_orbit(
     """Return the indexes of the start and stop of each half-orbit.
 
     Args:
-        ds: Datasets stored in a partition to be indexed.
+        zds: Datasets stored in a partition to be indexed.
     Returns:
         Dictionary of start and stop indexes for each half-orbit.
     """
@@ -149,7 +150,7 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
 
         Args:
             path: The path to the index.
-            ds: The collection to be indexed.
+            zds: The collection to be indexed.
             filesystem: The filesystem to use.
         Returns:
             The created index.
@@ -169,7 +170,7 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
         """Update the index.
 
         Args:
-            ds: New data stored in the collection to be indexed.
+            zds: New data stored in the collection to be indexed.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
             cycle_number: The name of the cycle number variable stored in the

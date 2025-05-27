@@ -17,7 +17,7 @@ import pytest
 
 from ..compressed_array import CompressedArray
 # pylint: disable=unused-import # Need to import for fixtures
-from .cluster import dask_client, dask_cluster
+from .cluster import dask_client, dask_cluster  # noqa: F401
 
 # pylint: enable=unused-import
 

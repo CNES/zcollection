@@ -8,9 +8,15 @@ Convenience functions
 """
 from __future__ import annotations
 
+from typing import Any
+import logging
+
 import fsspec
 
-from .. import collection, fs_utils, sync, view
+from .. import collection, fs_utils, meta, sync, view
+
+#: Module logger.
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 def create_view(path: str,
@@ -45,8 +51,8 @@ def create_view(path: str,
     filesystem = fs_utils.get_fs(filesystem)
     if filesystem.exists(path):
         raise ValueError(f'path {path!r} already exists.')
-    return view.View(path,
-                     view_ref,
+    return view.View(base_dir=path,
+                     view_ref=view_ref,
                      ds=None,
                      filesystem=filesystem,
                      filters=filters,
@@ -76,3 +82,61 @@ def open_view(
     return view.View.from_config(path,
                                  filesystem=filesystem,
                                  synchronizer=synchronizer)
+
+
+def update_deprecated_view(
+        path: str,
+        filesystem: fsspec.AbstractFileSystem | str | None = None) -> None:
+    """Update deprecated view's configuration. A backup of the existing view
+    configuration will be kept.
+
+    Args:
+        path: The path to the view.
+        filesystem: The filesystem to use for the view. This is an
+            instance of a subclass of :py:class:`fsspec.AbstractFileSystem`.
+
+        Raises:
+            ValueError:
+                If the provided directory does not contain a valid view
+                configuration file.
+    """
+    # pylint: disable=import-outside-toplevel
+    import json
+
+    _LOGGER.warning('Updating view: %r', path)
+    fs = fs_utils.get_fs(filesystem)
+    # pylint: disable=protected-access
+    config = view.View._config(path)
+
+    if not fs.exists(config):
+        raise ValueError(f'View not found at path {path!r}')
+
+    with fs.open(config) as stream:
+        data: dict[str, Any] = json.load(stream)
+
+    if data.get('version', '0') != '0':
+        _LOGGER.error('View already updated.')
+        return
+
+    ds = meta.Dataset.from_deprecated_config(data['metadata'])
+    # Views do not contain dimensions
+    ds.dimensions = {}
+
+    view_ref: dict[str, Any] = data['view_ref']
+    # pylint: disable=protected-access
+    zview = view.View(base_dir=data['base_dir'],
+                      view_ref=view.ViewReference(
+                          view_ref['path'],
+                          fsspec.AbstractFileSystem.from_json(
+                              json.dumps(view_ref['fs']))),
+                      ds=ds,
+                      filesystem=filesystem,
+                      filters=view._deserialize_filters(data['filters']))
+
+    config_back = f'{config}.bak'
+    _LOGGER.warning('Copying old configuration to: %r', config_back)
+    fs.copy(config, config_back)
+
+    _LOGGER.warning('Writing new configuration: %r', path)
+    # pylint: disable=protected-access
+    zview._write_config()

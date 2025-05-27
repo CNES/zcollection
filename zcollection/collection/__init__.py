@@ -8,10 +8,11 @@ Collection of Zarr groups
 """
 from __future__ import annotations
 
-from typing import Any, Literal, NoReturn
+from typing import TYPE_CHECKING, Any, Literal, NoReturn
 from collections.abc import Iterable, Iterator, Sequence
 import datetime
 import functools
+import importlib.metadata
 import io
 import json
 import logging
@@ -34,12 +35,15 @@ from .. import (
     partitioning,
     storage,
     sync,
+    variable as zvariable,
 )
-from .abc import Indexer, PartitionFilter, ReadOnlyCollection
+from ..type_hints import ArrayLike
+from .abc import IMMUTABLE, Indexer, PartitionFilter, ReadOnlyCollection
 from .callable_objects import UpdateCallable, WrappedPartitionCallable
 from .detail import (
     PartitionSlice,
     _insert,
+    _load_dataset,
     _try_infer_callable,
     _wrap_update_func,
     _wrap_update_func_with_overlap,
@@ -47,39 +51,16 @@ from .detail import (
 
 __all__ = ('dask_utils', 'dataset', 'fs_utils', 'merging', 'meta',
            'partitioning', 'storage', 'sync', 'Indexer', 'PartitionFilter',
-           'ReadOnlyCollection', 'UpdateCallable', 'WrappedPartitionCallable',
-           'PartitionSlice', '_insert', '_try_infer_callable',
-           '_wrap_update_func', '_wrap_update_func_with_overlap')
+           'ReadOnlyCollection', 'IMMUTABLE', 'UpdateCallable',
+           'WrappedPartitionCallable', 'PartitionSlice', '_insert',
+           '_try_infer_callable', '_wrap_update_func',
+           '_wrap_update_func_with_overlap')
+
+if TYPE_CHECKING:
+    from ..variable import abc as variable_abc
 
 #: Module logger.
 _LOGGER: logging.Logger = logging.getLogger(__name__)
-
-
-def _write_immutable_dataset(
-    zds: dataset.Dataset,
-    axis: str,
-    path: str,
-    fs: fsspec.AbstractFileSystem,
-    synchronizer: sync.Sync,
-) -> None:
-    """Write the immutable dataset.
-
-    Args:
-        zds: The dataset to write.
-        axis: The partitioning axis.
-        path: The path to the immutable dataset.
-        fs: The file system that the partition is stored on.
-    """
-    immutable_dataset = zds.select_variables_by_dims((axis, ), predicate=False)
-    assert len(immutable_dataset.variables) != 0, (
-        'The dataset to insert does not contain any variable '
-        'that is not split.')
-    _LOGGER.info('Creating the immutable dataset: %s', path)
-    storage.write_zarr_group(immutable_dataset,
-                             path,
-                             fs,
-                             synchronizer,
-                             distributed=False)
 
 
 def _infer_callable(
@@ -96,20 +77,23 @@ def _infer_callable(
     except StopIteration:
         return ()
 
+    immutable = collection.immutable_path if collection.have_immutable else None
+
     with collection.synchronizer:
-        zds: dataset.Dataset = storage.open_zarr_group(
-            one_partition,
-            collection.fs,
-            delayed=delayed,
-            selected_variables=selected_variables)
+        zds = _load_dataset(delayed=delayed,
+                            fs=collection.fs,
+                            immutable=immutable,
+                            partition=one_partition,
+                            selected_variables=selected_variables)
     func_result: dict[str, Any]
-    func_result = _try_infer_callable(func, zds,
-                                      collection.partition_properties.dim,
-                                      *args, **kwargs)
+    func_result = _try_infer_callable(func, zds, collection.dimension, *args,
+                                      **kwargs)
     unknown_variables: set[str] = set(func_result) - set(
         collection.metadata.variables.keys())
+
     if len(unknown_variables):
         raise ValueError(f'Unknown variables: {unknown_variables}')
+
     return tuple(func_result)
 
 
@@ -202,6 +186,7 @@ class Collection(ReadOnlyCollection):
             self._read_only_mode()
             # pylint: enable=method-hidden
         else:
+            storage.init_zarr_group(dirname=self._immutable, fs=self.fs)
             self._write_config(skip_if_exists=True)
 
     def __str__(self) -> str:
@@ -220,9 +205,10 @@ class Collection(ReadOnlyCollection):
         collection is opened in read-only mode."""
         # Set each unsupported method to raise an exception.
         for item in [
-                'add_variable',
                 'drop_partitions',
+                'add_variable',
                 'drop_variable',
+                'add_dimension',
                 'insert',
                 'update',
         ]:
@@ -232,9 +218,9 @@ class Collection(ReadOnlyCollection):
 
     def _write_config(self, skip_if_exists: bool = False) -> None:
         """Write the configuration file."""
-        base_dir: str = self.partition_properties.dir
-        config: str = self._config(base_dir)
-        exists: bool = self.fs.exists(config)
+        base_dir = self.partition_properties.dir
+        config = self._config(base_dir)
+        exists = self.fs.exists(config)
 
         if exists and skip_if_exists:
             return
@@ -249,6 +235,7 @@ class Collection(ReadOnlyCollection):
             'axis': self.axis,
             'dataset': self.metadata.get_config(),
             'partitioning': self.partitioning.get_config(),
+            'version': importlib.metadata.version('zcollection'),
         }
 
         with self.fs.open(config, mode='w') as stream:
@@ -289,21 +276,45 @@ class Collection(ReadOnlyCollection):
                 configuration file.
         """
         _LOGGER.info('Opening collection: %r', path)
-        fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
-        config: str = cls._config(path)
+        fs = fs_utils.get_fs(filesystem)
+        config = cls._config(path)
+
         if not fs.exists(config):
             raise ValueError(f'zarr collection not found at path {path!r}')
+
         with fs.open(config) as stream:
             data: dict[str, Any] = json.load(stream)
-        return Collection(
-            data['axis'],
-            meta.Dataset.from_config(data['dataset']),
-            partitioning.get_codecs(data['partitioning']),
-            path,
+
+        version = data.get('version', '0')
+        load_dataset = meta.Dataset.from_config
+
+        if version == '0':
+            msg_import = ("Use the 'zcollection.update_deprecated_collection' "
+                          'function to update it.')
+            warnings.warn(
+                message=('This collection needs to be updated and '
+                         f'can only be used in read only mode. {msg_import}'),
+                category=UserWarning,
+                stacklevel=2)
+            if mode == 'w':
+                raise ValueError(
+                    'Collection configuration needs to be updated. '
+                    f'{msg_import}')
+
+            load_dataset = meta.Dataset.from_deprecated_config
+
+        collection = Collection(
+            axis=data['axis'],
+            ds=load_dataset(data['dataset']),
+            partition_handler=partitioning.get_codecs(data['partitioning']),
+            partition_base_dir=path,
             mode=mode or 'r',
             filesystem=fs,
             synchronizer=synchronizer,
         )
+        collection.version = version
+
+        return collection
 
     # pylint: disable=method-hidden
     def insert(
@@ -312,7 +323,6 @@ class Collection(ReadOnlyCollection):
         *,
         merge_callable: merging.MergeCallable | None = None,
         npartitions: int | None = None,
-        validate: bool = False,
         distributed: bool = True,
         **kwargs,
     ) -> Iterable[str]:
@@ -327,8 +337,6 @@ class Collection(ReadOnlyCollection):
                 partitioned data.
             npartitions: The maximum number of partitions to process in
                 parallel. By default, partitions are processed one by one.
-            validate: Whether to validate dataset metadata before insertion
-                or not.
             distributed: Whether to use dask or not. Default To True.
             kwargs: Additional keyword arguments passed to the merge callable.
 
@@ -369,34 +377,30 @@ class Collection(ReadOnlyCollection):
         _LOGGER.info('Inserting of a %s dataset in the collection',
                      dask.utils.format_bytes(ds.nbytes))
 
-        missing_variables: tuple[str, ...] = self.metadata.missing_variables(
-            ds.metadata())
-        for item in missing_variables:
-            variable: meta.Variable = self.metadata.variables[item]
-            ds.add_variable(variable)
+        storage.write_zarr_group_missing(
+            zds=ds.select_variables_by_dims(
+                dims=(self.dimension, ),
+                predicate=False,
+            ),
+            dirname=self._immutable,
+            fs=self.fs,
+            synchronizer=self.synchronizer,
+            distributed=False,
+        )
 
-        if validate and ds.metadata() != self.metadata:
-            raise ValueError(
-                "Provided dataset's metadata do not match the collection's ones"
-            )
-        ds = ds.set_for_insertion(self.metadata)
+        # Remove the immutable variables.
+        ds = ds.select_variables_by_dims((self.dimension, ))
 
-        # If the dataset contains variables that should not be partitioned.
-        if self._immutable is not None:
+        if not ds.variables:
+            # No variable to insert
+            return tuple()
 
-            # On the first call, we store the immutable variables in
-            # a directory located at the root of the collection.
-            if not self.fs.exists(self._immutable):
-                _write_immutable_dataset(ds, self.axis, self._immutable,
-                                         self.fs, self.synchronizer)
-
-            # Remove the variables that should not be partitioned.
-            ds = ds.select_variables_by_dims((self.axis, ))
+        ds = self._set_ds_for_insertion(ds=ds)
 
         # Process the partitions to insert or update by batches to avoid
         # memory issues.
         partitions = tuple(
-            self.partitioning.split_dataset(ds, self.partition_properties.dim))
+            self.partitioning.split_dataset(zds=ds, axis=self.dimension))
 
         if distributed:
             self._insert_distributed(ds=ds,
@@ -412,6 +416,85 @@ class Collection(ReadOnlyCollection):
 
         return (fs_utils.join_path(*((self.partition_properties.dir, ) + item))
                 for item, _ in partitions)
+
+    def _set_ds_for_insertion(self, ds: dataset.Dataset) -> dataset.Dataset:
+        """Create a new dataset ready to be inserted into a collection.
+
+         * Missing collection's variables and dimensions are added
+           to the dataset
+         * Dimension's size are checked
+         * Each variable is checked
+
+        Args:
+            ds: Dataset to insert.
+
+        Returns:
+            New dataset.
+        """
+        mds = self.metadata
+
+        ds = dataset.Dataset(variables=[
+            self._set_var_for_insertion(var) for var in ds.variables.values()
+        ])
+
+        missing_variables = set(mds.missing_variables(
+            ds.metadata())) - self.immutable_variables
+
+        for name, dim in mds.dimensions.items():
+            if name == self.dimension:
+                continue
+
+            if name not in ds.dimensions:
+                # Adding missing dimensions properties
+                ds.dimensions[name] = dim.value
+            elif dim.value != ds.dimensions[name]:
+                raise ValueError(
+                    f'Inserted dimension {dim.name} has invalid size '
+                    f'({ds.dimensions[name]} instead of {dim.value})')
+
+        for item in missing_variables:
+            variable = mds.variables[item]
+            ds.add_variable(variable, filler=True)
+
+        ds.copy_properties(ds=mds)
+
+        return ds
+
+    def _set_var_for_insertion(self,
+                               variable: variable_abc.T) -> variable_abc.T:
+        """Create a new variable ready to be inserted into a collection.
+        Variable's dtype and fill_value are checked for consistency.
+
+        Args:
+            variable: The variable to insert.
+
+        Returns:
+            The variable.
+        """
+        var_meta = self.metadata.variables.get(variable.name, None)
+
+        if var_meta is None:
+            raise ValueError(f"Variable '{variable.name}' is unknown.")
+
+        if variable.dtype != var_meta.dtype:
+            raise ValueError(
+                f"Variable '{variable.name}' has invalid dtype "
+                f"('{variable.dtype}' instead of '{var_meta.dtype}')")
+
+        if variable.fill_value != var_meta.fill_value:
+            raise ValueError(
+                f"Variable '{variable.name}' has invalid fill_value "
+                f"('{variable.fill_value}' instead of '{var_meta.fill_value}')"
+            )
+
+        return zvariable.new_variable(cls=type(variable),
+                                      name=variable.name,
+                                      array=variable.array,
+                                      dimensions=variable.dimensions,
+                                      attrs=(),
+                                      compressor=variable.compressor,
+                                      fill_value=variable.fill_value,
+                                      filters=variable.filters)
 
     def _insert_distributed(self, ds: xarray.Dataset | dataset.Dataset,
                             partitions: tuple[PartitionSlice,
@@ -490,27 +573,30 @@ class Collection(ReadOnlyCollection):
         if not folders:
             return folders
 
-        def is_created_before(path: str, now: datetime.datetime,
-                              timedelta: datetime.timedelta) -> bool:
-            """Return whether the partition was created before the
-            timedelta."""
-            created: datetime.datetime = self.fs.created(path)
-            if created.tzinfo is not None:
-                created = created.replace(tzinfo=None)
-            return now - created > timedelta
-
         if timedelta is not None:
+
+            def _is_created_before(_path: str, _now: datetime.datetime,
+                                   _timedelta: datetime.timedelta) -> bool:
+                """Return whether the partition was created before the
+                timedelta."""
+                created: datetime.datetime = self.fs.created(_path)
+                if created.tzinfo is not None:
+                    created = created.replace(tzinfo=None)
+                return _now - created > _timedelta
+
             folders = list(
                 filter(
-                    lambda folder: is_created_before(  # type: ignore[arg-type]
-                        folder, now, timedelta),
+                    lambda _folder: _is_created_before(
+                        _path=_folder, _now=now, _timedelta=timedelta),
                     folders))
 
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()
             storage.execute_transaction(
-                client, self.synchronizer,
-                client.map(self.fs.rm, folders, recursive=True))
+                client=client,
+                synchronizer=self.synchronizer,
+                futures=client.map(self.fs.rm, folders, recursive=True),
+            )
         else:
             for folder in folders:
                 self.fs.rm(path=folder, recursive=True)
@@ -529,13 +615,14 @@ class Collection(ReadOnlyCollection):
         func: UpdateCallable,
         /,
         *args,
-        delayed: bool = True,
         depth: int = 0,
-        filters: PartitionFilter | None = None,
-        npartitions: int | None = None,
         selected_variables: list[str] | None = None,
-        trim: bool = True,
         variables: Sequence[str] | None = None,
+        selected_partitions: Iterable[str] | None = None,
+        filters: PartitionFilter | None = None,
+        trim: bool = True,
+        npartitions: int | None = None,
+        delayed: bool | None = None,
         distributed: bool = True,
         **kwargs,
     ) -> None:
@@ -545,7 +632,6 @@ class Collection(ReadOnlyCollection):
         Args:
             func: The function to apply on each partition.
             *args: The positional arguments to pass to the function.
-            delayed: Whether to load data in a dask array or not.
             depth: The depth of the overlap between the partitions. Default is
                 0 (no overlap). If depth is greater than 0, the function is
                 applied on the partition and its neighbors selected by the
@@ -553,20 +639,24 @@ class Collection(ReadOnlyCollection):
                 argument, it will be passed a tuple with the name of the
                 partitioned dimension and the slice allowing getting in the
                 dataset the selected partition.
-            filters: The expression used to filter the partitions to update.
-            npartitions: The number of partitions to update in parallel. By
-                default, it is equal to the number of Dask workers available
-                when calling this method.
-            selected_variables: A list of variables to load from the collection.
-                If None, all variables are loaded.
-            trim: Whether to trim ``depth`` items from each partition after
-                calling ``func``. Set it to ``False`` if your function does
-                this for you.
             variables: The list of variables updated by the function. If None,
                 the variables are inferred by calling the function on the first
                 partition. In this case, it is important to ensure that the
                 function can be called twice on the same partition without
                 side effects. Default is None.
+            selected_variables: A list of variables to load from the collection.
+                If None, all variables are loaded.
+            selected_partitions: A list of partitions to load (using the
+                partition relative path).
+            filters: The expression used to filter the partitions to update.
+            trim: Whether to trim ``depth`` items from each partition after
+                calling ``func``. Set it to ``False`` if your function does
+                this for you.
+            npartitions: The number of partitions to update in parallel. By
+                default, it is equal to the number of Dask workers available
+                when calling this method.
+            delayed: Whether to load data in a dask array or not.
+                Default value is True if distributed is True, False otherwise.
             distributed: Whether to use dask or not. Default To True.
             **kwargs: The keyword arguments to pass to the function.
 
@@ -584,9 +674,8 @@ class Collection(ReadOnlyCollection):
         if not callable(func):
             raise TypeError('func must be a callable')
 
-        # Delayed has to be True if dask is disabled
-        if not distributed:
-            delayed = False
+        if delayed is None:
+            delayed = distributed
 
         variables = variables or _infer_callable(
             self, func, filters, delayed, selected_variables, *args, **kwargs)
@@ -597,6 +686,13 @@ class Collection(ReadOnlyCollection):
                           stacklevel=2)
             return
 
+        immutable_update = self.immutable_variables.intersection(variables)
+
+        if immutable_update:
+            raise ValueError(f'Immutable variables ({immutable_update}) '
+                             'have to be updated using the '
+                             "'Collection.update_immutable' method.")
+
         # If depth is not 0, the variables updated must be in the selected
         # variables.
         if depth != 0 and selected_variables is not None:
@@ -606,48 +702,211 @@ class Collection(ReadOnlyCollection):
         _LOGGER.info('Updating of the (%s) variable in the collection',
                      ', '.join(repr(item) for item in variables))
 
-        selected_partitions = tuple(self.partitions(filters=filters,
-                                                    lock=True))
+        selected_partitions = tuple(
+            self.partitions(filters=filters,
+                            selected_partitions=selected_partitions,
+                            lock=True))
 
-        local_func: WrappedPartitionCallable = _wrap_update_func(
-            delayed=delayed,
-            func=func,
-            fs=self.fs,
-            immutable=self._immutable,
-            selected_variables=selected_variables
-        ) if depth == 0 else _wrap_update_func_with_overlap(
-            delayed=delayed,
-            depth=depth,
-            dim=self.partition_properties.dim,
-            func=func,
-            fs=self.fs,
-            immutable=self._immutable,
-            selected_partitions=selected_partitions,
-            selected_variables=selected_variables,
-            trim=trim)
+        immutable = self._immutable if self.have_immutable else None
+
+        if depth == 0:
+            local_func = _wrap_update_func(
+                delayed=delayed,
+                func=func,
+                fs=self.fs,
+                immutable=immutable,
+                selected_variables=selected_variables)
+        else:
+            local_func = _wrap_update_func_with_overlap(
+                delayed=delayed,
+                depth=depth,
+                dim=self.dimension,
+                func=func,
+                fs=self.fs,
+                immutable=immutable,
+                selected_partitions=selected_partitions,
+                selected_variables=selected_variables,
+                trim=trim)
 
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()
 
             batches: Iterator[Sequence[str]] = dask_utils.split_sequence(
-                selected_partitions, npartitions
-                or dask_utils.dask_workers(client, cores_only=True))
+                sequence=selected_partitions,
+                sections=npartitions
+                or dask_utils.dask_workers(client=client, cores_only=True))
+
             storage.execute_transaction(
-                client, self.synchronizer,
-                client.map(local_func,
-                           tuple(batches),
-                           key=func.__name__,
-                           func_args=args,
-                           func_kwargs=kwargs))
+                client=client,
+                synchronizer=self.synchronizer,
+                futures=client.map(
+                    local_func,
+                    tuple(batches),
+                    key=func.__name__,
+                    func_args=args,
+                    func_kwargs=kwargs,
+                ),
+            )
         else:
             local_func(selected_partitions, args, kwargs)
+
         tuple(map(self.fs.invalidate_cache, selected_partitions))
 
-    def drop_variable(
+    def update_immutable(self, name: str, data: ArrayLike) -> None:
+        """Update an immutable variable with provided data..
+
+        Args:
+            name: Name of the variable to update.
+            data: Immutable variable data.
+        """
+        dimensions, _ = self.dimensions_properties()
+        variable = self.metadata.variables.get(name, None)
+
+        if variable is None:
+            raise ValueError(f'Immutable variable ({name}) does not exist.')
+
+        # Validate dimensions size
+        for i, dim in enumerate(variable.dimensions):
+            if dimensions[dim] != data.shape[i]:
+                raise ValueError(
+                    f"Added variable '{variable.name}' contains a "
+                    f"dimension '{dim}' with an invalid size "
+                    f'({data.shape[i]} instead of {dimensions[dim]})')
+
+        storage.update_zarr_array(
+            dirname=fs_utils.join_path(self._immutable, variable.name),
+            array=data,
+            fs=self.fs,
+        )
+
+    def add_dimension(self, dimension: meta.Dimension) -> None:
+        """Add a dimension to the collection.
+
+        Args:
+            dimension: The dimension to add.
+
+        Raises:
+            ValueError: if the dimension is already part of the collection.
+
+        Example:
+            >>> import zcollection
+            >>> import numpy
+            >>> collection = zcollection.open_collection(
+            ...     "my_collection", mode="w")
+            >>> new_dimension = meta.Dimension(
+            ...     name="t",
+            ...     value=5,
+            ... )
+            >>> collection.add_dimension(new_dimension)
+        """
+        _LOGGER.info(
+            'Adding of the %r dimension to the collection'
+            ' (size: %r, chunks: %r)', dimension.name, dimension.value,
+            dimension.chunks)
+        self.metadata.add_dimension(dimension)
+        self._write_config()
+
+    def drop_dimension(self, dimension: str) -> None:
+        """Drop a dimension from the collection.
+
+        Args:
+            dimension: The dimension to drop.
+
+        Raises:
+            ValueError: if the dimension is already part of the collection.
+        """
+        _LOGGER.info('Dropping of the %r dimension from the collection',
+                     dimension)
+
+        del self.metadata.dimensions[dimension]
+        self._write_config()
+
+    def add_variable(
         self,
-        variable: str,
+        variable: meta.Variable | dataset.Variable,
         distributed: bool = True,
     ) -> None:
+        """Add a variable to the collection.
+
+        Args:
+            variable: The variable to add.
+            distributed: Whether to use dask or not. Default To True.
+
+        Raises:
+            ValueError: if the variable is already part of the collection, it
+                uses a dimension that is not part of the dataset.
+
+        Example:
+            >>> import zcollection
+            >>> import numpy
+            >>> collection = zcollection.open_collection(
+            ...     "my_collection", mode="w")
+            >>> new_variable = meta.Variable(
+            ...     name="my_variable",
+            ...     dtype=numpy.dtype("int16"),
+            ...     dimensions=("num_lines", "num_pixels"),
+            ...     fill_value=32267,
+            ...     attrs=(dataset.Attribute(name="my_attr", value=0), ),
+            ... )
+            >>> collection.add_variable(new_variable)
+        """
+        _LOGGER.info('Adding of the %r variable in the collection',
+                     variable.name)
+
+        variable = dataset.get_variable_metadata(variable)
+        self.metadata.add_variable(variable)
+        self._write_config()
+
+        # Attributes are not stored at variable's level
+        variable = variable.set_for_insertion()
+
+        try:
+            if self.dimension not in variable.dimensions:
+                self._add_variable(variable=variable,
+                                   partitions=[self._immutable])
+            elif distributed:
+                self._add_variable_distributed(variable=variable)
+            else:
+                self._add_variable(variable=variable,
+                                   partitions=self.partitions(lock=True))
+
+        except Exception:
+            self.drop_variable(variable=variable.name, distributed=distributed)
+            raise
+
+    def _add_variable(self, variable: meta.Variable,
+                      partitions: Iterable[str]):
+        """Add the provided variable to the collection."""
+        dimensions, chunks = self.dimensions_properties()
+
+        for partition in partitions:
+            storage.add_zarr_array(dirname=partition,
+                                   variable=variable,
+                                   dimensions=dimensions,
+                                   fs=self.fs,
+                                   axis=self.axis,
+                                   chunks=chunks)
+
+    def _add_variable_distributed(self, variable: meta.Variable):
+        """Add the provided variable to the collection using dask."""
+        dimensions, chunks = self.dimensions_properties()
+
+        client: dask.distributed.Client = dask_utils.get_client()
+        bag: dask.bag.core.Bag = self._bag_from_partitions(lock=True)
+
+        futures: list[dask.distributed.Future] = dask.distributed.futures_of(
+            bag.map(storage.add_zarr_array,
+                    variable=variable,
+                    dimensions=dimensions,
+                    fs=self.fs,
+                    axis=self.axis,
+                    chunks=chunks).persist())
+
+        storage.execute_transaction(client=client,
+                                    synchronizer=self.synchronizer,
+                                    futures=futures)
+
+    def drop_variable(self, variable: str, distributed: bool = True) -> None:
         """Delete the variable from the collection.
 
         Args:
@@ -671,15 +930,13 @@ class Collection(ReadOnlyCollection):
         if variable not in self.metadata.variables:
             raise ValueError(
                 f'The variable {variable!r} does not exist in the collection.')
-        if self._immutable:
-            zds: dataset.Dataset = storage.open_zarr_group(
-                self._immutable, self.fs)
-            if variable in zds.variables:
-                raise ValueError(
-                    f'The variable {variable!r} is part of the immutable '
-                    'dataset.')
 
-        if distributed:
+        if self.dimension not in self.metadata.variables[variable].dimensions:
+            # This is an immutable variable.
+            storage.del_zarr_array(dirname=self._immutable,
+                                   name=variable,
+                                   fs=self.fs)
+        elif distributed:
             client: dask.distributed.Client = dask_utils.get_client()
             bag: dask.bag.core.Bag = self._bag_from_partitions(lock=True)
             awaitables: list[
@@ -695,78 +952,6 @@ class Collection(ReadOnlyCollection):
 
         del self.metadata.variables[variable]
         self._write_config()
-
-    def add_variable(
-        self,
-        variable: meta.Variable | dataset.Variable,
-        distributed: bool = True,
-    ) -> None:
-        """Add a variable to the collection.
-
-        Args:
-            variable: The variable to add.
-            distributed: Whether to use dask or not. Default To True.
-
-        Raises:
-            ValueError: if the variable is already part of the collection, it
-                doesn't use the partitioning dimension or use a dimension that
-                is not part of the dataset.
-
-        Example:
-            >>> import zcollection
-            >>> import numpy
-            >>> collection = zcollection.open_collection(
-            ...     "my_collection", mode="w")
-            >>> new_variable = meta.Variable(
-            ...     name="my_variable",
-            ...     dtype=numpy.dtype("int16"),
-            ...     dimensions=("num_lines", "num_pixels"),
-            ...     fill_value=32267,
-            ...     attrs=(dataset.Attribute(name="my_attr", value=0), ),
-            ... )
-            >>> collection.add_variable(new_variable)
-        """
-        variable = dataset.get_variable_metadata(variable)
-        _LOGGER.info('Adding of the %r variable in the collection',
-                     variable.name)
-        if self.partition_properties.dim not in variable.dimensions:
-            raise ValueError(
-                'The new variable must use the partitioning axis.')
-        self.metadata.add_variable(variable)
-        self._write_config()
-
-        # Remove the attribute from the variable. The attribute will be added
-        # from the collection metadata.
-        variable = variable.set_for_insertion()
-
-        template: meta.Variable = self.metadata.search_same_dimensions_as(
-            variable)
-        chunks: dict[str, int] = {
-            dim.name: dim.value
-            for dim in self.metadata.chunks
-        }
-        try:
-            if distributed:
-                client: dask.distributed.Client = dask_utils.get_client()
-                bag: dask.bag.core.Bag = self._bag_from_partitions(lock=True)
-                futures: list[
-                    dask.distributed.Future] = dask.distributed.futures_of(
-                        bag.map(storage.add_zarr_array,
-                                variable,
-                                template.name,
-                                self.fs,
-                                chunks=chunks).persist())
-                storage.execute_transaction(client, self.synchronizer, futures)
-            else:
-                for partition in self.partitions(lock=True):
-                    storage.add_zarr_array(dirname=partition,
-                                           variable=variable,
-                                           template=template.name,
-                                           fs=self.fs,
-                                           chunks=chunks)
-        except Exception:
-            self.drop_variable(variable.name, distributed=distributed)
-            raise
 
     def copy(
         self,
@@ -803,8 +988,7 @@ class Collection(ReadOnlyCollection):
             >>> collection.copy(target="my_new_collection")
         """
         _LOGGER.info('Copying of the collection to %r', target)
-        if filesystem is None:
-            filesystem = fs_utils.get_fs(target)
+        filesystem = filesystem or fs_utils.get_fs(target)
 
         partitions = self.partitions(filters=filters)
 
@@ -902,7 +1086,7 @@ class Collection(ReadOnlyCollection):
         else:
             for partition in partitions:
                 partition, valid = _check_partition(
-                    partition,
+                    partition=partition,
                     fs=self.fs,
                     partitioning_strategy=self.partitioning)
                 _validity_check(_partition=partition, _valid=valid)

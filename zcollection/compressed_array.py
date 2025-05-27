@@ -8,7 +8,7 @@ Compressed array class
 """
 from __future__ import annotations
 
-from typing import Any, Union
+from typing import Any
 from collections.abc import Callable, Sequence
 
 import dask.array.backends
@@ -24,14 +24,14 @@ import zarr
 from .type_hints import DType, NDArray, NDMaskedArray
 
 #: Type of arrays returned when a compressed array is decompressed.
-Array = Union[NDArray, NDMaskedArray]
+Array = NDArray | NDMaskedArray
 
 
 class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
     """Hold a compressed array and provide a numpy.ndarray interface to it.
 
     Each operation on the array uncompresses the data, performs the operation,
-    an returns a numpy array. For the rechunk operation, the array is
+    and returns a numpy array. For the rechunk operation, the array is
     rechunked and the compressor is applied to the new chunks.
 
     Data is compressed using zarr and numcodecs.
@@ -227,7 +227,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
 
         Args:
             func: The numpy function.
-            types: The types of the arguments.
+            _types: The types of the arguments.
             args: The arguments.
             kwargs: The keyword arguments.
 

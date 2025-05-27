@@ -14,7 +14,7 @@ import numpy
 import pytest
 
 # pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_client, dask_cluster
+from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 from ..delayed_array import _as_dask_array
 
 # pylint enable=unused-import

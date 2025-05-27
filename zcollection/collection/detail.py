@@ -164,11 +164,15 @@ def _load_dataset(
         The loaded dataset.
     """
     zds: dataset.Dataset = open_zarr_group(
-        partition, fs, delayed=delayed, selected_variables=selected_variables)
+        dirname=partition,
+        fs=fs,
+        delayed=delayed,
+        selected_variables=selected_variables)
+
     if immutable:
         zds.merge(
-            open_zarr_group(immutable,
-                            fs,
+            open_zarr_group(dirname=immutable,
+                            fs=fs,
                             delayed=delayed,
                             selected_variables=selected_variables))
     return zds
@@ -202,20 +206,18 @@ def _load_dataset_with_overlap(
         overlap.
     """
 
-    def calculate_slice(
-        groups: list[dataset.Dataset],
-        selected_partitions: list[str],
-    ) -> slice:
+    def calculate_slice(_groups: list[dataset.Dataset],
+                        _selected_partitions: list[str]) -> slice:
         """Compute the slice of the selected dataset (without overlap)."""
         start = 0
-        indices = slice(0, 0, None)
-        for idx, zds in enumerate(groups):
-            size: int = zds.dimensions[dim]
-            indices = slice(start, start + size, None)
-            if partition == selected_partitions[idx]:
+        indexes = slice(0, 0, None)
+        for idx, ds in enumerate(_groups):
+            size: int = ds.dimensions[dim]
+            indexes = slice(start, start + size, None)
+            if partition == _selected_partitions[idx]:
                 break
             start += size
-        return indices
+        return indexes
 
     where: int = partitions.index(partition)
 
@@ -227,8 +229,8 @@ def _load_dataset_with_overlap(
 
     # Load the datasets for each selected partition.
     groups: list[dataset.Dataset] = [
-        open_zarr_group(partition,
-                        fs,
+        open_zarr_group(dirname=partition,
+                        fs=fs,
                         delayed=delayed,
                         selected_variables=selected_variables)
         for partition in selected_partitions
@@ -240,12 +242,12 @@ def _load_dataset_with_overlap(
     # Build the dataset for the selected partitions.
     zds: dataset.Dataset = groups.pop(0)
     if groups:
-        zds = zds.concat(groups, dim)
+        zds = zds.concat(other=groups, dim=dim)
 
     if immutable:
         zds.merge(
-            open_zarr_group(partition,
-                            fs,
+            open_zarr_group(dirname=immutable,
+                            fs=fs,
                             delayed=delayed,
                             selected_variables=selected_variables))
     return zds, indices
@@ -268,7 +270,6 @@ def _wrap_update_func(
         immutable: Name of the immutable directory.
         selected_variables: Name of the variables to load from the dataset.
             If None, all variables are loaded.
-        trim: Whether to trim the overlap.
 
     Returns:
         The wrapped function that takes a set of dataset partitions and the
@@ -280,8 +281,12 @@ def _wrap_update_func(
                       func_kwargs: dict[str, Any]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
-            zds: dataset.Dataset = _load_dataset(delayed, fs, immutable,
-                                                 partition, selected_variables)
+            zds: dataset.Dataset = _load_dataset(
+                delayed=delayed,
+                fs=fs,
+                immutable=immutable,
+                partition=partition,
+                selected_variables=selected_variables)
             dictionary: dict[str, ArrayLike] = func(zds, *func_args,
                                                     **func_kwargs)
             tuple(
@@ -408,18 +413,18 @@ def _insert(
     indexer: dict[str, slice]
 
     partition, indexer = args
-    dirname: str = join_path(*((partitioning_properties.dir, ) + partition))
+    dirname = join_path(*((partitioning_properties.dir, ) + partition))
 
     # If the consolidated zarr metadata does not exist, we consider the
     # partition as empty.
     if fs.exists(join_path(dirname, '.zmetadata')):
         # The current partition already exists, so we need to merge
         # the dataset.
-        merging.perform(zds.isel(indexer),
-                        dirname,
-                        axis,
-                        fs,
-                        partitioning_properties.dim,
+        merging.perform(ds_inserted=zds.isel(indexer),
+                        dirname=dirname,
+                        axis=axis,
+                        fs=fs,
+                        partitioning_dim=partitioning_properties.dim,
                         delayed=zds.delayed if distributed else False,
                         distributed=distributed,
                         merge_callable=merge_callable,
@@ -432,10 +437,10 @@ def _insert(
         zarr.storage.init_group(store=fs.get_mapper(dirname))
 
         # The synchronization is done by the caller.
-        write_zarr_group(zds.isel(indexer),
-                         dirname,
-                         fs,
-                         sync.NoSync(),
+        write_zarr_group(zds=zds.isel(indexer),
+                         dirname=dirname,
+                         fs=fs,
+                         synchronizer=sync.NoSync(),
                          distributed=distributed)
     except:  # noqa: E722
         # If the construction of the new dataset fails, the created
@@ -470,9 +475,10 @@ def _load_and_apply_indexer(
     partition_scheme: tuple[tuple[str, int], ...]
 
     partition_scheme, items = args
-    partition: str = join_path(
-        partition_properties.dir,
-        partition_handler.join(partition_scheme, fs.sep))
-    zds: dataset.Dataset = open_zarr_group(
-        partition, fs, delayed=delayed, selected_variables=selected_variables)
+    partition = join_path(partition_properties.dir,
+                          partition_handler.join(partition_scheme, fs.sep))
+    zds = open_zarr_group(dirname=partition,
+                          fs=fs,
+                          delayed=delayed,
+                          selected_variables=selected_variables)
     return [zds.isel({partition_properties.dim: indexer}) for indexer in items]

@@ -44,11 +44,11 @@ def test_attribute() -> None:
 
 def test_dimension() -> None:
     """Test dimension creation."""
-    dim = meta.Dimension('a', 12)
+    dim = meta.Dimension(name='a', value=12)
     assert isinstance(dim, meta.Dimension)
     assert dim.name == 'a'
     assert dim.value == 12
-    assert str(dim) == "Dimension('a', 12)"
+    assert str(dim) == "Dimension('a', 12, -1)"
     # pylint: disable=comparison-with-itself
     assert dim == dim
     # pylint: enable=comparison-with-itself
@@ -82,17 +82,39 @@ def test_variable() -> None:
 def test_dataset() -> None:
     """Test dataset creation."""
     root: pathlib.Path = pathlib.Path(__file__).parent
+
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
         first: dict[str, Any] = json.load(stream)
+
     with root.joinpath('second_dataset.json').open(encoding='utf-8') as stream:
         second: dict[str, Any] = json.load(stream)
+
     ds: meta.Dataset = meta.Dataset.from_config(first)
     other: meta.Dataset = meta.Dataset.from_config(second)
     assert ds == other
     assert (ds == 2) is False
     assert (ds != other) is False
-    ds.dimensions = ds.dimensions + ('dummy', )
+
+    dim_dum = meta.Dimension(name='dummy', value=20, chunks=2)
+    ds.add_dimension(dimension=dim_dum)
     assert ds != other
+
+    with pytest.raises(TypeError, match='Dimension must be a Dimension'):
+        ds.add_dimension(dimension=('dummy', 0))  # type: ignore
+
+    with pytest.raises(ValueError, match='already exists in the'):
+        ds.add_dimension(dimension=dim_dum)
+
+    assert ds.dim_chunks == {
+        'num_lines': -1,
+        'num_pixels': -1,
+        dim_dum.name: dim_dum.chunks
+    }
+    assert ds.dim_size == {
+        'num_lines': 0,
+        'num_pixels': 0,
+        dim_dum.name: dim_dum.value
+    }
 
 
 def test_select_variables() -> None:
@@ -100,31 +122,37 @@ def test_select_variables() -> None:
     root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
         config: dict[str, Any] = json.load(stream)
+
     ds: meta.Dataset = meta.Dataset.from_config(config)
     variables: set[str] = ds.select_variables(('longitude', 'latitude'))
     assert variables == {'longitude', 'latitude'}
+
     variables = ds.select_variables(drop_variables=('longitude', 'latitude'))
     assert set(variables) & {'longitude', 'latitude'} == set()
+
     variables = ds.select_variables(keep_variables=('longitude', 'latitude',
                                                     'time'),
                                     drop_variables=('time', ))
     assert variables == {'longitude', 'latitude'}
 
 
-def test_search_same_dimensions_as() -> None:
-    """Test search_same_dimensions_as."""
+def test_deprecated_config() -> None:
+    """Test select_variables."""
     root: pathlib.Path = pathlib.Path(__file__).parent
-    with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
-        first: dict[str, Any] = json.load(stream)
-    ds: meta.Dataset = meta.Dataset.from_config(first)
-    other: meta.Variable = ds.search_same_dimensions_as(
-        ds.variables['simulated_error_karin'])
-    assert other.dimensions == ds.variables['simulated_error_karin'].dimensions
+    with root.joinpath('deprecated_dataset.json').open(
+            encoding='utf-8') as stream:
+        config: dict[str, Any] = json.load(stream)
 
-    other = meta.Variable.from_config(other.get_config())
-    other.dimensions = other.dimensions + ('dummy', )
-    with pytest.raises(ValueError):
-        ds.search_same_dimensions_as(other)
+    ds = meta.Dataset.from_deprecated_config(config)
+
+    assert isinstance(ds, meta.Dataset)
+
+    dim_size = ds.dim_size
+    dim_chunks = ds.dim_chunks
+
+    for dim in ds.dimensions:
+        assert dim_size[dim] == -1
+        assert dim_chunks[dim] == -1
 
 
 def test_pickle() -> None:
@@ -162,15 +190,23 @@ def test_missing_variables() -> None:
 
 def test_add_variable() -> None:
     """Test adding a variable."""
-    ds = meta.Dataset(('x', 'y'), [])
+    ds = meta.Dataset(dimensions=(meta.Dimension('x',
+                                                 0), meta.Dimension('y', 10)),
+                      variables=[])
     ds.add_variable(meta.Variable('a', numpy.float64, dimensions=('x', 'y')))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='already exists'):
         ds.add_variable(
-            meta.Variable('a', numpy.float64, dimensions=('x', 'y')))
+            meta.Variable(name='a', dtype=numpy.float64,
+                          dimensions=('x', 'y')))
 
-    ds.add_variable(meta.Variable('b', numpy.float64, dimensions=('x', )))
-    ds.add_variable(meta.Variable('c', numpy.float64, dimensions=('y', )))
+    with pytest.raises(TypeError, match='Variable must be a Variable'):
+        ds.add_variable(('a', numpy.float64, ('x', 'y')))  # type: ignore
+
+    ds.add_variable(
+        meta.Variable(name='b', dtype=numpy.float64, dimensions=('x', )))
+    ds.add_variable(
+        meta.Variable(name='c', dtype=numpy.float64, dimensions=('y', )))
 
     with pytest.raises(ValueError):
         ds.add_variable(
@@ -186,9 +222,26 @@ def test_add_variable() -> None:
     ds.add_variable(meta.Variable('g', numpy.float64))
 
 
+def test_set_for_insertion():
+    var_meta = meta.Variable(name='f',
+                             dtype=numpy.float64,
+                             dimensions=('a', ),
+                             attrs=(meta.Attribute('x', 12), ))
+    var_insert = var_meta.set_for_insertion()
+
+    assert not var_insert.attrs
+    assert var_insert.name == var_meta.name
+    assert var_insert.dtype == var_meta.dtype
+    assert var_insert.dimensions == var_meta.dimensions
+
+
 def test_select_variables_by_dims() -> None:
     """Test select_variable_by_dims."""
-    ds = meta.Dataset(('a', 'b', 'x', 'y'), [])
+    ds = meta.Dataset(dimensions=(meta.Dimension('a',
+                                                 0), meta.Dimension('b', 10),
+                                  meta.Dimension('x',
+                                                 10), meta.Dimension('y', 10)),
+                      variables=[])
     ds.add_variable(meta.Variable('a', numpy.float64, dimensions=('x', 'y')))
     ds.add_variable(meta.Variable('b', numpy.float64, dimensions=('x', )))
     ds.add_variable(meta.Variable('c', numpy.float64, dimensions=('y', )))

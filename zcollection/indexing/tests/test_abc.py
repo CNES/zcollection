@@ -17,7 +17,7 @@ from .. import abc
 from ... import collection, convenience, dataset, partitioning
 from ...partitioning.tests import data
 # pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import dask_client, dask_cluster
+from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 from ...tests.fs import local_fs
 # pylint: enable=unused-import
 from ...type_hints import NDArray
@@ -36,8 +36,8 @@ def split_half_orbit(
         Iterator of start and stop indexes.
     """
     assert pass_number.shape == cycle_number.shape
-    pass_idx = numpy.where(numpy.roll(pass_number, 1) != pass_number)[0]
-    cycle_idx = numpy.where(numpy.roll(cycle_number, 1) != cycle_number)[0]
+    pass_idx = numpy.nonzero(numpy.roll(pass_number, 1) != pass_number)[0]
+    cycle_idx = numpy.nonzero(numpy.roll(cycle_number, 1) != cycle_number)[0]
 
     half_orbit = numpy.unique(
         numpy.concatenate(
@@ -89,7 +89,7 @@ class HalfOrbitIndexer(abc.Indexer):
     #: Column name of the pass number.
     PASS_NUMBER = 'pass_number'
 
-    def dtype(self, /, **kwargs) -> list[tuple[str, str]]:
+    def dtype(self, **kwargs) -> list[tuple[str, str]]:
         """Return the columns of the index.
 
         Returns:
@@ -158,17 +158,17 @@ def test_indexer(
     """Test the base class of the indexer."""
     ds = dataset.Dataset.from_xarray(data.create_test_sequence(5, 20, 10))
 
-    zcollection = convenience.create_collection(
-        'time',
-        ds,
-        partitioning.Date(('time', ), 'M'),
+    zcol = convenience.create_collection(
+        axis='time',
+        ds=ds,
+        partition_handler=partitioning.Date(('time', ), 'M'),
         partition_base_dir=str(local_fs.collection),
         filesystem=local_fs.fs)
-    zcollection.insert(ds, merge_callable=collection.merging.merge_time_series)
+    zcol.insert(ds, merge_callable=collection.merging.merge_time_series)
 
     indexer = HalfOrbitIndexer.create(str(
         local_fs.collection.joinpath('index.parquet')),
-                                      zcollection,
+                                      zcol,
                                       filesystem=local_fs.fs)
 
     # Index not yet created
@@ -178,10 +178,10 @@ def test_indexer(
     assert indexer.dtype() == [('start', 'int64'), ('stop', 'int64'),
                                ('cycle_number', 'uint16'),
                                ('pass_number', 'uint16')]
-    indexer.update(zcollection)
+    indexer.update(zcol)
     assert isinstance(indexer.table, pyarrow.Table)
 
-    selection = zcollection.load(indexer=indexer.query({'cycle_number': 2}))
+    selection = zcol.load(indexer=indexer.query({'cycle_number': 2}))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2}
 
@@ -192,18 +192,17 @@ def test_indexer(
         indexer.query({'X': 3})
 
     # Updating the index should not change the indexer.
-    indexer.update(zcollection)
-    other = zcollection.load(indexer=indexer.query({'cycle_number': 2}))
+    indexer.update(zcol)
+    other = zcol.load(indexer=indexer.query({'cycle_number': 2}))
     assert other is not None
     assert numpy.all(
         other['observation'].values == selection['observation'].values)
 
-    selection = zcollection.load(
-        indexer=indexer.query({'cycle_number': [2, 4]}))
+    selection = zcol.load(indexer=indexer.query({'cycle_number': [2, 4]}))
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2, 4}
 
-    selection = zcollection.load(indexer=indexer.query({
+    selection = zcol.load(indexer=indexer.query({
         'cycle_number': [2, 4],
         'pass_number': 1
     }))
@@ -211,7 +210,7 @@ def test_indexer(
     assert set(selection.variables['cycle_number'].values) == {2, 4}
     assert set(selection.variables['pass_number'].values) == {1}
 
-    selection = zcollection.load(indexer=indexer.query({
+    selection = zcol.load(indexer=indexer.query({
         'cycle_number': [2, 4],
         'pass_number': [1, 5]
     }))
@@ -223,7 +222,7 @@ def test_indexer(
         local_fs.collection.joinpath('index.parquet')),
                                     filesystem=local_fs.fs)
     assert indexer.meta == {'attribute': b'value'}
-    selection = zcollection.load(indexer=indexer.query({
+    selection = zcol.load(indexer=indexer.query({
         'cycle_number': [2, 4],
         'pass_number': [1, 5]
     }))
