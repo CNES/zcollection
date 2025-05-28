@@ -6,7 +6,6 @@ dependencies:
   - dask-core
   - distributed
   - furo
-  - numcodecs
   - pyarrow
   - pypandoc
   - pytest
@@ -16,4 +15,4 @@ dependencies:
   - sphinx-gallery
   - sphinx-inline-tabs
   - xarray
-  - zarr>=2.11.0,<3
+  - zarr==2.18
