@@ -8,15 +8,17 @@ Time period
 """
 from __future__ import annotations
 
-from typing import Any, Final, Literal
-from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Final, Literal
 import enum
 import re
 from re import Match
 
 import numpy
 
-from ..type_hints import DType
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from ..type_hints import DType
 
 # Parse the unit of numpy.timedelta64.
 PATTERN: Callable[[str], Match[str] | None] = re.compile(
@@ -160,15 +162,13 @@ class PeriodRelation(enum.IntEnum):
 
     def is_after(self) -> bool:
         """Return true if the relation is after."""
-        # pylint: disable=comparison-with-callable
+
         return self.value == PeriodRelation.AFTER
-        # pylint: enable=comparison-with-callable
 
     def is_before(self) -> bool:
         """Return true if the relation is before."""
-        # pylint: disable=comparison-with-callable
+
         return self.value == PeriodRelation.BEFORE
-        # pylint: enable=comparison-with-callable
 
     def contains(self) -> bool:
         """Return true if one period enclosing the other period."""
@@ -193,9 +193,8 @@ class PeriodRelation(enum.IntEnum):
 
     def is_inside(self) -> bool:
         """Return true if one period is inside the other period."""
-        # pylint: disable=comparison-with-callable
+
         return self.value == PeriodRelation.INSIDE
-        # pylint: enable=comparison-with-callable
 
 
 class Period:
@@ -274,12 +273,12 @@ class Period:
             return self._last + self._duration_unit - self._begin
         return self.end() - self._begin
 
-    def __eq__(self, rhs: Any) -> bool:
+    def __eq__(self, rhs: object) -> bool:
         if not isinstance(rhs, Period):
             return NotImplemented
         return (self._begin == rhs._begin) and (self._last == rhs._last)
 
-    def __ne__(self, rhs: Any) -> bool:
+    def __ne__(self, rhs: object) -> bool:
         if not isinstance(rhs, Period):
             return NotImplemented
         return (self._begin != rhs._begin) or (self._last != rhs._last)
@@ -501,10 +500,12 @@ class Period:
                                  if self._last < other.last else self.end())
         return Period(start, end)
 
-    # pylint: disable=too-many-return-statements
     # This code has a lot of "return" statements because we have to determine
     # the relation between the two periods among 8 different cases.
-    def _get_direct_relation(self, other: Period) -> PeriodRelation | None:
+    def _get_direct_relation(  # noqa: PLR0911
+            self,
+            other: Period,
+    ) -> PeriodRelation | None:
         """Get the direct relation between two periods."""
         if other.last < self._begin:
             return PeriodRelation.AFTER
@@ -528,7 +529,6 @@ class Period:
                     if other.last == self.last else PeriodRelation.ENCLOSING)
 
         return None
-        # pylint: enable=too-many-return-statements
 
     def get_relation(self, other: Period) -> PeriodRelation:
         """Get the relationship between the two time periods.

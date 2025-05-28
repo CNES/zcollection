@@ -8,14 +8,16 @@ Dask utilities
 """
 from __future__ import annotations
 
-from typing import Any
-from collections.abc import Callable, Iterator, Sequence
+from typing import TYPE_CHECKING, Any
 import itertools
 import uuid
 
 from dask.delayed import Delayed as dask_Delayed
 import dask.distributed
 import dask.highlevelgraph
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator, Sequence
 
 
 def dask_workers(client: dask.distributed.Client,
@@ -95,7 +97,7 @@ def simple_delayed(name: str, func: Callable) -> dask_Delayed:
     Returns:
         delayed function
     """
-    name = f'{name}-{str(uuid.uuid4())}'
+    name = f'{name}-{uuid.uuid4()!s}'
     return dask_Delayed(
         name,
         dask.highlevelgraph.HighLevelGraph({name: {

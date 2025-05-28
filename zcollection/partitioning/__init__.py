@@ -26,4 +26,4 @@ register_codec(Date)
 register_codec(Sequence)
 register_codec(GroupedSequence)
 
-__all__ = ('Partitioning', 'Date', 'Sequence', 'GroupedSequence', 'get_codecs')
+__all__ = ('Date', 'GroupedSequence', 'Partitioning', 'Sequence', 'get_codecs')

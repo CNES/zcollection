@@ -8,26 +8,33 @@ Implementation details.
 """
 from __future__ import annotations
 
-from typing import Any
-from collections.abc import Callable, Iterable, Sequence
+from typing import TYPE_CHECKING, Any
 import dataclasses
 import sys
 import time
 import traceback
-import types
 
 import dask.utils
-import fsspec
 import zarr.storage
 
 from .. import dataset, merging, partitioning, sync
 from ..fs_utils import join_path
 from ..storage import open_zarr_group, update_zarr_array, write_zarr_group
-from ..type_hints import ArrayLike
-from .callable_objects import UpdateCallable, WrappedPartitionCallable
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Sequence
+    import types
+
+    import fsspec
+
+    from ..type_hints import ArrayLike
+    from .callable_objects import UpdateCallable, WrappedPartitionCallable
 
 #: Partition's type.
 PartitionSlice = tuple[tuple[str, ...], dict[str, slice]]
+
+#: Maximum number of tries to remove a directory.
+MAX_TRIES: int = 10
 
 
 @dataclasses.dataclass(frozen=True)
@@ -136,12 +143,11 @@ def _update_with_overlap(
             )
     else:
         tuple(
-            map(
-                lambda items: update_zarr_array(
-                    dirname=join_path(path, items[0]),
-                    array=items[1],
-                    fs=fs,
-                ), dictionary.items()))
+            update_zarr_array(  # type: ignore[func-returns-value]
+                dirname=join_path(path, items[0]),
+                array=items[1],
+                fs=fs,
+            ) for items in dictionary.items())
 
 
 def _load_dataset(
@@ -338,7 +344,6 @@ def _wrap_update_func_with_overlap(
         # Applying function for each partition's data
         for partition in partitions:
 
-            # pylint: disable=duplicate-code
             # False positive with the method Collection.map_overlap
             zds: dataset.Dataset
             indices: slice
@@ -351,7 +356,6 @@ def _wrap_update_func_with_overlap(
                 partition=partition,
                 partitions=selected_partitions,
                 selected_variables=selected_variables)
-            # pylint: enable=duplicate-code
 
             _update_with_overlap(*func_args,
                                  func=func,
@@ -374,7 +378,7 @@ def _rm(fs: fsspec.AbstractFileSystem, dirname: str) -> None:
         dirname: The name of the directory to remove.
     """
     tries = 0
-    while tries < 10:
+    while tries < MAX_TRIES:
         try:
             fs.rm(dirname, recursive=True)
             fs.invalidate_cache(dirname)
@@ -413,7 +417,7 @@ def _insert(
     indexer: dict[str, slice]
 
     partition, indexer = args
-    dirname = join_path(*((partitioning_properties.dir, ) + partition))
+    dirname = join_path(*((partitioning_properties.dir, *partition)))
 
     # If the consolidated zarr metadata does not exist, we consider the
     # partition as empty.
@@ -442,7 +446,7 @@ def _insert(
                          fs=fs,
                          synchronizer=sync.NoSync(),
                          distributed=distributed)
-    except:  # noqa: E722
+    except:
         # If the construction of the new dataset fails, the created
         # partition is deleted, to guarantee the integrity of the
         # collection.

@@ -8,7 +8,7 @@ Partitioning scheme.
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 import abc
 import collections
 from collections.abc import Callable, Generator, Iterator, Sequence
@@ -19,11 +19,13 @@ import dask.array.core
 import dask.array.creation
 import dask.array.reductions
 import dask.array.wrap
-import fsspec
 import numpy
 
-from .. import dataset
-from ..type_hints import ArrayLike, DTypeLike, NDArray
+if TYPE_CHECKING:
+    import fsspec
+
+    from .. import dataset
+    from ..type_hints import ArrayLike, DTypeLike, NDArray
 
 #: Object that represents a partitioning scheme
 Partition = tuple[tuple[tuple[str, Any], ...], slice]
@@ -64,13 +66,12 @@ def _logical_or_reduce(
 
     #: pylint: enable=unused-argument
 
-    return dask.array.reductions.reduction(
-        arr[1:] != arr[:-1],  # type: ignore
-        chunk=chunk,
-        aggregate=aggregate,
-        axis=axis,
-        keepdims=False,
-        dtype=numpy.bool_)
+    return dask.array.reductions.reduction(arr[1:] != arr[:-1],
+                                           chunk=chunk,
+                                           aggregate=aggregate,
+                                           axis=axis,
+                                           keepdims=False,
+                                           dtype=numpy.bool_)
 
 
 def unique(arr: dask.array.core.Array) -> tuple[NDArray, NDArray]:
@@ -127,7 +128,7 @@ def difference(arr: NDArray) -> NDArray:
     Returns:
         Array of differences
     """
-    return arr[1:] - arr[:-1]  # type: ignore
+    return arr[1:] - arr[:-1]
 
 
 def concatenate_item(arr: NDArray, item: Any) -> NDArray:
@@ -165,14 +166,11 @@ def list_partitions(
         return StopIteration()  # type: ignore[return-value]
 
     if root:
-        folders = map(
-            lambda info: info['name'].rstrip('/'),
-            filter(
-                lambda info: info['type'] == 'directory' and not info['name'].
-                split(fs.sep)[-1].startswith('.'),
-                fs.ls(path, detail=True),
-            ),
-        )
+        folders = (info['name'].rstrip('/') for info in filter(
+            lambda info: info['type'] == 'directory' and not info['name'].
+            split(fs.sep)[-1].startswith('.'),
+            fs.ls(path, detail=True),
+        ))
         # If we're partitioning at top level (example: by year)
         if depth == 0:
             yield from folders

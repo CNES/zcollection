@@ -21,7 +21,7 @@ from zcollection import fs_utils
 from .. import dataset, storage, sync
 from .time_series import merge_time_series
 
-__all__ = ('MergeCallable', 'perform', 'merge_time_series')
+__all__ = ('MergeCallable', 'merge_time_series', 'perform')
 
 
 #: pylint: disable=too-few-public-methods,duplicate-code
@@ -40,7 +40,7 @@ class MergeCallable(Protocol):
         axis: str,
         partitioning_dim: str,
         **kwargs,
-    ) -> dataset.Dataset:  # pylint: disable=duplicate-code
+    ) -> dataset.Dataset:
         """Call the partition function.
 
         Args:
@@ -53,11 +53,10 @@ class MergeCallable(Protocol):
         Returns:
             The merged dataset.
         """
-        # pylint: disable=unnecessary-ellipsis
+
         # Ellipsis is necessary to make the function signature match the
         # protocol.
         ...  # pragma: no cover
-        # pylint: enable=unnecessary-ellipsis
 
     #: pylint: enable=too-few-public-methods,duplicate-code
 

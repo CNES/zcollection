@@ -8,10 +8,12 @@ Handles the partition selection expressions
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 import ast
 import dataclasses
-import types
+
+if TYPE_CHECKING:
+    import types
 
 
 @dataclasses.dataclass
@@ -43,10 +45,10 @@ class Expression:
                 name: variables[name]
                 for name in self.code.co_names if name not in self.BUILTINS
             }
-            # pylint: disable=eval-used
+
             # The eval function is used here to evaluate a simple expression.
             # The only builtin functions allowed is the range function.
             return eval(self.code, {'__builtins__': self.BUILTINS}, __locals)
-            # pylint: enable=eval-used
+
         except KeyError as err:
             raise NameError(f'name {err!s} is not defined') from err

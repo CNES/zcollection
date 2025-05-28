@@ -8,20 +8,23 @@ Compressed array class
 """
 from __future__ import annotations
 
-from typing import Any
-from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any
 
 import dask.array.backends
 import dask.array.chunk_types
 import dask.array.core
 import dask.array.dispatch
 import dask.base
-import numcodecs.abc
 import numpy
 import numpy.lib.mixins
 import zarr
 
 from .type_hints import DType, NDArray, NDMaskedArray
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    import numcodecs.abc
 
 #: Type of arrays returned when a compressed array is decompressed.
 Array = NDArray | NDMaskedArray
@@ -68,7 +71,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return f'<{self.__class__.__name__} ({self.shape}) {self.dtype}>'
 
     def _repr_html_(self) -> str:
-        # pylint: disable=protected-access
+
         # Useless to rewrite the html representation of the array. Use the
         # zarr one.
         html_code: str = self._array.info._repr_html_()
@@ -300,7 +303,7 @@ def dask_array_from_compressed_array(
             array, chunks, **kwargs)
     return dask.array.core.from_array(
         array,
-        chunks,  # type: ignore
+        chunks,  # type: ignore[arg-type]
         name=name,
         inline_array=inline_array)
 

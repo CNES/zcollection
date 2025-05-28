@@ -27,8 +27,8 @@ def test_attribute() -> None:
     assert att.name == 'a'
     assert att.value == 23.4
     assert str(att) == "Attribute('a', 23.4)"
-    # pylint: disable=comparison-with-itself
-    assert att == att
+
+    assert att == att  # noqa: PLR0124
     assert (att == 'X') is False
     assert att != meta.Attribute('a', '23.4')
     assert isinstance(meta.Attribute.from_config(att.get_config()),
@@ -38,8 +38,7 @@ def test_attribute() -> None:
     assert att == meta.Attribute('a', numpy.arange(10))
 
     att = meta.Attribute('a', numpy.datetime64('2000-01-01', 'us'))
-    assert att == att
-    # pylint: enable=comparison-with-itself
+    assert att == att  # noqa: PLR0124
 
 
 def test_dimension() -> None:
@@ -49,9 +48,9 @@ def test_dimension() -> None:
     assert dim.name == 'a'
     assert dim.value == 12
     assert str(dim) == "Dimension('a', 12, -1)"
-    # pylint: disable=comparison-with-itself
-    assert dim == dim
-    # pylint: enable=comparison-with-itself
+
+    assert dim == dim  # noqa: PLR0124
+
     assert dim != meta.Dimension('a', 11)
     assert isinstance(meta.Dimension.from_config(dim.get_config()),
                       meta.Dimension)
@@ -69,14 +68,13 @@ def test_variable() -> None:
                                      0, 1, numpy.int16)))
     assert isinstance(var, meta.Variable)
     assert str(var) == "Variable('a')"
-    # pylint: disable=comparison-with-itself
-    assert var == var
+
+    assert var == var  # noqa: PLR0124
     assert (var == 2) is False
     other: meta.Variable = meta.Variable.from_config(var.get_config())
     assert var == other
     other.name = 'x'
     assert var != other
-    # pylint: enable=comparison-with-itself
 
 
 def test_dataset() -> None:
@@ -100,7 +98,7 @@ def test_dataset() -> None:
     assert ds != other
 
     with pytest.raises(TypeError, match='Dimension must be a Dimension'):
-        ds.add_dimension(dimension=('dummy', 0))  # type: ignore
+        ds.add_dimension(dimension=('dummy', 0))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match='already exists in the'):
         ds.add_dimension(dimension=dim_dum)
@@ -184,7 +182,10 @@ def test_missing_variables() -> None:
 
     other.variables['XXX'] = other.variables['longitude']
     other.variables['XXX'].name = 'XXX'
-    with pytest.raises(ValueError):
+    with pytest.raises(
+            ValueError,
+            match='The reference dataset does not define the .* variables '
+            'that are defined in this dataset.'):
         ds.missing_variables(other)
 
 
@@ -201,22 +202,32 @@ def test_add_variable() -> None:
                           dimensions=('x', 'y')))
 
     with pytest.raises(TypeError, match='Variable must be a Variable'):
-        ds.add_variable(('a', numpy.float64, ('x', 'y')))  # type: ignore
+        ds.add_variable((  # type: ignore[arg-type]
+            'a',
+            numpy.float64,
+            ('x', 'y'),
+        ))
 
     ds.add_variable(
         meta.Variable(name='b', dtype=numpy.float64, dimensions=('x', )))
     ds.add_variable(
         meta.Variable(name='c', dtype=numpy.float64, dimensions=('y', )))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(
+            ValueError,
+            match='The new variable must use the dataset dimensions.'):
         ds.add_variable(
             meta.Variable('d', numpy.float64, dimensions=('a', 'y')))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(
+            ValueError,
+            match='The new variable must use the dataset dimensions.'):
         ds.add_variable(
             meta.Variable('e', numpy.float64, dimensions=('a', 'b')))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(
+            ValueError,
+            match='The new variable must use the dataset dimensions.'):
         ds.add_variable(meta.Variable('f', numpy.float64, dimensions=('a', )))
 
     ds.add_variable(meta.Variable('g', numpy.float64))

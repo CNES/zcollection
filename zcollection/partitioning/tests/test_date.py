@@ -8,7 +8,7 @@ Test partitioning by date.
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 import dataclasses
 import pickle
 import random
@@ -23,11 +23,10 @@ import xarray
 
 from .. import Date, get_codecs
 from ... import dataset
-# pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
-from ...type_hints import NDArray
 
-# pylint: disable=disable=unused-argument
+if TYPE_CHECKING:
+    from ...type_hints import NDArray
 
 #: First date of the dataset to partition
 START_DATE = numpy.datetime64('2000-01-06', 'ns')
@@ -81,7 +80,7 @@ class PartitionTestData:
 
 @pytest.mark.parametrize('delayed', [False, True])
 def test_split_dataset(
-    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    dask_client,  # noqa: F811
     delayed: bool,
 ) -> None:
     """Test the split_dataset method."""
@@ -116,7 +115,8 @@ def test_split_dataset(
         dates: NDArray = numpy.arange(START_DATE, end_date, TIME_DELTA)
 
         # Measured data
-        observation: NDArray = numpy.random.rand(dates.size)  # type: ignore
+        rng = numpy.random.default_rng(42)
+        observation: NDArray = rng.random(dates.size)
 
         # Create the dataset to split
         xds = xarray.Dataset({
@@ -159,10 +159,13 @@ def test_construction() -> None:
         'variables': ('dates', ),
     }
 
-    with pytest.raises(ValueError):
+    with pytest.raises(
+            ValueError,
+            match='Partitioning on dates is performed on a single variable.'):
         Date(('dates1', 'dates2'), 'D')
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError,
+                       match='resolution must be in: Y, M, D, h, m, s'):
         Date(('dates', ), 'W')
 
 
@@ -179,7 +182,7 @@ RESOLUTION_DTYPE_TEST_SET = [
 ]
 
 
-@pytest.mark.parametrize('resolution, dtype', RESOLUTION_DTYPE_TEST_SET)
+@pytest.mark.parametrize(('resolution', 'dtype'), RESOLUTION_DTYPE_TEST_SET)
 def test_config(resolution, dtype):
     """Test the configuration of the Date class."""
     partitioning = Date(variables=('dates', ), resolution=resolution)
@@ -193,7 +196,7 @@ def test_config(resolution, dtype):
     assert other.dtype() == dtype
 
 
-@pytest.mark.parametrize('resolution, dtype', RESOLUTION_DTYPE_TEST_SET)
+@pytest.mark.parametrize(('resolution', 'dtype'), RESOLUTION_DTYPE_TEST_SET)
 def test_pickle(resolution, dtype):
     """Test the pickling of the Date class."""
     partitioning = Date(('dates', ), resolution=resolution)
@@ -207,7 +210,7 @@ def test_pickle(resolution, dtype):
 
 @pytest.mark.parametrize('delayed', [False, True])
 def test_no_monotonic(
-    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    dask_client,  # noqa: F811
     delayed: bool,
 ):
     """Test that the Date partitioning raises an error if the temporal axis is
@@ -215,17 +218,21 @@ def test_no_monotonic(
     dates: numpy.ndarray = numpy.arange(numpy.datetime64('2000-01-01', 'h'),
                                         numpy.datetime64('2000-01-02', 'h'),
                                         numpy.timedelta64(1, 'm'))
-    numpy.random.shuffle(dates)
+    rng = numpy.random.default_rng(42)
+    rng.shuffle(dates)
     partitioning = Date(('dates', ), 'h')
-    # pylint: disable=protected-access
-    with pytest.raises(ValueError):
-        arr = dask.array.core.from_array(dates) if delayed else dates
-        list(partitioning._split({'dates': arr}))  # type: ignore[arg-type]
-    # pylint: enable=protected-access
+
+    with pytest.raises(ValueError, match='is not monotonic'):
+        list(
+            partitioning._split({
+                'dates':
+                dask.array.core.from_array(  # type: ignore[arg-type]
+                    dates) if delayed else dates
+            }))
 
 
 def test_values_must_be_datetime64(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ):
     """Test that the values must be datetime64."""
     dates = numpy.arange(numpy.datetime64('2000-01-01', 'h'),
@@ -234,17 +241,16 @@ def test_values_must_be_datetime64(
     partitioning = Date(('dates', ), 'h')
     dates = dates.astype('int64')
     with pytest.raises(TypeError):
-        # pylint: disable=protected-access
+
         list(
             partitioning._split({
                 'dates':
                 dask.array.core.from_array(dates)  # type: ignore[arg-type]
             }))
-    # pylint: enable=protected-access
 
 
 @pytest.mark.parametrize(
-    'start, end, step, path_generator',
+    ('start', 'end', 'step', 'path_generator'),
     [(('2000-01-01', 'D'), ('2000-02-01', 'D'), (1, 'D'), lambda item:
       (f'year={item.year}', f'month={item.month:02d}', f'day={item.day:02d}')),
      (('2000', 'Y'), ('2005', 'Y'), (1, 'Y'), lambda item:

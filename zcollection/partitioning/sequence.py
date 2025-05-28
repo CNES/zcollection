@@ -8,15 +8,21 @@ Partitioning a sequence of variables
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar
-from collections.abc import Iterator, Sequence as SequenceType
+from typing import TYPE_CHECKING, ClassVar
 
 import dask.array.core
 import dask.array.routines
 import numpy
 
 from . import abc
-from ..type_hints import ArrayLike, NDArray
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence as SequenceType
+
+    from ..type_hints import ArrayLike, NDArray
+
+#: Minimum size of a grouped sequence.
+MIN_GROUP_SIZE: int = 2
 
 
 def _is_monotonic(arr: NDArray) -> bool:
@@ -37,7 +43,7 @@ def _is_monotonic(arr: NDArray) -> bool:
         arr[:, ix] for ix in reversed(range(arr.shape[1]))
     ]
     sort_order: NDArray = numpy.lexsort(numpy.array(values))
-    return numpy.all(abc.difference(sort_order) > 0)  # type: ignore
+    return bool(numpy.all(abc.difference(sort_order) > 0))
 
 
 def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
@@ -109,13 +115,16 @@ class Sequence(abc.Partitioning):
         indices = abc.concatenate_item(indices, matrix.shape[0])
 
         fields = tuple(variables.keys())
-        # pylint: disable=unnecessary-lambda-assignment
+
         # We want to reference a lambda function, not assign it to a variable.
         if len(fields) == 1:
-            concat: Any = lambda fields, keys: (fields + keys, )
+
+            def concat(fields, keys):
+                return (fields + keys, )
         else:
-            concat = lambda fields, keys: tuple(zip(fields, keys))
-        # pylint: enable=unnecessary-lambda-assignment
+
+            def concat(fields, keys):
+                return tuple(zip(fields, keys))
 
         return ((concat(fields,
                         tuple(item)), slice(start, indices[ix + 1], None))
@@ -184,7 +193,7 @@ class GroupedSequence(Sequence):
             variables.
     """
 
-    __slots__ = ('_dtype', '_pattern', 'variables', 'size', 'start')
+    __slots__ = ('_dtype', '_pattern', 'size', 'start', 'variables')
 
     #: The ID of the partitioning scheme.
     ID: ClassVar[str] = 'GroupedSequence'
@@ -196,10 +205,10 @@ class GroupedSequence(Sequence):
         start: int = 0,
         dtype: SequenceType[str] | None = None,
     ) -> None:
-        if size < 2:
+        if size < MIN_GROUP_SIZE:
             raise ValueError(
-                f"Parameter 'size' must be at least 2 ('{size}' was provided)."
-            )
+                f"Parameter 'size' must be at least {MIN_GROUP_SIZE} ('{size}' "
+                'was provided).')
 
         self.size = size
         self.start = start

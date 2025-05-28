@@ -13,13 +13,14 @@ import dask.array.ma
 import numpy
 import pytest
 
-# pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 # pylint enable=unused-import
 from ..array import _as_numpy_array
 
 
-def test_as_numpy_array(dask_client) -> None:
+def test_as_numpy_array(
+        dask_client,  # noqa: F811
+) -> None:
     """Test converting array like to a dask array."""
     array: numpy.ndarray
     fill_value: Any
@@ -43,10 +44,10 @@ def test_as_numpy_array(dask_client) -> None:
     assert not isinstance(array, numpy.ma.MaskedArray)
     assert fill_value == 5
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='does not match the fill value'):
         _as_numpy_array(numpy.ma.masked_equal(np_array, 5), fill_value=6)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='does not match the fill value'):
         _as_numpy_array(numpy.ma.masked_equal(
             numpy.arange(numpy.datetime64(0, 'Y'),
                          numpy.datetime64(10, 'Y'),

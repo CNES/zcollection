@@ -81,7 +81,7 @@ def test_cmp() -> None:
     with pytest.raises(TypeError):
         _ = period1 < 1
 
-    assert not period1 == 1  # pylint: disable=unneeded-not
+    assert not period1 == 1
     assert period1 != 1
 
 
@@ -192,7 +192,7 @@ def test_invalid_period() -> None:
     assert null_per.span(_period3()) == _period(5, 81)
 
 
-def test_invalid() -> None:
+def test_invalid() -> None:  # noqa: PLR0915
     """Test the invalid periods."""
     period1 = _period(0, -2)
     assert period1.begin == _datetime(0)
@@ -284,7 +284,7 @@ def test_invalid() -> None:
     assert period1 == period2
 
 
-def test_period_get_relation() -> None:
+def test_period_get_relation() -> None:  # noqa: PLR0915
     """Test the get_relation method."""
 
     #          ##################
@@ -420,5 +420,5 @@ def test_pickle() -> None:
 
 def test_invalid_type() -> None:
     """Test invalid type."""
-    with pytest.raises(ValueError):
-        Period(numpy.int64(1), numpy.int64(2))  # type: ignore
+    with pytest.raises(ValueError, match='dtype is not a time duration'):
+        Period(numpy.int64(1), numpy.int64(2))  # type: ignore[arg-type]

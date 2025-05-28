@@ -5,8 +5,7 @@
 """Test the base class for indexing."""
 from __future__ import annotations
 
-from collections.abc import Iterator
-import pathlib
+from typing import TYPE_CHECKING
 
 import fsspec
 import numpy
@@ -16,11 +15,14 @@ import pytest
 from .. import abc
 from ... import collection, convenience, dataset, partitioning
 from ...partitioning.tests import data
-# pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
-from ...tests.fs import local_fs
-# pylint: enable=unused-import
-from ...type_hints import NDArray
+from ...tests.fs import local_fs  # noqa: F401
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    import pathlib
+
+    from ...type_hints import NDArray
 
 
 def split_half_orbit(
@@ -48,7 +50,6 @@ def split_half_orbit(
     yield from tuple(zip(half_orbit[:-1], half_orbit[1:]))
 
 
-# pylint: disable=unused-argument,invalid-name
 # The signature of the function must follow the signature of
 # zcollection.PartitionCallable
 def _half_orbit(
@@ -77,8 +78,7 @@ def _half_orbit(
         pass_number[i0],
     ) for i0, i1 in split_half_orbit(cycle_number, pass_number))
 
-    return numpy.fromiter(  # type: ignore
-        generator, dtype)
+    return numpy.fromiter(generator, dtype)
 
 
 class HalfOrbitIndexer(abc.Indexer):
@@ -95,9 +95,9 @@ class HalfOrbitIndexer(abc.Indexer):
         Returns:
             A tuple of (name, type) pairs.
         """
-        return super().dtype() + [
-            (self.CYCLE_NUMBER, 'uint16'),
-            (self.PASS_NUMBER, 'uint16'),
+        return [
+            *super().dtype(), (self.CYCLE_NUMBER, 'uint16'),
+            (self.PASS_NUMBER, 'uint16')
         ]
 
     @classmethod
@@ -119,10 +119,11 @@ class HalfOrbitIndexer(abc.Indexer):
         Returns:
             The created index.
         """
-        return super()._create(path,
-                               zds,
-                               meta={'attribute': b'value'},
-                               filesystem=filesystem)  # type: ignore
+        return super()._create(  # type: ignore[return-value]
+            path,
+            zds,
+            meta={'attribute': b'value'},
+            filesystem=filesystem)
 
     def update(
         self,
@@ -152,8 +153,8 @@ class HalfOrbitIndexer(abc.Indexer):
 
 
 def test_indexer(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-        local_fs,  # pylint: disable=redefined-outer-name
+        dask_client,  # noqa: F811
+        local_fs,  # noqa: F811
 ):
     """Test the base class of the indexer."""
     ds = dataset.Dataset.from_xarray(data.create_test_sequence(5, 20, 10))
@@ -172,7 +173,7 @@ def test_indexer(
                                       filesystem=local_fs.fs)
 
     # Index not yet created
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='The index is not initialized'):
         _ = indexer.table
 
     assert indexer.dtype() == [('start', 'int64'), ('stop', 'int64'),
@@ -185,10 +186,10 @@ def test_indexer(
     assert selection is not None
     assert set(selection.variables['cycle_number'].values) == {2}
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Invalid logical operator:'):
         indexer.query({'cycle_number': 3}, logical_op='X')
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Invalid column names:'):
         indexer.query({'X': 3})
 
     # Updating the index should not change the indexer.

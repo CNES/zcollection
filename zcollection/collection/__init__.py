@@ -9,10 +9,8 @@ Collection of Zarr groups
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal, NoReturn
-from collections.abc import Iterable, Iterator, Sequence
 import datetime
 import functools
-import importlib.metadata
 import io
 import json
 import logging
@@ -23,7 +21,6 @@ import warnings
 import dask.bag.core
 import dask.distributed
 import dask.utils
-import fsspec
 import xarray
 
 from .. import (
@@ -37,7 +34,7 @@ from .. import (
     sync,
     variable as zvariable,
 )
-from ..type_hints import ArrayLike
+from ..version import __version__
 from .abc import IMMUTABLE, Indexer, PartitionFilter, ReadOnlyCollection
 from .callable_objects import UpdateCallable, WrappedPartitionCallable
 from .detail import (
@@ -49,14 +46,34 @@ from .detail import (
     _wrap_update_func_with_overlap,
 )
 
-__all__ = ('dask_utils', 'dataset', 'fs_utils', 'merging', 'meta',
-           'partitioning', 'storage', 'sync', 'Indexer', 'PartitionFilter',
-           'ReadOnlyCollection', 'IMMUTABLE', 'UpdateCallable',
-           'WrappedPartitionCallable', 'PartitionSlice', '_insert',
-           '_try_infer_callable', '_wrap_update_func',
-           '_wrap_update_func_with_overlap')
+__all__ = (
+    'IMMUTABLE',
+    'Indexer',
+    'PartitionFilter',
+    'PartitionSlice',
+    'ReadOnlyCollection',
+    'UpdateCallable',
+    'WrappedPartitionCallable',
+    '_insert',
+    '_try_infer_callable',
+    '_wrap_update_func',
+    '_wrap_update_func_with_overlap',
+    'dask_utils',
+    'dataset',
+    'fs_utils',
+    'merging',
+    'meta',
+    'partitioning',
+    'storage',
+    'sync',
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator, Sequence
+
+    import fsspec
+
+    from ..type_hints import ArrayLike
     from ..variable import abc as variable_abc
 
 #: Module logger.
@@ -180,11 +197,11 @@ class Collection(ReadOnlyCollection):
                          synchronizer=synchronizer)
 
         if self.mode == 'r':
-            # pylint: disable=method-hidden
+
             # These methods are overloaded when the collection is opened in
             # readonly.
             self._read_only_mode()
-            # pylint: enable=method-hidden
+
         else:
             storage.init_zarr_group(dirname=self._immutable, fs=self.fs)
             self._write_config(skip_if_exists=True)
@@ -235,7 +252,7 @@ class Collection(ReadOnlyCollection):
             'axis': self.axis,
             'dataset': self.metadata.get_config(),
             'partitioning': self.partitioning.get_config(),
-            'version': importlib.metadata.version('zcollection'),
+            'version': __version__,
         }
 
         with self.fs.open(config, mode='w') as stream:
@@ -316,7 +333,6 @@ class Collection(ReadOnlyCollection):
 
         return collection
 
-    # pylint: disable=method-hidden
     def insert(
         self,
         ds: xarray.Dataset | dataset.Dataset,
@@ -370,7 +386,7 @@ class Collection(ReadOnlyCollection):
             (HDF5, NetCDF, Zarr, etc.) must be compatible with concurrent
             access.
         """
-        # pylint: disable=method-hidden
+
         if isinstance(ds, xarray.Dataset):
             ds = dataset.Dataset.from_xarray(ds)
 
@@ -393,7 +409,7 @@ class Collection(ReadOnlyCollection):
 
         if not ds.variables:
             # No variable to insert
-            return tuple()
+            return ()
 
         ds = self._set_ds_for_insertion(ds=ds)
 
@@ -414,7 +430,7 @@ class Collection(ReadOnlyCollection):
                                     merge_callable=merge_callable,
                                     **kwargs)
 
-        return (fs_utils.join_path(*((self.partition_properties.dir, ) + item))
+        return (fs_utils.join_path(*((self.partition_properties.dir, *item)))
                 for item, _ in partitions)
 
     def _set_ds_for_insertion(self, ds: dataset.Dataset) -> dataset.Dataset:
@@ -539,7 +555,6 @@ class Collection(ReadOnlyCollection):
                     distributed=False,
                     **kwargs)
 
-    # pylint: disable=method-hidden
     def drop_partitions(
         self,
         *,
@@ -547,7 +562,6 @@ class Collection(ReadOnlyCollection):
         timedelta: datetime.timedelta | None = None,
         distributed: bool = True,
     ) -> Iterable[str]:
-        # pylint: disable=method-hidden
         """Drop the selected partitions.
 
         Args:
@@ -609,7 +623,6 @@ class Collection(ReadOnlyCollection):
         tuple(map(invalidate_cache, folders))
         return folders
 
-    # pylint: disable=method-hidden
     def update(
         self,
         func: UpdateCallable,
@@ -626,7 +639,6 @@ class Collection(ReadOnlyCollection):
         distributed: bool = True,
         **kwargs,
     ) -> None:
-        # pylint: disable=method-hidden
         """Update the selected partitions.
 
         Args:
@@ -1013,7 +1025,7 @@ class Collection(ReadOnlyCollection):
 
             def worker_task(args: Sequence[tuple[str, str]]) -> None:
                 """Function call on each worker to copy the partitions."""
-                tuple(map(lambda arg: partial(*arg), args))
+                tuple(partial(*arg) for arg in args)
 
             client.gather(client.map(worker_task, args))
         else:
@@ -1069,7 +1081,8 @@ class Collection(ReadOnlyCollection):
             valid."""
             if not _valid:
                 warnings.warn(f'Invalid partition: {_partition}',
-                              category=RuntimeWarning)
+                              category=RuntimeWarning,
+                              stacklevel=2)
                 invalid_partitions.append(_partition)
 
         if distributed:
@@ -1081,12 +1094,12 @@ class Collection(ReadOnlyCollection):
                 partitioning_strategy=self.partitioning)
 
             for item in dask.distributed.as_completed(futures):
-                partition, valid = item.result()  # type: ignore
+                partition, valid = item.result()
                 _validity_check(_partition=partition, _valid=valid)
         else:
-            for partition in partitions:
+            for item in partitions:
                 partition, valid = _check_partition(
-                    partition=partition,
+                    partition=item,
                     fs=self.fs,
                     partitioning_strategy=self.partitioning)
                 _validity_check(_partition=partition, _valid=valid)

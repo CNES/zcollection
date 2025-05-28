@@ -6,6 +6,7 @@
 Fixtures for testing Dask clusters using the pytest.
 ====================================================
 """
+from typing import TYPE_CHECKING
 from collections.abc import Iterator
 import contextlib
 import logging
@@ -13,15 +14,17 @@ import weakref
 
 import dask.config
 import dask.distributed
-import py
 import pytest
 
+if TYPE_CHECKING:
+    import py
 
-@pytest.fixture()
+
+@pytest.fixture
 def dask_cluster(
-        pytestconfig,
-        tmpdir_factory,
-        scope='session',  # pylint: disable=unused-argument
+    pytestconfig,
+    tmpdir_factory,
+    scope='session',
 ) -> str:
     """Launch a Dask LocalCluster with a configurable number of workers."""
     n_workers: int | None
@@ -77,17 +80,13 @@ def dask_cluster(
 
 
 @contextlib.contextmanager
-def _scheduler_file(
-        dask_cluster,  # pylint: disable=redefined-outer-name
-) -> Iterator[str]:
+def _scheduler_file(dask_cluster, ) -> Iterator[str]:
     """Get the scheduler used to connect to the cluster."""
     yield dask_cluster
 
 
-@pytest.fixture()
-def dask_client(
-    dask_cluster,  # pylint: disable=redefined-outer-name
-) -> Iterator[dask.distributed.Client]:
+@pytest.fixture
+def dask_client(dask_cluster, ) -> Iterator[dask.distributed.Client]:
     """Connect a Dask client to the cluster."""
     with _scheduler_file(dask_cluster) as scheduler_file:
         try:

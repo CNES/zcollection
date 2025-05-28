@@ -8,8 +8,7 @@ Delayed variable arrays.
 """
 from __future__ import annotations
 
-from typing import Any
-from collections.abc import Callable, Mapping, MutableMapping, Sequence
+from typing import TYPE_CHECKING, Any
 import uuid
 
 import dask.array.core
@@ -18,13 +17,18 @@ import dask.array.ma
 import dask.base
 import dask.highlevelgraph
 import dask.threaded
-import numcodecs.abc
 import numpy
-import zarr
 
 from ..meta import Attribute
-from ..type_hints import ArrayLike, NDArray, NDMaskedArray
 from .abc import Variable, concat, new_variable, not_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping, MutableMapping, Sequence
+
+    import numcodecs.abc
+    import zarr
+
+    from ..type_hints import ArrayLike, NDArray, NDMaskedArray
 
 #: The dask array getter used to access the data.
 GETTER: Callable = dask.array.core.getter
@@ -110,7 +114,7 @@ def _as_dask_array(
         offered masked array. Otherwise, the provided array and fill value.
     """
     result: dask.array.core.Array = dask.array.core.asarray(arr)
-    _meta: Any = result._meta  # pylint: disable=protected-access
+    _meta: Any = result._meta
     if isinstance(_meta, numpy.ma.MaskedArray):
         if fill_value is not None and not_equal(fill_value, _meta.fill_value):
             raise ValueError(
@@ -161,7 +165,7 @@ class DelayedArray(Variable):
                  filler: bool = False) -> None:
         array: dask.array.core.Array
         array, fill_value = _as_dask_array(data, fill_value=fill_value)
-        # pylint: disable=duplicate-code
+
         # The code is not duplicated, we need to call the parent constructor,
         # but pylint does not understand that.
         super().__init__(
@@ -174,7 +178,6 @@ class DelayedArray(Variable):
             filters=filters,
             filler=filler,
         )
-        # pylint: enable=duplicate-code
 
     @property
     def data(self) -> dask.array.core.Array:
@@ -191,12 +194,12 @@ class DelayedArray(Variable):
         """
         # If the fill value is None, or if the dask array already holds a
         # masked array, return the underlying array.
-        # pylint: disable=protected-access
+
         # No other way to check if the dask array is a masked array.
         if (self.fill_value is None
                 or isinstance(self.array._meta, numpy.ma.MaskedArray)):
             return self.array
-        # pylint: enable=protected-access
+
         return dask.array.ma.masked_equal(self.array, self.fill_value)
 
     @property
@@ -264,7 +267,7 @@ class DelayedArray(Variable):
         except ValueError as exc:
             msg = str(exc)
             if 'cannot reshape' in msg or 'buffer too small' in msg:
-                raise ModifiedVariableError() from exc
+                raise ModifiedVariableError from exc
             raise
         return values if self.fill_value is None else numpy.ma.masked_equal(
             values, self.fill_value)
@@ -306,7 +309,7 @@ class DelayedArray(Variable):
             name=f'{name}-{uuid.uuid1()}',
             **kwargs,
         )
-        # pylint: disable=duplicate-code
+
         # This call is similar to the one in array.py, but it's not the same
         # behaviour.
         return new_variable(cls,
@@ -317,7 +320,6 @@ class DelayedArray(Variable):
                             compressor=array.compressor,
                             fill_value=array.fill_value,
                             filters=tuple(array.filters or ()))
-        # pylint: enable=duplicate-code
 
     def concat(self, other: DelayedArray | Sequence[DelayedArray],
                dim: str) -> DelayedArray:
@@ -357,7 +359,7 @@ class DelayedArray(Variable):
         Returns:
             The variable.
         """
-        # pylint: disable=duplicate-code
+
         # False positive with the method concat.
         return new_variable(type(self),
                             name=self.name,
@@ -367,7 +369,6 @@ class DelayedArray(Variable):
                             compressor=self.compressor,
                             fill_value=self.fill_value,
                             filters=self.filters)
-        # pylint: enable=duplicate-code
 
     def to_dask_array(self):
         """Return the underlying dask array.
@@ -418,7 +419,7 @@ class DelayedArray(Variable):
         array: Any = array_func(results, *args, **kwargs)
         if not isinstance(array, dask.array.core.Array):
             array = dask.array.core.from_array(array)
-        # pylint: disable=duplicate-code
+
         # False positive with the method metadata defined in the base class.
         return new_variable(type(self),
                             name=self.name,
@@ -428,7 +429,6 @@ class DelayedArray(Variable):
                             compressor=self.compressor,
                             fill_value=self.fill_value,
                             filters=self.filters)
-        # pylint: enable=duplicate-code
 
     def __dask_postcompute__(self) -> tuple:
         """Return the finalizer and extra arguments to convert the computed
@@ -437,7 +437,7 @@ class DelayedArray(Variable):
         array_args: tuple
 
         array_func, array_args = self.data.__dask_postcompute__()
-        return self._dask_finalize, (array_func, ) + array_args
+        return self._dask_finalize, (array_func, *array_args)
 
     def __dask_postpersist__(self) -> tuple:
         """Return the rebuilder and extra arguments to rebuild an equivalent
@@ -446,4 +446,4 @@ class DelayedArray(Variable):
         array_args: tuple
 
         array_func, array_args = self.data.__dask_postpersist__()
-        return self._dask_finalize, (array_func, ) + array_args
+        return self._dask_finalize, (array_func, *array_args)

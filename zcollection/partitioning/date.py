@@ -8,15 +8,18 @@ Partitioning by date
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar
-from collections.abc import Iterator, Sequence
-import datetime
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import dask.array.core
 import numpy
 
 from . import abc
-from ..type_hints import ArrayLike, NDArray
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+    import datetime
+
+    from ..type_hints import ArrayLike, NDArray
 
 #: Numpy time units
 RESOLUTION = ('Y', 'M', 'D', 'h', 'm', 's')
@@ -56,8 +59,7 @@ def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
         index, indices = abc.unique(arr)  # type: ignore[arg-type]
         # We don't use here the function `numpy.diff` but `abc.difference` for
         # optimization purposes.
-        if not numpy.all(
-                abc.difference(index.view(numpy.int64)) >= 0):  # type: ignore
+        if not numpy.all(abc.difference(index.view(numpy.int64)) >= 0):
             raise ValueError('index is not monotonic')
         return index, indices
     return abc.unique_and_check_monotony(arr)
@@ -106,7 +108,6 @@ class Date(abc.Partitioning):
         """Return the keys of the partitioning scheme."""
         return tuple(UNITS[ix] for ix in self._index)
 
-    # pylint: disable=arguments-differ
     # False positive: the base method is static.
     def _partition(  # type: ignore[override]
         self,
@@ -118,7 +119,6 @@ class Date(abc.Partitioning):
         return tuple(UNITS[ix] + '=' +
                      f'{getattr(py_datetime, self._attrs[ix]):02d}'
                      for ix in self._index)
-        # pylint: enable=arguments-differ
 
     def _split(
         self,
@@ -134,7 +134,7 @@ class Date(abc.Partitioning):
         is_delayed: bool = any(
             isinstance(value, dask.array.core.Array)
             for value in variables.values())
-        name, values = tuple(variables.items())[0]
+        name, values = next(iter(variables.items()))
 
         if not numpy.issubdtype(values.dtype, numpy.dtype('datetime64')):
             raise TypeError('values must be a datetime64 array')

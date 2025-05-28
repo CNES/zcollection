@@ -15,9 +15,9 @@ from .view import create_view, open_view, update_deprecated_view
 
 __all__ = (
     'create_collection',
-    'open_collection',
-    'update_deprecated_collection',
     'create_view',
+    'open_collection',
     'open_view',
+    'update_deprecated_collection',
     'update_deprecated_view',
 )

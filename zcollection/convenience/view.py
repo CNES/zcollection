@@ -100,12 +100,12 @@ def update_deprecated_view(
                 If the provided directory does not contain a valid view
                 configuration file.
     """
-    # pylint: disable=import-outside-toplevel
+
     import json
 
     _LOGGER.warning('Updating view: %r', path)
     fs = fs_utils.get_fs(filesystem)
-    # pylint: disable=protected-access
+
     config = view.View._config(path)
 
     if not fs.exists(config):
@@ -123,7 +123,7 @@ def update_deprecated_view(
     ds.dimensions = {}
 
     view_ref: dict[str, Any] = data['view_ref']
-    # pylint: disable=protected-access
+
     zview = view.View(base_dir=data['base_dir'],
                       view_ref=view.ViewReference(
                           view_ref['path'],
@@ -138,5 +138,5 @@ def update_deprecated_view(
     fs.copy(config, config_back)
 
     _LOGGER.warning('Writing new configuration: %r', path)
-    # pylint: disable=protected-access
+
     zview._write_config()

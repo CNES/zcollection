@@ -5,7 +5,9 @@ Overview of a View.
 This section outlines the steps required to get started with the main features
 of a ``View``.
 """
-from collections.abc import Iterator
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 import pprint
 
 import dask.distributed
@@ -14,6 +16,9 @@ import numpy
 
 import zcollection
 import zcollection.tests.data
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 # %%
@@ -103,7 +108,7 @@ zds.variables['var3'].values
 # The same principle used by the collection allows to
 # :py:meth:`update<zcollection.view.View.update>` the variables.
 view.update(
-    lambda ds: dict(var3=ds['var1'].values * 0 + 1))  # type: ignore[arg-type]
+    lambda ds: {'var3': ds['var1'].values * 0 + 1})  # type: ignore[arg-type]
 
 # %%
 # Like the :py:meth:`update<zcollection.collection.Collection.update>` method
@@ -120,7 +125,7 @@ print(var3)
 # **Warning**: The variables of the reference collection cannot be edited.
 try:
     view.update(
-        lambda ds: dict(var2=ds['var2'].values * 0))  # type: ignore[arg-type]
+        lambda ds: {'var2': ds['var2'].values * 0})  # type: ignore[arg-type]
 except ValueError as exc:
     print(str(exc))
 

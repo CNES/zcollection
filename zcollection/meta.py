@@ -8,15 +8,18 @@ Configuration metadata
 """
 from __future__ import annotations
 
-from typing import Any
-from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING, Any
 
-import numcodecs.abc
 import numpy
 import zarr.codecs
 import zarr.meta
 
-from .type_hints import DTypeLike
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    import numcodecs.abc
+
+    from .type_hints import DTypeLike
 
 #: Block size limit used with dask arrays. (128 MiB)
 BLOCK_SIZE_LIMIT = 134217728
@@ -85,7 +88,7 @@ class Dimension:
         value: size of the dimension.
         chunks: size of the dimension's chunks.
     """
-    __slots__ = ('name', 'value', 'chunks')
+    __slots__ = ('chunks', 'name', 'value')
 
     def __init__(self, name: str, value: int, chunks: int = -1) -> None:
         self.name: str = name
@@ -252,7 +255,7 @@ class Dataset:
         block_size_limit: An optional integer representing the maximum size
             (in bytes) of a block/chunk of variable's data.
     """
-    __slots__ = ('dimensions', 'variables', 'attrs', 'block_size_limit')
+    __slots__ = ('attrs', 'block_size_limit', 'dimensions', 'variables')
 
     def __init__(self,
                  dimensions: Sequence[Dimension],

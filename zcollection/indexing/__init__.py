@@ -13,4 +13,5 @@ try:
     __all__ = ('Indexer', 'QueryDict', 'Scalar')
 except ImportError:  # pragma: no cover
     warnings.warn(
-        'Install PyArrow to use the indexing capabilities of zcollection.')
+        'Install PyArrow to use the indexing capabilities of zcollection.',
+        stacklevel=2)

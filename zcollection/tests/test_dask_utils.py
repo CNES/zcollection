@@ -10,10 +10,7 @@ import dask.distributed
 import pytest
 
 from .. import dask_utils
-# pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster  # noqa: F401
-
-# pylint: disable=unused-import
 
 
 @pytest.mark.filterwarnings('ignore:Port \\d+ is already in use.*')
@@ -24,7 +21,7 @@ def test_get_client_with_no_cluster():
 
 
 def test_get_client_with_cluster(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ):
     """Test the get_client function with a cluster."""
     with dask_utils.get_client() as client:
@@ -32,13 +29,13 @@ def test_get_client_with_cluster(
 
 
 def test_dask_workers(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ):
     """Test the dask_workers function."""
     assert dask_utils.dask_workers(dask_client, cores_only=True) == len(
-        dask_client.ncores())  # type: ignore
+        dask_client.ncores())
     assert dask_utils.dask_workers(dask_client, cores_only=False) == sum(
-        item for item in dask_client.nthreads().values())  # type: ignore
+        item for item in dask_client.nthreads().values())
 
 
 def test_split_sequence():
@@ -139,5 +136,7 @@ def test_split_sequence():
         [8],
         [9],
     ]
-    with pytest.raises(ValueError):
+    with pytest.raises(
+            ValueError,
+            match='The number of sections must be greater than zero.'):
         list(dask_utils.split_sequence(list(range(10)), 0))

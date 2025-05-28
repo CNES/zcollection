@@ -8,11 +8,14 @@ Synchronization of concurrent accesses
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 import abc
-from collections.abc import Callable
 import threading
 
 import fasteners
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class Sync(abc.ABC):  # pragma: no cover

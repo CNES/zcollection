@@ -6,25 +6,26 @@
 Testing variables
 =================
 """
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import pickle
 
 import dask.array.core
 import dask.array.ma
 import numpy
 import pytest
-import xarray
 import zarr
 
 from ... import meta
-# pylint: disable=unused-import # Need to import for fixtures
-from ...tests.cluster import \
-    dask_client  # pylint: disable=redefined-outer-name,unused-argument
+from ...tests.cluster import dask_client  # noqa: F401
 from ...tests.cluster import dask_cluster  # noqa: F401
-from ..abc import Variable
 from ..array import Array
 from ..delayed_array import DelayedArray
 from .data import array, delayed_array
+
+if TYPE_CHECKING:
+    import xarray
+
+    from ..abc import Variable
 
 # pylint enable=unused-import
 
@@ -38,7 +39,7 @@ DELAYED_ARRAY = delayed_array
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
 def test_masked_array(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test masked array."""
     var1: Variable = factory()
@@ -59,7 +60,7 @@ def test_masked_array(
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
 def test_constructor(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test variable creation."""
     var1: Variable = factory()
@@ -68,8 +69,8 @@ def test_constructor(
     assert var1.shape == (5, 2)
     assert var1.dimensions == ('x', 'y')
     assert var1.attrs == (meta.Attribute(name='attr', value=1), )
-    assert var1.compressor.cname == 'zstd'  # type: ignore
-    assert var1.compressor.clevel == 1  # type: ignore
+    assert var1.compressor.cname == 'zstd'  # type: ignore[union-attr]
+    assert var1.compressor.clevel == 1  # type: ignore[union-attr]
     assert var1.fill_value == 0
     assert var1.size == 10
     assert var1.nbytes == 80
@@ -90,8 +91,8 @@ def test_constructor(
     assert var2.shape == (5, 2)
     assert var2.dimensions == ('x', 'y')
     assert var2.attrs == (meta.Attribute(name='attr', value=1), )
-    assert var2.compressor.cname == 'zstd'  # type: ignore
-    assert var2.compressor.clevel == 1  # type: ignore
+    assert var2.compressor.cname == 'zstd'  # type: ignore[union-attr]
+    assert var2.compressor.clevel == 1  # type: ignore[union-attr]
     assert var2.fill_value == 0
     assert var2.size == 10
     assert var2.nbytes == 80
@@ -117,14 +118,15 @@ def test_constructor(
     assert isinstance(var1.data, dask.array.core.Array)
     assert numpy.all(var1.values == 1)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError,
+                       match='Data shape does not match variable dimensions'):
         var1.values = numpy.ones((10, 4, 2), dtype='int64')
 
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
 def test_duplicate(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test of the duplication of variables."""
     var1: Variable = factory()
@@ -134,24 +136,25 @@ def test_duplicate(
     assert var2.shape == (5, 2)
     assert var2.dimensions == ('x', 'y')
     assert var2.attrs == (meta.Attribute(name='attr', value=1), )
-    assert var2.compressor.cname == 'zstd'  # type: ignore
-    assert var2.compressor.clevel == 1  # type: ignore
+    assert var2.compressor.cname == 'zstd'  # type: ignore[union-attr]
+    assert var2.compressor.clevel == 1  # type: ignore[union-attr]
     assert var2.fill_value == 0
     assert var2.filters == (
         zarr.Delta('int64', 'int32'),
         zarr.Delta('int32', 'int32'),
     )
-    assert numpy.all(var1.values == var2.values / 2)  # type: ignore
+    assert numpy.all(var1.values == var2.values / 2)
     assert var1.metadata() == var2.metadata()
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError,
+                       match='Data shape does not match variable dimensions'):
         var1.duplicate(numpy.ones((10, 4, 2), dtype='int64'))
 
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
 def test_concatenate(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test concatenation of variables."""
     var1: Variable = factory()
@@ -166,14 +169,14 @@ def test_concatenate(
     assert numpy.all(
         var4.values == numpy.concatenate((var1.values, var2.values), axis=0))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='other must be a non-empty sequence'):
         var1.concat([], 'y')
 
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
 def test_getitem(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test getting of variables."""
     var: Variable = factory()
@@ -188,14 +191,15 @@ def test_getitem(
     assert numpy.all(result == values[0:2, 0:2])
 
 
+# typedef: Variable = ARRAY | DELAYED_ARRAY  # type: ignore[misc]
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
 def test_fill(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test filling of variables."""
     var: Variable = factory()
-    assert not var.values.all() is numpy.ma.masked
+    assert var.values.all() is not numpy.ma.masked
     var.fill()
     assert var.values.all() is numpy.ma.masked
 
@@ -203,7 +207,7 @@ def test_fill(
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
 def test_rechunk(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test rechunking of variables."""
     var: Variable = factory()
@@ -215,7 +219,7 @@ def test_rechunk(
 @pytest.mark.parametrize('factory', [Array, DelayedArray])
 def test_dimension_less(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Concatenate two dimensionless variables."""
     data: numpy.ndarray = numpy.array([0, 1], dtype=numpy.int32)
@@ -241,7 +245,7 @@ def test_dimension_less(
 @pytest.mark.parametrize('factory', [Array, DelayedArray])
 def test_timedelta64_to_xarray(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test conversion to xarray."""
     delta: numpy.ndarray = numpy.diff(
@@ -268,7 +272,7 @@ def test_timedelta64_to_xarray(
 @pytest.mark.parametrize('factory', [Array, DelayedArray])
 def test_datetime64_to_xarray(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test conversion to xarray."""
     dates: numpy.ndarray = numpy.arange(

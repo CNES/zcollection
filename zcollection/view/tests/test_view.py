@@ -24,7 +24,6 @@ from ... import (
     variable,
     view,
 )
-# pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 from ...tests.data import (
     create_test_collection,
@@ -35,14 +34,12 @@ from ...tests.fixture import dask_arrays, numpy_arrays  # noqa: F401
 from ...tests.fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
 from ...view.detail import _calculate_axis_reference
 
-# pylint: enable=unused-import
-
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('arrays_type', ['dask_arrays', 'numpy_arrays'])
 @pytest.mark.parametrize('distributed', [False, True])
-def test_view(
-    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+def test_view(  # noqa: PLR0915
+    dask_client,  # noqa: F811
     fs,
     arrays_type,
     distributed,
@@ -76,7 +73,7 @@ def test_view(
         attrs=(meta.Attribute(name='attr', value=1), ),
     )
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Variable var2 already exists'):
         zview.add_variable(var, distributed=distributed)
 
     assert not zview.variables()
@@ -86,7 +83,9 @@ def test_view(
 
     assert {v.name for v in zview.variables()} == {var.name}
 
-    with pytest.raises(ValueError):
+    with pytest.raises(
+            ValueError,
+            match='The variable .* already exists in the collection.'):
         zview.add_variable(var, distributed=distributed)
 
     zview = convenience.open_view(str(tested_fs.view), filesystem=tested_fs.fs)
@@ -175,31 +174,20 @@ def test_view(
         """Update function used for this test."""
         return {varname: zds.variables['var1'].values * 0 + 5}
 
-    zview.update(
-        update,  # type: ignore
-        'var3',
-        delayed=delayed,
-        distributed=distributed)
+    zview.update(update, 'var3', delayed=delayed, distributed=distributed)
 
-    with pytest.raises(ValueError):
-        zview.update(
-            update,  # type: ignore
-            'varX',
-            distributed=distributed)
+    with pytest.raises(ValueError, match='Variable varX does not exist'):
+        zview.update(update, 'varX', distributed=distributed)
 
-    with pytest.raises(ValueError):
-        zview.update(
-            update,  # type: ignore
-            'var2',
-            distributed=distributed)
+    with pytest.raises(ValueError, match='Variable var2 is read-only'):
+        zview.update(update, 'var2', distributed=distributed)
 
     zds = zview.load(delayed=delayed, distributed=distributed)
     assert zds is not None
     assert numpy.all(zds.variables['var3'].values == 5)
 
-    indexers = zview.map(
-        lambda x: slice(0, x.dimensions['num_lines'])  # type: ignore
-    ).compute()
+    indexers = zview.map(lambda x: slice(  # type: ignore[arg-type]
+        0, x.dimensions['num_lines'])).compute()
     ds1 = zview.load(delayed=delayed,
                      indexer=indexers,
                      distributed=distributed)
@@ -226,7 +214,7 @@ def test_view(
         for item in zview.partitions(filters=zview.sync())) == (str(
             tested_fs.view.joinpath('year=2000', 'month=01', 'day=13')), )
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='zarr view not found at path .*'):
         convenience.open_view(str(tested_fs.collection),
                               filesystem=tested_fs.fs)
 
@@ -359,10 +347,11 @@ def test_view_read_immutable_only(fs, request):
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_view_update(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-        fs,
-        request,
-        tmpdir):
+    dask_client,  # noqa: F811
+    fs,
+    request,
+    tmpdir,
+):
     """Test updating variable."""
     tested_fs = request.getfixturevalue(fs)
 
@@ -383,7 +372,7 @@ def test_view_update(
         """Update function used to set a variable to 0."""
         return {varname: zds.variables['var1'].values * 0}
 
-    zview.update(to_zero, var.name)  # type: ignore
+    zview.update(to_zero, var.name)  # type: ignore[arg-type]
 
     data = zview.load(delayed=False)
     assert numpy.all(data.variables[var.name].values == 0)
@@ -407,7 +396,7 @@ def test_view_update(
 
         return {varname: zds.variables[var.name].values + 1}
 
-    zview.update(plus_one_with_log, var.name)  # type: ignore
+    zview.update(plus_one_with_log, var.name)  # type: ignore[arg-type]
 
     # One log per partition + 1 log for the initial call
     assert len(test_dir.listdir()) == len(list(zview.partitions())) + 1
@@ -419,7 +408,7 @@ def test_view_update(
     assert numpy.all(data.variables[var.name].values == 1)
 
     zview.update(
-        plus_one_with_log,  # type: ignore
+        plus_one_with_log,  # type: ignore[arg-type]
         var.name,
         variables=[var.name])
 
@@ -472,7 +461,7 @@ def test_view_update_with_immutable(fs, request) -> None:
         return {new_var.name: _zds.variables['var1'].values * 201.5}
 
     zview.update(
-        update_1,  # type: ignore
+        update_1,  # type: ignore[arg-type]
         delayed=False,
         distributed=False,
     )
@@ -485,7 +474,7 @@ def test_view_update_with_immutable(fs, request) -> None:
         return {new_var.name: _zds.variables['var1'].values * 201.5}
 
     zview.update(
-        update_2,  # type: ignore
+        update_2,  # type: ignore[arg-type]
         selected_variables=['var1'],
         delayed=False,
         distributed=False,
@@ -494,7 +483,7 @@ def test_view_update_with_immutable(fs, request) -> None:
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
 def test_view_overlap(
-    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    dask_client,  # noqa: F811
     arg,
     request,
 ):
@@ -529,7 +518,7 @@ def test_view_overlap(
         return {varname: zds.variables['var1'].values * 1 + 5}
 
     zview.update(
-        update,  # type: ignore
+        update,  # type: ignore[arg-type]
         'var3',
         depth=1,
         trim_result=False)
@@ -538,7 +527,7 @@ def test_view_overlap(
     numpy.all(zds.variables['var3'].values == 5)
 
     zview.update(
-        update,  # type: ignore
+        update,  # type: ignore[arg-type]
         'var3',
         depth=1,
         trim=False,
@@ -547,9 +536,12 @@ def test_view_overlap(
     assert zds is not None
     numpy.all(zds.variables['var3'].values == 5)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(
+            ValueError,
+            match='If the depth is greater than 0, the selected variables '
+            'must contain the variables updated by the function.'):
         zview.update(
-            update,  #  type: ignore
+            update,  #  type: ignore[arg-type]
             'var3',
             depth=1,
             trim_result=False,
@@ -566,12 +558,12 @@ def test_view_overlap(
 
     with pytest.raises(ValueError, match='must be greater than or equal to 0'):
         zview.map_overlap(
-            map_func,  # type: ignore
+            map_func,  # type: ignore[arg-type]
             depth=-1,
         )
 
     indexers = zview.map_overlap(
-        map_func,  # type: ignore
+        map_func,  # type: ignore[arg-type]
         depth=1,
     ).compute()
 
@@ -583,8 +575,9 @@ def test_view_overlap(
 
 
 def test_view_checksum(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-        tmpdir) -> None:
+    dask_client,  # noqa: F811
+    tmpdir,
+) -> None:
     """Test the checksum calculation."""
     zds = next(create_test_dataset())
     zcol = collection.Collection('time', zds.metadata(),
@@ -607,7 +600,7 @@ def test_view_checksum(
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('distributed', [False, True])
 def test_view_sync(
-    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    dask_client,  # noqa: F811
     arg,
     distributed,
     request,
@@ -704,7 +697,4 @@ def test_view_with_empty_collection(fs, request, caplog):
         return {varname: zds.variables['var1'].values * 0 + 5}
 
     with pytest.warns(Warning, match='function is not applied'):
-        zview.update(
-            update,  # type: ignore
-            varname=var.name,
-            distributed=False)
+        zview.update(update, varname=var.name, distributed=False)

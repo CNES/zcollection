@@ -14,11 +14,8 @@ import numpy
 import pytest
 
 from ... import convenience, dataset, meta, variable, view
-# pylint: disable=unused-import # Need to import for fixtures
 from ...tests.data import create_test_collection
 from ...tests.fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
-
-# pylint: disable=unused-import
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
@@ -43,7 +40,7 @@ def test_update_deprecated_view(fs, request, caplog):
         """Update function used to set a variable to 0."""
         return {varname: zds.variables['var1'].values * 0}
 
-    zview.update(to_zero, var.name)  # type: ignore
+    zview.update(to_zero, var.name)  # type: ignore[arg-type]
 
     zdata_ref = zview.load(selected_variables=['var1', var.name],
                            delayed=False,
@@ -120,7 +117,11 @@ def test_update_deprecated_view(fs, request, caplog):
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
-def test_update_deprecated_collection(fs, request, caplog):
+def test_update_deprecated_collection(  # noqa: PLR0915
+        fs,
+        request,
+        caplog,
+) -> None:
     """Test the deprecated collection update functionality."""
     caplog.set_level(logging.WARNING)
     tested_fs = request.getfixturevalue(fs)
@@ -183,14 +184,18 @@ def test_update_deprecated_collection(fs, request, caplog):
 
     zdata = zcol.load(delayed=False, distributed=False)
 
-    for v in zdata_ref.variables:
+    for v in zdata_ref.variables:  # type: ignore[union-attr]
         if v == 'time':
-            assert numpy.array_equal(zdata[v].values, zdata_ref[v].values)
+            assert numpy.array_equal(
+                zdata[v].values,  # type: ignore[index]
+                zdata_ref[v].values,  # type: ignore[index]
+            )
         else:
-            assert numpy.allclose(zdata[v].values,
-                                  zdata_ref[v].values,
-                                  equal_nan=True,
-                                  rtol=0)
+            assert numpy.allclose(
+                zdata[v].values,  # type: ignore[index]
+                zdata_ref[v].values,  # type: ignore[index]
+                equal_nan=True,
+                rtol=0)
 
     # Invalid collection path
     with pytest.raises(ValueError, match='collection not found'):
@@ -230,11 +235,15 @@ def test_update_deprecated_collection(fs, request, caplog):
 
     zdata = zcol.load(delayed=False, distributed=False)
 
-    for v in zdata_ref.variables:
+    for v in zdata_ref.variables:  # type: ignore[union-attr]
         if v == 'time':
-            assert numpy.array_equal(zdata[v].values, zdata_ref[v].values)
+            assert numpy.array_equal(
+                zdata[v].values,  # type: ignore[index]
+                zdata_ref[v].values,  # type: ignore[index]
+            )
         else:
-            assert numpy.allclose(zdata[v].values,
-                                  zdata_ref[v].values,
-                                  equal_nan=True,
-                                  rtol=0)
+            assert numpy.allclose(
+                zdata[v].values,  # type: ignore[index]
+                zdata_ref[v].values,  # type: ignore[index]
+                equal_nan=True,
+                rtol=0)

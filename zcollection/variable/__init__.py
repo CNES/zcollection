@@ -11,4 +11,4 @@ from .abc import Variable, new_variable
 from .array import Array
 from .delayed_array import DelayedArray
 
-__all__ = ('Attribute', 'Variable', 'Array', 'DelayedArray', 'new_variable')
+__all__ = ('Array', 'Attribute', 'DelayedArray', 'Variable', 'new_variable')

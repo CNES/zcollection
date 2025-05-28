@@ -15,10 +15,10 @@ from .. import registry
 
 def test_get_codecs() -> None:
     """Test the get_codecs function."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='codec not available'):
         registry.get_codecs({'ID': 'foo'})
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='codec not available'):
         registry.get_codecs({'id': 'foo'})
 
 
@@ -48,10 +48,10 @@ def test_register_codec() -> None:
     instance = MyCodec(12)
 
     other = registry.get_codecs(instance.get_config())
-    assert other.attribute == instance.attribute  # type: ignore
+    assert other.attribute == instance.attribute  # type: ignore[attr-defined]
     assert isinstance(other, MyCodec)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='codec already registered'):
         registry.register_codec(
             MyCodec,  # type: ignore[arg-type]
             codec_id='foo')

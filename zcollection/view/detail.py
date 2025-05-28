@@ -8,7 +8,7 @@ Implementation details.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import base64
 from collections.abc import Callable, Iterable, Iterator, Sequence
 import dataclasses
@@ -21,8 +21,6 @@ import warnings
 
 import dask.array.core
 import dask.bag.core
-import dask.distributed
-import fsspec
 import numpy
 import zarr
 
@@ -37,7 +35,12 @@ from ..storage import (
     variable_shape,
     write_zattrs,
 )
-from ..type_hints import ArrayLike, NDArray
+
+if TYPE_CHECKING:
+    import dask.distributed
+    import fsspec
+
+    from ..type_hints import ArrayLike, NDArray
 
 #: Module logger.
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -65,7 +68,8 @@ class ViewReference:
     #: Path to the collection.
     path: str
     #: The file system used to access the reference collection.
-    filesystem: fsspec.AbstractFileSystem = get_fs('file')
+    filesystem: fsspec.AbstractFileSystem = dataclasses.field(
+        default_factory=lambda: get_fs('file'))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -151,12 +155,11 @@ def _drop_zarr_zarr(partition: str,
     try:
         fs.rm(join_path(partition, variable), recursive=True)
         fs.invalidate_cache(partition)
-    # pylint: disable=broad-except
+
     # We don't want to fail on errors.
     except Exception:
         if not ignore_errors:
             raise
-    # pylint: enable=broad-except
 
 
 def _load_one_dataset(
@@ -450,21 +453,20 @@ def _wrap_update_func_overlap(
         indices: slice
 
         for zds, partition in parameters:
-            zds, indices = _select_overlap((zds, partition), datasets_list,
-                                           depth, view_ref)
-            # pylint: disable=duplicate-code
+            selected_zds, indices = _select_overlap(
+                (zds, partition), datasets_list, depth, view_ref)
+
             # False positive with the function _wrap_update_func_with_overlap
             # defined in the module zcollection.collection.detail
             _update_with_overlap(*func_args,
                                  func=func,
-                                 zds=zds,
+                                 zds=selected_zds,
                                  indices=indices,
                                  dim=dim,
                                  fs=fs,
                                  path=join_path(base_dir, partition),
                                  trim=trim,
                                  **func_kwargs)
-            # pylint: enable=duplicate-code
 
     return wrap_function
 

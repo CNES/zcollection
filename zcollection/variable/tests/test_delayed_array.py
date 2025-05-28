@@ -13,7 +13,6 @@ import dask.array.ma
 import numpy
 import pytest
 
-# pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 from ..delayed_array import _as_dask_array
 
@@ -21,7 +20,7 @@ from ..delayed_array import _as_dask_array
 
 
 def test_as_dask_array(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test converting array like to a dask array."""
     dask_array: dask.array.core.Array
@@ -43,10 +42,10 @@ def test_as_dask_array(
     assert isinstance(dask_array, dask.array.core.Array)
     assert fill_value == 5
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='does not match the fill value'):
         _as_dask_array(numpy.ma.masked_equal(np_array, 5), fill_value=6)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='does not match the fill value'):
         _as_dask_array(numpy.ma.masked_equal(
             numpy.arange(numpy.datetime64(0, 'Y'),
                          numpy.datetime64(10, 'Y'),

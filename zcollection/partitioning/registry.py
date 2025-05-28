@@ -8,9 +8,10 @@ Registers the partitioning codecs.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from . import abc
+if TYPE_CHECKING:
+    from . import abc
 
 #: A registry of all available partitioning codecs.
 CODEC_REGISTRY: dict[str, type[abc.Partitioning]] = {}

@@ -8,7 +8,7 @@ Abstract base class for indexing.
 """
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 import abc
 from collections.abc import Iterable
 import functools
@@ -19,9 +19,10 @@ import numpy
 import pyarrow
 import pyarrow.parquet
 
-from .. import collection, dataset
-from ..collection.callable_objects import MapCallable
-from ..type_hints import NDArray
+if TYPE_CHECKING:
+    from .. import collection, dataset
+    from ..collection.callable_objects import MapCallable
+    from ..type_hints import NDArray
 
 #: Scalar data type for the index.
 Scalar = int | float | bytes
@@ -62,11 +63,10 @@ class IndexingCallable(Protocol):
             A numpy structured array to be converted to a DataFrame and stored
             in the index.
         """
-        # pylint: disable=unnecessary-ellipsis
+
         # Ellipsis is necessary to make the function signature match the
         # protocol.
         ...  # pragma: no cover
-        # pylint: enable=unnecessary-ellipsis
 
 
 class Indexer(abc.ABC):
@@ -169,7 +169,7 @@ class Indexer(abc.ABC):
 
     def _sort_keys(self) -> list[tuple[str, str]]:
         """Return the list of keys to sort the index by."""
-        keys: tuple[str, ...] = self._partition_keys + (self.START, self.STOP)
+        keys: tuple[str, ...] = (*self._partition_keys, self.START, self.STOP)
         return [(key, 'ascending') for key in keys]
 
     @classmethod
@@ -279,19 +279,19 @@ class Indexer(abc.ABC):
             if length == 0:
                 continue
             # Create a new table with the indexed data.
-            data = {
+            indexed_data = {
                 field: pyarrow.array(data[field], type=self._type[field])
                 for field in data.dtype.fields
             }
             # Add the partition to the table.
-            data.update(
+            indexed_data.update(
                 (name,
                  pyarrow.nulls(length, type=self._type[name]).fill_null(value))
                 for name, value in partition)
             # Memoize the updated partitions.
             partitions.append(tuple(
                 (name, value) for name, value in partition))
-            tables.append(pyarrow.Table.from_pydict(data))
+            tables.append(pyarrow.Table.from_pydict(indexed_data))
 
         # If no new data, skip the update.
         if not partitions:
@@ -301,26 +301,26 @@ class Indexer(abc.ABC):
         if self._fs.exists(self._path):
             table = pyarrow.parquet.read_table(self._path, filesystem=self._fs)
 
-            # pylint: disable=no-member
             # Build the list of mask to select the rows to drop.
-            mask = []
-            for item in partitions:
-                mask.append(
-                    functools.reduce(
-                        pyarrow.compute.and_,  # type:ignore
-                        [
-                            pyarrow.compute.is_in(  # type:ignore
-                                table[name],
-                                value_set=pyarrow.array([value],
-                                                        type=self._type[name]))
-                            for name, value in item
-                        ]))
-            mask = functools.reduce(pyarrow.compute.or_, mask)  # type:ignore
+            mask = [
+                functools.reduce(
+                    pyarrow.compute.and_,  # type:ignore[attr-defined]
+                    [
+                        pyarrow.compute.is_in(  # type:ignore[attr-defined]
+                            table[name],
+                            value_set=pyarrow.array([value],
+                                                    type=self._type[name]))
+                        for name, value in item
+                    ]) for item in partitions
+            ]
+            mask = functools.reduce(
+                pyarrow.compute.or_,  # type:ignore[attr-defined]
+                mask,
+            )
 
             # Inserts the previous index without the updated partitions.
             tables.insert(0, table.filter(
-                pyarrow.compute.invert(mask)))  # type:ignore
-            # pylint: enable=no-member
+                pyarrow.compute.invert(mask)))  # type:ignore[attr-defined]
 
         if len(tables) == 0:
             # No new data, nothing to do.
@@ -447,7 +447,6 @@ class Indexer(abc.ABC):
         if mask is not None:
             table = table.filter(mask)
 
-        # pylint: disable=no-member
         if values:
             mask = functools.reduce(function, [
                 pyarrow.compute.is_in(table[name],
@@ -455,7 +454,7 @@ class Indexer(abc.ABC):
                                           value, type=self._type[name]))
                 for name, value in values.items()
             ])
-            # pylint: disable=no-member
+
             table = table.filter(mask)
 
         # The selected table is sorted by the partitioning keys and the slice.

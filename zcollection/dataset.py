@@ -8,13 +8,12 @@ Dataset
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 import ast
 import collections
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 import dataclasses
-import types
 
 import dask.array.core
 import dask.array.routines
@@ -28,8 +27,12 @@ import xarray.conventions
 from . import meta, representation
 from .compressed_array import CompressedArray
 from .meta import BLOCK_SIZE_LIMIT, Attribute, Dimension, DimensionType
-from .type_hints import ArrayLike, NDArray, NDMaskedArray
 from .variable import Array, DelayedArray, Variable, new_variable
+
+if TYPE_CHECKING:
+    import types
+
+    from .type_hints import ArrayLike, NDArray, NDMaskedArray
 
 #: Alias to type hint for the variables of a dataset.
 VariableType = OrderedDict[str, Variable]
@@ -200,8 +203,14 @@ class Dataset:
         <zcollection.variable.array.Array>` objects. It is impossible to mix
         delayed and non-delayed variables in the same dataset.
     """
-    __slots__ = ('dimensions', 'variables', 'attrs', 'dim_chunks',
-                 'block_size_limit', 'delayed')
+    __slots__ = (
+        'attrs',
+        'block_size_limit',
+        'delayed',
+        'dim_chunks',
+        'dimensions',
+        'variables',
+    )
 
     def __init__(self,
                  variables: Iterable[Variable],
@@ -487,8 +496,8 @@ class Dataset:
         """
         self.attrs = tuple(mds.attrs)
         tuple(
-            map(lambda var: var.fill_attrs(mds.variables[var.name]),
-                self.variables.values()))
+            var.fill_attrs(mds.variables[  # type: ignore[func-returns-value]
+                var.name]) for var in self.variables.values())
 
     def isel(self, slices: dict[str, Any]) -> Dataset:
         """Return a new dataset with each array indexed along the specified
@@ -737,12 +746,11 @@ class Dataset:
         """
         if not self.delayed:
             raise ValueError('cannot write a non-delayed dataset to Zarr')
-        # pylint: disable=import-outside-toplevel, import-error
+
         # Avoid circular import
         import storage
         import sync
 
-        # pylint: enable=import-outside-toplevel, import-error
         storage.write_zarr_group(zds=self,
                                  dirname=path,
                                  fs=fs or fsspec.filesystem('file'),
@@ -866,11 +874,11 @@ class Expression:
                 name: zds.variables[name].data
                 for name in self.code.co_names if name not in self.BUILTINS
             }
-            # pylint: disable=eval-used
+
             # The eval function is used here to evaluate a simple expression.
             # The only builtin functions allowed is the range function.
             return eval(self.code, {'__builtins__': self.BUILTINS}, __locals)
-            # pylint: enable=eval-used
+
         except KeyError as exc:
             raise NameError(
                 f'Variable {exc} is not defined in the dataset') from exc

@@ -34,10 +34,8 @@ from types import GenericAlias  # type: ignore[attr-defined]
 
 import numpy.typing
 
-# pylint: disable=invalid-name
 _DType_co = TypeVar('_DType_co', covariant=True, bound='numpy.dtype[Any]')
 _ScalarType_co = TypeVar('_ScalarType_co', bound=numpy.generic, covariant=True)
-# pylint: enable=invalid-name
 
 if TYPE_CHECKING:
     DType = numpy.dtype[_ScalarType_co]
@@ -59,30 +57,26 @@ class ArrayLike(Protocol[_DType_co]):
     @property
     def dtype(self) -> DType:
         """The data type of the array."""
-        # pylint: disable=unnecessary-ellipsis
+
         # Make checker happy.
         ...
-        # pylint: enable=unnecessary-ellipsis
 
     @property
     def shape(self) -> tuple[int, ...]:
         """The shape of the array."""
-        # pylint: disable=unnecessary-ellipsis
+
         # Make checker happy.
         ...
-        # pylint: enable=unnecessary-ellipsis
 
     @property
     def size(self) -> int:
         """The size of the array."""
-        # pylint: disable=unnecessary-ellipsis
+
         # Make checker happy.
         ...
-        # pylint: enable=unnecessary-ellipsis
 
     def astype(self, dtype: DTypeLike) -> ArrayLike[_DType_co]:
         """Convert the array to a given type."""
-        # pylint: disable=unnecessary-ellipsis
+
         # Make checker happy.
         ...
-        # pylint: enable=unnecessary-ellipsis

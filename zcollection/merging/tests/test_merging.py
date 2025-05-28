@@ -13,12 +13,9 @@ import zarr
 from .. import _update_fs, merge_time_series, perform
 from ... import sync
 from ...tests import data
-# pylint: disable=unused-import # Need to import for fixtures
 from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 from ...tests.fixture import dask_arrays, numpy_arrays  # noqa: F401
-from ...tests.fs import local_fs
-
-# pylint: enable=unused-import
+from ...tests.fs import local_fs  # noqa: F401
 
 
 class MyError(RuntimeError):
@@ -39,8 +36,8 @@ class ThrowError(sync.Sync):
 
 
 def test_update_fs(
-        dask_client,  # pylint: disable=redefined-outer-name
-        local_fs,  # pylint: disable=redefined-outer-name
+        dask_client,  # noqa: F811
+        local_fs,  # noqa: F811
 ) -> None:
     """Test the _update_fs function."""
     generator = data.create_test_dataset(delayed=False)
@@ -59,20 +56,20 @@ def test_update_fs(
     assert not local_fs.exists(zattrs)
 
     with pytest.raises(MyError):
-        future = dask_client.submit(_update_fs,
-                                    str(partition_folder),
-                                    zds_sc,
-                                    local_fs.fs,
-                                    synchronizer=ThrowError())
-        dask_client.gather(future)
+        dask_client.gather(
+            dask_client.submit(_update_fs,
+                               str(partition_folder),
+                               zds_sc,
+                               local_fs.fs,
+                               synchronizer=ThrowError()))
 
     assert not local_fs.exists(zattrs)
 
 
 @pytest.mark.parametrize('arrays_type', ['dask_arrays', 'numpy_arrays'])
 def test_perform(
-    dask_client,  # pylint: disable=redefined-outer-name
-    local_fs,  # pylint: disable=redefined-outer-name
+    dask_client,  # noqa: F811
+    local_fs,  # noqa: F811
     arrays_type,
     request,
 ) -> None:

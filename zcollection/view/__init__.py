@@ -8,10 +8,8 @@ View on a reference collection.
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar
-from collections.abc import Iterable, Iterator, Sequence
+from typing import TYPE_CHECKING, Any, ClassVar
 import copy
-import importlib.metadata
 import json
 import logging
 import pathlib
@@ -24,9 +22,9 @@ import dask.utils
 import fsspec
 
 from .. import collection, dask_utils, dataset, fs_utils, meta, storage, sync
-from ..collection.callable_objects import MapCallable, PartitionCallable
 from ..collection.detail import _try_infer_callable
 from ..convenience import collection as convenience
+from ..version import __version__
 from .detail import (
     ViewReference,
     ViewUpdateCallable,
@@ -44,6 +42,11 @@ from .detail import (
     _wrap_update_func_overlap,
     _write_checksum,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator, Sequence
+
+    from ..collection.callable_objects import MapCallable, PartitionCallable
 
 __all__ = ('View', 'ViewReference')
 
@@ -110,8 +113,9 @@ class View:
         """Initialize the partitions of the view."""
         _LOGGER.info('Populating view %s', self)
         args = tuple(
-            map(lambda item: fs_utils.join_path(self.base_dir, item),
-                self.view_ref.partitions(filters=filters, relative=True)))
+            fs_utils.join_path(self.base_dir, item)
+            for item in self.view_ref.partitions(filters=filters,
+                                                 relative=True))
         # When opening an existing view, if the user asks to use new partitions
         # from the reference collection, in this case only the missing
         # partitions are created.
@@ -160,7 +164,7 @@ class View:
                 'path': self.view_ref.partition_properties.dir,
                 'fs': fs,
             },
-            'version': importlib.metadata.version('zcollection'),
+            'version': __version__,
         }
 
         with self.fs.open(config, mode='w') as stream:
@@ -234,15 +238,13 @@ class View:
         Returns:
             The list of partitions.
         """
-        return filter(
-            self.fs.exists,
-            map(
-                lambda item: fs_utils.join_path(self.base_dir, item),
-                self.view_ref.partitions(
-                    filters=filters,
-                    indexer=indexer,
-                    selected_partitions=selected_partitions,
-                    relative=True)))
+        return filter(self.fs.exists,
+                      (fs_utils.join_path(self.base_dir, item)
+                       for item in self.view_ref.partitions(
+                           filters=filters,
+                           indexer=indexer,
+                           selected_partitions=selected_partitions,
+                           relative=True)))
 
     def variables(
         self,
@@ -281,7 +283,7 @@ class View:
             ...         zcollection.meta.Attribute("long_name", "temperature")),
             ...        fill_value=-9999.0))
         """
-        # pylint: disable=duplicate-code
+
         # false positive, no code duplication
 
         ref_zcol = self.view_ref
@@ -328,7 +330,6 @@ class View:
             raise
 
         self._write_config()
-        # pylint: enable=duplicate-code
 
     def _add_variable(self, variable: meta.Variable,
                       partitions: Iterator[tuple[str, str]]):
@@ -504,11 +505,10 @@ class View:
         # The load function returns the path to the partitions and the loaded
         # datasets. Only the loaded datasets are retrieved here and filter None
         # values corresponding to empty partitions.
-        arrays: list[dataset.Dataset] = list(
-            map(
-                lambda item: item[0],  # type: ignore[index]
-                filter(lambda item: item is not None,
-                       datasets)))  # type: ignore[arg-type]
+        arrays: list[dataset.Dataset] = [
+            item[0]  # type: ignore[index]
+            for item in filter(lambda item: item is not None, datasets)
+        ]
 
         if arrays:
             array = arrays.pop(0)
@@ -618,19 +618,20 @@ class View:
 
         # If no dataset is selected, we have nothing to do.
         if not datasets_list:
-            warnings.warn('The update function is not applied because no '
-                          'data is selected with the given filters.')
+            warnings.warn(
+                'The update function is not applied because no '
+                'data is selected with the given filters.',
+                stacklevel=2)
             return
 
         variables = variables or tuple(
             _try_infer_callable(func, datasets_list[0][0],
                                 self.view_ref.dimension, *args, **kwargs))
         tuple(
-            map(
-                lambda varname: _assert_variable_handled(
-                    reference=self.view_ref.metadata,
-                    view=self.metadata,
-                    variable=varname), variables))
+            _assert_variable_handled(  # type: ignore[func-returns-value]
+                reference=self.view_ref.metadata,
+                view=self.metadata,
+                variable=varname) for varname in variables)
         _LOGGER.info('Updating variable %s',
                      ', '.join(repr(item) for item in variables))
 
@@ -672,7 +673,6 @@ class View:
         else:
             wrap_function(datasets_list, self.base_dir, args, kwargs)
 
-    # pylint: disable=duplicate-code
     # false positive, no code duplication
     def map(
         self,
@@ -760,7 +760,6 @@ class View:
             partition_size=partition_size,
             npartitions=npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
-        # pylint: enable=duplicate-code
 
     def map_overlap(
         self,

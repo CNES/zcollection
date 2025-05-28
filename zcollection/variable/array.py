@@ -8,18 +8,22 @@ In memory variable arrays.
 """
 from __future__ import annotations
 
-from typing import Any
-from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 import dask.array.core
 import dask.array.ma
-import numcodecs.abc
 import numpy
-import zarr
 
 from ..meta import Attribute
-from ..type_hints import ArrayLike, NDArray, NDMaskedArray
 from .abc import Variable, concat, new_variable, not_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    import numcodecs.abc
+    import zarr
+
+    from ..type_hints import ArrayLike, NDArray, NDMaskedArray
 
 
 def _as_numpy_array(

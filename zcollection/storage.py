@@ -8,18 +8,15 @@ I/O operations
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import collections
-from collections.abc import Iterable, Sequence
 import json
 import logging
 
 import dask.array.core
 import dask.base
-from dask.delayed import Delayed as dask_Delayed
 import dask.distributed
 import dask.local
-import fsspec
 import numcodecs.abc
 import numcodecs.blosc
 import numpy
@@ -27,7 +24,14 @@ import zarr
 
 from . import dataset, meta, sync
 from .fs_utils import join_path
-from .type_hints import ArrayLike, NDArray
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from dask.delayed import Delayed as dask_Delayed
+    import fsspec
+
+    from .type_hints import ArrayLike, NDArray
 
 #: Name of the attribute storing the names of the dimensions of an array.
 DIMENSIONS = '_ARRAY_DIMENSIONS'
@@ -75,7 +79,7 @@ def execute_transaction(
             awaitables = client.compute(futures,
                                         **kwargs)  # type: ignore[arg-type]
             return client.gather(awaitables)
-    except:  # noqa: E722
+    except:
         # Before throwing the exception, we wait until all future scheduled
         # ones finished.
         dask.distributed.wait(awaitables)
@@ -167,13 +171,11 @@ def write_zarr_variable(
     # If the user has not specified a chunk size, we use the default one.
     # Otherwise, we use the user's choice.
     block_size_limit = block_size_limit or meta.BLOCK_SIZE_LIMIT
-    var_chunks: dict[int, int | str] = {
-        ix: -1
-        for ix in range(variable.ndim)
-    } if chunks is None else {
-        ix: chunks.get(dim, -1)
-        for ix, dim in enumerate(variable.dimensions)
-    }
+    var_chunks: dict[int, int | str] = dict.fromkeys(range(
+        variable.ndim), -1) if chunks is None else {
+            ix: chunks.get(dim, -1)
+            for ix, dim in enumerate(variable.dimensions)
+        }
     data = data.rechunk(chunks=var_chunks, block_size_limit=block_size_limit)
 
     try:
@@ -267,14 +269,13 @@ def write_zarr_group(
                     workers=dask.distributed.get_worker().address)
         else:
             tuple(
-                map(
-                    lambda item: write_zarr_variable(
-                        args=item,
-                        dirname=dirname,
-                        fs=fs,
-                        chunks=zds.dim_chunks,
-                        block_size_limit=zds.block_size_limit,
-                    ), zds.variables.items()))
+                write_zarr_variable(  # type: ignore[func-returns-value]
+                    args=item,
+                    dirname=dirname,
+                    fs=fs,
+                    chunks=zds.dim_chunks,
+                    block_size_limit=zds.block_size_limit,
+                ) for item in zds.variables.items())
 
         _write_meta(zds=zds, dirname=dirname, fs=fs)
 
@@ -556,7 +557,7 @@ def check_zarr_group(
             mode='r',
         )
         for _, array in store.arrays():
-            data: NDArray = array[...]  # type: ignore
+            data: NDArray = array[...]
             del data
     except (ValueError, TypeError, RuntimeError):
         return False

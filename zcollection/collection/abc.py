@@ -8,17 +8,15 @@ Base classes for collections.
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional
 from collections.abc import Callable, Iterable, Iterator, Sequence
 import dataclasses
-import importlib.metadata
 import itertools
 import pathlib
 
 import dask.bag.core
 import dask.distributed
 import dask.utils
-import fsspec
 
 from .. import (
     dask_utils,
@@ -30,13 +28,18 @@ from .. import (
     storage,
     sync,
 )
-from .callable_objects import MapCallable, PartitionCallable
+from ..version import __version__
 from .detail import (
     PartitioningProperties,
     _load_and_apply_indexer,
     _load_dataset,
     _load_dataset_with_overlap,
 )
+
+if TYPE_CHECKING:
+    import fsspec
+
+    from .callable_objects import MapCallable, PartitionCallable
 
 #: Type of functions filtering the partitions.
 PartitionFilterCallback = Callable[[dict[str, int]], bool]
@@ -223,7 +226,7 @@ class ReadOnlyCollection:
         self._immutable = _immutable_path(
             partition_properties=self._properties.partition)
 
-        self.version = importlib.metadata.version('zcollection')
+        self.version = __version__
 
     @property
     def axis(self) -> str:
@@ -336,17 +339,12 @@ class ReadOnlyCollection:
         partitions_scheme = sorted(
             {self.partitioning.parse(item)
              for item in partitions})
-        return filter(
-            self.fs.exists,
-            map(
-                lambda partition: self.fs.sep.join(
-                    (self.partition_properties.dir,
-                     self.partitioning.join(
-                         partition_scheme=partition,
-                         sep=self.fs.sep,
-                     ))),
-                partitions_scheme,
-            ))
+        return filter(self.fs.exists, (self.fs.sep.join(
+            (self.partition_properties.dir,
+             self.partitioning.join(
+                 partition_scheme=partition,
+                 sep=self.fs.sep,
+             ))) for partition in partitions_scheme))
 
     def dimensions_properties(self) -> tuple[dict[str, int], dict[str, int]]:
         """Extract dimension properties (size and chunks).
@@ -413,14 +411,13 @@ class ReadOnlyCollection:
         if selected_partitions is not None:
             partitions = self._normalize_partitions(
                 partitions=selected_partitions)
+        elif lock:
+            with self.synchronizer:
+                partitions = tuple(
+                    self.partitioning.list_partitions(self.fs, base_dir))
         else:
-            if lock:
-                with self.synchronizer:
-                    partitions = tuple(
-                        self.partitioning.list_partitions(self.fs, base_dir))
-            else:
-                partitions = self.partitioning.list_partitions(fs=self.fs,
-                                                               path=base_dir)
+            partitions = self.partitioning.list_partitions(fs=self.fs,
+                                                           path=base_dir)
 
         if indexer is not None:
             # List of partitions existing in the indexer and partitions list
@@ -439,7 +436,6 @@ class ReadOnlyCollection:
             if (item != self._immutable and self._is_selected(
                 partition=item.replace(base_dir, '').split(sep), expr=expr)))
 
-    # pylint: disable=duplicate-code
     # false positive, no code duplication
     def map(
         self,
@@ -520,12 +516,11 @@ class ReadOnlyCollection:
             npartitions=npartitions)
 
         return bag.map(_wrap,
+                       *args,
                        _func=func,
                        _selected_variables=selected_variables,
                        _delayed=delayed,
-                       *args,
                        **kwargs)
-        # pylint: enable=duplicate-code
 
     def map_overlap(
         self,
@@ -633,12 +628,12 @@ class ReadOnlyCollection:
             partitions, partition_size=partition_size, npartitions=npartition)
 
         return bag.map(_wrap,
+                       *args,
                        _delayed=delayed,
                        _depth=depth,
                        _partitions=partitions,
                        _selected_variables=selected_variables,
                        _wrapped_func=func,
-                       *args,
                        **kwargs)
 
     def load(

@@ -27,11 +27,11 @@ def test_construction() -> None:
                       GroupedSequence)
     assert len(GroupedSequence(variables=('a', 'b'), size=2)) == 2
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Data type must be one of'):
         GroupedSequence(variables=('a', 'b'), size=2,
-                        dtype=(0, ))  # type: ignore
+                        dtype=(0, ))  # type: ignore[arg-type]
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='variables must not be empty'):
         GroupedSequence(variables=(), size=2, dtype=())
 
     with pytest.raises(ValueError, match='must be at least 2'):
@@ -40,10 +40,10 @@ def test_construction() -> None:
     with pytest.raises(ValueError, match='must be at least 2'):
         GroupedSequence(variables=('a', 'b'), size=1, dtype=())
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Data type must be one of'):
         GroupedSequence(variables=('a', 'b'), size=2, dtype=('c', 'd'))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Data type must be one of'):
         GroupedSequence(variables=('a', 'b'),
                         size=2,
                         dtype=('float32', 'int32'))
@@ -56,16 +56,18 @@ def test_construction() -> None:
 
     assert partitioning.encode(partition_keys) == (1, 2)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError,
+                       match='Partition is not driven by this instance'):
         partitioning.encode((('A', 1), ('b', 2)))
 
     assert partitioning.decode((1, 2)) == (('a', 1), ('b', 2))
     assert partition_keys == (('a', 1), ('b', 2))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='invalid literal for int()'):
         partitioning.parse('a=1/b=2/c=3')
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError,
+                       match='Partition is not driven by this instance'):
         partitioning.parse('field=1')
 
 
@@ -126,7 +128,7 @@ def test_split_dataset(part_size: int) -> None:
         [xds['cycle_number'].values] * 2).T,
                                            dims=('num_lines', 'nump_pixels'))
     zds = dataset.Dataset.from_xarray(xds, delayed=False)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='must be a one-dimensional array'):
         list(partitioning.split_dataset(zds, 'num_lines'))
 
 
@@ -135,7 +137,7 @@ VARIABLES_DTYPE_TEST_SET = [(('a', ), None), (('a', ), ('uint8', )),
                             (('a', 'b'), ('int8', 'int16'))]
 
 
-@pytest.mark.parametrize('variables, dtype', VARIABLES_DTYPE_TEST_SET)
+@pytest.mark.parametrize(('variables', 'dtype'), VARIABLES_DTYPE_TEST_SET)
 @pytest.mark.parametrize('part_size', [2, 3, 4, 5])
 def test_config(variables, dtype, part_size) -> None:
     """Test the configuration of the GroupedSequence class."""
@@ -150,7 +152,7 @@ def test_config(variables, dtype, part_size) -> None:
     assert other.dtype() == partitioning.dtype()
 
 
-@pytest.mark.parametrize('variables, dtype', VARIABLES_DTYPE_TEST_SET)
+@pytest.mark.parametrize(('variables', 'dtype'), VARIABLES_DTYPE_TEST_SET)
 @pytest.mark.parametrize('part_size', [2, 3, 4, 5])
 def test_pickle(variables, dtype, part_size) -> None:
     """Test the pickling of the GroupedSequence class."""

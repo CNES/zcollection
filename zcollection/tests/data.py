@@ -8,14 +8,18 @@ Make test datasets
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 import itertools
 
 import numpy
 import zarr
 
 from .. import collection, dataset, partitioning
-from ..type_hints import NDArray
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from ..type_hints import NDArray
 
 #: First date of the test dataset.
 START_DATE = numpy.datetime64('2000-01-01', 'ns')

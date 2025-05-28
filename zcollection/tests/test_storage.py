@@ -18,15 +18,12 @@ import pytest
 import zarr
 
 from .. import dataset, storage, sync
-# pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster  # noqa: F401
-from .fs import local_fs
-
-# pylint: enable=unused-import
+from .fs import local_fs  # noqa: F401
 
 
 def test_execute_transaction(
-        dask_client,  # pylint: disable=redefined-outer-name
+        dask_client,  # noqa: F811
 ) -> None:
     """Test the execute_transaction function."""
     # First case: no transaction to execute
@@ -91,8 +88,8 @@ def create_dataset(shape) -> dataset.Dataset:
 
 
 def test_write_attrs(
-        local_fs,  # pylint: disable=redefined-outer-name
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        local_fs,  # noqa: F811
+        dask_client,  # noqa: F811
 ) -> None:
     """Test the write_attrs function."""
     var = create_variable((10, 2))
@@ -120,7 +117,7 @@ def test_write_attrs(
     assert local_fs.exists(str(local_fs.root.joinpath('var', storage.ZATTRS)))
 
 
-@pytest.mark.parametrize('chunks, chunks_expected', [
+@pytest.mark.parametrize(('chunks', 'chunks_expected'), [
     (None, (1024, 1024)),
     ({
         'x': -1,
@@ -152,10 +149,11 @@ def test_write_attrs(
     }, (53, 826)),
 ])
 def test_write_variable(
-        local_fs,  # pylint: disable=redefined-outer-name
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-        chunks,
-        chunks_expected) -> None:
+    local_fs,  # noqa: F811
+    dask_client,  # noqa: F811
+    chunks,
+    chunks_expected,
+) -> None:
     """Test the write_variable function."""
     dim_size = 1024
     var = create_variable((dim_size, dim_size))
@@ -175,13 +173,16 @@ def test_write_variable(
     assert zarray.chunks == chunks_expected
     assert zarray.nchunks == chunks_number
 
-    other = storage.open_zarr_array(zarray, 'var')  # type:ignore
+    other = storage.open_zarr_array(
+        zarray,  # type: ignore[call-arg]
+        'var',
+    )
     assert other.metadata() == var.metadata()
     assert numpy.all(other.values == var.values)
 
 
 @pytest.mark.parametrize(
-    'block_size, chunks, blocks_number',
+    ('block_size', 'chunks', 'blocks_number'),
     [
         # Everything fit in one block
         (1048756, None, 1),
@@ -202,11 +203,12 @@ def test_write_variable(
         }, 2),
     ])
 def test_write_variable_block_size_limit(
-        local_fs,  # pylint: disable=redefined-outer-name
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
-        block_size,
-        chunks,
-        blocks_number) -> None:
+    local_fs,  # noqa: F811
+    dask_client,  # noqa: F811
+    block_size,
+    chunks,
+    blocks_number,
+) -> None:
     """Test the write_variable function with different block size limits."""
     dim_size = 1024
     var = create_variable((dim_size, dim_size))
@@ -223,8 +225,8 @@ def test_write_variable_block_size_limit(
 
 
 def test_write_zarr_group(
-        local_fs,  # pylint: disable=redefined-outer-name
-        dask_client,  # pylint: disable=redefined-outer-name
+        local_fs,  # noqa: F811
+        dask_client,  # noqa: F811
 ) -> None:
     """Test the write_zarr_group function."""
     zds = create_dataset((1024, 1024))
@@ -245,7 +247,7 @@ def test_write_zarr_group(
     assert other.metadata() == zds.metadata()
 
 
-@pytest.mark.parametrize('chunks, chunks_expected', [
+@pytest.mark.parametrize(('chunks', 'chunks_expected'), [
     (None, (1024, 1024)),
     ({
         'x': -1,
@@ -261,8 +263,8 @@ def test_write_zarr_group(
     }, (512, 1024)),
 ])
 def test_update_zarr_array(
-    local_fs,  # pylint: disable=redefined-outer-name
-    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    local_fs,  # noqa: F811
+    dask_client,  # noqa: F811
     chunks,
     chunks_expected,
 ) -> None:
@@ -295,8 +297,8 @@ def test_update_zarr_array(
 
 
 def test_del_zarr_array(
-        local_fs,  # pylint: disable=redefined-outer-name
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        local_fs,  # noqa: F811
+        dask_client,  # noqa: F811
 ) -> None:
     """Test the del_zarr_array function."""
     var = create_variable((1024, 1024))
@@ -306,7 +308,7 @@ def test_del_zarr_array(
     assert not local_fs.exists(str(local_fs.root.joinpath('var')))
 
 
-@pytest.mark.parametrize('chunks, chunks_expected', [
+@pytest.mark.parametrize(('chunks', 'chunks_expected'), [
     (None, (1024, 1024)),
     ({
         'x': 1024,
@@ -326,8 +328,8 @@ def test_del_zarr_array(
     }, (1024, 128)),
 ])
 def test_add_zarr_array(
-    local_fs,  # pylint: disable=redefined-outer-name
-    dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+    local_fs,  # noqa: F811
+    dask_client,  # noqa: F811
     chunks,
     chunks_expected,
 ) -> None:
@@ -374,7 +376,7 @@ def test_add_zarr_array(
 
     # We'll try to read 'y' from existing data and generate a zarr
     # exception
-    with pytest.raises(Exception):
+    with pytest.raises(Exception, match='.*'):
         storage.add_zarr_array(dirname=root,
                                variable=var.metadata(),
                                dimensions={

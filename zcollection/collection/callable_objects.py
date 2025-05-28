@@ -8,11 +8,12 @@ Callable objects.
 """
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from collections.abc import Callable, Sequence
 
-from .. import dataset
-from ..type_hints import ArrayLike
+if TYPE_CHECKING:
+    from .. import dataset
+    from ..type_hints import ArrayLike
 
 #: Function type to load and call a callback function of type
 #: :class:`PartitionCallable`.
@@ -31,10 +32,9 @@ class PartitionCallable(Protocol):
     @property
     def __name__(self) -> str:
         """Name of the callable."""
-        # pylint: disable=unnecessary-ellipsis
+
         # Make checker happy.
         ...
-        # pylint: enable=unnecessary-ellipsis
 
     def __call__(self, zds: dataset.Dataset, *args, **kwargs) -> Any:
         """Call the partition function.
@@ -63,10 +63,9 @@ class UpdateCallable(Protocol):
     @property
     def __name__(self) -> str:
         """Name of the callable."""
-        # pylint: disable=unnecessary-ellipsis
+
         # Make checker happy.
         ...
-        # pylint: enable=unnecessary-ellipsis
 
     def __call__(self, zds: dataset.Dataset, *args,
                  **kwargs) -> dict[str, ArrayLike]:
@@ -80,7 +79,6 @@ class UpdateCallable(Protocol):
         Returns:
             Dictionary of arrays to update.
         """
-        # pylint: disable=unnecessary-ellipsis
+
         # Mandatory to make Pylance happy.
         ...
-        # pylint: enable=unnecessary-ellipsis

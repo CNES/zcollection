@@ -17,7 +17,6 @@ import xarray
 from .. import dataset
 from ..expression import Expression
 from ..partitioning import Date
-# pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster  # noqa: F401
 
 # pylint enable=unused-import
@@ -31,7 +30,8 @@ def make_dataset(num_samples: int | None = None) -> dataset.Dataset:
                                             1, 'h')).astype('datetime64[ns]')
     if num_samples is not None:
         dates = dates[0:num_samples + 1]
-    observation = numpy.random.rand(dates.size)  # type: ignore
+    rng = numpy.random.default_rng(42)
+    observation = rng.random(dates.size)
     return dataset.Dataset.from_xarray(
         xarray.Dataset({
             'dates':
@@ -55,7 +55,7 @@ def test_expression() -> None:
 
 
 def test_date_expression(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test of expressions handling dates.."""
     zds = make_dataset(5 * 24)
@@ -72,7 +72,7 @@ def test_date_expression(
 
 
 def test_bench_expression(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Benchmark of expressions."""
     partitioning = Date(('dates', ), 'D')

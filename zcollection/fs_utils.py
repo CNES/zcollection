@@ -8,11 +8,13 @@ File system tools
 """
 from __future__ import annotations
 
-from typing import Any
-from collections.abc import Iterator, Sequence
+from typing import TYPE_CHECKING, Any
 import os
 
 import fsspec
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
 
 #: Path separator
 SEPARATOR = '/'
@@ -33,10 +35,10 @@ def normalize_path(fs: fsspec.AbstractFileSystem, path: str) -> str:
     Returns:
         Normalized path.
     """
-    # pylint: disable=protected-access
+
     # There is no public method to perform this operation.
     path = fs._strip_protocol(path)  # type: ignore[return-value]
-    # pylint: enable=protected-access
+
     if path == '':
         path = fs.sep
     if fs.protocol in ('file', 'memory'):
@@ -100,7 +102,7 @@ def fs_walk(
 
     def sort_sequence(sequence: list[str]) -> list[str]:
         """Sort the sequence if the user wishes."""
-        return list(sorted(sequence)) if sort else sequence
+        return sorted(sequence) if sort else sequence
 
     dirs = sort_sequence(dirs)
     yield path.rstrip(SEPARATOR), dirs, sort_sequence(files)
@@ -143,10 +145,12 @@ def copy_files(
         fs_target: The file system that the target directory is stored on.
     """
     tuple(
-        map(
-            lambda path: copy_file(path,
-                                   join_path(target, os.path.basename(path)),
-                                   fs_source, fs_target), source))
+        copy_file(  # type: ignore[func-returns-value]
+            path,
+            join_path(target, os.path.basename(path)),
+            fs_source,
+            fs_target,
+        ) for path in source)
 
 
 def copy_tree(

@@ -6,6 +6,7 @@
 Testing datasets
 ================
 """
+from typing import TYPE_CHECKING
 import pickle
 
 import numpy
@@ -14,10 +15,11 @@ import xarray
 import zarr
 
 from .. import dataset, meta
-from ..variable import Variable
 from ..variable.tests.data import array, delayed_array
-# pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster  # noqa: F401
+
+if TYPE_CHECKING:
+    from ..variable import Variable
 
 # pylint enable=unused-import
 
@@ -31,7 +33,7 @@ def create_delayed_dataset(factory) -> dataset.Dataset:
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test dataset creation."""
     zds = create_delayed_dataset(factory)
@@ -76,10 +78,11 @@ def test_dataset(
 
 
 def test_dataset_dimensions_conflict(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test dataset creation with dimensions conflict."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError,
+                       match='variable .* has conflicting dimensions'):
         dataset.Dataset([
             dataset.DelayedArray(
                 name='var1',
@@ -105,7 +108,7 @@ def test_dataset_dimensions_conflict(
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_xarray(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test xarray creation."""
     zds = create_delayed_dataset(factory)
@@ -119,7 +122,7 @@ def test_xarray(
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset_isel(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test dataset selection."""
     zds = create_delayed_dataset(factory)
@@ -144,7 +147,7 @@ def test_dataset_isel(
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset_delete(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test dataset deletion."""
     zds = create_delayed_dataset(factory)
@@ -163,7 +166,7 @@ def test_dataset_delete(
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset_concat(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test concatenation of datasets."""
     zds1 = create_delayed_dataset(factory)
@@ -178,14 +181,15 @@ def test_dataset_concat(
     assert numpy.all(zds3.variables['var1'].values == numpy.concatenate(
         (matrix, matrix), axis=0))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError,
+                       match='cannot concatenate an empty sequence'):
         zds1.concat([], 'z')
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset_pickle(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test pickling of datasets."""
     zds = create_delayed_dataset(factory)
@@ -205,7 +209,7 @@ def test_dataset_pickle(
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset_add_variable(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test for adding a variable."""
     zds = create_delayed_dataset(factory)
@@ -266,7 +270,7 @@ def test_dataset_add_variable(
 
 
 def test_empty_dataset(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test empty dataset."""
     zds = dataset.Dataset([], attrs=[])
@@ -281,7 +285,7 @@ Data variables:
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset_rename(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test renaming of datasets."""
     zds = create_delayed_dataset(factory)
@@ -291,14 +295,15 @@ def test_dataset_rename(
     assert 'var1' not in zds.variables
     assert 'var2' not in zds.variables
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError,
+                       match='.* already already exists in the dataset'):
         zds.rename({'var3': 'var4'})
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset_persist(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test persisting of datasets."""
     zds1 = create_delayed_dataset(factory)
@@ -322,7 +327,7 @@ def test_dataset_persist(
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset_rechunk(
         factory,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test rechunking of datasets."""
     zds1 = create_delayed_dataset(factory)
@@ -342,7 +347,7 @@ def test_dataset_rechunk(
 
 
 def test_dataset_merge(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test merging of datasets."""
     template = dataset.Dataset(
@@ -428,7 +433,7 @@ def test_dataset_merge(
         attrs=[dataset.Attribute('attr1', 1),
                dataset.Attribute('attr2', 2)])
     zds1 = pickle.loads(pickle.dumps(template))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='variable .* already exists'):
         zds1.merge(zds2)
 
     zds2 = dataset.Dataset(
@@ -438,12 +443,12 @@ def test_dataset_merge(
         attrs=[dataset.Attribute('attr3', 3),
                dataset.Attribute('attr4', 4)])
     zds1 = pickle.loads(pickle.dumps(template))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='dimensions .* are not identical'):
         zds1.merge(zds2)
 
 
 def test_dataset_select_variables_by_dims(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test selecting variables by dimensions."""
     zds = dataset.Dataset([
@@ -501,7 +506,7 @@ def test_dataset_select_variables_by_dims(
 
 
 def test_dataset_expression(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test dataset expression."""
     matrix = numpy.arange(100).reshape((10, 10))

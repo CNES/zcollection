@@ -23,11 +23,12 @@ repos:
     rev: 6.0.1
     hooks:
       - id: isort
-  - repo: https://github.com/PyCQA/flake8
-    rev: 7.2.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.6
     hooks:
-      - id: flake8
-        exclude: tests
+      - id: ruff
+        args: [--fix]
+        exclude: (examples/.*\.py|docs/.*\.py)
   - repo: https://github.com/pre-commit/pygrep-hooks
     rev: "v1.10.0"
     hooks:

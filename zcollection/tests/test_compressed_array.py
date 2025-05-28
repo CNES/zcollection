@@ -16,12 +16,8 @@ import numpy
 import pytest
 
 from ..compressed_array import CompressedArray
-# pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster  # noqa: F401
 
-# pylint: enable=unused-import
-
-# pylint: disable=unnecessary-lambda # We keep the lambdas for readability
 #: Functions to test
 functions = [
     lambda x: x,
@@ -81,7 +77,6 @@ functions = [
     numpy.isneginf,
     numpy.isposinf,
 ]
-# pylint: enable=unnecessary-lambda
 
 
 @pytest.mark.filterwarnings(
@@ -89,10 +84,11 @@ functions = [
 @pytest.mark.parametrize('func', functions)
 def test_basic(
         func,
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test basic functionality."""
-    values: numpy.ndarray = numpy.random.random((2, 3, 4))
+    rng = numpy.random.default_rng(42)
+    values: numpy.ndarray = rng.random((2, 3, 4))
     arr: dask.array.core.Array = dask.array.core.from_array(
         CompressedArray(values), chunks='auto')
     compressed_array: numpy.ndarray = func(arr).compute()
@@ -102,7 +98,7 @@ def test_basic(
 
 
 def test_metadata(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test metadata."""
     y: dask.array.core.Array = dask.array.random.random((10, 10),
@@ -110,7 +106,6 @@ def test_metadata(
     z = CompressedArray(y.compute())
     y = y.map_blocks(CompressedArray)  # type: ignore[arg-type,call-arg]
 
-    # pylint: disable=protected-access
     assert isinstance(y._meta, numpy.ndarray)
     assert isinstance((y + 1)._meta, numpy.ndarray)
     assert isinstance(y[:5, ::2]._meta, numpy.ndarray)
@@ -119,54 +114,52 @@ def test_metadata(
         numpy.ndarray)
     assert isinstance((y - z), numpy.ndarray)
     assert isinstance(y.persist()._meta, numpy.ndarray)
-    # pylint: enable=protected-access
 
 
 def test_from_delayed_meta(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test from_delayed with meta."""
 
     def f() -> CompressedArray:
         return CompressedArray(numpy.eye(3))
 
-    d: Any = dask.delayed(f)()  # type: ignore
+    d: Any = dask.delayed(f)()  # type: ignore[arg-type]
     x: dask.array.core.Array = dask.array.core.from_delayed(
         d, shape=(3, 3), meta=CompressedArray(numpy.eye(1)))
-    assert numpy.all(x.compute() == f()[...])  # type: ignore
+    assert numpy.all(x.compute() == f()[...])  # type: ignore[index]
 
 
 def test_from_array(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test from_array."""
     x = CompressedArray(numpy.eye(10))
     d: dask.array.core.Array = dask.array.core.from_array(
         x, chunks=(5, 5))  # type: ignore[arg-type]
 
-    # pylint: disable=protected-access
     assert isinstance(d._meta, numpy.ndarray)
-    # pylint: enable=protected-access
+
     assert isinstance(d.compute(), numpy.ndarray)
     assert numpy.allclose(d.compute(), x)
 
 
 def test_map_blocks(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test map_blocks."""
     x: dask.array.core.Array = dask.array.creation.eye(
         10, chunks=5)  # type: ignore[arg-type,call-arg]
     y: dask.array.core.Array = x.map_blocks(
         CompressedArray)  # type: ignore[arg-type,call-arg]
-    # pylint: disable=protected-access
+
     assert isinstance(y._meta, numpy.ndarray)
-    # pylint: enable=protected-access
+
     assert numpy.allclose(y.compute(), x.compute())
 
 
 def test_compressed_masked_array(
-        dask_client,  # pylint: disable=redefined-outer-name,unused-argument
+        dask_client,  # noqa: F811
 ) -> None:
     """Test CompressedMaskedArray."""
     x: dask.array.core.Array = dask.array.creation.eye(

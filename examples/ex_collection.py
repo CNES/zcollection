@@ -7,7 +7,7 @@ of a ``Collection``.
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 import datetime
 import pprint
 
@@ -17,6 +17,9 @@ import numpy
 
 import zcollection
 import zcollection.tests.data
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 # %%
@@ -178,7 +181,7 @@ zds.variables['var2'].values
 # anywhere the variable ``var1`` is defined.
 def ones(zds) -> dict[str, numpy.ndarray]:
     """Returns a variable with ones everywhere."""
-    return dict(var2=zds.variables['var1'].values * 0 + 1)
+    return {'var2': zds.variables['var1'].values * 0 + 1}
 
 
 collection.update(ones)  # type: ignore[arg-type]
@@ -225,7 +228,7 @@ def twos(ds, partition_info: tuple[str, slice]) -> dict[str, numpy.ndarray]:
         data[:] = -2
     else:
         data[:] = 2
-    return dict(var2=data)
+    return {'var2': data}
 
 
 collection.update(twos, depth=1)  # type: ignore[arg-type]

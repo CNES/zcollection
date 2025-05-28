@@ -8,6 +8,7 @@ Test partitioning by sequence.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from collections.abc import Iterator
 import pickle
 
@@ -16,37 +17,40 @@ import numpy
 import pytest
 import xarray
 
-from zcollection.type_hints import ArrayLike
-
 from . import data
 from .. import Sequence, get_codecs
 from ... import dataset
+
+if TYPE_CHECKING:
+    from zcollection.type_hints import ArrayLike
 
 
 def test_construction() -> None:
     """Test the sequence constructor."""
     assert isinstance(Sequence(('a', 'b')), Sequence)
     assert len(Sequence(('a', 'b'))) == 2
-    with pytest.raises(ValueError):
-        Sequence(('a', 'b'), (0, ))  # type: ignore
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Data type must be one of'):
+        Sequence(('a', 'b'), (0, ))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match='variables must not be empty'):
         Sequence((), ())
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Data type must be one of'):
         Sequence(('a', 'b'), dtype=('c', 'd'))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='Data type must be one of'):
         Sequence(('a', 'b'), dtype=('float32', 'int32'))
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match='dtype must be a sequence of strings'):
         Sequence(('a', 'b'), dtype='int32')
     partitioning = Sequence(('a', 'b'))
     partition_keys = partitioning.parse('a=1/b=2')
     assert partitioning.encode(partition_keys) == (1, 2)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError,
+                       match='Partition is not driven by this instance'):
         partitioning.encode((('A', 1), ('b', 2)))
     assert partitioning.decode((1, 2)) == (('a', 1), ('b', 2))
     assert partition_keys == (('a', 1), ('b', 2))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='invalid literal for int()'):
         partitioning.parse('a=1/b=2/c=3')
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError,
+                       match='Partition is not driven by this instance'):
         partitioning.parse('field=1')
 
 
@@ -102,7 +106,7 @@ def test_split_dataset(delayed: bool) -> None:
     zds = dataset.Dataset.from_xarray(xds)
     if not delayed:
         zds = zds.compute()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='must be a one-dimensional array'):
         list(partitioning.split_dataset(zds, 'num_lines'))
 
 
@@ -111,7 +115,7 @@ VARIABLES_DTYPE_TEST_SET = [(('a', ), None), (('a', ), ('uint8', )),
                             (('a', 'b'), ('int8', 'int16'))]
 
 
-@pytest.mark.parametrize('variables, dtype', VARIABLES_DTYPE_TEST_SET)
+@pytest.mark.parametrize(('variables', 'dtype'), VARIABLES_DTYPE_TEST_SET)
 def test_config(variables, dtype) -> None:
     """Test the configuration of the Sequence class."""
     partitioning = Sequence(variables=variables, dtype=dtype)
@@ -123,7 +127,7 @@ def test_config(variables, dtype) -> None:
     assert other.dtype() == partitioning.dtype()
 
 
-@pytest.mark.parametrize('variables, dtype', VARIABLES_DTYPE_TEST_SET)
+@pytest.mark.parametrize(('variables', 'dtype'), VARIABLES_DTYPE_TEST_SET)
 def test_pickle(variables, dtype) -> None:
     """Test the pickling of the Sequence class."""
     partitioning = Sequence(variables=variables, dtype=dtype)
@@ -134,7 +138,6 @@ def test_pickle(variables, dtype) -> None:
     assert other.dtype() == partitioning.dtype()
 
 
-# pylint: disable=protected-access
 @pytest.mark.parametrize('delayed', [False, True])
 def test_multiple_sequence(delayed: bool) -> None:
     """Test the creation of a sequence with multiple variables."""
@@ -176,11 +179,12 @@ def test_multiple_sequence(delayed: bool) -> None:
             _a += 1
         assert item[1] == slice(idx, idx + 1)
 
-    numpy.random.shuffle(arrays['_c'])
+    rng = numpy.random.default_rng(42)
+    rng.shuffle(arrays['_c'])
     variables['_c'] = dask.array.core.from_array(  # type: ignore[assignment]
         arrays['_c'], chunks=chunks) if delayed else arrays['_c']
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='index is not monotonic'):
         list(partitioning._split(variables))  # type: ignore[arg-type]
 
     del variables['_c']
@@ -193,14 +197,12 @@ def test_multiple_sequence(delayed: bool) -> None:
         assert item[0] == (('_a', _a), )
         _a += 1
         assert item[1] == slice(idx * 25, idx * 25 + 25)
-    # pylint: enable=protected-access
 
 
 def test_values_must_be_integer() -> None:
     """Test that the values must be integer."""
     values = numpy.arange(0, 100, dtype='f8')
     partitioning = Sequence(('values', ))
-    # pylint: disable=protected-access
+
     with pytest.raises(TypeError):
         list(partitioning._split({'values': values}))
-    # pylint: enable=protected-access

@@ -8,13 +8,15 @@ Convenience functions
 """
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 import logging
 
-import fsspec
 import xarray
 
 from .. import collection, dataset, fs_utils, meta, partitioning
+
+if TYPE_CHECKING:
+    import fsspec
 
 #: Module logger.
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -70,7 +72,6 @@ def create_collection(
                                  **kwargs)
 
 
-# pylint: disable=redefined-builtin
 def open_collection(path: str,
                     *,
                     mode: Literal['r', 'w'] | None = None,
@@ -91,7 +92,6 @@ def open_collection(path: str,
         ...     "/tmp/mycollection", mode="r")
     """
     return collection.Collection.from_config(path, mode=mode, **kwargs)
-    # pylint: enable=redefined-builtin
 
 
 def update_deprecated_collection(
@@ -110,7 +110,7 @@ def update_deprecated_collection(
                 If the provided directory does not contain a valid collection
                 configuration file.
     """
-    # pylint: disable=import-outside-toplevel
+
     import json
 
     import zarr
@@ -119,7 +119,7 @@ def update_deprecated_collection(
 
     _LOGGER.warning('Updating collection: %r', path)
     filesystem = fs_utils.get_fs(filesystem)
-    # pylint: disable=protected-access
+
     config = collection.Collection._config(path)
 
     if not filesystem.exists(config):
@@ -184,7 +184,6 @@ def update_deprecated_collection(
         filesystem=filesystem,
     )
 
-    # pylint: disable=protected-access
     config = zcol._config(path)
 
     config_back = f'{config}.bak'
@@ -192,7 +191,7 @@ def update_deprecated_collection(
     filesystem.copy(config, config_back)
 
     _LOGGER.warning('Writing new configuration: %r', path)
-    # pylint: disable=protected-access
+
     zcol._write_config()
 
 

@@ -29,7 +29,8 @@ def create_test_sequence(repeatability, number_of_measures,
     time: numpy.ndarray = numpy.arange(START_DATE,
                                        START_DATE + len(cycle_number) * delta,
                                        delta)
-    observation = numpy.random.rand(cycle_number.size)  # type: ignore
+    rng = numpy.random.default_rng(42)
+    observation = rng.random(cycle_number.size)
     return xarray.Dataset({
         'time':
         xarray.DataArray(

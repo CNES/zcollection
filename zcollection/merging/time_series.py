@@ -6,11 +6,15 @@
 Merging a time series
 =====================
 """
+from typing import TYPE_CHECKING
+
 import numpy
 
 from . import period
 from .. import dataset
-from ..type_hints import NDArray
+
+if TYPE_CHECKING:
+    from ..type_hints import NDArray
 
 
 def _merge_time_series(
@@ -53,38 +57,35 @@ def _merge_time_series(
     # The new piece is located before, but there is an overlap
     # between the two datasets.
     if relation.is_before_overlapping():
-        # pylint: disable=comparison-with-callable
+
         indices = numpy.nonzero(
             # comparison between ndarray and datetime64
-            existing_axis > intersection.end())[0]  # type: ignore
-        # pylint: enable=comparison-with-callable
+            existing_axis > intersection.end())[0]
+
         return inserted_ds.concat(
             existing_ds.isel({partitioning_dim: indices}), partitioning_dim)
 
     # The new piece is located after, but there is an overlap
     # between the two datasets.
     if relation.is_after_overlapping():
-        # pylint: disable=comparison-with-callable
+
         indices = numpy.nonzero(
             # comparison between ndarray and datetime64
-            existing_axis < intersection.begin)[0]  # type: ignore
-        # pylint: enable=comparison-with-callable
+            existing_axis < intersection.begin)[0]
+
         return existing_ds.isel({
             partitioning_dim: indices
         }).concat(inserted_ds, partitioning_dim)
 
     assert relation.is_inside()
     # comparison between ndarray and datetime64
-    index = numpy.nonzero(
-        existing_axis < intersection.begin)[0]  # type: ignore
+    index = numpy.nonzero(existing_axis < intersection.begin)[0]
     before: dataset.Dataset = existing_ds.isel(
         {partitioning_dim: slice(0, index[-1] + 1, None)})
 
-    # pylint: disable=comparison-with-callable
     # comparison between ndarray and datetime64
-    index = numpy.nonzero(
-        existing_axis > intersection.end())[0]  # type: ignore
-    # pylint: enable=comparison-with-callable
+    index = numpy.nonzero(existing_axis > intersection.end())[0]
+
     after: dataset.Dataset = existing_ds.isel(
         {partitioning_dim: slice(index[0], index[-1] + 1, None)})
 

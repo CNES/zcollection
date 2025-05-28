@@ -15,10 +15,7 @@ import fsspec
 import fsspec.implementations.local
 
 from .. import fs_utils
-# pylint: disable=unused-import # Need to import for fixtures
 from .cluster import dask_client, dask_cluster  # noqa: F401
-
-# pylint: disable=unused-import
 
 #: Test data
 TEXT = '''Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam porta
@@ -89,15 +86,17 @@ def test_fs_walk(tmpdir) -> None:
                 ...
 
     fs = fs_utils.get_fs()
-    listing1 = []
-    for root, _dirs, files in fs_utils.fs_walk(fs, str(tmpdir), sort=True):
-        for item in files:
-            listing1.append(fs.sep.join([root, item]))
+    listing1 = [
+        fs.sep.join([root, item])
+        for root, dirs, files in fs_utils.fs_walk(fs, str(tmpdir), sort=True)
+        for item in files
+    ]
 
-    listing2 = []
-    for root, _dirs, files in fs_utils.fs_walk(fs, str(tmpdir), sort=False):
-        for item in files:
-            listing2.append(fs.sep.join([root, item]))
+    listing2 = [
+        fs.sep.join([root, item])
+        for root, _dirs, files in fs_utils.fs_walk(fs, str(tmpdir), sort=False)
+        for item in files
+    ]
 
     assert listing1 == sorted(listing2)
 
@@ -222,8 +221,9 @@ def test_copy_tree(tmpdir) -> None:
             assert fs_target.cat(fs_utils.join_path(
                 root, item)).decode('utf-8') == TEXT
         for item in dirs:
-            item = item.replace('\\', '/')
-            parts = item.replace('/tree/', '').split(fs_target.sep)
+            directory_structure = item.replace('\\', '/')
+            parts = directory_structure.replace('/tree/',
+                                                '').split(fs_target.sep)
             assert parts[0] == 'year=2014'
             if len(parts) > 1:
                 assert parts[1] in ['month=4', 'month=5']

@@ -4,8 +4,9 @@ Indexing a Collection.
 
 In this example, we will see how to index a collection.
 """
-from collections.abc import Iterator
-import pathlib
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 import pprint
 
 import dask.distributed
@@ -15,6 +16,10 @@ import numpy
 import zcollection
 import zcollection.indexing
 import zcollection.partitioning.tests.data
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    import pathlib
 
 # %%
 # Initialization of the environment
@@ -133,9 +138,9 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
         Returns:
             A tuple of (name, type) pairs.
         """
-        return super().dtype() + [
-            (self.CYCLE_NUMBER, 'uint16'),
-            (self.PASS_NUMBER, 'uint16'),
+        return [
+            *super().dtype(), (self.CYCLE_NUMBER, 'uint16'),
+            (self.PASS_NUMBER, 'uint16')
         ]
 
     @classmethod
@@ -145,7 +150,7 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
         zds: zcollection.Collection,
         filesystem: fsspec.AbstractFileSystem | None = None,
         **kwargs,
-    ) -> 'HalfOrbitIndexer':
+    ) -> HalfOrbitIndexer:
         """Create a new index.
 
         Args:
@@ -155,10 +160,12 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
         Returns:
             The created index.
         """
-        return super()._create(path,
-                               zds,
-                               meta=dict(attribute=b'value'),
-                               filesystem=filesystem)  # type: ignore
+        return super()._create(  # type: ignore[return-value]
+            path,
+            zds,
+            meta={'attribute': b'value'},
+            filesystem=filesystem,
+        )
 
     def update(
         self,
@@ -204,7 +211,7 @@ indexer.table.to_pandas()
 # %%
 # This index can now be used to load a part of a collection.
 selection: zcollection.Dataset | None = collection.load(
-    indexer=indexer.query(dict(pass_number=[1, 2])),
+    indexer=indexer.query({'pass_number': [1, 2]}),
     delayed=False,
 )
 assert selection is not None
