@@ -71,7 +71,7 @@ def wait_for_minio_to_start(timeout: float) -> None:
 
 
 @pytest.fixture
-def s3_base(tmpdir, pytestconfig) -> Iterator[None]:
+def s3_base(tmp_path, pytestconfig) -> Iterator[None]:
     """Launch minio server."""
     if pytestconfig.getoption('s3') is False:
         pytest.skip('S3 disabled')
@@ -84,7 +84,7 @@ def s3_base(tmpdir, pytestconfig) -> Iterator[None]:
 
     process = subprocess.Popen(
         shlex.split(f'minio server --quiet --address {ENDPOINT} '
-                    f"--console-address :{PORT+1} '{tmpdir!s}'"))
+                    f"--console-address :{PORT+1} '{tmp_path!s}'"))
 
     try:
         wait_for_minio_to_start(timeout=30)

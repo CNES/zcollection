@@ -350,7 +350,7 @@ def test_view_update(
     dask_client,  # noqa: F811
     fs,
     request,
-    tmpdir,
+    tmp_path,
 ):
     """Test updating variable."""
     tested_fs = request.getfixturevalue(fs)
@@ -377,7 +377,7 @@ def test_view_update(
     data = zview.load(delayed=False)
     assert numpy.all(data.variables[var.name].values == 0)
 
-    test_dir = tmpdir / 'test'
+    test_dir = tmp_path / 'test'
     test_dir.mkdir()
 
     def plus_one_with_log(zds: dataset.Dataset, varname):
@@ -576,16 +576,16 @@ def test_view_overlap(
 
 def test_view_checksum(
     dask_client,  # noqa: F811
-    tmpdir,
+    tmp_path,
 ) -> None:
     """Test the checksum calculation."""
     zds = next(create_test_dataset())
     zcol = collection.Collection('time', zds.metadata(),
                                  partitioning.Date(('time', ), 'D'),
-                                 str(tmpdir))
+                                 str(tmp_path))
 
     zcol.insert(zds)
-    partition = tmpdir / 'year=2000' / 'month=01' / 'day=01'
+    partition = tmp_path / 'year=2000' / 'month=01' / 'day=01'
     axis_ref = _calculate_axis_reference(str(partition), zcol)
     assert isinstance(axis_ref.array, numpy.ndarray)
     assert isinstance(axis_ref.checksum, str)

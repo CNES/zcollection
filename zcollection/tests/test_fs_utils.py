@@ -48,7 +48,7 @@ def test_get_fs() -> None:
     assert isinstance(fs, fsspec.implementations.local.LocalFileSystem)
 
 
-def test_fs_walk(tmpdir) -> None:
+def test_fs_walk(tmp_path) -> None:
     """Test the fs_walk function."""
     item: Any
 
@@ -78,7 +78,7 @@ def test_fs_walk(tmpdir) -> None:
         ('year=2014', 'month=4', 'day=22'),
         ('year=2014', 'month=4', 'day=30'),
     ]):
-        path = pathlib.Path(tmpdir).joinpath(*item)
+        path = pathlib.Path(tmp_path).joinpath(*item)
         path.mkdir(parents=True, exist_ok=False)
         if 'day' in item[-1]:
             with path.joinpath(f'file_{idx}.txt').open(mode='w',
@@ -88,21 +88,20 @@ def test_fs_walk(tmpdir) -> None:
     fs = fs_utils.get_fs()
     listing1 = [
         fs.sep.join([root, item])
-        for root, dirs, files in fs_utils.fs_walk(fs, str(tmpdir), sort=True)
+        for root, dirs, files in fs_utils.fs_walk(fs, str(tmp_path), sort=True)
         for item in files
     ]
 
     listing2 = [
-        fs.sep.join([root, item])
-        for root, _dirs, files in fs_utils.fs_walk(fs, str(tmpdir), sort=False)
-        for item in files
+        fs.sep.join([root, item]) for root, _dirs, files in fs_utils.fs_walk(
+            fs, str(tmp_path), sort=False) for item in files
     ]
 
     assert listing1 == sorted(listing2)
 
     assert list(
         fs_utils.fs_walk(fs,
-                         str(pathlib.Path(tmpdir).joinpath('inexistent')),
+                         str(pathlib.Path(tmp_path).joinpath('inexistent')),
                          sort=True)) == [('', [], [])]
 
 
@@ -138,11 +137,11 @@ def test_normalize_path() -> None:
     assert fs_utils.normalize_path(fs, './foo') == './foo'
 
 
-def test_copy_file(tmpdir) -> None:
+def test_copy_file(tmp_path) -> None:
     """Test the copy file across different file systems."""
     fs_source = fsspec.filesystem('file')
     fs_target = fsspec.filesystem('memory')
-    path = str(tmpdir / 'foo.txt')
+    path = str(tmp_path / 'foo.txt')
     with fs_source.open(path, mode='wb', encoding='utf-8') as stream:
         stream.write(TEXT.encode('utf-8'))
     fs_utils.copy_file(path, 'foo.txt', fs_source, fs_target)
@@ -150,10 +149,10 @@ def test_copy_file(tmpdir) -> None:
     assert fs_target.cat('foo.txt').decode('utf-8') == TEXT
 
 
-def test_copy_files(tmpdir) -> None:
+def test_copy_files(tmp_path) -> None:
     """Test the copy files across different file systems."""
-    source = tmpdir / 'source'
-    target = tmpdir / 'target'
+    source = tmp_path / 'source'
+    target = tmp_path / 'target'
     fs_source = fsspec.filesystem('file')
     fs_target = fsspec.filesystem('file')
     fs_source.mkdir(source)
@@ -174,7 +173,7 @@ def test_copy_files(tmpdir) -> None:
         assert fs_target.cat(item).decode('utf-8') == TEXT
 
 
-def test_copy_tree(tmpdir) -> None:
+def test_copy_tree(tmp_path) -> None:
     """Test the copy tree across different file systems."""
     item: Any
     fs_source = fsspec.filesystem('file')
@@ -206,7 +205,7 @@ def test_copy_tree(tmpdir) -> None:
         ('year=2014', 'month=4', 'day=22'),
         ('year=2014', 'month=4', 'day=30'),
     ]):
-        path = fs_utils.join_path(str(tmpdir), *item)
+        path = fs_utils.join_path(str(tmp_path), *item)
         fs_source.makedirs(path, exist_ok=False)
         if 'day' in item[-1]:
             with fs_source.open(fs_utils.join_path(path, f'file_{idx}.txt'),
@@ -214,7 +213,7 @@ def test_copy_tree(tmpdir) -> None:
                                 encoding='utf-8') as stream:
                 stream.write(TEXT.encode('utf-8'))
 
-    fs_utils.copy_tree(str(tmpdir), '/tree', fs_source, fs_target)
+    fs_utils.copy_tree(str(tmp_path), '/tree', fs_source, fs_target)
 
     for root, dirs, files in fs_utils.fs_walk(fs_target, '/tree'):
         for item in files:

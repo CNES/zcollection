@@ -46,13 +46,13 @@ def dask_cluster(
     except TypeError:
         processes = False
 
-    tmpdir: py.path.local = tmpdir_factory.getbasetemp()
-    scheduler_file: py.path.local = tmpdir / 'scheduler.json'
+    tmp_path: py.path.local = tmpdir_factory.getbasetemp()
+    scheduler_file: py.path.local = tmp_path / 'scheduler.json'
     if scheduler_file.exists():
         return str(scheduler_file)
 
     # Use the root path of the test session for the dask worker space
-    dask_worker: py.path.local = tmpdir / 'dask_worker_space'
+    dask_worker: py.path.local = tmp_path / 'dask_worker_space'
     dask.config.set(temporary_directory=str(dask_worker))
 
     logging.info('Dask local cluster starting')

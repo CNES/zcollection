@@ -110,7 +110,7 @@ def test_insert(  # noqa: PLR0915
     distributed,
     fs,
     request,
-    tmpdir,
+    tmp_path,
 ) -> None:
     """Test the insertion of a dataset."""
     tested_fs = request.getfixturevalue(fs)
@@ -122,7 +122,7 @@ def test_insert(  # noqa: PLR0915
                                  str(tested_fs.collection),
                                  filesystem=tested_fs.fs,
                                  synchronizer=sync.ProcessSync(
-                                     str(tmpdir / 'lock.lck')))
+                                     str(tmp_path / 'lock.lck')))
 
     indices = numpy.arange(0, len(datasets))
     rng = numpy.random.default_rng(42)
@@ -1372,12 +1372,12 @@ def test_copy_collection(
         arg,
         distributed,
         request,
-        tmpdir) -> None:
+        tmp_path) -> None:
     """Test the dropping of a dataset."""
     tested_fs = request.getfixturevalue(arg)
     zcol = create_test_collection(tested_fs, distributed=distributed)
 
-    target = str(tmpdir / 'copy')
+    target = str(tmp_path / 'copy')
     zcopy = zcol.copy(target,
                       filesystem=fsspec.filesystem('file'),
                       distributed=distributed)
@@ -1405,15 +1405,15 @@ def _insert(zds: dataset.Dataset, base_dir: str, lock_file: str,
 
 def test_concurrent_insert(
     dask_client,  # noqa: F811
-    tmpdir,
+    tmp_path,
 ) -> None:
     """Test the insertion of a dataset."""
     fs = fsspec.filesystem('file')
     datasets = list(create_test_dataset(delayed=False))
     zds = datasets[0]
-    lock_file = str(tmpdir / 'lock.lck')
+    lock_file = str(tmp_path / 'lock.lck')
     synchronizer = sync.ProcessSync(lock_file)
-    base_dir = str(tmpdir / 'test')
+    base_dir = str(tmp_path / 'test')
     zcol = collection.Collection(
         axis='time',
         ds=zds.metadata(),
@@ -1457,13 +1457,13 @@ def test_concurrent_insert(
 
 def test_partition_modified(
         dask_client,  # noqa: F811
-        tmpdir):
+        tmp_path):
     """Test the loading of a variable that has been modified since its
     creation."""
     fs = fsspec.filesystem('file')
     datasets = list(create_test_dataset())
     zds = datasets[0]
-    base_dir = str(tmpdir / 'test')
+    base_dir = str(tmp_path / 'test')
     zcol = collection.Collection('time',
                                  zds.metadata(),
                                  partitioning.Date(('time', ), 'D'),
@@ -1515,13 +1515,13 @@ def test_partition_modified(
 def test_invalid_partitions(
         dask_client,  # noqa: F811
         distributed,
-        tmpdir) -> None:
+        tmp_path) -> None:
     """Test the validate_partitions function."""
     fs = fsspec.filesystem('file')
     datasets = list(create_test_dataset())
     zds = datasets.pop(0)
     zds.concat(datasets, 'num_lines')
-    base_dir = str(tmpdir / 'test')
+    base_dir = str(tmp_path / 'test')
     zcol = collection.Collection(
         axis='time',
         ds=zds.metadata(),
@@ -1565,7 +1565,7 @@ def test_insert_with_chunks(
     fs,
     distributed,
     request,
-    tmpdir,
+    tmp_path,
 ) -> None:
     """Test the insertion of a dataset."""
     tested_fs = request.getfixturevalue(fs)
@@ -1581,7 +1581,7 @@ def test_insert_with_chunks(
                                  str(tested_fs.collection),
                                  filesystem=tested_fs.fs,
                                  synchronizer=sync.ProcessSync(
-                                     str(tmpdir / 'lock.lck')))
+                                     str(tmp_path / 'lock.lck')))
 
     # First insertion
     zcol.insert(datasets[0],

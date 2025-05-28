@@ -24,19 +24,19 @@ except ImportError as err:
     S3_IMPORT_EXCEPTION = str(err)
 
 
-def tempdir(tmpdir) -> pathlib.Path:
+def tempdir(tmp_path) -> pathlib.Path:
     """Create a temporary directory."""
-    return pathlib.Path(tempfile.mkdtemp(dir=str(tmpdir)))
+    return pathlib.Path(tempfile.mkdtemp(dir=str(tmp_path)))
 
 
 class Local:
     """Local files system."""
 
-    def __init__(self, tmpdir, protocol) -> None:
+    def __init__(self, tmp_path, protocol) -> None:
         #: The filesystem.
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(protocol)
         #: The root directory.
-        self.root = tempdir(pathlib.Path(tmpdir))
+        self.root = tempdir(pathlib.Path(tmp_path))
         #: The collection directory.
         self.collection: pathlib.Path = self.root.joinpath('collection')
         #: The view directory.
@@ -47,10 +47,10 @@ class Local:
 
 
 @pytest.fixture
-def local_fs(tmpdir, pytestconfig) -> Iterator[Local]:
+def local_fs(tmp_path, pytestconfig) -> Iterator[Local]:
     """Local filesystem."""
     protocol: str = 'memory' if pytestconfig.getoption('memory') else 'file'
-    instance = Local(tmpdir, protocol)
+    instance = Local(tmp_path, protocol)
     yield instance
     try:
         # For the memory protocol we delete the written data to free the
