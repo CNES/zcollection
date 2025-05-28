@@ -295,8 +295,7 @@ def test_dataset_rename(
     assert 'var1' not in zds.variables
     assert 'var2' not in zds.variables
 
-    with pytest.raises(ValueError,
-                       match='.* already exists in the dataset'):
+    with pytest.raises(ValueError, match='.* already exists in the dataset'):
         zds.rename({'var3': 'var4'})
 
 
