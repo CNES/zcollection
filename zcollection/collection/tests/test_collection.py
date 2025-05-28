@@ -639,7 +639,7 @@ def test_variable_immutable(  # noqa: PLR0915
     assert data is not None
     new_data_r = data[new_x.name]
 
-    assert numpy.array_equal(new_data_r.values, new_x.data)
+    assert numpy.array_equal(new_data_r.values, new_x.values)
     assert new_data_r.attrs == new_x.attrs
     assert new_data_r.fill_value == new_x.fill_value
     assert new_data_r.data.chunksize[1] == new_dim.chunks
