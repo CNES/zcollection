@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import shutil
 
 import dask.distributed
 import numpy
@@ -377,7 +378,7 @@ def test_view_update(
     data = zview.load(delayed=False)
     assert numpy.all(data.variables[var.name].values == 0)
 
-    test_dir = tmp_path / 'test'
+    test_dir: pathlib.Path = tmp_path / 'test'
     test_dir.mkdir()
 
     def plus_one_with_log(zds: dataset.Dataset, varname):
@@ -399,9 +400,9 @@ def test_view_update(
     zview.update(plus_one_with_log, var.name)  # type: ignore[arg-type]
 
     # One log per partition + 1 log for the initial call
-    assert len(test_dir.listdir()) == len(list(zview.partitions())) + 1
+    assert len(tuple(test_dir.iterdir())) == len(list(zview.partitions())) + 1
 
-    test_dir.remove()
+    shutil.rmtree(test_dir)
     test_dir.mkdir()
 
     data = zview.load(delayed=False)
@@ -412,7 +413,7 @@ def test_view_update(
         var.name,
         variables=[var.name])
 
-    assert len(test_dir.listdir()) == len(list(zview.partitions()))
+    assert len(tuple(test_dir.iterdir())) == len(list(zview.partitions()))
 
     data = zview.load(delayed=False)
     assert numpy.all(data.variables[var.name].values == 2)
