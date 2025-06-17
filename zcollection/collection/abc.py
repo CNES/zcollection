@@ -206,25 +206,19 @@ class ReadOnlyCollection:
         ds = meta.Dataset.from_config(data=ds.get_config())
         ds.dimensions[main_dimension].value = -1
 
-        self._settings = CollectionSettings(
-            mode=mode or 'w',
-            filesystem=fs_utils.get_fs(filesystem),
-            synchronizer=synchronizer or sync.NoSync())
+        self._settings = CollectionSettings(mode or 'w',
+                                            fs_utils.get_fs(filesystem),
+                                            synchronizer or sync.NoSync())
 
         self._properties = CollectionProperties(
-            axis=axis,
-            metadata=ds,
-            partition_strategy=partition_handler,
-            partition=PartitioningProperties(
-                dir=fs_utils.normalize_path(fs=self._settings.filesystem,
-                                            path=partition_base_dir),
-                dim=main_dimension,
-            ))
+            axis, ds, partition_handler,
+            PartitioningProperties(
+                fs_utils.normalize_path(self._settings.filesystem,
+                                        partition_base_dir), main_dimension))
 
         #: The path to the dataset that contains the immutable data relative
         #: to the partitioning.
-        self._immutable = _immutable_path(
-            partition_properties=self._properties.partition)
+        self._immutable = _immutable_path(self._properties.partition)
 
         self.version = __version__
 
@@ -283,8 +277,8 @@ class ReadOnlyCollection:
     @property
     def immutable_variables(self) -> set[str]:
         """Return the immutable variables of the collection."""
-        return self.metadata.select_variables_by_dims(dims=(self.dimension, ),
-                                                      predicate=False)
+        return self.metadata.select_variables_by_dims((self.dimension, ),
+                                                      False)
 
     def is_locked(self) -> bool:
         """Return True if the collection is locked."""
@@ -341,10 +335,8 @@ class ReadOnlyCollection:
              for item in partitions})
         return filter(self.fs.exists, (self.fs.sep.join(
             (self.partition_properties.dir,
-             self.partitioning.join(
-                 partition_scheme=partition,
-                 sep=self.fs.sep,
-             ))) for partition in partitions_scheme))
+             self.partitioning.join(partition, self.fs.sep)))
+                                       for partition in partitions_scheme))
 
     def dimensions_properties(self) -> tuple[dict[str, int], dict[str, int]]:
         """Extract dimension properties (size and chunks).
@@ -409,32 +401,27 @@ class ReadOnlyCollection:
         base_dir: str = self.partition_properties.dir
         sep: str = self.fs.sep
         if selected_partitions is not None:
-            partitions = self._normalize_partitions(
-                partitions=selected_partitions)
+            partitions = self._normalize_partitions(selected_partitions)
         elif lock:
             with self.synchronizer:
                 partitions = tuple(
                     self.partitioning.list_partitions(self.fs, base_dir))
         else:
-            partitions = self.partitioning.list_partitions(fs=self.fs,
-                                                           path=base_dir)
+            partitions = self.partitioning.list_partitions(self.fs, base_dir)
 
         if indexer is not None:
             # List of partitions existing in the indexer and partitions list
             partitions = list(partitions)
             partitions = [
                 p for p in list_partitions_from_indexer(
-                    indexer=indexer,
-                    partition_handler=self.partitioning,
-                    base_dir=self.partition_properties.dir,
-                    sep=self.fs.sep) if p in partitions
+                    indexer, self.partitioning, self.partition_properties.dir,
+                    self.fs.sep) if p in partitions
             ]
 
-        yield from (
-            self._relative_path(item) if relative else item
-            for item in partitions
-            if (item != self._immutable and self._is_selected(
-                partition=item.replace(base_dir, '').split(sep), expr=expr)))
+        yield from (self._relative_path(item) if relative else item
+                    for item in partitions
+                    if (item != self._immutable and self._is_selected(
+                        item.replace(base_dir, '').split(sep), expr)))
 
     # false positive, no code duplication
     def map(
@@ -499,11 +486,9 @@ class ReadOnlyCollection:
                 The result of the function.
             """
             zds = _load_dataset(
-                delayed=_delayed,
-                fs=self.fs,
-                immutable=self._immutable if self.have_immutable else None,
-                partition=_partition,
-                selected_variables=_selected_variables)
+                _delayed, self.fs,
+                self._immutable if self.have_immutable else None, _partition,
+                _selected_variables)
             return self.partitioning.parse(_partition), _func(
                 zds, *_args, **_kwargs)
 
@@ -511,9 +496,7 @@ class ReadOnlyCollection:
             raise TypeError('func must be a callable')
 
         bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-            self.partitions(filters=filters),
-            partition_size=partition_size,
-            npartitions=npartitions)
+            self.partitions(filters=filters), partition_size, npartitions)
 
         return bag.map(_wrap,
                        *args,
@@ -625,7 +608,7 @@ class ReadOnlyCollection:
 
         partitions = tuple(self.partitions(filters=filters))
         bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-            partitions, partition_size=partition_size, npartitions=npartition)
+            partitions, partition_size, npartition)
 
         return bag.map(_wrap,
                        *args,
@@ -703,11 +686,9 @@ class ReadOnlyCollection:
         if arrays is not None:
             array = arrays.pop(0)
             if arrays:
-                array = array.concat(other=arrays, dim=self.dimension)
+                array = array.concat(arrays, self.dimension)
 
-        array = self.merge_immutable(ds=array,
-                                     selected_variables=selected_variables,
-                                     delayed=delayed)
+        array = self.merge_immutable(array, selected_variables, delayed)
 
         if array is not None:
             array.fill_attrs(self.metadata)
@@ -736,8 +717,8 @@ class ReadOnlyCollection:
         if not var_im:
             return ds
 
-        ds_im = storage.open_zarr_group(dirname=self._immutable,
-                                        fs=self.fs,
+        ds_im = storage.open_zarr_group(self._immutable,
+                                        self.fs,
                                         delayed=delayed,
                                         selected_variables=selected_variables)
         if not ds_im.variables:
@@ -787,16 +768,16 @@ class ReadOnlyCollection:
             client = dask_utils.get_client()
             bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
                 selected_partitions,
-                npartitions=dask_utils.dask_workers(client, cores_only=True))
+                npartitions=dask_utils.dask_workers(client, True))
             arrays = bag.map(storage.open_zarr_group,
+                             self.fs,
                              delayed=delayed,
-                             fs=self.fs,
                              selected_variables=selected_variables).compute()
         else:
             arrays = [
-                storage.open_zarr_group(dirname=partition,
+                storage.open_zarr_group(partition,
+                                        self.fs,
                                         delayed=delayed,
-                                        fs=self.fs,
                                         selected_variables=selected_variables)
                 for partition in selected_partitions
             ]
@@ -841,10 +822,7 @@ class ReadOnlyCollection:
                                      filters=filters,
                                      indexer=indexer)
         args = tuple(
-            build_indexer_args(collection=self,
-                               filters=filters,
-                               indexer=indexer,
-                               partitions=partitions))
+            build_indexer_args(self, filters, indexer, partitions=partitions))
         if len(args) == 0:
             return None
 
@@ -852,8 +830,7 @@ class ReadOnlyCollection:
         if distributed:
             client = dask_utils.get_client()
             bag = dask.bag.core.from_sequence(
-                args,
-                npartitions=dask_utils.dask_workers(client, cores_only=True))
+                args, npartitions=dask_utils.dask_workers(client, True))
 
             arrays = list(
                 itertools.chain.from_iterable(
@@ -869,7 +846,7 @@ class ReadOnlyCollection:
             arrays = list(
                 itertools.chain.from_iterable([
                     _load_and_apply_indexer(
-                        args=a,
+                        a,
                         delayed=delayed,
                         fs=self.fs,
                         partition_handler=self.partitioning,
@@ -895,7 +872,7 @@ class ReadOnlyCollection:
             The dask bag.
         """
         partitions: list[str] = [*self.partitions(filters=filters, **kwargs)]
-        return dask.bag.core.from_sequence(seq=partitions,
+        return dask.bag.core.from_sequence(partitions,
                                            npartitions=len(partitions))
 
     def iterate_on_records(self) -> Iterator[tuple[str, str]]:

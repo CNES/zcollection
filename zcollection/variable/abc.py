@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import abc
 import collections
 from collections.abc import Callable, Iterator, Sequence
+import numbers
 
 from typing_extensions import Self
 import xarray
@@ -122,17 +123,14 @@ def not_equal(first: Any, second: Any) -> bool:
 
         return not number == number and number != number  # noqa: PLR0124
 
-    #: pylint: disable=unidiomatic-typecheck
-    if type(first) is not type(second):
+    if (not isinstance(first, numbers.Number) or not isinstance(
+            second, numbers.Number)) and type(first) is not type(second):
         return True
-    #: pylint: enable=unidiomatic-typecheck
     if _is_not_a_number(first) and _is_not_a_number(second):
         return False
     if first is None and second is None:
         return False
-    if first == second:
-        return False
-    return True
+    return not (first == second)
 
 
 def _variable_repr(var: Variable) -> str:
@@ -456,8 +454,8 @@ class Variable(IVariable, abc.ABC):
         Returns:
             Variable metadata
         """
-        return meta.Variable(name=self.name,
-                             dtype=self.dtype,
+        return meta.Variable(self.name,
+                             self.dtype,
                              dimensions=self.dimensions,
                              attrs=self.attrs,
                              compressor=self.compressor,

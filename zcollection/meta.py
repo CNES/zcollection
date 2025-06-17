@@ -234,8 +234,8 @@ class Variable:
         Returns:
             The variable.
         """
-        return Variable(name=self.name,
-                        dtype=self.dtype,
+        return Variable(self.name,
+                        self.dtype,
                         dimensions=self.dimensions,
                         compressor=self.compressor,
                         fill_value=self.fill_value,
@@ -411,11 +411,10 @@ class Dataset:
             New dataset.
         """
         return Dataset(
-            dimensions=tuple(
+            tuple(
                 Dimension.from_config(item)
                 for item in data.get('dimensions', [])),
-            variables=tuple(
-                Variable.from_config(item) for item in data['variables']),
+            tuple(Variable.from_config(item) for item in data['variables']),
             attrs=tuple(Attribute.from_config(item) for item in data['attrs']),
             block_size_limit=data.get('block_size_limit'))
 
@@ -432,11 +431,10 @@ class Dataset:
         """
         chunks = dict(data.get('chunks', []))
         return Dataset(
-            dimensions=tuple(
+            tuple(
                 Dimension.from_config((item, -1, chunks.get(item, -1)))
                 for item in data['dimensions']),
-            variables=tuple(
-                Variable.from_config(item) for item in data['variables']),
+            tuple(Variable.from_config(item) for item in data['variables']),
             attrs=tuple(Attribute.from_config(item) for item in data['attrs']),
             block_size_limit=data.get('block_size_limit'),
         )

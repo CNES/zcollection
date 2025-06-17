@@ -123,10 +123,10 @@ def _update_fs(
     # Writing new data.
     try:
         # The synchronization is done by the caller.
-        storage.write_zarr_group(zds=zds,
-                                 dirname=temp,
-                                 fs=fs,
-                                 synchronizer=synchronizer or sync.NoSync(),
+        storage.write_zarr_group(zds,
+                                 temp,
+                                 fs,
+                                 synchronizer or sync.NoSync(),
                                  distributed=distributed)
     except Exception:
         # The "write_zarr_group" method throws the exception if all scheduled
@@ -173,11 +173,11 @@ def perform(
     if merge_callable is None:
         zds = ds_inserted
     else:
-        ds = storage.open_zarr_group(dirname=dirname,
-                                     fs=fs,
+        ds = storage.open_zarr_group(dirname,
+                                     fs,
                                      delayed=delayed if distributed else False)
         # Read dataset does not contain insertion properties.
-        # This properties might be loss in the merge_callable depending on which
+        # These properties might be loss in the merge_callable depending on which
         # dataset is used.
         ds.copy_properties(ds=ds_inserted)
         zds = merge_callable(ds, ds_inserted, axis, partitioning_dim, **kwargs)

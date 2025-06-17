@@ -253,9 +253,10 @@ def test_view_read_immutable(fs, request):
     """Test the reading of an immutable variable."""
     tested_fs = request.getfixturevalue(fs)
 
-    create_test_collection(tested_fs, delayed=False, distributed=False)
+    col_ref = create_test_collection(tested_fs,
+                                     delayed=False,
+                                     distributed=False)
     view_ref = view.ViewReference(str(tested_fs.collection), tested_fs.fs)
-    col_ref = convenience.open_collection(path=view_ref.path, mode='w')
 
     # Cannot add an immutable variable to a view
     known_dimensions, _ = col_ref.dimensions_properties()
@@ -425,11 +426,10 @@ def test_view_update_with_immutable(fs, request) -> None:
     update callback function."""
     tested_fs = request.getfixturevalue(fs)
 
-    create_test_collection(tested_fs=tested_fs,
-                           delayed=False,
-                           distributed=False)
+    zcol = create_test_collection(tested_fs=tested_fs,
+                                  delayed=False,
+                                  distributed=False)
     view_ref = view.ViewReference(str(tested_fs.collection), tested_fs.fs)
-    zcol = convenience.open_collection(path=view_ref.path, mode='w')
 
     new_im = meta.Variable(
         name='var_immutable',

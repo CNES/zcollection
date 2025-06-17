@@ -51,8 +51,8 @@ def create_view(path: str,
     filesystem = fs_utils.get_fs(filesystem)
     if filesystem.exists(path):
         raise ValueError(f'path {path!r} already exists.')
-    return view.View(base_dir=path,
-                     view_ref=view_ref,
+    return view.View(path,
+                     view_ref,
                      ds=None,
                      filesystem=filesystem,
                      filters=filters,
@@ -124,8 +124,8 @@ def update_deprecated_view(
 
     view_ref: dict[str, Any] = data['view_ref']
 
-    zview = view.View(base_dir=data['base_dir'],
-                      view_ref=view.ViewReference(
+    zview = view.View(data['base_dir'],
+                      view.ViewReference(
                           view_ref['path'],
                           fsspec.AbstractFileSystem.from_json(
                               json.dumps(view_ref['fs']))),

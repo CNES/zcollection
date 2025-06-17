@@ -127,7 +127,7 @@ def _create_zarr_array(args: tuple[str, str],
         for ix, dim in enumerate(variable.dimensions))
 
     store: fsspec.FSMap = fs.get_mapper(join_path(dirname, variable.name))
-    zarr.full(shape=var_shape,
+    zarr.full(var_shape,
               chunks=var_chunks,
               dtype=variable.dtype,
               compressor=variable.compressor,
@@ -135,7 +135,7 @@ def _create_zarr_array(args: tuple[str, str],
               store=store,
               overwrite=True,
               filters=variable.filters)
-    write_zattrs(dirname=dirname, variable=variable, fs=fs)
+    write_zattrs(dirname, variable, fs)
     if invalidate_cache:
         fs.invalidate_cache(dirname)
 
@@ -196,8 +196,8 @@ def _load_one_dataset(
     partition_scheme, slices = args
     partition: str = view_ref.partitioning.join(partition_scheme, fs.sep)
     zds: dataset.Dataset = open_zarr_group(
-        dirname=join_path(view_ref.partition_properties.dir, partition),
-        fs=view_ref.fs,
+        join_path(view_ref.partition_properties.dir, partition),
+        view_ref.fs,
         delayed=delayed,
         selected_variables=selected_variables)
 
@@ -214,21 +214,19 @@ def _load_one_dataset(
 
     data = list(zds.variables.values()) + [
         open_zarr_array(
-            array=zarr.open(  # type: ignore[arg-type]
-                store=fs.get_mapper(join_path(base_dir, partition, variable)),
-                mode='r',
-            ),
-            name=variable,
+            zarr.open(  # type: ignore[arg-type]
+                fs.get_mapper(join_path(base_dir, partition, variable)), 'r'),
+            variable,
             delayed=delayed) for variable in variables
     ]
 
-    zds = dataset.Dataset(variables=data, attrs=zds.attrs, delayed=zds.delayed)
+    zds = dataset.Dataset(data, attrs=zds.attrs, delayed=zds.delayed)
 
     # Adding immutable variables
     if with_immutable and view_ref.have_immutable:
         zds.merge(
-            open_zarr_group(dirname=view_ref.immutable_path,
-                            fs=fs,
+            open_zarr_group(view_ref.immutable_path,
+                            fs,
                             delayed=delayed,
                             selected_variables=selected_variables))
 
@@ -239,7 +237,7 @@ def _load_one_dataset(
         ]
         zds = ds_list.pop(0)
         if ds_list:
-            zds = zds.concat(other=ds_list, dim=view_ref.dimension)
+            zds = zds.concat(ds_list, view_ref.dimension)
 
     return zds, partition
 
@@ -301,7 +299,7 @@ def _load_datasets_list(
             delayed=delayed,
             fs=fs,
             selected_variables=view_ref.metadata.select_variables(
-                keep_variables=selected_variables),
+                selected_variables),
             view_ref=client.scatter(view_ref),
             variables=metadata.select_variables(selected_variables),
             with_immutable=with_immutable)
@@ -314,7 +312,7 @@ def _load_datasets_list(
                 delayed=False,
                 fs=fs,
                 selected_variables=view_ref.metadata.select_variables(
-                    keep_variables=selected_variables),
+                    selected_variables),
                 view_ref=view_ref,
                 variables=metadata.select_variables(selected_variables),
                 with_immutable=with_immutable) for arg in arguments
@@ -410,10 +408,8 @@ def _wrap_update_func(
                                                     **func_kwargs)
             tuple(
                 update_zarr_array(  # type: ignore[func-returns-value]
-                    dirname=join_path(base_dir, partition, varname),
-                    array=array,
-                    fs=fs,
-                ) for varname, array in dictionary.items())
+                    join_path(base_dir, partition, varname), array, fs)
+                for varname, array in dictionary.items())
 
     return wrap_function
 
@@ -506,7 +502,7 @@ def _write_checksum_array(
     checksum_path = join_path(partition, CHECKSUM_FILE)
     mapper: fsspec.FSMap = fs.get_mapper(checksum_path)
     if fs.exists(checksum_path):
-        array = zarr.open(store=mapper)  # type: ignore[arg-type]
+        array = zarr.open(mapper)  # type: ignore[arg-type]
     else:
         array = zarr.create(shape=axis_ref.array.shape,
                             dtype=axis_ref.array.dtype,
@@ -553,12 +549,9 @@ def _write_checksum(
         view_ref.partition_properties.dir,
         str(pathlib.Path(partition).relative_to(base_dir).as_posix()))
     _write_checksum_array(
-        partition=partition,
-        fs=fs,
-        axis_ref=_calculate_axis_reference(
-            path=partition_ref,
-            view_ref=view_ref,
-        ),
+        partition,
+        fs,
+        _calculate_axis_reference(partition_ref, view_ref),
     )
 
 
@@ -594,10 +587,7 @@ def _sync_partition(
                 axis=view_ref.axis,
                 fs=fs,
                 invalidate_cache=False)
-        _write_checksum(partition=path,
-                        base_dir=base_dir,
-                        view_ref=view_ref,
-                        fs=fs)
+        _write_checksum(path, base_dir, view_ref, fs)
         fs.invalidate_cache(path)
 
     except Exception as exc:
@@ -687,19 +677,13 @@ def _sync(
             # So we extend the view partition to the reference partition.
             # fs_invalid_cache is done by _extend_partition
             if not dry_run:
-                _extend_partition(partition=partition_view,
-                                  fs=fs,
-                                  axis_ref=axis_ref)
+                _extend_partition(partition_view, fs, axis_ref)
             return partition
         # The partition is not synced, so we remove it.
         if not dry_run:
-            fs.rm(path=partition_view, recursive=True)
+            fs.rm(partition_view, recursive=True)
             fs.invalidate_cache(partition_view)
-            _sync_partition(metadata=metadata,
-                            partition=partition,
-                            base_dir=base_dir,
-                            fs=fs,
-                            view_ref=view_ref)
+            _sync_partition(metadata, partition, base_dir, fs, view_ref)
         return partition
     return None
 

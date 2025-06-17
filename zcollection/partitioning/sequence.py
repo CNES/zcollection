@@ -213,7 +213,7 @@ class GroupedSequence(Sequence):
         self.size = size
         self.start = start
 
-        super().__init__(variables=variables, dtype=dtype)
+        super().__init__(variables, dtype)
 
     def _split(
         self,
@@ -227,4 +227,4 @@ class GroupedSequence(Sequence):
         variables[last_field] = ((variables[last_field] - self.start) //
                                  self.size * self.size) + self.start
 
-        return super()._split(variables=variables)
+        return super()._split(variables)

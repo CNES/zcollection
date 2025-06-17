@@ -12,5 +12,4 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.11
-    - run: pip install 'pre-commit<4'
     - uses: pre-commit/action@v3.0.0

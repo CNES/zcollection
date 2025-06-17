@@ -265,7 +265,7 @@ class Partitioning(metaclass=abc.ABCMeta):
         Returns:
             A sequence of tuples that contains the partitioning
                 scheme and the associated indexer to divide the dataset on each
-                partition found..
+                partition found.
         """
 
     @staticmethod

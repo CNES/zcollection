@@ -179,9 +179,9 @@ def write_zarr_variable(
     data = data.rechunk(chunks=var_chunks, block_size_limit=block_size_limit)
 
     try:
-        _to_zarr(array=data,
-                 mapper=fs.get_mapper(dirname),
-                 path=name,
+        _to_zarr(data,
+                 fs.get_mapper(dirname),
+                 name,
                  compressor=variable.compressor,
                  fill_value=variable.fill_value,
                  **kwargs)
@@ -260,24 +260,23 @@ def write_zarr_group(
                     chunks=zds.dim_chunks,
                     block_size_limit=zds.block_size_limit,
                     dirname=dirname,
-                    fs=fs,
-                )
+                    fs=fs)
                 execute_transaction(
-                    client=client,
-                    synchronizer=sync.NoSync(),
-                    futures=futures,
+                    client,
+                    sync.NoSync(),
+                    futures,
                     workers=dask.distributed.get_worker().address)
         else:
             tuple(
                 write_zarr_variable(  # type: ignore[func-returns-value]
-                    args=item,
-                    dirname=dirname,
-                    fs=fs,
+                    item,
+                    dirname,
+                    fs,
                     chunks=zds.dim_chunks,
                     block_size_limit=zds.block_size_limit,
                 ) for item in zds.variables.items())
 
-        _write_meta(zds=zds, dirname=dirname, fs=fs)
+        _write_meta(zds, dirname, fs)
 
 
 def write_zarr_group_missing(
@@ -301,20 +300,14 @@ def write_zarr_group_missing(
     """
 
     _LOGGER.debug('Opening Zarr group %r', dirname)
-    store = zarr.open_consolidated(store=fs.get_mapper(dirname), mode='r')
+    store = zarr.open_consolidated(fs.get_mapper(dirname), mode='r')
     selected_variables = set(zds.variables) - set(store)
 
     if not selected_variables:
         return
 
     zds = zds.select_vars(names=list(selected_variables))
-    write_zarr_group(
-        zds=zds,
-        dirname=dirname,
-        fs=fs,
-        synchronizer=synchronizer,
-        distributed=distributed,
-    )
+    write_zarr_group(zds, dirname, fs, synchronizer, distributed=distributed)
 
 
 def open_zarr_array(
@@ -352,8 +345,8 @@ def init_zarr_group(dirname, fs: fsspec.AbstractFileSystem) -> None:
     _LOGGER.debug('Initializing zarr group: %s', dirname)
     store = fs.get_mapper(dirname)
 
-    zarr.storage.init_group(store=store)
-    zarr.consolidate_metadata(store=store)
+    zarr.storage.init_group(store)
+    zarr.consolidate_metadata(store)
 
 
 def open_zarr_group(
@@ -385,16 +378,15 @@ def open_zarr_group(
 
     variables = [
         open_zarr_array(
-            array=store[name],  # type: ignore[arg-type]
-            name=name,
+            store[name],  # type: ignore[arg-type]
+            name,
             delayed=delayed) for name in selected_variables
     ]
 
     return dataset.Dataset(
-        variables=variables,
+        variables,
         attrs=tuple(dataset.Attribute(*item) for item in store.attrs.items()),
-        delayed=delayed,
-    )
+        delayed=delayed)
 
 
 def update_zarr_array(
@@ -475,7 +467,7 @@ def variable_shape(
     """
     dims = set(variable.dimensions) - set(dimensions)
     if dims:
-        # Only a single dimension might be missing : the main axis
+        # Only a single dimension might be missing: the main axis
         if len(dims) > 1 or axis is None:
             raise ValueError(f'Variable {variable.name} contains'
                              f' unknown dimensions: {dims}.')
@@ -552,10 +544,8 @@ def check_zarr_group(
         True if the directory contains a valid Zarr group, False otherwise.
     """
     try:
-        store: zarr.Group = zarr.open_consolidated(
-            store=fs.get_mapper(dirname),
-            mode='r',
-        )
+        store: zarr.Group = zarr.open_consolidated(fs.get_mapper(dirname),
+                                                   mode='r')
         for _, array in store.arrays():
             data: NDArray = array[...]
             del data

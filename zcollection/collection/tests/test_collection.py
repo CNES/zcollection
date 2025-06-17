@@ -427,6 +427,14 @@ def test_drop_partitions(
     assert all(part_ge_13)
 
     npartitions = len(partitions)
+
+    if arg == 's3_fs':
+        # Partitions cannot be dropped using a timedelta with S3
+        with pytest.raises(NotImplementedError):
+            zcol.drop_partitions(timedelta=datetime.timedelta(days=1),
+                                 distributed=distributed)
+        return
+
     zcol.drop_partitions(timedelta=datetime.timedelta(days=1),
                          distributed=distributed)
     partitions = list(zcol.partitions())

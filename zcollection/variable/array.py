@@ -82,16 +82,14 @@ class Array(Variable):
                  filler: bool = False) -> None:
         array: NDArray
         array, fill_value = _as_numpy_array(data, fill_value=fill_value)
-        super().__init__(
-            name=name,
-            data=array,
-            dimensions=dimensions,
-            attrs=attrs,
-            compressor=compressor,
-            fill_value=fill_value,
-            filters=filters,
-            filler=filler,
-        )
+        super().__init__(name,
+                         array,
+                         dimensions,
+                         attrs=attrs,
+                         compressor=compressor,
+                         fill_value=fill_value,
+                         filters=filters,
+                         filler=filler)
 
     @property
     def data(self) -> dask.array.core.Array:

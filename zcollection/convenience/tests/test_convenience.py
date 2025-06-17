@@ -51,7 +51,7 @@ def test_update_deprecated_view(fs, request, caplog):
     #: pylint: disable=protected-access
     conf_zview = zview._config(zview.base_dir)
 
-    with tested_fs.open(conf_zview) as stream:
+    with tested_fs.fs.open(conf_zview) as stream:
         cdata_zview = json.load(stream)
 
     cdata_zview_deprecated = copy.deepcopy(cdata_zview)
@@ -65,7 +65,7 @@ def test_update_deprecated_view(fs, request, caplog):
         d[0] for d in cdata_zview_deprecated['metadata']['dimensions']
     ]
 
-    with tested_fs.open(conf_zview, mode='w') as stream:
+    with tested_fs.fs.open(conf_zview, mode='w') as stream:
         json.dump(cdata_zview_deprecated, stream, indent=4)
 
     # Invalid view path
@@ -90,14 +90,14 @@ def test_update_deprecated_view(fs, request, caplog):
 
     conf_zview_old = f'{conf_zview}.bak'
 
-    assert tested_fs.exists(conf_zview_old)
+    assert tested_fs.fs.exists(conf_zview_old)
 
     # Configuration is back to what it was
-    with tested_fs.open(conf_zview_old) as stream:
+    with tested_fs.fs.open(conf_zview_old) as stream:
         assert json.load(stream) == cdata_zview_deprecated
 
     # Configuration is back to what it was
-    with tested_fs.open(conf_zview) as stream:
+    with tested_fs.fs.open(conf_zview) as stream:
         assert json.load(stream) == cdata_zview
 
     caplog.clear()
@@ -116,6 +116,7 @@ def test_update_deprecated_view(fs, request, caplog):
         assert numpy.allclose(zdata[v].values, zdata_ref[v].values, rtol=0)
 
 
+@pytest.mark.filterwarnings('ignore:This collection needs to be updated')
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_update_deprecated_collection(  # noqa: PLR0915
         fs,
@@ -152,7 +153,7 @@ def test_update_deprecated_collection(  # noqa: PLR0915
     #: pylint: disable=protected-access
     conf_zcol = zcol._config(base_dir)
 
-    with tested_fs.open(conf_zcol) as stream:
+    with tested_fs.fs.open(conf_zcol) as stream:
         cdata_zcol = json.load(stream)
 
     cdata_zcol_deprecated = copy.deepcopy(cdata_zcol)
@@ -169,7 +170,7 @@ def test_update_deprecated_collection(  # noqa: PLR0915
         [d[0], d[2]] for d in cdata_zcol['dataset']['dimensions']
     ]
 
-    with tested_fs.open(conf_zcol, mode='w') as stream:
+    with tested_fs.fs.open(conf_zcol, mode='w') as stream:
         json.dump(cdata_zcol_deprecated, stream, indent=4)
     # The collection cannot be opened in write mode without
     # an update
@@ -213,14 +214,14 @@ def test_update_deprecated_collection(  # noqa: PLR0915
 
     conf_zcol_old = f'{conf_zcol}.bak'
 
-    assert tested_fs.exists(conf_zcol_old)
+    assert tested_fs.fs.exists(conf_zcol_old)
 
     # Configuration is back to what it was
-    with tested_fs.open(conf_zcol_old) as stream:
+    with tested_fs.fs.open(conf_zcol_old) as stream:
         assert json.load(stream) == cdata_zcol_deprecated
 
     # Configuration is back to what it was
-    with tested_fs.open(conf_zcol) as stream:
+    with tested_fs.fs.open(conf_zcol) as stream:
         assert json.load(stream) == cdata_zcol
 
     caplog.clear()

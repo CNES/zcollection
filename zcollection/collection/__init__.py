@@ -97,11 +97,8 @@ def _infer_callable(
     immutable = collection.immutable_path if collection.have_immutable else None
 
     with collection.synchronizer:
-        zds = _load_dataset(delayed=delayed,
-                            fs=collection.fs,
-                            immutable=immutable,
-                            partition=one_partition,
-                            selected_variables=selected_variables)
+        zds = _load_dataset(delayed, collection.fs, immutable, one_partition,
+                            selected_variables)
     func_result: dict[str, Any]
     func_result = _try_infer_callable(func, zds, collection.dimension, *args,
                                       **kwargs)
@@ -188,10 +185,10 @@ class Collection(ReadOnlyCollection):
         filesystem: fsspec.AbstractFileSystem | str | None = None,
         synchronizer: sync.Sync | None = None,
     ) -> None:
-        super().__init__(axis=axis,
-                         ds=ds,
-                         partition_handler=partition_handler,
-                         partition_base_dir=partition_base_dir,
+        super().__init__(axis,
+                         ds,
+                         partition_handler,
+                         partition_base_dir,
                          mode=mode,
                          filesystem=filesystem,
                          synchronizer=synchronizer)
@@ -203,7 +200,7 @@ class Collection(ReadOnlyCollection):
             self._read_only_mode()
 
         else:
-            storage.init_zarr_group(dirname=self._immutable, fs=self.fs)
+            storage.init_zarr_group(self._immutable, self.fs)
             self._write_config(skip_if_exists=True)
 
     def __str__(self) -> str:
@@ -321,10 +318,10 @@ class Collection(ReadOnlyCollection):
             load_dataset = meta.Dataset.from_deprecated_config
 
         collection = Collection(
-            axis=data['axis'],
-            ds=load_dataset(data['dataset']),
-            partition_handler=partitioning.get_codecs(data['partitioning']),
-            partition_base_dir=path,
+            data['axis'],
+            load_dataset(data['dataset']),
+            partitioning.get_codecs(data['partitioning']),
+            path,
             mode=mode or 'r',
             filesystem=fs,
             synchronizer=synchronizer,
@@ -393,16 +390,12 @@ class Collection(ReadOnlyCollection):
         _LOGGER.info('Inserting of a %s dataset in the collection',
                      dask.utils.format_bytes(ds.nbytes))
 
-        storage.write_zarr_group_missing(
-            zds=ds.select_variables_by_dims(
-                dims=(self.dimension, ),
-                predicate=False,
-            ),
-            dirname=self._immutable,
-            fs=self.fs,
-            synchronizer=self.synchronizer,
-            distributed=False,
-        )
+        storage.write_zarr_group_missing(ds.select_variables_by_dims(
+            (self.dimension, ), False),
+                                         self._immutable,
+                                         self.fs,
+                                         self.synchronizer,
+                                         distributed=False)
 
         # Remove the immutable variables.
         ds = ds.select_variables_by_dims((self.dimension, ))
@@ -419,16 +412,10 @@ class Collection(ReadOnlyCollection):
             self.partitioning.split_dataset(zds=ds, axis=self.dimension))
 
         if distributed:
-            self._insert_distributed(ds=ds,
-                                     partitions=partitions,
-                                     npartitions=npartitions,
-                                     merge_callable=merge_callable,
-                                     **kwargs)
+            self._insert_distributed(ds, partitions, npartitions,
+                                     merge_callable, **kwargs)
         else:
-            self._insert_sequential(ds=ds,
-                                    partitions=partitions,
-                                    merge_callable=merge_callable,
-                                    **kwargs)
+            self._insert_sequential(ds, partitions, merge_callable, **kwargs)
 
         return (fs_utils.join_path(*((self.partition_properties.dir, *item)))
                 for item, _ in partitions)
@@ -449,7 +436,7 @@ class Collection(ReadOnlyCollection):
         """
         mds = self.metadata
 
-        ds = dataset.Dataset(variables=[
+        ds = dataset.Dataset([
             self._set_var_for_insertion(var) for var in ds.variables.values()
         ])
 
@@ -497,13 +484,13 @@ class Collection(ReadOnlyCollection):
                 f"Variable '{variable.name}' has invalid dtype "
                 f"('{variable.dtype}' instead of '{var_meta.dtype}')")
 
-        if variable.fill_value != var_meta.fill_value:
+        if zvariable.abc.not_equal(variable.fill_value, var_meta.fill_value):
             raise ValueError(
                 f"Variable '{variable.name}' has invalid fill_value "
                 f"('{variable.fill_value}' instead of '{var_meta.fill_value}')"
             )
 
-        return zvariable.new_variable(cls=type(variable),
+        return zvariable.new_variable(type(variable),
                                       name=variable.name,
                                       array=variable.array,
                                       dimensions=variable.dimensions,
@@ -570,6 +557,8 @@ class Collection(ReadOnlyCollection):
                 the :meth:`partitions` method.
             timedelta: Select the partitions created before the specified time
                 delta relative to the current time.
+                This option can only be used on filesystem supporting
+                the ``fs.created()`` method.
             distributed: Whether to use dask or not. Default To True.
 
         Returns:
@@ -607,13 +596,11 @@ class Collection(ReadOnlyCollection):
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()
             storage.execute_transaction(
-                client=client,
-                synchronizer=self.synchronizer,
-                futures=client.map(self.fs.rm, folders, recursive=True),
-            )
+                client, self.synchronizer,
+                client.map(self.fs.rm, folders, recursive=True))
         else:
             for folder in folders:
-                self.fs.rm(path=folder, recursive=True)
+                self.fs.rm(folder, recursive=True)
 
         def invalidate_cache(path) -> None:
             """Invalidate the cache."""
@@ -722,36 +709,24 @@ class Collection(ReadOnlyCollection):
         immutable = self._immutable if self.have_immutable else None
 
         if depth == 0:
-            local_func = _wrap_update_func(
-                delayed=delayed,
-                func=func,
-                fs=self.fs,
-                immutable=immutable,
-                selected_variables=selected_variables)
+            local_func = _wrap_update_func(delayed, func, self.fs, immutable,
+                                           selected_variables)
         else:
             local_func = _wrap_update_func_with_overlap(
-                delayed=delayed,
-                depth=depth,
-                dim=self.dimension,
-                func=func,
-                fs=self.fs,
-                immutable=immutable,
-                selected_partitions=selected_partitions,
-                selected_variables=selected_variables,
-                trim=trim)
+                delayed, depth, self.dimension, func, self.fs, immutable,
+                selected_partitions, selected_variables, trim)
 
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()
 
             batches: Iterator[Sequence[str]] = dask_utils.split_sequence(
-                sequence=selected_partitions,
-                sections=npartitions
+                selected_partitions, npartitions
                 or dask_utils.dask_workers(client=client, cores_only=True))
 
             storage.execute_transaction(
-                client=client,
-                synchronizer=self.synchronizer,
-                futures=client.map(
+                client,
+                self.synchronizer,
+                client.map(
                     local_func,
                     tuple(batches),
                     key=func.__name__,
@@ -786,10 +761,7 @@ class Collection(ReadOnlyCollection):
                     f'({data.shape[i]} instead of {dimensions[dim]})')
 
         storage.update_zarr_array(
-            dirname=fs_utils.join_path(self._immutable, variable.name),
-            array=data,
-            fs=self.fs,
-        )
+            fs_utils.join_path(self._immutable, variable.name), data, self.fs)
 
     def add_dimension(self, dimension: meta.Dimension) -> None:
         """Add a dimension to the collection.
@@ -874,16 +846,14 @@ class Collection(ReadOnlyCollection):
 
         try:
             if self.dimension not in variable.dimensions:
-                self._add_variable(variable=variable,
-                                   partitions=[self._immutable])
+                self._add_variable(variable, [self._immutable])
             elif distributed:
-                self._add_variable_distributed(variable=variable)
+                self._add_variable_distributed(variable)
             else:
-                self._add_variable(variable=variable,
-                                   partitions=self.partitions(lock=True))
+                self._add_variable(variable, self.partitions(lock=True))
 
         except Exception:
-            self.drop_variable(variable=variable.name, distributed=distributed)
+            self.drop_variable(variable.name, distributed)
             raise
 
     def _add_variable(self, variable: meta.Variable,
@@ -892,10 +862,10 @@ class Collection(ReadOnlyCollection):
         dimensions, chunks = self.dimensions_properties()
 
         for partition in partitions:
-            storage.add_zarr_array(dirname=partition,
-                                   variable=variable,
-                                   dimensions=dimensions,
-                                   fs=self.fs,
+            storage.add_zarr_array(partition,
+                                   variable,
+                                   dimensions,
+                                   self.fs,
                                    axis=self.axis,
                                    chunks=chunks)
 
@@ -908,15 +878,13 @@ class Collection(ReadOnlyCollection):
 
         futures: list[dask.distributed.Future] = dask.distributed.futures_of(
             bag.map(storage.add_zarr_array,
-                    variable=variable,
-                    dimensions=dimensions,
-                    fs=self.fs,
+                    variable,
+                    dimensions,
+                    self.fs,
                     axis=self.axis,
                     chunks=chunks).persist())
 
-        storage.execute_transaction(client=client,
-                                    synchronizer=self.synchronizer,
-                                    futures=futures)
+        storage.execute_transaction(client, self.synchronizer, futures)
 
     def drop_variable(self, variable: str, distributed: bool = True) -> None:
         """Delete the variable from the collection.
@@ -945,9 +913,7 @@ class Collection(ReadOnlyCollection):
 
         if self.dimension not in self.metadata.variables[variable].dimensions:
             # This is an immutable variable.
-            storage.del_zarr_array(dirname=self._immutable,
-                                   name=variable,
-                                   fs=self.fs)
+            storage.del_zarr_array(self._immutable, variable, self.fs)
         elif distributed:
             client: dask.distributed.Client = dask_utils.get_client()
             bag: dask.bag.core.Bag = self._bag_from_partitions(lock=True)
@@ -958,9 +924,7 @@ class Collection(ReadOnlyCollection):
             storage.execute_transaction(client, self.synchronizer, awaitables)
         else:
             for partition in self.partitions(lock=True):
-                storage.del_zarr_array(dirname=partition,
-                                       name=variable,
-                                       fs=self.fs)
+                storage.del_zarr_array(partition, variable, self.fs)
 
         del self.metadata.variables[variable]
         self._write_config()
@@ -1034,8 +998,8 @@ class Collection(ReadOnlyCollection):
                     target,
                     os.path.relpath(source_path,
                                     self.partition_properties.dir))
-                fs_utils.copy_tree(source=source_path,
-                                   target=target_path,
+                fs_utils.copy_tree(source_path,
+                                   target_path,
                                    fs_source=self.fs,
                                    fs_target=filesystem)
 
@@ -1095,14 +1059,12 @@ class Collection(ReadOnlyCollection):
 
             for item in dask.distributed.as_completed(futures):
                 partition, valid = item.result()
-                _validity_check(_partition=partition, _valid=valid)
+                _validity_check(partition, valid)
         else:
             for item in partitions:
-                partition, valid = _check_partition(
-                    partition=item,
-                    fs=self.fs,
-                    partitioning_strategy=self.partitioning)
-                _validity_check(_partition=partition, _valid=valid)
+                partition, valid = _check_partition(item, self.fs,
+                                                    self.partitioning)
+                _validity_check(partition, valid)
 
         if fix and invalid_partitions:
             for item in invalid_partitions:

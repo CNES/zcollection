@@ -63,10 +63,10 @@ def create_collection(
             f'The directory {partition_base_dir!r} already exists.')
     if isinstance(ds, xarray.Dataset):
         ds = dataset.Dataset.from_xarray(ds)
-    return collection.Collection(axis=axis,
-                                 ds=ds.metadata(),
-                                 partition_handler=partition_handler,
-                                 partition_base_dir=partition_base_dir,
+    return collection.Collection(axis,
+                                 ds.metadata(),
+                                 partition_handler,
+                                 partition_base_dir,
                                  mode='w',
                                  filesystem=filesystem,
                                  **kwargs)
@@ -136,8 +136,7 @@ def update_deprecated_collection(
     axis = data['axis']
     main_dimension = ds.variables[axis].dimensions[0]
 
-    dimensions_source = _dimensions_source(ds=ds,
-                                           main_dimension=main_dimension)
+    dimensions_source = _dimensions_source(ds, main_dimension)
 
     zcol_partitioning = partitioning.get_codecs(data['partitioning'])
     partitions = list(
@@ -162,7 +161,7 @@ def update_deprecated_collection(
                             variable.name)
             var_path = join_path(path, collection.IMMUTABLE, variable.name)
 
-        var_shape = zarr.open(store=filesystem.get_mapper(var_path)).shape
+        var_shape = zarr.open(filesystem.get_mapper(var_path)).shape
 
         dim_size = var_shape[dim_index]
         _LOGGER.warning('Assigning size %r to dimension %r.', dim_size,
@@ -175,14 +174,12 @@ def update_deprecated_collection(
         raise ValueError('Something is wrong, some dimensions are missing: '
                          f'{missing_dimensions}')
 
-    zcol = collection.Collection(
-        axis=axis,
-        ds=ds,
-        partition_handler=zcol_partitioning,
-        partition_base_dir=path,
-        mode='w',
-        filesystem=filesystem,
-    )
+    zcol = collection.Collection(axis,
+                                 ds,
+                                 zcol_partitioning,
+                                 path,
+                                 mode='w',
+                                 filesystem=filesystem)
 
     config = zcol._config(path)
 

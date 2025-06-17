@@ -152,17 +152,10 @@ def merge_time_series(
         # gaps.
         for ix in range(len(index) - 1):
             existing_ds = _merge_time_series(
-                existing_ds=existing_ds,
-                inserted_ds=inserted_ds.isel(
+                existing_ds,
+                inserted_ds.isel(
                     {partitioning_dim: slice(index[ix], index[ix + 1], None)}),
-                axis=axis,
-                partitioning_dim=partitioning_dim,
-            )
+                axis, partitioning_dim)
         return existing_ds
 
-    return _merge_time_series(
-        existing_ds=existing_ds,
-        inserted_ds=inserted_ds,
-        axis=axis,
-        partitioning_dim=partitioning_dim,
-    )
+    return _merge_time_series(existing_ds, inserted_ds, axis, partitioning_dim)

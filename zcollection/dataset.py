@@ -329,9 +329,9 @@ class Dataset:
                         f'length {self.dimensions[dim]} on the data but length '
                         f'{size} defined in dataset.')
         self.variables[var.name] = (DelayedArray if self.delayed else Array)(
-            name=var.name,
-            data=data,
-            dimensions=var.dimensions,
+            var.name,
+            data,
+            var.dimensions,
             attrs=var.attrs,
             compressor=var.compressor,
             fill_value=var.fill_value,
@@ -373,7 +373,7 @@ class Dataset:
         """
         if isinstance(names, str) or not isinstance(names, Iterable):
             names = [names]
-        zds = Dataset(variables=(self.variables[name] for name in names),
+        zds = Dataset((self.variables[name] for name in names),
                       attrs=self.attrs,
                       delayed=self.delayed)
         zds.copy_properties(ds=self)
@@ -386,12 +386,10 @@ class Dataset:
             Dataset metadata
         """
         return meta.Dataset(
-            dimensions=tuple(
-                Dimension(
-                    name=dim, value=size, chunks=self.dim_chunks.get(dim, -1))
+            tuple(
+                Dimension(dim, size, self.dim_chunks.get(dim, -1))
                 for dim, size in self.dimensions.items()),
-            variables=tuple(item.metadata()
-                            for item in self.variables.values()),
+            tuple(item.metadata() for item in self.variables.values()),
             attrs=self.attrs,
             block_size_limit=self.block_size_limit,
         )
@@ -425,12 +423,11 @@ class Dataset:
         ]
 
         return Dataset(
-            variables=variables,
+            variables,
             attrs=tuple(
                 Attribute(*item)  # type: ignore[arg-type]
                 for item in zds.attrs.items()),
-            delayed=delayed,
-        )
+            delayed=delayed)
 
     def to_xarray(self, **kwargs) -> xarray.Dataset:
         """Convert the dataset to a xarray dataset.
@@ -518,9 +515,7 @@ class Dataset:
                 tuple(slices.get(dim, slice(None)) for dim in var.dimensions))
             for var in self.variables.values()
         ]
-        zds = Dataset(variables=variables,
-                      attrs=self.attrs,
-                      delayed=self.delayed)
+        zds = Dataset(variables, attrs=self.attrs, delayed=self.delayed)
         zds.copy_properties(ds=self)
         return zds
 
@@ -539,11 +534,9 @@ class Dataset:
         variables: list[Variable] = _delete_delayed_vars(
             self, indexer, axis) if self.delayed else _delete_vars(
                 self, indexer, axis)
-        zds = Dataset(variables=variables,
-                      attrs=self.attrs,
-                      delayed=self.delayed)
+        zds = Dataset(variables, attrs=self.attrs, delayed=self.delayed)
 
-        zds.copy_properties(ds=self)
+        zds.copy_properties(self)
         return zds
 
     def compute(self, **kwargs) -> Dataset:
@@ -572,7 +565,7 @@ class Dataset:
                   filters=item.filters)
             for item, array in zip(self.variables.values(), arrays)
         ]
-        zds = Dataset(variables=variables, attrs=self.attrs, delayed=False)
+        zds = Dataset(variables, attrs=self.attrs, delayed=False)
 
         zds.copy_properties(ds=self)
         return zds
@@ -594,9 +587,7 @@ class Dataset:
         variables: list[Variable] = [
             var.rechunk(**kwargs) for var in self.variables.values()
         ]
-        zds = Dataset(variables=variables,
-                      attrs=self.attrs,
-                      delayed=self.delayed)
+        zds = Dataset(variables, attrs=self.attrs, delayed=self.delayed)
         zds.copy_properties(ds=self)
         return zds
 
@@ -654,9 +645,7 @@ class Dataset:
             var.concat(tuple(item.variables[name] for item in other), dim)
             for name, var in self.variables.items()
         ]
-        zds = Dataset(variables=variables,
-                      attrs=self.attrs,
-                      delayed=self.delayed)
+        zds = Dataset(variables, attrs=self.attrs, delayed=self.delayed)
         zds.copy_properties(ds=self)
         return zds
 
@@ -729,8 +718,8 @@ class Dataset:
         variables: list[Variable] = [
             var for var in self.variables.values() if condition(var)
         ]
-        zds = Dataset(variables=variables, attrs=self.attrs)
-        zds.copy_properties(ds=self)
+        zds = Dataset(variables, attrs=self.attrs)
+        zds.copy_properties(self)
         return zds
 
     def to_zarr(self,
@@ -751,10 +740,10 @@ class Dataset:
         import storage
         import sync
 
-        storage.write_zarr_group(zds=self,
-                                 dirname=path,
-                                 fs=fs or fsspec.filesystem('file'),
-                                 synchronizer=sync.NoSync(),
+        storage.write_zarr_group(self,
+                                 path,
+                                 fs or fsspec.filesystem('file'),
+                                 sync.NoSync(),
                                  distributed=parallel)
 
     def __str__(self) -> str:
@@ -781,10 +770,10 @@ def get_variable_metadata(var: Variable | meta.Variable) -> meta.Variable:
 def get_dataset_variable_properties(
         metadata: meta.Dataset,
         selected_variables: Iterable[str] | None = None) -> tuple[Array, ...]:
-    """Return the variables properties defined in the dataset.
+    """Return the variables' properties defined in the dataset.
 
     Args:
-        metadata: Metadata dataset containing variables information.
+        metadata: Metadata dataset containing variables' information.
         selected_variables: The variables to return. If None, all the
             variables are returned.
 
@@ -793,9 +782,9 @@ def get_dataset_variable_properties(
     """
     selected_variables = selected_variables or metadata.variables.keys()
     return tuple(
-        Array(name=v.name,
-              data=numpy.ndarray((0, ) * len(v.dimensions), v.dtype),
-              dimensions=v.dimensions,
+        Array(v.name,
+              numpy.ndarray((0, ) * len(v.dimensions), v.dtype),
+              v.dimensions,
               attrs=v.attrs,
               compressor=v.compressor,
               fill_value=v.fill_value,

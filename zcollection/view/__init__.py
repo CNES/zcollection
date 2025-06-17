@@ -90,10 +90,9 @@ class View:
         self.base_dir: str = fs_utils.normalize_path(fs=self.fs, path=base_dir)
         #: The reference collection of the view.
         self.view_ref: collection.Collection = convenience.open_collection(
-            path=view_ref.path, mode='r', filesystem=view_ref.filesystem)
+            view_ref.path, mode='r', filesystem=view_ref.filesystem)
         #: The metadata of the variables handled by the view.
-        self.metadata = ds or meta.Dataset(
-            dimensions=[], variables=[], attrs=[])
+        self.metadata = ds or meta.Dataset([], [], attrs=[])
         #: The synchronizer used to synchronize the view.
         self.synchronizer: sync.Sync = synchronizer or sync.NoSync()
         #: The filters used to select the partitions of the reference.
@@ -103,7 +102,7 @@ class View:
             _LOGGER.info('Creating view %s', self)
             self.fs.makedirs(self.base_dir)
             self._write_config()
-            self._init_partitions(filters=filters, distributed=distributed)
+            self._init_partitions(filters, distributed)
         else:
             _LOGGER.info('Opening view %s', self)
 
@@ -127,19 +126,14 @@ class View:
             client: dask.distributed.Client = dask_utils.get_client()
             storage.execute_transaction(
                 client, self.synchronizer,
-                client.map(
-                    _write_checksum,
-                    tuple(args),
-                    base_dir=self.base_dir,
-                    view_ref=self.view_ref,
-                    fs=self.fs,
-                ))
+                client.map(_write_checksum,
+                           tuple(args),
+                           base_dir=self.base_dir,
+                           view_ref=self.view_ref,
+                           fs=self.fs))
         else:
             for arg in args:
-                _write_checksum(partition=arg,
-                                base_dir=self.base_dir,
-                                view_ref=self.view_ref,
-                                fs=self.fs)
+                _write_checksum(arg, self.base_dir, self.view_ref, self.fs)
 
     def __str__(self) -> str:
         return (f'{self.__class__.__name__}'
@@ -167,7 +161,7 @@ class View:
             'version': __version__,
         }
 
-        with self.fs.open(config, mode='w') as stream:
+        with self.fs.open(config, 'w') as stream:
             json.dump(params, stream, indent=4)  # type: ignore[arg-type]
 
         self.fs.invalidate_cache(config)
@@ -211,8 +205,8 @@ class View:
                              'function to update it.')
 
         view_ref: dict[str, Any] = data['view_ref']
-        return View(base_dir=data['base_dir'],
-                    view_ref=ViewReference(
+        return View(data['base_dir'],
+                    ViewReference(
                         view_ref['path'],
                         fsspec.AbstractFileSystem.from_json(
                             json.dumps(view_ref['fs']))),
@@ -223,6 +217,7 @@ class View:
 
     def partitions(
         self,
+        *,
         filters: collection.PartitionFilter = None,
         indexer: collection.Indexer | None = None,
         selected_partitions: Iterable[str] | None = None,
@@ -259,8 +254,8 @@ class View:
         Returns:
             The variables of the view.
         """
-        return dataset.get_dataset_variable_properties(
-            metadata=self.metadata, selected_variables=selected_variables)
+        return dataset.get_dataset_variable_properties(self.metadata,
+                                                       selected_variables)
 
     def add_variable(self,
                      variable: meta.Variable | dataset.Variable,
@@ -298,8 +293,7 @@ class View:
         if ref_zcol.dimension not in variable.dimensions:
             raise ValueError('Immutable variable cannot be added to views.')
 
-        self.metadata.add_variable(variable=variable,
-                                   dimensions=set(ref_meta.dimensions))
+        self.metadata.add_variable(variable, set(ref_meta.dimensions))
 
         existing_partitions = {
             pathlib.Path(path).relative_to(self.base_dir).as_posix()
@@ -313,20 +307,17 @@ class View:
         args = filter(lambda item: item[0] in existing_partitions,
                       ref_zcol.iterate_on_records())
 
-        # Attributes are not stored at variable's level
+        # Attributes are not stored at the variable's level
         variable = variable.set_for_insertion()
 
         try:
             if distributed:
-                self._add_variable_distributed(variable=variable,
-                                               partitions=args)
+                self._add_variable_distributed(variable, args)
             else:
-                self._add_variable(variable=variable, partitions=args)
+                self._add_variable(variable, args)
 
         except Exception:
-            self.drop_variable(variable=variable.name,
-                               distributed=distributed,
-                               ignore_errors=True)
+            self.drop_variable(variable.name, distributed, True)
             raise
 
         self._write_config()
@@ -354,18 +345,16 @@ class View:
         client: dask.distributed.Client = dask_utils.get_client()
 
         storage.execute_transaction(
-            client=client,
-            synchronizer=self.synchronizer,
-            futures=client.map(
-                _create_zarr_array,
-                tuple(partitions),
-                base_dir=self.base_dir,
-                variable=variable,
-                dimensions=dimensions,
-                chunks=chunks,
-                axis=self.view_ref.axis,
-                fs=self.fs,
-            ),
+            client,
+            self.synchronizer,
+            client.map(_create_zarr_array,
+                       tuple(partitions),
+                       base_dir=self.base_dir,
+                       variable=variable,
+                       dimensions=dimensions,
+                       chunks=chunks,
+                       axis=self.view_ref.axis,
+                       fs=self.fs),
         )
 
     def drop_variable(
@@ -389,11 +378,8 @@ class View:
             >>> view.drop_variable("temperature")
         """
         _LOGGER.info('Dropping variable %r', variable)
-        _assert_variable_handled(
-            reference=self.view_ref.metadata,
-            view=self.metadata,
-            variable=variable,
-        )
+        _assert_variable_handled(self.view_ref.metadata, self.metadata,
+                                 variable)
 
         del self.metadata.variables[variable]
         self._write_config()
@@ -401,9 +387,9 @@ class View:
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()
             storage.execute_transaction(
-                client=client,
-                synchronizer=self.synchronizer,
-                futures=client.map(
+                client,
+                self.synchronizer,
+                client.map(
                     _drop_zarr_zarr,
                     tuple(self.partitions()),
                     fs=self.fs,
@@ -413,12 +399,7 @@ class View:
             )
         else:
             for partition in self.partitions():
-                _drop_zarr_zarr(
-                    partition=partition,
-                    fs=self.fs,
-                    variable=variable,
-                    ignore_errors=ignore_errors,
-                )
+                _drop_zarr_zarr(partition, self.fs, variable, ignore_errors)
 
     def load(
         self,
@@ -459,15 +440,15 @@ class View:
 
         array: dataset.Dataset | None = None
         datasets: list[tuple[dataset.Dataset, str] | None]
-        partitions = self.partitions(selected_partitions=selected_partitions,
-                                     filters=filters,
-                                     indexer=indexer)
+        partitions = self.partitions(filters=filters,
+                                     indexer=indexer,
+                                     selected_partitions=selected_partitions)
 
         if indexer is not None:
             arguments = tuple(
-                collection.abc.build_indexer_args(collection=self.view_ref,
-                                                  filters=filters,
-                                                  indexer=indexer,
+                collection.abc.build_indexer_args(self.view_ref,
+                                                  filters,
+                                                  indexer,
                                                   partitions=partitions))
             if len(arguments) == 0:
                 return None
@@ -513,10 +494,10 @@ class View:
         if arrays:
             array = arrays.pop(0)
             if arrays:
-                array = array.concat(other=arrays, dim=self.view_ref.dimension)
+                array = array.concat(arrays, self.view_ref.dimension)
 
-        array = self.view_ref.merge_immutable(
-            ds=array, selected_variables=selected_variables, delayed=delayed)
+        array = self.view_ref.merge_immutable(array, selected_variables,
+                                              delayed)
 
         if array is not None:
             metadata: meta.Dataset = copy.deepcopy(self.view_ref.metadata)
@@ -629,9 +610,8 @@ class View:
                                 self.view_ref.dimension, *args, **kwargs))
         tuple(
             _assert_variable_handled(  # type: ignore[func-returns-value]
-                reference=self.view_ref.metadata,
-                view=self.metadata,
-                variable=varname) for varname in variables)
+                self.view_ref.metadata, self.metadata, varname)
+            for varname in variables)
         _LOGGER.info('Updating variable %s',
                      ', '.join(repr(item) for item in variables))
 
@@ -648,14 +628,9 @@ class View:
                     'If the depth is greater than 0, the selected variables '
                     'must contain the variables updated by the function.')
 
-            wrap_function = _wrap_update_func_overlap(
-                datasets_list=datasets_list,
-                depth=depth,
-                func=func,
-                fs=self.fs,
-                view_ref=self.view_ref,
-                trim=trim,
-            )
+            wrap_function = _wrap_update_func_overlap(datasets_list, depth,
+                                                      func, self.fs,
+                                                      self.view_ref, trim)
 
         if distributed:
             batches: Iterator[Sequence[Any]] = dask_utils.split_sequence(
@@ -751,14 +726,12 @@ class View:
                 fs=self.fs,
                 view_ref=self.view_ref,
                 metadata=self.metadata,
-                partitions=self.partitions(filters),
+                partitions=self.partitions(filters=filters),
                 selected_variables=selected_variables,
                 with_immutable=True,
             ))
         bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-            datasets_list,
-            partition_size=partition_size,
-            npartitions=npartitions)
+            datasets_list, partition_size, npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
 
     def map_overlap(
@@ -862,14 +835,12 @@ class View:
                 fs=self.fs,
                 view_ref=self.view_ref,
                 metadata=self.metadata,
-                partitions=self.partitions(filters),
+                partitions=self.partitions(filters=filters),
                 selected_variables=selected_variables,
                 with_immutable=True,
             ))
         bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-            datasets_list,
-            partition_size=partition_size,
-            npartitions=npartitions)
+            datasets_list, partition_size, npartitions)
         return bag.map(_wrap, func, datasets_list, depth, *args, **kwargs)
 
     def is_synced(self, distributed: bool = True) -> bool:
@@ -942,7 +913,7 @@ class View:
         if filters is not None:
             self.filters = filters
             self._write_config()
-            self._init_partitions(filters, distributed=distributed)
+            self._init_partitions(filters, distributed)
 
         partitions = tuple(self.view_ref.partitions(relative=True))
         _LOGGER.info('%d partitions to synchronize', len(partitions))
