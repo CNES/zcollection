@@ -635,13 +635,14 @@ def test_view_sync(
         numpy.ones((len(dates), zds.dimensions['num_pixels']),
                    dtype=numpy.int64))
     zcol.insert(zds)
-    del zcol
+
     zview = convenience.open_view(str(tested_fs.view), filesystem=tested_fs.fs)
     assert zview is not None
     assert zview.is_synced(distributed=distributed) is False
-    zview.sync(filters=lambda keys: True, distributed=distributed)
+    zview.sync(filters='day >= 16', distributed=distributed)
     zds = zview.load(distributed=distributed)
     assert zds is not None
+    assert numpy.array_equal(zds['time'].values, zcol.load()['time'].values)
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])

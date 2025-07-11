@@ -897,7 +897,7 @@ class View:
                 method.
                 If None, the view is synchronized with all the partitions
                 already present in the view. If you want to extend the view
-                with new partitions, use must provide a predicate that
+                with new partitions, you must provide a predicate that
                 selects the new partitions.
                 Existing partitions are not removed, even if they are not
                 selected by the predicate.
@@ -915,7 +915,9 @@ class View:
             self._write_config()
             self._init_partitions(filters, distributed)
 
-        partitions = tuple(self.view_ref.partitions(relative=True))
+        partitions = tuple(
+            self.view_ref.partitions(filters=filters, relative=True))
+
         _LOGGER.info('%d partitions to synchronize', len(partitions))
 
         if distributed:
