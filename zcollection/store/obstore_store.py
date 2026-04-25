@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 import zarr.storage
 
 from ..errors import StoreError
-from ._async_bridge import run_sync, to_list_async
+from ._async_bridge import run_sync
 from .base import Store
 
 
@@ -126,7 +126,13 @@ class ObjectStore(Store):
 
     def list_prefix(self, prefix: str) -> Iterator[str]:
         """Yield direct children under ``prefix``."""
-        return iter(to_list_async(self._store.list_dir(prefix.rstrip("/"))))
+
+        async def _drain() -> list[str]:
+            return [
+                key async for key in self._store.list_dir(prefix.rstrip("/"))
+            ]
+
+        return iter(run_sync(_drain()))
 
     def list_dir(self, prefix: str) -> Iterator[str]:
         """Yield direct children under ``prefix`` (alias of :meth:`list_prefix`)."""
