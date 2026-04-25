@@ -43,7 +43,15 @@ _RESOLUTIONS: dict[str, tuple[tuple[str, str, int], ...]] = {
 class Date:
     """Partition by truncating a 1-D datetime64 variable to ``resolution``.
 
-    Component names match the v2 layout (``year=2024/month=03/day=01``).
+    Component names match the layout (``year=2024/month=03/day=01``).
+
+    Args:
+        variables: The variable(s) to partition by; must be exactly one.
+        resolution: The partitioning resolution, one of "Y", "M", "D", "h",
+            "m", or "s".
+        dimension: The dimension to partition along; if ``None``, inferred
+            from the variable name.
+
     """
 
     name = "date"
@@ -55,16 +63,7 @@ class Date:
         resolution: str,
         dimension: str | None = None,
     ) -> None:
-        """Initialize the Date partitioning.
-
-        Args:
-            variables: The variable(s) to partition by; must be exactly one.
-            resolution: The partitioning resolution, one of "Y", "M", "D", "h",
-                "m", or "s".
-            dimension: The dimension to partition along; if ``None``, inferred
-                from the variable name.
-
-        """
+        """Initialize the Date partitioning."""
         if isinstance(variables, str):
             variables = (variables,)
         if len(variables) != 1:
@@ -76,9 +75,14 @@ class Date:
                 f"unsupported resolution {resolution!r}; "
                 f"choose from {tuple(_RESOLUTIONS)!r}"
             )
+        #: The variable to partition by.
         self._variable = variables[0]
+        #: The resolution code (Y/M/D/h/m/s).
         self._resolution = resolution
+        #: The dimension to partition along.
         self._dimension = dimension or variables[0]
+        #: The component names, datetime64 units, and zero-padding widths for
+        #: this resolution.
         self._components = _RESOLUTIONS[resolution]
 
     @property
@@ -142,14 +146,38 @@ class Date:
         return tuple(parts)
 
     def encode(self, key: PartitionKey) -> str:
-        """Encode a key as a relative storage path."""
+        """Encode a key as a relative storage path.
+
+        Args:
+            key: A tuple of (component-name, value) pairs corresponding to the
+                partition key.
+
+        Returns:
+            A string representing the relative storage path for the given key,
+            formatted according to the component names and zero-padding widths
+            defined for this partitioning.
+
+        """
         pad_by_name = {name: pad for name, _unit, pad in self._components}
         return "/".join(
             f"{name}={int(val):0{pad_by_name[name]}d}" for name, val in key
         )
 
     def decode(self, path: str) -> PartitionKey:
-        """Decode a relative storage path into a key."""
+        """Decode a relative storage path into a key.
+
+        Args:
+            path: A string representing the relative storage path.
+
+        Returns:
+            A tuple of (component-name, value) pairs corresponding to the
+            partition key.
+
+        Raises:
+            PartitionError: If the path is not properly formatted or if any
+                component is missing or has an invalid value.
+
+        """
         parts: list[tuple[str, int]] = []
         for token in path.strip("/").split("/"):
             if "=" not in token:
@@ -171,7 +199,15 @@ class Date:
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> Date:
-        """Reconstruct a Date partitioning from its JSON payload."""
+        """Reconstruct a Date partitioning from its JSON payload.
+
+        Args:
+            payload: The JSON payload containing the partitioning information.
+
+        Returns:
+            An instance of the Date partitioning based on the provided payload.
+
+        """
         return cls(
             (payload["variable"],),
             resolution=payload["resolution"],

@@ -25,6 +25,14 @@ class GroupedSequence(Sequence):
     The first ``len(variables) - 1`` variables continue to act as exact keys;
     the last variable is mapped to ``(value - start) // size * size + start``
     before grouping. ``size`` must be ≥ 2 (otherwise prefer :class:`Sequence`).
+
+    Args:
+        variables: The variable(s) to partition by; must be at least one.
+        dimension: The dimension to partition along; if ``None``, inferred
+            from the variable name.
+        size: The bucket size for the last variable; must be ≥ 2.
+        start: The bucket origin for the last variable; defaults to 0.
+
     """
 
     name = "grouped-sequence"
@@ -37,22 +45,15 @@ class GroupedSequence(Sequence):
         size: int,
         start: int = 0,
     ) -> None:
-        """Initialize the grouped-sequence partitioning.
-
-        Args:
-            variables: The variable(s) to partition by; must be at least one.
-            dimension: The dimension to partition along; if ``None``, inferred
-                from the variable name.
-            size: The bucket size for the last variable; must be ≥ 2.
-            start: The bucket origin for the last variable; defaults to 0.
-
-        """
+        """Initialize the grouped-sequence partitioning."""
         super().__init__(variables, dimension=dimension)
         if size < _MIN_GROUP_SIZE:
             raise PartitionError(
                 f"GroupedSequence requires size >= {_MIN_GROUP_SIZE}; got {size}"
             )
+        #: The bucket size for the last variable.
         self._size = int(size)
+        #: The bucket origin for the last variable.
         self._start = int(start)
 
     @property
@@ -66,7 +67,21 @@ class GroupedSequence(Sequence):
         return self._start
 
     def split(self, dataset: Dataset) -> Iterator[tuple[PartitionKey, slice]]:
-        """Yield ``(key, slice)`` for each contiguous bucket in ``dataset``."""
+        """Yield ``(key, slice)`` for each contiguous bucket in ``dataset``.
+
+        Args:
+            dataset: The dataset to partition, which must contain all variables
+                in this partitioning and have the partitioning dimension in
+                each.
+
+        Yields:
+            Tuples of (partition_key, slice) for each contiguous bucket in the
+            dataset, where partition_key is a tuple of (component, value) pairs
+            representing the partition key for that bucket, and slice is a slice
+            object that can be used to index into the dataset along the
+            partitioning dimension.
+
+        """
         cols: dict[str, numpy.ndarray] = {}
         names = list(self.axis)
         for name in names:
@@ -111,7 +126,16 @@ class GroupedSequence(Sequence):
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> GroupedSequence:
-        """Reconstruct a GroupedSequence from its JSON payload."""
+        """Reconstruct a GroupedSequence from its JSON payload.
+
+        Args:
+            payload: The JSON payload containing the partitioning information.
+
+        Returns:
+            An instance of the GroupedSequence partitioning based on the
+            provided JSON payload.
+
+        """
         return cls(
             tuple(payload["variables"]),
             dimension=payload["dimension"],

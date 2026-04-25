@@ -12,7 +12,11 @@ import operator
 
 from ..errors import ExpressionError
 
+#: A partition key is a tuple of (component, value) pairs, e.g.
+#: (("year", 2024), ("month", 3)).
 PartitionKey = tuple[tuple[str, Any], ...]
+
+#: A predicate is a function that takes a partition-key dict and returns a bool.
 Predicate = Callable[[dict[str, Any]], bool]
 
 _ALLOWED_NODES: tuple[type[ast.AST], ...] = (
@@ -44,6 +48,19 @@ def compile_filter(expr: str | None) -> Predicate:
     """Compile a filter expression to a predicate over partition-key dicts.
 
     ``expr=None`` or empty string returns a tautology.
+
+    Args:
+        expr: The filter expression to compile. This should be a string
+            containing a valid Python expression using only the allowed syntax.
+
+    Returns:
+        A predicate function that takes a partition-key dict and returns a bool
+        indicating whether the partition key satisfies the filter expression.
+
+    Raises:
+        ExpressionError: If the expression contains syntax errors or uses
+            disallowed syntax.
+
     """
     if not expr:
         return lambda _ctx: True

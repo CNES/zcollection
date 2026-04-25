@@ -18,6 +18,7 @@ class Partitioning(Protocol):
     Implementations operate on plain numpy — Dask is layered higher up.
     """
 
+    #: A human-readable name for this partitioning strategy, e.g. "sequence".
     name: str
 
     @property
@@ -54,6 +55,21 @@ def keys_from_columns(
 
     ``unique_rows`` has shape (n_unique, n_cols); ``inverse`` maps each input
     row to its unique index. Sort order is lexicographic and stable.
+
+    Args:
+        columns: Mapping of column name to 1D array of partition values.
+
+    Returns:
+        A tuple of (unique_rows, inverse) where:
+        - unique_rows: A 2D array of shape (n_unique, n_cols) containing the
+          unique combinations of partition values.
+        - inverse: A 1D array mapping each input row to its corresponding
+          unique index in unique_rows.
+
+    Raises:
+        ValueError: If no columns are provided or if columns have mismatched
+            lengths.
+
     """
     if not columns:
         raise ValueError("at least one column is required")
@@ -72,6 +88,18 @@ def runs_from_inverse(inverse: numpy.ndarray) -> Iterable[tuple[int, slice]]:
 
     A row that re-appears later produces a separate run — partitions can be
     fragmented. Callers concatenate fragments belonging to the same group.
+
+    Args:
+        inverse: A 1D array mapping each input row to its corresponding unique
+        index in the unique rows.
+
+    Yields:
+        Tuples of (group_id, slice) where:
+        - group_id: An integer representing the unique index of the partition
+          key.
+        - slice: A slice object indicating the start and end indices of the
+          contiguous run of rows corresponding to the group_id.
+
     """
     if inverse.size == 0:
         return

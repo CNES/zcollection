@@ -43,16 +43,35 @@ CATALOG_FORMAT_VERSION: int = 1
 class CatalogState:
     """Decoded catalog payload."""
 
+    #: Sorted tuple of partition paths relative to the collection root.
     paths: tuple[str, ...]
+    #: Checksum of the catalog content, for tamper/crash detection.
     checksum: str
 
     def matches(self, paths: list[str] | tuple[str, ...]) -> bool:
-        """Return whether ``paths`` hash to the stored checksum."""
+        """Return whether ``paths`` hash to the stored checksum.
+
+        Args:
+            paths: List of partition paths to verify against the catalog's
+                checksum.
+
+        Returns:
+            True if the checksum of the provided paths matches the catalog's
+            checksum, indicating that the catalog is consistent with the given
+            paths; False otherwise.
+
+        """
         return _checksum(paths) == self.checksum
 
 
 class Catalog:
-    """Read/write the partition catalog for one collection."""
+    """Read/write the partition catalog for one collection.
+
+    Args:
+        store: The underlying storage interface for reading and writing the
+            catalog.
+
+    """
 
     def __init__(self, store: Store) -> None:
         """Initialize the catalog reader/writer for ``store``."""
@@ -118,7 +137,16 @@ class Catalog:
 def reconcile(
     catalog: Catalog, walked: list[str] | tuple[str, ...]
 ) -> CatalogState:
-    """Rewrite the catalog from a fresh walk and return the new state."""
+    """Rewrite the catalog from a fresh walk and return the new state.
+
+    Args:
+        catalog: The Catalog instance to update with the new paths.
+        walked: The list of partition paths obtained from a fresh walk.
+
+    Returns:
+        The new CatalogState after rewriting the catalog.
+
+    """
     catalog.write(walked)
     state = catalog.read()
     assert state is not None  # we just wrote it

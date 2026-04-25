@@ -17,22 +17,23 @@ class Sequence:
 
     The variables must all share the same single dimension, which becomes the
     partitioning axis.
+
+    Args:
+        variables: The variable(s) to partition by; must be at least one.
+        dimension: The dimension to partition along; if ``None``, inferred
+            from the variable name.
+
     """
 
     name = "sequence"
 
     def __init__(self, variables: tuple[str, ...], *, dimension: str) -> None:
-        """Initialize the sequence partitioning.
-
-        Args:
-            variables: The variable(s) to partition by; must be at least one.
-            dimension: The dimension to partition along; if ``None``, inferred
-                from the variable name.
-
-        """
+        """Initialize the sequence partitioning."""
         if not variables:
             raise PartitionError("Sequence requires at least one variable")
+        #: The partition-key variable names.
         self._axis = tuple(variables)
+        #: The dimension this partitioning splits.
         self._dimension = dimension
 
     @property
@@ -46,7 +47,20 @@ class Sequence:
         return self._dimension
 
     def split(self, dataset: Dataset) -> Iterator[tuple[PartitionKey, slice]]:
-        """Yield ``(key, slice)`` for each unique tuple in ``dataset``."""
+        """Yield ``(key, slice)`` for each unique tuple in ``dataset``.
+
+        Args:
+            dataset: The dataset to split; must contain the partition-key
+                variables as 1-D arrays along the partitioning dimension.
+
+        Yields:
+            Tuples of the form ``(key, slice)``, where ``key`` is a partition
+            key tuple (e.g. ``(("x", 1), ("y", 2))``) representing the unique
+            value combination for the partition, and ``slice`` is a slice object
+            that can be used to index into the dataset along the partitioning
+            dimension.
+
+        """
         cols: dict[str, numpy.ndarray] = {}
         for name in self._axis:
             if name not in dataset:
@@ -68,11 +82,30 @@ class Sequence:
             yield key, sl
 
     def encode(self, key: PartitionKey) -> str:
-        """Encode a key as a relative storage path."""
+        """Encode a key as a relative storage path.
+
+        Args:
+            key: The partition key to encode.
+
+        Returns:
+            A relative storage path representing the encoded partition key.
+
+        """
         return "/".join(f"{name}={value}" for name, value in key)
 
     def decode(self, path: str) -> PartitionKey:
-        """Decode a relative storage path into a key."""
+        """Decode a relative storage path into a key.
+
+        Args:
+            path: The relative storage path to decode.
+
+        Returns:
+            The decoded partition key.
+
+        Raises:
+            PartitionError: If the path is not in the expected format.
+
+        """
         parts: list[tuple[str, int]] = []
         for token in path.strip("/").split("/"):
             if "=" not in token:
@@ -93,7 +126,16 @@ class Sequence:
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> Sequence:
-        """Reconstruct a Sequence partitioning from its JSON payload."""
+        """Reconstruct a Sequence partitioning from its JSON payload.
+
+        Args:
+            payload: The JSON payload containing the partitioning information.
+
+        Returns:
+            An instance of the Sequence partitioning based on the provided
+            payload.
+
+        """
         return cls(
             variables=tuple(payload["variables"]),
             dimension=payload["dimension"],
