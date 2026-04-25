@@ -1,29 +1,36 @@
-# Copyright (c) 2023 CNES
-#
-# All rights reserved. Use of this source code is governed by a
-# BSD-style license that can be found in the LICENSE file.
-"""
-Partitioning scheme.
-====================
+"""Partitioning strategies and the typed filter expression engine."""
+from __future__ import annotations
 
-Entry point of the implemented partitioning schemes.
+from typing import Any
 
-* :py:class:`Sequence <zcollection.partitioning.sequence.Sequence>`:
-  Partitioning a sequence of variables.
-* :py:class:`Date <zcollection.partitioning.date.Date>`: Partitioning a
-  sequence of dates.
-
-.. class:: Partitioning
-
-    Alias for :class:`zcollection.partitioning.abc.Partitioning`.
-"""
-from .abc import Partitioning
+from .base import Partitioning, PartitionKey
+from .catalog import Catalog, CatalogState, reconcile as reconcile_catalog
 from .date import Date
-from .registry import get_codecs, register_codec
-from .sequence import GroupedSequence, Sequence
+from .expression import compile_filter, key_to_dict
+from .grouped import GroupedSequence
+from .sequence import Sequence
 
-register_codec(Date)
-register_codec(Sequence)
-register_codec(GroupedSequence)
+__all__ = (
+    "Catalog",
+    "CatalogState",
+    "Date",
+    "GroupedSequence",
+    "PartitionKey",
+    "Partitioning",
+    "Sequence",
+    "compile_filter",
+    "from_json",
+    "key_to_dict",
+    "reconcile_catalog",
+)
 
-__all__ = ('Date', 'GroupedSequence', 'Partitioning', 'Sequence', 'get_codecs')
+
+def from_json(payload: dict[str, Any]) -> Partitioning:
+    name = payload.get("name")
+    if name == "sequence":
+        return Sequence.from_json(payload)
+    if name == "grouped-sequence":
+        return GroupedSequence.from_json(payload)
+    if name == "date":
+        return Date.from_json(payload)
+    raise ValueError(f"unknown partitioning {name!r}")

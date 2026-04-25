@@ -1,57 +1,65 @@
-# Copyright (c) 2023 CNES
-#
-# All rights reserved. Use of this source code is governed by a
-# BSD-style license that can be found in the LICENSE file.
+"""zcollection v3 — Zarr v3 native, async-friendly partitioned collections.
+
+Phase 1 surface: synchronous API with LocalStore and MemoryStore.
 """
-Handle a collection of Zarr groups.
-===================================
-"""
-from . import merging, partitioning
-from .collection import Collection
-from .collection.abc import Indexer, PartitionFilter, PartitionFilterCallback
-from .collection.callable_objects import (
-    MapCallable,
-    PartitionCallable,
-    UpdateCallable,
-)
-from .convenience import (
+from __future__ import annotations
+
+from . import aio, codecs, partitioning, view
+from .collection import merge
+from .api import (
+    Collection,
+    CollectionNotFoundError,
+    ReadOnlyError,
     create_collection,
-    create_view,
     open_collection,
-    open_view,
-    update_deprecated_collection,
 )
-from .dataset import Dataset, Expression
-from .meta import Attribute
-from .variable import Array, DelayedArray, Variable, new_variable
-from .version import __version__
-from .view import View, ViewReference, ViewUpdateCallable
+from .data import Dataset, Variable
+from .errors import (
+    CollectionExistsError,
+    SchemaError,
+    StoreError,
+    ZCollectionError,
+)
+from .schema import (
+    Attribute,
+    DatasetSchema,
+    Dimension,
+    SchemaBuilder,
+    VariableRole,
+    VariableSchema,
+)
+from .store import LocalStore, MemoryStore, Store, open_store
 
 __all__ = (
-    'Array',
-    'Attribute',
-    'Collection',
-    'Dataset',
-    'DelayedArray',
-    'Expression',
-    'Indexer',
-    'MapCallable',
-    'PartitionCallable',
-    'PartitionFilter',
-    'PartitionFilterCallback',
-    'UpdateCallable',
-    'Variable',
-    'View',
-    'ViewReference',
-    'ViewUpdateCallable',
-    '__version__',
-    'create_collection',
-    'create_view',
-    'merging',
-    'new_variable',
-    'open_collection',
-    'open_view',
-    'partitioning',
-    'update_deprecated_collection',
-    'version',
+    "Attribute",
+    "Collection",
+    "CollectionExistsError",
+    "CollectionNotFoundError",
+    "Dataset",
+    "DatasetSchema",
+    "Dimension",
+    "LocalStore",
+    "MemoryStore",
+    "ReadOnlyError",
+    "SchemaBuilder",
+    "SchemaError",
+    "Store",
+    "StoreError",
+    "Variable",
+    "VariableRole",
+    "VariableSchema",
+    "ZCollectionError",
+    "aio",
+    "codecs",
+    "create_collection",
+    "merge",
+    "open_collection",
+    "open_store",
+    "partitioning",
+    "view",
 )
+
+
+def Schema() -> SchemaBuilder:
+    """Shorthand for :class:`SchemaBuilder`."""
+    return SchemaBuilder()

@@ -1,17 +1,16 @@
-# Copyright (c) 2023 CNES
-#
-# All rights reserved. Use of this source code is governed by a
-# BSD-style license that can be found in the LICENSE file.
-"""
-Indexing a Collection.
-======================
-"""
-import warnings
+"""Parquet-backed secondary indices over a collection.
 
-try:
-    from .abc import Indexer, QueryDict, Scalar
-    __all__ = ('Indexer', 'QueryDict', 'Scalar')
-except ImportError:  # pragma: no cover
-    warnings.warn(
-        'Install PyArrow to use the indexing capabilities of zcollection.',
-        stacklevel=2)
+An :class:`Indexer` is a row-level lookup table that lets callers find
+the ``(partition, row-slice)`` ranges containing a given key value. It
+sits beside the collection (typically at ``<root>/_indices/<name>.parquet``)
+and is rebuilt by walking partitions through the collection's ``map``.
+
+The v3 indexer is deliberately small compared to the v2 surface: it is a
+pyarrow Table on disk and a thin lookup helper. Callers pick the columns
+they want indexed via the ``builder`` callable.
+"""
+from __future__ import annotations
+
+from .parquet import Indexer, IndexBuilder
+
+__all__ = ("IndexBuilder", "Indexer")
