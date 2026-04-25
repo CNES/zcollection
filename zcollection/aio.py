@@ -8,7 +8,6 @@ FastAPI handlers, Jupyter ``%await`` cells, or other async workloads).
 from typing import TYPE_CHECKING
 
 from .collection import Collection
-from .errors import CollectionNotFoundError, ReadOnlyError
 from .store import Store, open_store
 
 if TYPE_CHECKING:
@@ -25,7 +24,7 @@ async def create_collection(
     catalog_enabled: bool = False,
     overwrite: bool = False,
 ) -> Collection:
-    """Async create. Returns the same :class:`Collection` as the sync API."""
+    """Async create. Returns the same :class:`~zcollection.collection.base.Collection` as the sync API."""
     store = path if isinstance(path, Store) else open_store(path)
     return Collection.create(
         store,
@@ -42,7 +41,7 @@ async def open_collection(
     *,
     mode: str = "r",
 ) -> Collection:
-    """Async open. Returns a :class:`Collection`; ``read_only`` flag follows ``mode``."""
+    """Async open. Returns a :class:`~zcollection.collection.base.Collection`; ``read_only`` flag follows ``mode``."""
     if mode not in {"r", "rw"}:
         raise ValueError(f"mode must be 'r' or 'rw'; got {mode!r}")
     read_only = mode == "r"
@@ -55,9 +54,6 @@ async def open_collection(
 
 
 __all__ = (
-    "Collection",
-    "CollectionNotFoundError",
-    "ReadOnlyError",
     "create_collection",
     "open_collection",
 )

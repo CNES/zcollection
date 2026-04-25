@@ -125,10 +125,10 @@ class Collection:
                 raised.
 
         Returns:
-            The newly-created :class:`Collection`, ready to ``insert``.
+            The newly-created :class:`~zcollection.collection.base.Collection`, ready to ``insert``.
 
         Raises:
-            CollectionExistsError: If a collection already exists at
+            ~zcollection.errors.CollectionExistsError: If a collection already exists at
                 ``store.root_uri`` and ``overwrite=False``.
 
         """
@@ -168,10 +168,10 @@ class Collection:
                 writing.
 
         Returns:
-            A :class:`Collection` bound to the existing root.
+            A :class:`~zcollection.collection.base.Collection` bound to the existing root.
 
         Raises:
-            CollectionNotFoundError: If no collection exists at
+            ~zcollection.errors.CollectionNotFoundError: If no collection exists at
                 ``store.root_uri``.
 
         """
@@ -323,7 +323,7 @@ class Collection:
             they were produced.
 
         Raises:
-            ReadOnlyError: If the collection was opened with
+            ~zcollection.errors.ReadOnlyError: If the collection was opened with
                 ``read_only=True``.
             KeyError: If ``merge`` is a string that doesn't match a
                 built-in strategy.
@@ -492,7 +492,7 @@ class Collection:
             they were processed.
 
         Raises:
-            ReadOnlyError: If the collection was opened with
+            ~zcollection.errors.ReadOnlyError: If the collection was opened with
                 ``read_only=True``.
 
         """
@@ -595,7 +595,7 @@ class Collection:
             they were processed.
 
         Raises:
-            ReadOnlyError: If the collection was opened with
+            ~zcollection.errors.ReadOnlyError: If the collection was opened with
                 ``read_only=True``.
 
         """

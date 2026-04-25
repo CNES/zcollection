@@ -39,10 +39,10 @@ def create_collection(
         overwrite: If ``True``, replace any existing root at ``path``.
 
     Returns:
-        A writable :class:`Collection` ready to ``insert``.
+        A writable :class:`~zcollection.collection.base.Collection` ready to ``insert``.
 
     Raises:
-        CollectionExistsError: If a collection already exists at ``path``
+        ~zcollection.errors.CollectionExistsError: If a collection already exists at ``path``
             and ``overwrite=False``.
 
     """
@@ -70,13 +70,13 @@ def open_collection(
             full read-write.
 
     Returns:
-        A :class:`Collection` bound to the existing root. In ``"r"`` mode
+        A :class:`~zcollection.collection.base.Collection` bound to the existing root. In ``"r"`` mode
         all mutating methods raise
         :class:`~zcollection.errors.ReadOnlyError`.
 
     Raises:
         ValueError: If ``mode`` is not one of ``"r"`` or ``"rw"``.
-        CollectionNotFoundError: If no collection exists at ``path``.
+        ~zcollection.errors.CollectionNotFoundError: If no collection exists at ``path``.
 
     """
     if mode not in {"r", "rw"}:

@@ -46,7 +46,7 @@ class ViewReference:
 
 
 class View:
-    """Overlay of extra variables on top of a base :class:`Collection`."""
+    """Overlay of extra variables on top of a base :class:`~zcollection.collection.base.Collection`."""
 
     def __init__(
         self,
@@ -100,10 +100,10 @@ class View:
                 location.
 
         Returns:
-            A writable :class:`View` ready to ``update``.
+            A writable :class:`~zcollection.view.base.View` ready to ``update``.
 
         Raises:
-            CollectionExistsError: If a view already exists at
+            ~zcollection.errors.CollectionExistsError: If a view already exists at
                 ``store.root_uri`` and ``overwrite=False``.
             ZCollectionError: If a view variable's dimensions are
                 inconsistent with the base schema.
@@ -161,10 +161,10 @@ class View:
                 :class:`~zcollection.errors.ReadOnlyError`.
 
         Returns:
-            A :class:`View` bound to the existing overlay.
+            A :class:`~zcollection.view.base.View` bound to the existing overlay.
 
         Raises:
-            CollectionNotFoundError: If no view config exists at
+            ~zcollection.errors.CollectionNotFoundError: If no view config exists at
                 ``store.root_uri``.
 
         """
@@ -338,7 +338,7 @@ class View:
             they were processed.
 
         Raises:
-            ReadOnlyError: If the view was opened with
+            ~zcollection.errors.ReadOnlyError: If the view was opened with
                 ``read_only=True``.
 
         """

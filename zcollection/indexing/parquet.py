@@ -37,7 +37,7 @@ IndexBuilder = Callable[["Dataset"], numpy.ndarray | dict[str, numpy.ndarray]]
 
 
 class Indexer:
-    """Lookup table over a :class:`Collection`'s rows."""
+    """Lookup table over a :class:`~zcollection.collection.base.Collection`'s rows."""
 
     def __init__(self, table: pyarrow.Table) -> None:
         """Initialize the indexer with an underlying Parquet table.
