@@ -1,10 +1,12 @@
-"""High-level Collection facade — Phase 1 sync surface."""
+"""High-level Collection facade — sync + async surfaces."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, Iterator
+import asyncio
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator
 
 import numpy
 
+from ..config import get as config_get
 from ..data import Dataset, Variable
 from ..errors import (
     CollectionExistsError,
@@ -13,10 +15,10 @@ from ..errors import (
     ReadOnlyError,
 )
 from ..io import (
-    open_partition_dataset,
+    open_partition_dataset_async,
     partition_exists,
     read_root_config,
-    write_partition_dataset,
+    write_partition_dataset_async,
     write_root_config,
 )
 from ..partitioning import (
@@ -27,10 +29,12 @@ from ..partitioning import (
 from ..schema import DatasetSchema
 from ..schema.serde import CONFIG_FILE
 from ..store.layout import CATALOG_DIR, IMMUTABLE_DIR, join_path
+from . import merge as merge_mod
 
 if TYPE_CHECKING:
     from ..partitioning import Partitioning
     from ..store import Store
+    from .merge import MergeCallable
 
 
 _RESERVED_TOP_LEVEL = {CATALOG_DIR, IMMUTABLE_DIR, CONFIG_FILE, "zarr.json"}
@@ -156,18 +160,59 @@ class Collection:
 
     # --- Insert ----------------------------------------------------
 
-    def insert(self, dataset: Dataset, *, overwrite: bool = True) -> list[str]:
+    def insert(
+        self,
+        dataset: Dataset,
+        *,
+        overwrite: bool = True,
+        merge: "MergeCallable | str | None" = None,
+    ) -> list[str]:
+        from ..dask.scheduler import run_sync  # noqa: PLC0415 — break import cycle
+
+        return run_sync(
+            self.insert_async(dataset, overwrite=overwrite, merge=merge)
+        )
+
+    async def insert_async(
+        self,
+        dataset: Dataset,
+        *,
+        overwrite: bool = True,
+        merge: "MergeCallable | str | None" = None,
+    ) -> list[str]:
         self._require_writable()
-        written: list[str] = []
-        for key, sl in self._partitioning.split(dataset):
-            sub = _slice_dataset(dataset, dim=self._partitioning.dimension, sl=sl)
-            path = self._partitioning.encode(key)
-            extra = {"_zc_partition_key": [list(t) for t in key]}
-            write_partition_dataset(
-                self._store, path, sub, overwrite=overwrite, extra_attrs=extra
-            )
-            written.append(path)
-        return written
+        merge_fn = merge_mod.resolve(merge)
+        concurrency = max(1, int(config_get("partition.concurrency")))
+
+        plan: list[tuple[Any, slice, str]] = [
+            (key, sl, self._partitioning.encode(key))
+            for key, sl in self._partitioning.split(dataset)
+        ]
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _write(key, sl, path) -> str:
+            async with sem:
+                sub = _slice_dataset(
+                    dataset, dim=self._partitioning.dimension, sl=sl,
+                )
+                if merge is not None and partition_exists(self._store, path):
+                    existing = await open_partition_dataset_async(
+                        self._store, path, self._schema,
+                    )
+                    sub = merge_fn(
+                        existing, sub,
+                        axis=self._axis,
+                        partitioning_dim=self._partitioning.dimension,
+                    )
+                extra = {"_zc_partition_key": [list(t) for t in key]}
+                await write_partition_dataset_async(
+                    self._store, path, sub,
+                    overwrite=overwrite, extra_attrs=extra,
+                    concurrency=concurrency,
+                )
+                return path
+
+        return list(await asyncio.gather(*[_write(*t) for t in plan]))
 
     # --- Query -----------------------------------------------------
 
@@ -177,15 +222,30 @@ class Collection:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> Dataset | None:
+        from ..dask.scheduler import run_sync  # noqa: PLC0415 — break import cycle
 
+        return run_sync(self.query_async(filters=filters, variables=variables))
+
+    async def query_async(
+        self,
+        *,
+        filters: str | None = None,
+        variables: Iterable[str] | None = None,
+    ) -> Dataset | None:
         wanted = list(variables) if variables is not None else None
         parts = list(self.partitions(filters=filters))
         if not parts:
             return None
-        loaded = [
-            open_partition_dataset(self._store, p, self._schema, variables=wanted)
-            for p in parts
-        ]
+        concurrency = max(1, int(config_get("partition.concurrency")))
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _load(path: str) -> Dataset:
+            async with sem:
+                return await open_partition_dataset_async(
+                    self._store, path, self._schema, variables=wanted,
+                )
+
+        loaded = list(await asyncio.gather(*[_load(p) for p in parts]))
         return _concat_datasets(loaded, dim=self._partitioning.dimension)
 
     # --- Drop ------------------------------------------------------
@@ -197,6 +257,85 @@ class Collection:
             self._store.delete_prefix(path)
             dropped.append(path)
         return dropped
+
+    # --- Map / Update ----------------------------------------------
+
+    def map(
+        self,
+        fn: Callable[[Dataset], Any],
+        *,
+        filters: str | None = None,
+        variables: Iterable[str] | None = None,
+    ) -> dict[str, Any]:
+        """Apply ``fn`` to each partition's dataset and return ``{path: result}``."""
+        from ..dask.scheduler import run_sync  # noqa: PLC0415 — break import cycle
+
+        return run_sync(
+            self.map_async(fn, filters=filters, variables=variables)
+        )
+
+    async def map_async(
+        self,
+        fn: Callable[[Dataset], Any],
+        *,
+        filters: str | None = None,
+        variables: Iterable[str] | None = None,
+    ) -> dict[str, Any]:
+        wanted = list(variables) if variables is not None else None
+        parts = list(self.partitions(filters=filters))
+        concurrency = max(1, int(config_get("partition.concurrency")))
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _apply(path: str) -> tuple[str, Any]:
+            async with sem:
+                ds = await open_partition_dataset_async(
+                    self._store, path, self._schema, variables=wanted,
+                )
+                return path, fn(ds)
+
+        results = await asyncio.gather(*[_apply(p) for p in parts])
+        return dict(results)
+
+    def update(
+        self,
+        fn: Callable[[Dataset], Dataset],
+        *,
+        filters: str | None = None,
+        variables: Iterable[str] | None = None,
+    ) -> list[str]:
+        """Read each partition, apply ``fn`` returning a new Dataset, write back."""
+        from ..dask.scheduler import run_sync  # noqa: PLC0415 — break import cycle
+
+        return run_sync(
+            self.update_async(fn, filters=filters, variables=variables)
+        )
+
+    async def update_async(
+        self,
+        fn: Callable[[Dataset], Dataset],
+        *,
+        filters: str | None = None,
+        variables: Iterable[str] | None = None,
+    ) -> list[str]:
+        self._require_writable()
+        wanted = list(variables) if variables is not None else None
+        parts = list(self.partitions(filters=filters))
+        concurrency = max(1, int(config_get("partition.concurrency")))
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _update(path: str) -> str:
+            async with sem:
+                ds = await open_partition_dataset_async(
+                    self._store, path, self._schema, variables=wanted,
+                )
+                new_ds = fn(ds)
+                await write_partition_dataset_async(
+                    self._store, path, new_ds,
+                    overwrite=True, concurrency=concurrency,
+                )
+                return path
+
+        return list(await asyncio.gather(*[_update(p) for p in parts]))
 
     # --- Internal --------------------------------------------------
 

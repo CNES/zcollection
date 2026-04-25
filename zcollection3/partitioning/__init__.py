@@ -4,10 +4,14 @@ from __future__ import annotations
 from typing import Any
 
 from .base import Partitioning, PartitionKey
+from .date import Date
 from .expression import compile_filter, key_to_dict
+from .grouped import GroupedSequence
 from .sequence import Sequence
 
 __all__ = (
+    "Date",
+    "GroupedSequence",
     "PartitionKey",
     "Partitioning",
     "Sequence",
@@ -21,4 +25,8 @@ def from_json(payload: dict[str, Any]) -> Partitioning:
     name = payload.get("name")
     if name == "sequence":
         return Sequence.from_json(payload)
+    if name == "grouped-sequence":
+        return GroupedSequence.from_json(payload)
+    if name == "date":
+        return Date.from_json(payload)
     raise ValueError(f"unknown partitioning {name!r}")

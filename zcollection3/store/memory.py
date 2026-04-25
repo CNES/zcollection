@@ -72,7 +72,15 @@ def _head_under(key: str, prefix: str) -> str | None:
 
 
 def _run_sync(coro):
-    return asyncio.run(coro)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    # A loop is running in this thread; offload to a fresh one in another thread.
+    import concurrent.futures  # noqa: PLC0415
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 def _zarr_contains(store: Any, key: str) -> bool:

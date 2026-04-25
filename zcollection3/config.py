@@ -8,7 +8,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-import zarr.config
+from zarr.core.config import config as _zarr_config
 
 
 _DEFAULTS: dict[str, Any] = {
@@ -48,4 +48,4 @@ def override(**kwargs: Any) -> Iterator[None]:
 def configure_zarr(async_concurrency: int | None = None) -> None:
     """Plumb async concurrency into zarr.config."""
     if async_concurrency is not None:
-        zarr.config.set({"async.concurrency": async_concurrency})
+        _zarr_config.set({"async.concurrency": async_concurrency})

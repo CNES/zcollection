@@ -4,7 +4,8 @@ Phase 1 surface: synchronous API with LocalStore and MemoryStore.
 """
 from __future__ import annotations
 
-from . import codecs, partitioning
+from . import aio, codecs, partitioning
+from .collection import merge
 from .api import (
     Collection,
     CollectionNotFoundError,
@@ -48,8 +49,10 @@ __all__ = (
     "VariableRole",
     "VariableSchema",
     "ZCollectionError",
+    "aio",
     "codecs",
     "create_collection",
+    "merge",
     "open_collection",
     "open_store",
     "partitioning",
