@@ -15,16 +15,20 @@ from ..errors import (
     ReadOnlyError,
 )
 from ..io import (
+    open_immutable_dataset_async,
     open_partition_dataset_async,
     partition_exists,
     read_root_config,
+    write_immutable_dataset,
     write_partition_dataset_async,
     write_root_config,
 )
 from ..partitioning import (
+    Catalog,
     compile_filter,
     from_json as partitioning_from_json,
     key_to_dict,
+    reconcile_catalog,
 )
 from ..schema import DatasetSchema
 from ..schema.serde import CONFIG_FILE
@@ -59,6 +63,7 @@ class Collection:
         self._partitioning = partitioning
         self._catalog_enabled = catalog_enabled
         self._read_only = read_only
+        self._catalog = Catalog(store) if catalog_enabled else None
 
     # --- Construction ------------------------------------------------
 
@@ -137,15 +142,41 @@ class Collection:
 
     def partitions(self, *, filters: str | None = None) -> Iterator[str]:
         """Yield relative partition paths in sorted order, optionally filtered."""
-        depth = len(self._partitioning.axis)
         predicate = compile_filter(filters)
-        for path in sorted(self._walk(prefix="", depth=depth)):
+        for path in self._enumerate_partitions():
             try:
                 key = self._partitioning.decode(path)
             except PartitionError:
                 continue
             if predicate(key_to_dict(key)):
                 yield path
+
+    def _enumerate_partitions(self) -> list[str]:
+        """Return the canonical partition list, preferring the catalog."""
+        if self._catalog is not None:
+            cached = self._catalog.read_paths()
+            if cached is not None:
+                return cached
+        return sorted(self._walk_partitions())
+
+    def _walk_partitions(self) -> Iterator[str]:
+        depth = len(self._partitioning.axis)
+        yield from self._walk(prefix="", depth=depth)
+
+    def repair_catalog(self) -> list[str]:
+        """Rebuild the catalog by walking the store; returns the new path list.
+
+        Use after a crash, or after manual edits to the partition tree.
+        Raises if the collection was not opened with ``catalog_enabled=True``.
+        """
+        if self._catalog is None:
+            raise RuntimeError(
+                "repair_catalog() requires a catalog-enabled collection",
+            )
+        self._require_writable()
+        walked = sorted(self._walk_partitions())
+        reconcile_catalog(self._catalog, walked)
+        return walked
 
     def _walk(self, *, prefix: str, depth: int) -> Iterator[str]:
         for child in sorted(self._store.list_dir(prefix)):
@@ -184,6 +215,17 @@ class Collection:
         merge_fn = merge_mod.resolve(merge)
         concurrency = max(1, int(config_get("partition.concurrency")))
 
+        # The incoming dataset typically carries the *unbound* schema
+        # (immutable=False everywhere). Rebind to the Collection's bound
+        # schema so the writer can identify immutable variables.
+        dataset = _rebind_to_schema(dataset, self._schema)
+
+        # Write immutable variables once at the root; they're identical
+        # across partitions by definition. Skipped if none present in the
+        # incoming dataset.
+        if any(v.schema.immutable for v in dataset.variables.values()):
+            write_immutable_dataset(self._store, dataset, overwrite=True)
+
         plan: list[tuple[Any, slice, str]] = [
             (key, sl, self._partitioning.encode(key))
             for key, sl in self._partitioning.split(dataset)
@@ -212,7 +254,10 @@ class Collection:
                 )
                 return path
 
-        return list(await asyncio.gather(*[_write(*t) for t in plan]))
+        written = list(await asyncio.gather(*[_write(*t) for t in plan]))
+        if self._catalog is not None and written:
+            self._catalog.add(written)
+        return written
 
     # --- Query -----------------------------------------------------
 
@@ -245,8 +290,15 @@ class Collection:
                     self._store, path, self._schema, variables=wanted,
                 )
 
-        loaded = list(await asyncio.gather(*[_load(p) for p in parts]))
-        return _concat_datasets(loaded, dim=self._partitioning.dimension)
+        loaded_task = asyncio.gather(*[_load(p) for p in parts])
+        immutable_task = open_immutable_dataset_async(
+            self._store, self._schema, variables=wanted,
+        )
+        loaded, immutable = await asyncio.gather(loaded_task, immutable_task)
+        merged = _concat_datasets(
+            list(loaded), dim=self._partitioning.dimension,
+        )
+        return _attach_immutable(merged, immutable)
 
     # --- Drop ------------------------------------------------------
 
@@ -256,6 +308,8 @@ class Collection:
         for path in list(self.partitions(filters=filters)):
             self._store.delete_prefix(path)
             dropped.append(path)
+        if self._catalog is not None and dropped:
+            self._catalog.remove(dropped)
         return dropped
 
     # --- Map / Update ----------------------------------------------
@@ -285,13 +339,16 @@ class Collection:
         parts = list(self.partitions(filters=filters))
         concurrency = max(1, int(config_get("partition.concurrency")))
         sem = asyncio.Semaphore(concurrency)
+        immutable = await open_immutable_dataset_async(
+            self._store, self._schema, variables=wanted,
+        )
 
         async def _apply(path: str) -> tuple[str, Any]:
             async with sem:
                 ds = await open_partition_dataset_async(
                     self._store, path, self._schema, variables=wanted,
                 )
-                return path, fn(ds)
+                return path, fn(_attach_immutable(ds, immutable))
 
         results = await asyncio.gather(*[_apply(p) for p in parts])
         return dict(results)
@@ -322,13 +379,16 @@ class Collection:
         parts = list(self.partitions(filters=filters))
         concurrency = max(1, int(config_get("partition.concurrency")))
         sem = asyncio.Semaphore(concurrency)
+        immutable = await open_immutable_dataset_async(
+            self._store, self._schema, variables=wanted,
+        )
 
         async def _update(path: str) -> str:
             async with sem:
                 ds = await open_partition_dataset_async(
                     self._store, path, self._schema, variables=wanted,
                 )
-                new_ds = fn(ds)
+                new_ds = fn(_attach_immutable(ds, immutable))
                 await write_partition_dataset_async(
                     self._store, path, new_ds,
                     overwrite=True, concurrency=concurrency,
@@ -342,6 +402,33 @@ class Collection:
     def _require_writable(self) -> None:
         if self._read_only:
             raise ReadOnlyError(f"collection at {self._store.root_uri} is read-only")
+
+
+def _rebind_to_schema(dataset: Dataset, schema: DatasetSchema) -> Dataset:
+    """Replace each variable's schema reference with ``schema``'s entry.
+
+    Lets a Dataset built from an unbound schema participate in operations
+    that depend on bound metadata (notably ``immutable``).
+    """
+    rebound: dict[str, Variable] = {}
+    for name, var in dataset.variables.items():
+        target = schema.variables.get(name)
+        rebound[name] = Variable(target, var.to_numpy()) if target else var
+    return Dataset(schema=schema, variables=rebound, attrs=dataset.attrs)
+
+
+def _attach_immutable(
+    dataset: Dataset | None,
+    immutable: dict[str, Variable],
+) -> Dataset | None:
+    """Return ``dataset`` with the immutable vars merged in (dataset wins)."""
+    if dataset is None or not immutable:
+        return dataset
+    merged = dict(immutable)
+    merged.update(dataset.variables)
+    return Dataset(
+        schema=dataset.schema, variables=merged, attrs=dataset.attrs,
+    )
 
 
 def _slice_dataset(dataset: Dataset, *, dim: str, sl: slice) -> Dataset:

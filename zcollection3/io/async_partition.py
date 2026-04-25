@@ -55,6 +55,8 @@ async def write_partition_dataset_async(
 
     async def _write_one(name: str, var: Variable) -> None:
         async with sem:
+            if var.schema.immutable:
+                return  # immutable vars live in the root _immutable/ group
             data = var.to_numpy()
             shape = data.shape
             inner_chunks = _chunks_for(var.schema, shape, dim_chunks)
@@ -109,8 +111,8 @@ async def open_partition_dataset_async(
             return name, Variable(schema.variables[name], numpy.asarray(data))
 
     names = [
-        n for n in schema.variables
-        if (wanted is None or n in wanted)
+        n for n, v in schema.variables.items()
+        if (wanted is None or n in wanted) and not v.immutable
     ]
     results = await asyncio.gather(*[_read_one(n) for n in names])
 
@@ -121,9 +123,8 @@ async def open_partition_dataset_async(
         name, var = item
         out[name] = var
 
-    sub_schema = schema.select(out.keys()) if wanted is not None else schema
     attrs = dict(group.attrs)
-    return Dataset(schema=sub_schema, variables=out, attrs=attrs)
+    return Dataset(schema=schema, variables=out, attrs=attrs)
 
 
 async def partition_exists_async(store: Store, partition_path: str) -> bool:

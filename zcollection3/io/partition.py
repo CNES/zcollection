@@ -107,6 +107,8 @@ def write_partition_dataset(
 
     dim_chunks = dataset.schema.dim_chunks
     for name, var in dataset.variables.items():
+        if var.schema.immutable:
+            continue  # immutable vars live in the root _immutable/ group
         data = var.to_numpy()
         shape = data.shape
         inner_chunks = _chunks_for(var.schema, shape, dim_chunks)
@@ -154,18 +156,19 @@ def open_partition_dataset(
 
     wanted = set(variables) if variables is not None else None
     out: dict[str, Variable] = {}
-    for name in schema.variables:
+    for name, vschema in schema.variables.items():
         if wanted is not None and name not in wanted:
             continue
+        if vschema.immutable:
+            continue  # served from the root _immutable/ group
         if name not in group:
             continue  # variable not present in this partition
         zarr_arr = group[name]
         data = numpy.asarray(zarr_arr[...])
         out[name] = Variable(schema.variables[name], data)
 
-    sub_schema = schema.select(out.keys()) if wanted is not None else schema
     return Dataset(
-        schema=sub_schema,
+        schema=schema,
         variables=out,
         attrs=dict(group.attrs),
     )

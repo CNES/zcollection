@@ -4,7 +4,7 @@ Phase 1 surface: synchronous API with LocalStore and MemoryStore.
 """
 from __future__ import annotations
 
-from . import aio, codecs, partitioning
+from . import aio, codecs, partitioning, view
 from .collection import merge
 from .api import (
     Collection,
@@ -56,6 +56,7 @@ __all__ = (
     "open_collection",
     "open_store",
     "partitioning",
+    "view",
 )
 
 

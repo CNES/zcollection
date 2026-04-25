@@ -4,12 +4,15 @@ from __future__ import annotations
 from typing import Any
 
 from .base import Partitioning, PartitionKey
+from .catalog import Catalog, CatalogState, reconcile as reconcile_catalog
 from .date import Date
 from .expression import compile_filter, key_to_dict
 from .grouped import GroupedSequence
 from .sequence import Sequence
 
 __all__ = (
+    "Catalog",
+    "CatalogState",
     "Date",
     "GroupedSequence",
     "PartitionKey",
@@ -18,6 +21,7 @@ __all__ = (
     "compile_filter",
     "from_json",
     "key_to_dict",
+    "reconcile_catalog",
 )
 
 
