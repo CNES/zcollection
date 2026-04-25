@@ -41,7 +41,9 @@ if TYPE_CHECKING:
     from .merge import MergeCallable
 
 
-_RESERVED_TOP_LEVEL = {CATALOG_DIR, IMMUTABLE_DIR, CONFIG_FILE, "zarr.json"}
+_RESERVED_TOP_LEVEL = {
+    CATALOG_DIR, IMMUTABLE_DIR, CONFIG_FILE, "zarr.json", "_zc_meta",
+}
 
 
 class Collection:
@@ -83,13 +85,14 @@ class Collection:
                 f"a collection already exists at {store.root_uri}"
             )
         bound = schema.with_partition_axis(axis)
-        write_root_config(
-            store,
-            schema=bound,
-            axis=axis,
-            partitioning=partitioning.to_json(),
-            catalog_enabled=catalog_enabled,
-        )
+        with store.session():
+            write_root_config(
+                store,
+                schema=bound,
+                axis=axis,
+                partitioning=partitioning.to_json(),
+                catalog_enabled=catalog_enabled,
+            )
         return cls(
             store=store,
             schema=bound,
@@ -220,44 +223,47 @@ class Collection:
         # schema so the writer can identify immutable variables.
         dataset = _rebind_to_schema(dataset, self._schema)
 
-        # Write immutable variables once at the root; they're identical
-        # across partitions by definition. Skipped if none present in the
-        # incoming dataset.
-        if any(v.schema.immutable for v in dataset.variables.values()):
-            write_immutable_dataset(self._store, dataset, overwrite=True)
+        # Wrap the whole insert in a store session so transactional backends
+        # (Icechunk) commit atomically; for non-transactional stores this is
+        # a no-op context.
+        with self._store.session():
+            # Immutable variables are written once at the root; they're
+            # identical across partitions by definition.
+            if any(v.schema.immutable for v in dataset.variables.values()):
+                write_immutable_dataset(self._store, dataset, overwrite=True)
 
-        plan: list[tuple[Any, slice, str]] = [
-            (key, sl, self._partitioning.encode(key))
-            for key, sl in self._partitioning.split(dataset)
-        ]
-        sem = asyncio.Semaphore(concurrency)
+            plan: list[tuple[Any, slice, str]] = [
+                (key, sl, self._partitioning.encode(key))
+                for key, sl in self._partitioning.split(dataset)
+            ]
+            sem = asyncio.Semaphore(concurrency)
 
-        async def _write(key, sl, path) -> str:
-            async with sem:
-                sub = _slice_dataset(
-                    dataset, dim=self._partitioning.dimension, sl=sl,
-                )
-                if merge is not None and partition_exists(self._store, path):
-                    existing = await open_partition_dataset_async(
-                        self._store, path, self._schema,
+            async def _write(key, sl, path) -> str:
+                async with sem:
+                    sub = _slice_dataset(
+                        dataset, dim=self._partitioning.dimension, sl=sl,
                     )
-                    sub = merge_fn(
-                        existing, sub,
-                        axis=self._axis,
-                        partitioning_dim=self._partitioning.dimension,
+                    if merge is not None and partition_exists(self._store, path):
+                        existing = await open_partition_dataset_async(
+                            self._store, path, self._schema,
+                        )
+                        sub = merge_fn(
+                            existing, sub,
+                            axis=self._axis,
+                            partitioning_dim=self._partitioning.dimension,
+                        )
+                    extra = {"_zc_partition_key": [list(t) for t in key]}
+                    await write_partition_dataset_async(
+                        self._store, path, sub,
+                        overwrite=overwrite, extra_attrs=extra,
+                        concurrency=concurrency,
                     )
-                extra = {"_zc_partition_key": [list(t) for t in key]}
-                await write_partition_dataset_async(
-                    self._store, path, sub,
-                    overwrite=overwrite, extra_attrs=extra,
-                    concurrency=concurrency,
-                )
-                return path
+                    return path
 
-        written = list(await asyncio.gather(*[_write(*t) for t in plan]))
-        if self._catalog is not None and written:
-            self._catalog.add(written)
-        return written
+            written = list(await asyncio.gather(*[_write(*t) for t in plan]))
+            if self._catalog is not None and written:
+                self._catalog.add(written)
+            return written
 
     # --- Query -----------------------------------------------------
 
@@ -305,11 +311,12 @@ class Collection:
     def drop_partitions(self, *, filters: str | None = None) -> list[str]:
         self._require_writable()
         dropped: list[str] = []
-        for path in list(self.partitions(filters=filters)):
-            self._store.delete_prefix(path)
-            dropped.append(path)
-        if self._catalog is not None and dropped:
-            self._catalog.remove(dropped)
+        with self._store.session():
+            for path in list(self.partitions(filters=filters)):
+                self._store.delete_prefix(path)
+                dropped.append(path)
+            if self._catalog is not None and dropped:
+                self._catalog.remove(dropped)
         return dropped
 
     # --- Map / Update ----------------------------------------------
@@ -395,7 +402,8 @@ class Collection:
                 )
                 return path
 
-        return list(await asyncio.gather(*[_update(p) for p in parts]))
+        with self._store.session():
+            return list(await asyncio.gather(*[_update(p) for p in parts]))
 
     # --- Internal --------------------------------------------------
 

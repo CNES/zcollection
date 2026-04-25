@@ -164,9 +164,12 @@ def test_open_store_memory():
     assert isinstance(s, zc.MemoryStore)
 
 
-def test_open_store_icechunk_reserved():
-    with pytest.raises(StoreError, match="Phase 5"):
-        zc.open_store("icechunk://placeholder")
+def test_open_store_icechunk_resolves(tmp_path):
+    pytest.importorskip("icechunk")
+    from zcollection3.store.icechunk_store import IcechunkStore  # noqa: PLC0415
+
+    s = zc.open_store(f"icechunk://{tmp_path / 'repo'}")
+    assert isinstance(s, IcechunkStore)
 
 
 def test_open_store_unknown_scheme():

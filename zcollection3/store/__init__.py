@@ -17,6 +17,13 @@ from .layout import (
 from .local import LocalStore
 from .memory import MemoryStore
 
+
+def __getattr__(name: str):  # pragma: no cover — lazy optional dep
+    if name == "IcechunkStore":
+        from .icechunk_store import IcechunkStore  # noqa: PLC0415
+        return IcechunkStore
+    raise AttributeError(name)
+
 __all__ = (
     "CATALOG_DIR",
     "IMMUTABLE_DIR",
