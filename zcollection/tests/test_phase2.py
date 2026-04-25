@@ -1,17 +1,15 @@
 """Phase 2 — async API, Date / GroupedSequence partitioning, merge, map/update."""
-from __future__ import annotations
 
 import asyncio
 
 import numpy
 import pytest
 
-import zcollection3 as zc
-from zcollection3 import aio
-from zcollection3.collection import merge as merge_mod
-from zcollection3.dask import dask_map_async
-from zcollection3.partitioning import Date, GroupedSequence
-
+import zcollection as zc
+from zcollection import aio
+from zcollection.collection import merge as merge_mod
+from zcollection.dask import dask_map_async
+from zcollection.partitioning import Date, GroupedSequence
 
 # --- async facade round-trip ----------------------------------------
 
@@ -21,8 +19,11 @@ def test_async_create_insert_query(tmp_path, schema, dataset, partitioning):
 
     async def _scenario():
         col = await aio.create_collection(
-            store, schema=schema, axis="num",
-            partitioning=partitioning, overwrite=True,
+            store,
+            schema=schema,
+            axis="num",
+            partitioning=partitioning,
+            overwrite=True,
         )
         written = await col.insert_async(dataset)
         assert sorted(written) == ["num=0", "num=1", "num=2"]
@@ -56,8 +57,10 @@ def _date_dataset() -> tuple[zc.DatasetSchema, zc.Dataset]:
     )
     times = numpy.array(
         [
-            "2024-01-05", "2024-01-20",
-            "2024-02-03", "2024-02-15",
+            "2024-01-05",
+            "2024-01-20",
+            "2024-02-03",
+            "2024-02-15",
             "2024-03-01",
         ],
         dtype="datetime64[s]",
@@ -80,8 +83,11 @@ def test_date_partitioning_monthly(tmp_path):
     store = zc.LocalStore(tmp_path / "col")
     part = Date("time", resolution="M")
     col = zc.create_collection(
-        store, schema=schema, axis="time",
-        partitioning=part, overwrite=True,
+        store,
+        schema=schema,
+        axis="time",
+        partitioning=part,
+        overwrite=True,
     )
     written = col.insert(ds)
     assert sorted(written) == [
@@ -99,8 +105,11 @@ def test_date_partitioning_roundtrip_serde(tmp_path):
     store = zc.LocalStore(tmp_path / "col")
     part = Date("time", resolution="D")
     zc.create_collection(
-        store, schema=schema, axis="time",
-        partitioning=part, overwrite=True,
+        store,
+        schema=schema,
+        axis="time",
+        partitioning=part,
+        overwrite=True,
     ).insert(ds)
 
     reopened = zc.open_collection(store, mode="r")
@@ -140,8 +149,11 @@ def test_grouped_sequence_buckets_last_axis(tmp_path):
     store = zc.LocalStore(tmp_path / "col")
     part = GroupedSequence(("cycle", "pass_id"), dimension="num", size=10)
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=part, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=part,
+        overwrite=True,
     )
     written = col.insert(ds)
     # cycle=1: pass_id 1,7 → bucket 0; pass_id 12 → bucket 10
@@ -165,8 +177,11 @@ def test_grouped_sequence_size_validation():
 def test_merge_replace_default(tmp_path, schema, dataset, partitioning):
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
@@ -195,8 +210,11 @@ def test_merge_replace_default(tmp_path, schema, dataset, partitioning):
 def test_merge_concat_appends(tmp_path, schema, dataset, partitioning):
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
@@ -229,8 +247,11 @@ def test_merge_time_series_drops_overlap_and_sorts(tmp_path):
     store = zc.LocalStore(tmp_path / "col")
     part = Date("time", resolution="Y")
     col = zc.create_collection(
-        store, schema=schema, axis="time",
-        partitioning=part, overwrite=True,
+        store,
+        schema=schema,
+        axis="time",
+        partitioning=part,
+        overwrite=True,
     )
     col.insert(ds)
 
@@ -282,11 +303,16 @@ def test_merge_resolve_callable_passes_through(schema, dataset):
 # --- map / update ---------------------------------------------------
 
 
-def test_map_returns_per_partition_results(tmp_path, schema, dataset, partitioning):
+def test_map_returns_per_partition_results(
+    tmp_path, schema, dataset, partitioning
+):
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
@@ -297,15 +323,19 @@ def test_map_returns_per_partition_results(tmp_path, schema, dataset, partitioni
 def test_update_writes_back(tmp_path, schema, dataset, partitioning):
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
     def double_value(ds: zc.Dataset) -> zc.Dataset:
         new_vars = dict(ds.variables)
         new_vars["value"] = zc.Variable(
-            ds["value"].schema, ds["value"].to_numpy() * 2.0,
+            ds["value"].schema,
+            ds["value"].to_numpy() * 2.0,
         )
         return zc.Dataset(schema=ds.schema, variables=new_vars, attrs=ds.attrs)
 
@@ -326,8 +356,11 @@ def test_concurrent_inserts_distinct_partitions(tmp_path, schema, partitioning):
     """Disjoint partitions written concurrently — no corruption, all visible."""
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
 
     def _slice_for(num: int) -> zc.Dataset:
@@ -350,9 +383,9 @@ def test_concurrent_inserts_distinct_partitions(tmp_path, schema, partitioning):
         )
 
     async def _scenario():
-        await asyncio.gather(*[
-            col.insert_async(_slice_for(n)) for n in range(5)
-        ])
+        await asyncio.gather(
+            *[col.insert_async(_slice_for(n)) for n in range(5)]
+        )
 
     asyncio.run(_scenario())
 
@@ -368,6 +401,7 @@ def test_concurrent_inserts_distinct_partitions(tmp_path, schema, partitioning):
 
 def test_dask_map_async_without_cluster():
     """``dask_map_async`` falls back to the local runner when no Client exists."""
+
     async def _coro_factory(i):
         return i * i
 

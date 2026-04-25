@@ -1,10 +1,8 @@
 """Single, polymorphic Variable: holds numpy or dask data plus its schema."""
-from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
 import numpy
-
 
 if TYPE_CHECKING:
     from ..schema import VariableSchema

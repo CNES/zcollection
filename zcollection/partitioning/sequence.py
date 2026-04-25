@@ -1,7 +1,7 @@
 """Sequence partitioning — one partition per unique value tuple."""
-from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
+from collections.abc import Iterator
 
 import numpy
 
@@ -63,7 +63,9 @@ class Sequence:
         parts: list[tuple[str, int]] = []
         for token in path.strip("/").split("/"):
             if "=" not in token:
-                raise PartitionError(f"invalid partition path segment: {token!r}")
+                raise PartitionError(
+                    f"invalid partition path segment: {token!r}"
+                )
             name, raw = token.split("=", 1)
             parts.append((name, int(raw)))
         return tuple(parts)
@@ -76,7 +78,7 @@ class Sequence:
         }
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> "Sequence":
+    def from_json(cls, payload: dict[str, Any]) -> Sequence:
         return cls(
             variables=tuple(payload["variables"]),
             dimension=payload["dimension"],

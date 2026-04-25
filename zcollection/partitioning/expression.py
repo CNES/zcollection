@@ -4,23 +4,39 @@ Replaces the v2 ``eval()``-based filter. Only a small, total subset of Python
 syntax is permitted: comparisons, ``and``/``or``/``not``, ``in``, names that
 match partition key components, and integer/string literals.
 """
-from __future__ import annotations
 
+from typing import Any
 import ast
+from collections.abc import Callable
 import operator
-from typing import Any, Callable
 
 from ..errors import ExpressionError
 
 PartitionKey = tuple[tuple[str, Any], ...]
 Predicate = Callable[[dict[str, Any]], bool]
 
-
 _ALLOWED_NODES: tuple[type[ast.AST], ...] = (
-    ast.Expression, ast.BoolOp, ast.UnaryOp, ast.Compare, ast.Name, ast.Load,
-    ast.Constant, ast.Tuple, ast.List, ast.Set,
-    ast.And, ast.Or, ast.Not,
-    ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.In, ast.NotIn,
+    ast.Expression,
+    ast.BoolOp,
+    ast.UnaryOp,
+    ast.Compare,
+    ast.Name,
+    ast.Load,
+    ast.Constant,
+    ast.Tuple,
+    ast.List,
+    ast.Set,
+    ast.And,
+    ast.Or,
+    ast.Not,
+    ast.Eq,
+    ast.NotEq,
+    ast.Lt,
+    ast.LtE,
+    ast.Gt,
+    ast.GtE,
+    ast.In,
+    ast.NotIn,
 )
 
 
@@ -70,6 +86,7 @@ def _compile_name(node: ast.Name) -> Callable[[dict[str, Any]], Any]:
         if n not in ctx:
             raise ExpressionError(f"unknown partition key {n!r}")
         return ctx[n]
+
     return _name
 
 
@@ -107,10 +124,13 @@ def _compile_compare(node: ast.Compare) -> Callable[[dict[str, Any]], Any]:
                 return False
             cur = rv
         return True
+
     return _cmp
 
 
-_NODE_HANDLERS: dict[type[ast.AST], Callable[[Any], Callable[[dict[str, Any]], Any]]] = {
+_NODE_HANDLERS: dict[
+    type[ast.AST], Callable[[Any], Callable[[dict[str, Any]], Any]]
+] = {
     ast.Constant: _compile_constant,
     ast.Name: _compile_name,
     ast.Tuple: _compile_sequence,
@@ -120,7 +140,6 @@ _NODE_HANDLERS: dict[type[ast.AST], Callable[[Any], Callable[[dict[str, Any]], A
     ast.UnaryOp: _compile_unaryop,
     ast.Compare: _compile_compare,
 }
-
 
 _CMP_OPS: dict[type[ast.cmpop], Callable[[Any, Any], bool]] = {
     ast.Eq: operator.eq,

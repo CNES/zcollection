@@ -6,11 +6,11 @@ than fsspec/aiobotocore and produces fewer GETs on cold opens.
 
 The dependency is optional — we only import obstore when this module is
 constructed, so missing it raises a clear, actionable error instead of
-breaking ``import zcollection3``.
+breaking ``import zcollection``.
 """
-from __future__ import annotations
 
-from typing import Any, Iterator
+from typing import Any
+from collections.abc import Iterator
 from urllib.parse import urlparse
 
 import zarr.storage
@@ -37,7 +37,7 @@ class ObjectStore(Store):
         read_only: bool = False,
     ) -> None:
         try:
-            import obstore  # noqa: PLC0415  (optional dependency)
+            import obstore
         except ImportError as exc:
             raise StoreError(
                 "ObjectStore requires the 'obstore' package; "
@@ -51,8 +51,12 @@ class ObjectStore(Store):
         if not parsed.scheme:
             raise StoreError(f"ObjectStore needs a scheme://; got {url!r}")
 
-        self._inner_obstore = _build_obstore(obstore, parsed, client_options, credentials)
-        self._store = zarr.storage.ObjectStore(self._inner_obstore, read_only=read_only)
+        self._inner_obstore = _build_obstore(
+            obstore, parsed, client_options, credentials
+        )
+        self._store = zarr.storage.ObjectStore(
+            self._inner_obstore, read_only=read_only
+        )
 
     @property
     def root_uri(self) -> str:
@@ -68,19 +72,23 @@ class ObjectStore(Store):
             async for _ in self._store.list_dir(key.rstrip("/")):
                 return True
             return False
+
         return run_sync(_check())
 
     def read_bytes(self, key: str) -> bytes | None:
         async def _get() -> bytes | None:
-            from zarr.core.buffer import default_buffer_prototype  # noqa: PLC0415
+            from zarr.core.buffer import default_buffer_prototype
 
             try:
-                buf = await self._store.get(key, prototype=default_buffer_prototype())
+                buf = await self._store.get(
+                    key, prototype=default_buffer_prototype()
+                )
             except FileNotFoundError:
                 return None
             if buf is None:
                 return None
             return bytes(buf.to_bytes())
+
         return run_sync(_get())
 
     def write_bytes(self, key: str, data: bytes) -> None:
@@ -88,10 +96,11 @@ class ObjectStore(Store):
             raise PermissionError(f"store at {self.root_uri} is read-only")
 
         async def _put() -> None:
-            from zarr.core.buffer import default_buffer_prototype  # noqa: PLC0415
+            from zarr.core.buffer import default_buffer_prototype
 
             proto = default_buffer_prototype()
             await self._store.set(key, proto.buffer.from_bytes(data))
+
         run_sync(_put())
 
     def list_prefix(self, prefix: str) -> Iterator[str]:

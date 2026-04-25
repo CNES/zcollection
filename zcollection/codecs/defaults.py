@@ -11,10 +11,10 @@ In Phase 1 we keep the actual codec descriptors as simple dicts so the schema
 serialises cleanly without depending on Zarr v3 codec object stability. The
 ``io`` layer translates these into ``zarr.codecs`` objects at write time.
 """
-from __future__ import annotations
 
+from typing import Any
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable
 
 import numpy
 import zarr.codecs as zcodecs
@@ -45,7 +45,7 @@ class CodecStack:
         }
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> "CodecStack":
+    def from_json(cls, payload: dict[str, Any]) -> CodecStack:
         return cls(
             array_to_array=tuple(payload.get("array_to_array", [])),
             array_to_bytes=payload.get("array_to_bytes"),
@@ -80,7 +80,9 @@ class _Profile:
             array_to_bytes=_bytes_codec(),
             bytes_to_bytes=(self.compressor,),
             sharded=self.sharded,
-            shard_target_bytes=self.target_shard_bytes if self.sharded else None,
+            shard_target_bytes=self.target_shard_bytes
+            if self.sharded
+            else None,
         )
 
 
@@ -126,8 +128,7 @@ def profile(
         name = DEFAULT_PROFILE
     if name not in PROFILES:
         raise KeyError(
-            f"unknown codec profile {name!r}; "
-            f"available: {profile_names()!r}"
+            f"unknown codec profile {name!r}; available: {profile_names()!r}"
         )
     spec = PROFILES[name]
     base = spec.codecs(numpy.dtype("float32"))

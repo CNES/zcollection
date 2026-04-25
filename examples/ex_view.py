@@ -5,7 +5,6 @@ Overview of a View.
 This section outlines the steps required to get started with the main features
 of a ``View``.
 """
-from __future__ import annotations
 
 from typing import TYPE_CHECKING
 import pprint
@@ -157,8 +156,9 @@ def resize(ds: zcollection.Dataset, dim: str,
         new_size: int,
     ) -> tuple[int, ...]:
         """Compute the new shape of a variable."""
-        return tuple(new_size if dim == selected_dim else size
-                     for dim, size in zip(var.dimensions, var.shape, strict=False))
+        return tuple(
+            new_size if dim == selected_dim else size
+            for dim, size in zip(var.dimensions, var.shape, strict=False))
 
     return zcollection.Dataset([
         zcollection.Array(

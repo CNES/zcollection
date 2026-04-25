@@ -1,18 +1,16 @@
 """Phase 4 — partition catalog, _immutable group, views, parquet indexer."""
-from __future__ import annotations
 
 import json
 
 import numpy
 import pytest
 
-import zcollection3 as zc
-from zcollection3.indexing import Indexer
-from zcollection3.partitioning import Catalog
-from zcollection3.partitioning.catalog import CATALOG_FILE, _checksum
-from zcollection3.store.layout import IMMUTABLE_DIR
-from zcollection3.view import View, ViewReference
-
+import zcollection as zc
+from zcollection.indexing import Indexer
+from zcollection.partitioning import Catalog
+from zcollection.partitioning.catalog import CATALOG_FILE, _checksum
+from zcollection.store.layout import IMMUTABLE_DIR
+from zcollection.view import View, ViewReference
 
 # --- catalog --------------------------------------------------------
 
@@ -50,11 +48,17 @@ def test_catalog_drop(tmp_path):
     assert not cat.exists()
 
 
-def test_collection_uses_catalog_when_enabled(tmp_path, schema, dataset, partitioning):
+def test_collection_uses_catalog_when_enabled(
+    tmp_path, schema, dataset, partitioning
+):
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, catalog_enabled=True, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        catalog_enabled=True,
+        overwrite=True,
     )
     col.insert(dataset)
     cat = Catalog(store)
@@ -68,7 +72,11 @@ def test_collection_uses_catalog_when_enabled(tmp_path, schema, dataset, partiti
 
 
 def test_repair_catalog_recovers_from_crash(
-    tmp_path, schema, dataset, partitioning, monkeypatch,
+    tmp_path,
+    schema,
+    dataset,
+    partitioning,
+    monkeypatch,
 ):
     """Simulate a crash between partition-writes and catalog-update.
 
@@ -78,8 +86,12 @@ def test_repair_catalog_recovers_from_crash(
     """
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, catalog_enabled=True, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        catalog_enabled=True,
+        overwrite=True,
     )
     Catalog(store).write([])  # baseline empty catalog
 
@@ -105,12 +117,19 @@ def test_repair_catalog_recovers_from_crash(
 
 
 def test_catalog_drop_partitions_updates_catalog(
-    tmp_path, schema, dataset, partitioning,
+    tmp_path,
+    schema,
+    dataset,
+    partitioning,
 ):
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, catalog_enabled=True, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        catalog_enabled=True,
+        overwrite=True,
     )
     col.insert(dataset)
     col.drop_partitions(filters="num == 1")
@@ -128,13 +147,19 @@ def test_catalog_corrupted_payload_treated_as_missing(tmp_path):
 
 
 def test_immutable_variable_persists_at_root(
-    tmp_path, schema, dataset, partitioning,
+    tmp_path,
+    schema,
+    dataset,
+    partitioning,
 ):
     """The ``static`` variable (dim x only) lives at ``_immutable/static``."""
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
     # The immutable group exists at root.
@@ -144,18 +169,25 @@ def test_immutable_variable_persists_at_root(
 
 
 def test_immutable_variable_returned_by_query(
-    tmp_path, schema, dataset, partitioning,
+    tmp_path,
+    schema,
+    dataset,
+    partitioning,
 ):
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
     out = zc.open_collection(store, mode="r").query()
     assert "static" in out.variables
     assert numpy.array_equal(
-        out["static"].to_numpy(), dataset["static"].to_numpy(),
+        out["static"].to_numpy(),
+        dataset["static"].to_numpy(),
     )
     # And mutable variables still merge correctly.
     assert numpy.array_equal(
@@ -170,8 +202,11 @@ def test_immutable_variable_returned_by_query(
 def test_view_create_query_update(tmp_path, schema, dataset, partitioning):
     base_store = zc.LocalStore(tmp_path / "col")
     base = zc.create_collection(
-        base_store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        base_store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     base.insert(dataset)
 
@@ -182,7 +217,9 @@ def test_view_create_query_update(tmp_path, schema, dataset, partitioning):
         dimensions=("num", "x"),
     )
     view = View.create(
-        view_store, base=base, variables=[derived],
+        view_store,
+        base=base,
+        variables=[derived],
         reference=ViewReference(uri=f"file://{tmp_path / 'col'}"),
     )
 
@@ -204,16 +241,23 @@ def test_view_create_query_update(tmp_path, schema, dataset, partitioning):
 def test_view_persists_and_reopens(tmp_path, schema, dataset, partitioning):
     base_store = zc.LocalStore(tmp_path / "col")
     base = zc.create_collection(
-        base_store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        base_store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     base.insert(dataset)
     view_store = zc.LocalStore(tmp_path / "view")
     derived = zc.VariableSchema(
-        name="bias", dtype=numpy.dtype("float32"), dimensions=("num", "x"),
+        name="bias",
+        dtype=numpy.dtype("float32"),
+        dimensions=("num", "x"),
     )
     View.create(
-        view_store, base=base, variables=[derived],
+        view_store,
+        base=base,
+        variables=[derived],
         reference=f"file://{tmp_path / 'col'}",
     )
     reopened = View.open(view_store, base=base)
@@ -221,19 +265,28 @@ def test_view_persists_and_reopens(tmp_path, schema, dataset, partitioning):
     assert reopened.reference.uri.endswith("col")
 
 
-def test_view_rejects_colliding_variable(tmp_path, schema, dataset, partitioning):
+def test_view_rejects_colliding_variable(
+    tmp_path, schema, dataset, partitioning
+):
     base_store = zc.LocalStore(tmp_path / "col")
     base = zc.create_collection(
-        base_store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        base_store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     view_store = zc.LocalStore(tmp_path / "view")
     colliding = zc.VariableSchema(
-        name="value", dtype=numpy.dtype("float32"), dimensions=("num", "x"),
+        name="value",
+        dtype=numpy.dtype("float32"),
+        dimensions=("num", "x"),
     )
     with pytest.raises(zc.ZCollectionError, match="collides"):
         View.create(
-            view_store, base=base, variables=[colliding],
+            view_store,
+            base=base,
+            variables=[colliding],
             reference=f"file://{tmp_path / 'col'}",
         )
 
@@ -244,8 +297,11 @@ def test_view_rejects_colliding_variable(tmp_path, schema, dataset, partitioning
 def test_indexer_build_and_lookup(tmp_path, schema, dataset, partitioning):
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
@@ -279,8 +335,11 @@ def test_indexer_build_and_lookup(tmp_path, schema, dataset, partitioning):
 def test_indexer_unknown_column_raises(tmp_path, schema, dataset, partitioning):
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
@@ -300,15 +359,22 @@ def test_view_config_is_json(tmp_path, schema, dataset, partitioning):
     """Sanity: the view config is well-formed JSON we can hand-decode."""
     base_store = zc.LocalStore(tmp_path / "col")
     base = zc.create_collection(
-        base_store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        base_store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     view_store = zc.LocalStore(tmp_path / "view")
     derived = zc.VariableSchema(
-        name="d", dtype=numpy.dtype("float32"), dimensions=("num",),
+        name="d",
+        dtype=numpy.dtype("float32"),
+        dimensions=("num",),
     )
     View.create(
-        view_store, base=base, variables=[derived],
+        view_store,
+        base=base,
+        variables=[derived],
         reference=f"file://{tmp_path / 'col'}",
     )
     raw = (tmp_path / "view" / "_zcollection_view.json").read_bytes()

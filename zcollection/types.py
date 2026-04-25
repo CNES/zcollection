@@ -1,7 +1,7 @@
 """Public type aliases and protocols."""
-from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
+from collections.abc import Callable
 
 if TYPE_CHECKING:
     import numpy
@@ -23,8 +23,7 @@ class IndexerCallable(Protocol):
     def __call__(
         self,
         partition: dict[str, int],
-    ) -> "slice | numpy.ndarray | None":
-        ...
+    ) -> slice | numpy.ndarray | None: ...
 
 
 #: An indexer is either a callable or an iterable of (partition, slice) pairs.
@@ -35,5 +34,6 @@ class JSONSerializable(Protocol):
     """Protocol for objects with a JSON config round-trip."""
 
     def to_json(self) -> Any: ...
+
     @classmethod
-    def from_json(cls, payload: Any) -> "JSONSerializable": ...
+    def from_json(cls, payload: Any) -> JSONSerializable: ...

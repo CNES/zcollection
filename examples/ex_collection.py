@@ -5,7 +5,6 @@ Overview of a Collection.
 This section outlines the steps required to get started with the main features
 of a ``Collection``.
 """
-from __future__ import annotations
 
 from typing import TYPE_CHECKING
 import datetime

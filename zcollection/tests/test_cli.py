@@ -1,13 +1,12 @@
 """CLI sanity tests — drives ``ls / inspect / drop`` via :func:`cli.main`."""
-from __future__ import annotations
 
 import io
 import json
 
 import pytest
 
-import zcollection3 as zc
-from zcollection3.cli.main import main
+import zcollection as zc
+from zcollection.cli.main import main
 
 
 @pytest.fixture
@@ -15,8 +14,11 @@ def populated(tmp_path, schema, dataset, partitioning):
     path = str(tmp_path / "col")
     store = zc.LocalStore(path)
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
     return path
@@ -83,7 +85,8 @@ def test_drop_aborts_without_confirmation(populated):
 
 def test_drop_confirmed_via_stdin(populated):
     rc, _ = _run(
-        ["drop", populated, "--filter", "num == 0"], stdin="y\n",
+        ["drop", populated, "--filter", "num == 0"],
+        stdin="y\n",
     )
     assert rc == 0
     _, ls = _run(["ls", populated])

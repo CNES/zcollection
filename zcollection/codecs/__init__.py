@@ -5,7 +5,6 @@ chunks travel from numpy memory to bytes on disk. It maps onto Zarr v3's
 three-stage codec pipeline (array-array, array-bytes, bytes-bytes) and is
 serialised as part of each variable's schema.
 """
-from __future__ import annotations
 
 from .defaults import (
     DEFAULT_PROFILE,

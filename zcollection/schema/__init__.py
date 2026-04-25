@@ -5,7 +5,6 @@ dataset schema. This module is the single source of truth for what a
 collection *is*; nothing outside ``schema/`` reads or writes the
 ``_zcollection.json`` config.
 """
-from __future__ import annotations
 
 from .attribute import Attribute
 from .builder import SchemaBuilder

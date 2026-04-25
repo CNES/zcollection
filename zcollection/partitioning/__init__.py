@@ -1,5 +1,4 @@
 """Partitioning strategies and the typed filter expression engine."""
-from __future__ import annotations
 
 from typing import Any
 

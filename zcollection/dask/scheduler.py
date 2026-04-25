@@ -4,11 +4,12 @@ The sync facade dispatches every async coroutine through this runner so
 callers never juggle ``asyncio.run``. Inside a Dask worker we reuse the
 worker's own loop instead of spinning a new one.
 """
-from __future__ import annotations
 
+from typing import Any, TypeVar
 import asyncio
+from collections.abc import Coroutine
+from concurrent.futures import Future
 import threading
-from typing import Any, Awaitable, TypeVar
 
 T = TypeVar("T")
 
@@ -20,7 +21,7 @@ class AsyncRunner:
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(
             target=self._loop.run_forever,
-            name="zcollection3-runner",
+            name="zcollection-runner",
             daemon=True,
         )
         self._thread.start()
@@ -29,9 +30,9 @@ class AsyncRunner:
     def loop(self) -> asyncio.AbstractEventLoop:
         return self._loop
 
-    def run(self, coro: Awaitable[T]) -> T:
+    def run(self, coro: Coroutine[Any, Any, T]) -> T:
         """Schedule ``coro`` on the runner's loop and block until it finishes."""
-        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        future: Future[T] = asyncio.run_coroutine_threadsafe(coro, self._loop)
         return future.result()
 
     def close(self) -> None:
@@ -56,7 +57,7 @@ def get_runner() -> AsyncRunner:
     return _RUNNER
 
 
-def run_sync(coro: Awaitable[T]) -> T:
+def run_sync(coro: Coroutine[Any, Any, T]) -> T:
     """Block on ``coro`` using the global runner, or the current loop on a worker.
 
     On a Dask worker we already sit inside a running loop; in that rare case

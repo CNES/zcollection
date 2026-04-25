@@ -1,14 +1,8 @@
 """Bench harness sanity — runs the suite on a tiny local store."""
-from __future__ import annotations
 
 import json
 
-from zcollection3.benches.harness import (
-    BenchSpec,
-    compare,
-    dump_json,
-    run_suite,
-)
+from zcollection.benches.harness import BenchSpec, compare, dump_json, run_suite
 
 
 def test_run_suite_against_local_store(tmp_path):
@@ -27,7 +21,11 @@ def test_run_suite_against_local_store(tmp_path):
     # Probe wired in: insert and the two query phases must hit the zarr layer.
     # ``open_collection_cold`` deliberately reads only the config sidecar, so
     # zero zarr ops there is the correct outcome.
-    for hot in ("insert_full_dataset", "query_one_partition_full", "query_full"):
+    for hot in (
+        "insert_full_dataset",
+        "query_one_partition_full",
+        "query_full",
+    ):
         assert sum(by_name[hot].counts.values()) > 0, (
             f"{hot} had no probe activity"
         )

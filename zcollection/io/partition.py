@@ -1,8 +1,8 @@
 """Per-partition Zarr v3 group I/O (sync, Phase 1)."""
-from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable
 import logging
-from typing import TYPE_CHECKING, Any, Iterable
 
 import numpy
 import zarr
@@ -47,7 +47,8 @@ def _build_array_kwargs(
             dtype=dtype,
             target_shard_bytes=stack.shard_target_bytes,
         )
-        if stack.sharded else None
+        if stack.sharded
+        else None
     )
 
     if shard_shape is None:
@@ -58,7 +59,11 @@ def _build_array_kwargs(
             "compressors": inner_compressors or None,
         }
 
-    inner_codecs: list[Any] = [*inner_filters, inner_serializer, *inner_compressors]
+    inner_codecs: list[Any] = [
+        *inner_filters,
+        inner_serializer,
+        *inner_compressors,
+    ]
     sharding = zcodecs.ShardingCodec(
         chunk_shape=inner_chunks,
         codecs=inner_codecs,
@@ -71,8 +76,11 @@ def _build_array_kwargs(
     }
 
 
-def _chunks_for(var: VariableSchema, shape: tuple[int, ...],
-                dim_chunks: dict[str, int | None]) -> tuple[int, ...]:
+def _chunks_for(
+    var: VariableSchema,
+    shape: tuple[int, ...],
+    dim_chunks: dict[str, int | None],
+) -> tuple[int, ...]:
     out: list[int] = []
     for dim, size in zip(var.dimensions, shape, strict=True):
         c = dim_chunks.get(dim)
@@ -110,7 +118,9 @@ def write_partition_dataset(
         data = var.to_numpy()
         shape = data.shape
         inner_chunks = _chunks_for(var.schema, shape, dim_chunks)
-        array_kwargs = _build_array_kwargs(var.schema, shape, inner_chunks, data.dtype)
+        array_kwargs = _build_array_kwargs(
+            var.schema, shape, inner_chunks, data.dtype
+        )
         attrs = dict(var.attrs)
         # Persist Zarr v3 dimension names natively.
         arr = group.create_array(
@@ -155,7 +165,7 @@ def open_partition_dataset(
         if name not in group:
             continue  # variable not present in this partition
         zarr_arr = group[name]
-        data = numpy.asarray(zarr_arr[...])
+        data = numpy.asarray(zarr_arr[...])  # type: ignore[index]
         out[name] = Variable(schema.variables[name], data)
 
     return Dataset(

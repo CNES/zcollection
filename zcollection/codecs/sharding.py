@@ -11,10 +11,9 @@ but no larger than, ``target_shard_bytes``. We grow shard size dimension
 by dimension (largest first) so wide arrays don't end up disproportionately
 tall.
 """
-from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
+import math
 
 if TYPE_CHECKING:
     import numpy
@@ -43,10 +42,14 @@ def compute_shard_shape(
     inner_bytes = itemsize * math.prod(max(c, 1) for c in inner_chunks)
     if inner_bytes >= target_shard_bytes:
         # Inner chunk is already at/over the target; one chunk per shard.
-        return tuple(_clip(c, s) for c, s in zip(inner_chunks, shape, strict=True))
+        return tuple(
+            _clip(c, s) for c, s in zip(inner_chunks, shape, strict=True)
+        )
 
     # Per-dim cap: how many inner chunks fit before hitting the array's size.
-    caps = tuple(_max_multiplier(c, s) for c, s in zip(inner_chunks, shape, strict=True))
+    caps = tuple(
+        _max_multiplier(c, s) for c, s in zip(inner_chunks, shape, strict=True)
+    )
 
     multipliers = [1] * len(inner_chunks)
 
@@ -100,7 +103,9 @@ def shard_decision(
         dtype=dtype,
         target_shard_bytes=target_shard_bytes,
     )
-    if proposal == tuple(_clip(c, s) for c, s in zip(inner_chunks, shape, strict=True)):
+    if proposal == tuple(
+        _clip(c, s) for c, s in zip(inner_chunks, shape, strict=True)
+    ):
         return None
     return proposal
 

@@ -2,15 +2,17 @@
 
 Usage::
 
-    schema = (SchemaBuilder()
+    schema = (
+        SchemaBuilder()
         .with_dimension("time", chunks=4096)
         .with_dimension("x_ac", size=240, chunks=240)
         .with_variable("ssh", dtype="float32", dimensions=("time", "x_ac"))
-        .build())
+        .build()
+    )
 """
-from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 
 import numpy
 
@@ -35,8 +37,10 @@ class SchemaBuilder:
         size: int | None = None,
         chunks: int | None = None,
         shards: int | None = None,
-    ) -> "SchemaBuilder":
-        self._dims[name] = Dimension(name, size=size, chunks=chunks, shards=shards)
+    ) -> SchemaBuilder:
+        self._dims[name] = Dimension(
+            name, size=size, chunks=chunks, shards=shards
+        )
         return self
 
     def with_variable(
@@ -49,7 +53,7 @@ class SchemaBuilder:
         codecs: CodecStack | None = None,
         attrs: dict[str, Any] | None = None,
         role: VariableRole = VariableRole.USER,
-    ) -> "SchemaBuilder":
+    ) -> SchemaBuilder:
         self._vars[name] = VariableSchema(
             name=name,
             dtype=numpy.dtype(dtype),
@@ -61,7 +65,7 @@ class SchemaBuilder:
         )
         return self
 
-    def with_attribute(self, name: str, value: Any) -> "SchemaBuilder":
+    def with_attribute(self, name: str, value: Any) -> SchemaBuilder:
         self._attrs[name] = value
         return self
 

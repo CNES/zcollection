@@ -1,8 +1,8 @@
 """In-memory store for tests and ephemeral collections."""
-from __future__ import annotations
 
+from typing import Any
 import asyncio
-from typing import Any, Iterator
+from collections.abc import Iterator
 
 import zarr.storage
 
@@ -77,7 +77,7 @@ def _run_sync(coro):
     except RuntimeError:
         return asyncio.run(coro)
     # A loop is running in this thread; offload to a fresh one in another thread.
-    import concurrent.futures  # noqa: PLC0415
+    import concurrent.futures
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(asyncio.run, coro).result()
@@ -90,10 +90,12 @@ def _zarr_contains(store: Any, key: str) -> bool:
         async for _ in store.list_dir(key):
             return True
         return False
+
     return _run_sync(_check())
 
 
 def _zarr_list_dir(store: Any, prefix: str) -> Iterator[str]:
     async def _collect() -> list[str]:
         return [name async for name in store.list_dir(prefix)]
+
     return iter(_run_sync(_collect()))

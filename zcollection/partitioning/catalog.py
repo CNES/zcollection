@@ -22,12 +22,11 @@ Two-phase / crash safety:
   may verify against a recompute from the listed paths; mismatch ⇒ fall
   back to walking. :func:`reconcile` performs the recovery write-back.
 """
-from __future__ import annotations
 
+from typing import TYPE_CHECKING
+from dataclasses import dataclass
 import hashlib
 import json
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from ..store.layout import CATALOG_DIR, join_path
 
@@ -107,7 +106,9 @@ class Catalog:
         self._store.delete_prefix(CATALOG_DIR)
 
 
-def reconcile(catalog: Catalog, walked: list[str] | tuple[str, ...]) -> CatalogState:
+def reconcile(
+    catalog: Catalog, walked: list[str] | tuple[str, ...]
+) -> CatalogState:
     """Rewrite the catalog from a fresh walk and return the new state."""
     catalog.write(walked)
     state = catalog.read()

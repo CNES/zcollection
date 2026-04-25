@@ -5,10 +5,9 @@ counters whenever the underlying store is exercised. It uses
 :class:`zarr.storage.WrapperStore` so it stays oblivious to the backend
 (local, obstore, memory) and never changes data semantics.
 """
-from __future__ import annotations
 
-from collections import Counter
 from typing import Any
+from collections import Counter
 
 import zarr.storage
 
@@ -21,11 +20,13 @@ class CountingProbe(zarr.storage.WrapperStore):
     ``list_dir``, ``exists``.
     """
 
-    def __init__(self, store: Any, *, counts: Counter[str] | None = None) -> None:
+    def __init__(
+        self, store: Any, *, counts: Counter[str] | None = None
+    ) -> None:
         super().__init__(store)
         self.counts: Counter[str] = counts if counts is not None else Counter()
 
-    def _with_store(self, store: Any) -> "CountingProbe":
+    def _with_store(self, store: Any) -> CountingProbe:
         # Zarr clones the wrapper for read-only views; share counters across clones.
         return CountingProbe(store, counts=self.counts)
 

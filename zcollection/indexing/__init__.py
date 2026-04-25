@@ -9,8 +9,7 @@ The v3 indexer is deliberately small compared to the v2 surface: it is a
 pyarrow Table on disk and a thin lookup helper. Callers pick the columns
 they want indexed via the ``builder`` callable.
 """
-from __future__ import annotations
 
-from .parquet import Indexer, IndexBuilder
+from .parquet import IndexBuilder, Indexer
 
 __all__ = ("IndexBuilder", "Indexer")

@@ -1,10 +1,10 @@
 """Local-FS store backed by :class:`zarr.storage.LocalStore`."""
-from __future__ import annotations
 
+from typing import Any
+from collections.abc import Iterator
 import os
-import shutil
 from pathlib import Path
-from typing import Any, Iterator
+import shutil
 
 import zarr.storage
 
@@ -14,11 +14,15 @@ from .base import Store
 class LocalStore(Store):
     """File-system backed store rooted at ``path``."""
 
-    def __init__(self, path: str | os.PathLike[str], *, read_only: bool = False) -> None:
+    def __init__(
+        self, path: str | os.PathLike[str], *, read_only: bool = False
+    ) -> None:
         self._path = Path(path)
         self._path.mkdir(parents=True, exist_ok=True)
         self._read_only = read_only
-        self._store = zarr.storage.LocalStore(str(self._path), read_only=read_only)
+        self._store = zarr.storage.LocalStore(
+            str(self._path), read_only=read_only
+        )
 
     @property
     def root_uri(self) -> str:

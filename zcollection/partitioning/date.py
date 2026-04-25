@@ -1,7 +1,7 @@
 """Date partitioning — bucket a datetime64 axis by Y/M/D/h/m/s."""
-from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
+from collections.abc import Iterator
 
 import numpy
 
@@ -11,23 +11,31 @@ from .base import PartitionKey, runs_from_inverse
 if TYPE_CHECKING:
     from ..data import Dataset
 
-
 #: Mapping from a resolution code to the (component-name, datetime64 unit, padding) tuple.
 _RESOLUTIONS: dict[str, tuple[tuple[str, str, int], ...]] = {
     "Y": (("year", "Y", 4),),
     "M": (("year", "Y", 4), ("month", "M", 2)),
     "D": (("year", "Y", 4), ("month", "M", 2), ("day", "D", 2)),
     "h": (
-        ("year", "Y", 4), ("month", "M", 2), ("day", "D", 2),
+        ("year", "Y", 4),
+        ("month", "M", 2),
+        ("day", "D", 2),
         ("hour", "h", 2),
     ),
     "m": (
-        ("year", "Y", 4), ("month", "M", 2), ("day", "D", 2),
-        ("hour", "h", 2), ("minute", "m", 2),
+        ("year", "Y", 4),
+        ("month", "M", 2),
+        ("day", "D", 2),
+        ("hour", "h", 2),
+        ("minute", "m", 2),
     ),
     "s": (
-        ("year", "Y", 4), ("month", "M", 2), ("day", "D", 2),
-        ("hour", "h", 2), ("minute", "m", 2), ("second", "s", 2),
+        ("year", "Y", 4),
+        ("month", "M", 2),
+        ("day", "D", 2),
+        ("hour", "h", 2),
+        ("minute", "m", 2),
+        ("second", "s", 2),
     ),
 }
 
@@ -75,7 +83,7 @@ class Date:
     def resolution(self) -> str:
         return self._resolution
 
-    def split(self, dataset: "Dataset") -> Iterator[tuple[PartitionKey, slice]]:
+    def split(self, dataset: Dataset) -> Iterator[tuple[PartitionKey, slice]]:
         if self._variable not in dataset:
             raise PartitionError(
                 f"variable {self._variable!r} required for Date partitioning is missing"
@@ -108,8 +116,12 @@ class Date:
         ts = value.astype("datetime64[s]").item()
         parts: list[tuple[str, int]] = []
         getters = {
-            "year": ts.year, "month": ts.month, "day": ts.day,
-            "hour": ts.hour, "minute": ts.minute, "second": ts.second,
+            "year": ts.year,
+            "month": ts.month,
+            "day": ts.day,
+            "hour": ts.hour,
+            "minute": ts.minute,
+            "second": ts.second,
         }
         for name, _unit, _pad in self._components:
             parts.append((name, int(getters[name])))
@@ -125,7 +137,9 @@ class Date:
         parts: list[tuple[str, int]] = []
         for token in path.strip("/").split("/"):
             if "=" not in token:
-                raise PartitionError(f"invalid partition path segment: {token!r}")
+                raise PartitionError(
+                    f"invalid partition path segment: {token!r}"
+                )
             name, raw = token.split("=", 1)
             parts.append((name, int(raw)))
         return tuple(parts)
@@ -139,7 +153,7 @@ class Date:
         }
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> "Date":
+    def from_json(cls, payload: dict[str, Any]) -> Date:
         return cls(
             (payload["variable"],),
             resolution=payload["resolution"],

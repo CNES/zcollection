@@ -4,10 +4,11 @@ If a Dask Client is reachable, :func:`dask_map_async` submits each coroutine
 to the cluster and the worker's own event loop drives it. Otherwise it falls
 back to :func:`asyncio.gather` on the local runner with bounded concurrency.
 """
-from __future__ import annotations
 
+from typing import Any, TypeVar
 import asyncio
-from typing import Any, Awaitable, Callable, TypeVar
+from collections.abc import Awaitable, Callable
+from concurrent.futures import Future
 
 from .scheduler import get_runner
 
@@ -17,9 +18,7 @@ T = TypeVar("T")
 def _try_get_client() -> Any | None:
     """Return the active distributed Client, or None if Dask isn't usable."""
     try:
-        from distributed import (  # noqa: PLC0415 — optional dependency
-            get_client,
-        )
+        from distributed import get_client
     except ImportError:
         return None
     try:
@@ -34,13 +33,18 @@ def _await_in_worker(coro_factory: Callable[[], Awaitable[T]]) -> T:
     Each Dask worker has its own asyncio loop available through
     :func:`distributed.get_worker`; we schedule the coroutine on it and block.
     """
-    from distributed import (  # noqa: PLC0415 — optional dependency
-        get_worker,
-    )
+    from distributed import get_worker
 
     worker = get_worker()
-    loop = worker.loop.asyncio_loop
-    fut = asyncio.run_coroutine_threadsafe(coro_factory(), loop)
+    loop = worker.loop.asyncio_loop  # type: ignore[attr-defined]
+    coro = coro_factory()
+    if not asyncio.iscoroutine(coro):
+
+        async def _wrap() -> T:
+            return await coro
+
+        coro = _wrap()
+    fut: Future[T] = asyncio.run_coroutine_threadsafe(coro, loop)
     return fut.result()
 
 

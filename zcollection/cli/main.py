@@ -1,13 +1,13 @@
-"""Implementation of the ``zcollection3`` CLI subcommands."""
-from __future__ import annotations
+"""Implementation of the ``zcollection`` CLI subcommands."""
 
+from typing import Any, TextIO
 import argparse
+from collections.abc import Sequence
 import json
 import sys
-from typing import Any, Sequence, TextIO
 
-import zcollection3 as zc
-from zcollection3.errors import CollectionNotFoundError, StoreError
+import zcollection as zc
+from zcollection.errors import CollectionNotFoundError, StoreError
 
 
 def _open_ro(path: str) -> zc.Collection:
@@ -82,7 +82,9 @@ def _render_inspect(info: dict[str, Any], out: TextIO) -> None:
 
 
 def _cmd_drop(
-    args: argparse.Namespace, out: TextIO, stdin: TextIO,
+    args: argparse.Namespace,
+    out: TextIO,
+    stdin: TextIO,
 ) -> int:
     col = _open_rw(args.path)
     targets = list(col.partitions(filters=args.filter))
@@ -109,15 +111,19 @@ def _cmd_drop(
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="zcollection3",
+        prog="zcollection",
         description="Inspect and manage zcollection v3 collections.",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     ls = sub.add_parser("ls", help="List partition paths.")
     ls.add_argument("path", help="Collection URL or filesystem path.")
-    ls.add_argument("--filter", default=None, help="Partition filter expression.")
-    ls.add_argument("--json", action="store_true", help="Output as a JSON list.")
+    ls.add_argument(
+        "--filter", default=None, help="Partition filter expression."
+    )
+    ls.add_argument(
+        "--json", action="store_true", help="Output as a JSON list."
+    )
 
     insp = sub.add_parser("inspect", help="Show schema and partition summary.")
     insp.add_argument("path", help="Collection URL or filesystem path.")
@@ -125,9 +131,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
     dr = sub.add_parser("drop", help="Drop partitions matching a filter.")
     dr.add_argument("path", help="Collection URL or filesystem path.")
-    dr.add_argument("--filter", required=True, help="Partition filter expression.")
     dr.add_argument(
-        "-y", "--yes", action="store_true",
+        "--filter", required=True, help="Partition filter expression."
+    )
+    dr.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
         help="Skip the confirmation prompt.",
     )
 

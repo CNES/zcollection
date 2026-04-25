@@ -1,5 +1,4 @@
 """Public sync facade for zcollection v3 (Phase 1)."""
-from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
@@ -43,7 +42,8 @@ def open_collection(
         raise ValueError(f"mode must be 'r' or 'rw'; got {mode!r}")
     read_only = mode == "r"
     store = (
-        path if isinstance(path, Store)
+        path
+        if isinstance(path, Store)
         else open_store(path, read_only=read_only)
     )
     return Collection.open(store, read_only=read_only)

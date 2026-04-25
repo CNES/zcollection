@@ -1,5 +1,4 @@
 """Read/write the ``_zcollection.json`` root config."""
-from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
@@ -33,7 +32,5 @@ def write_root_config(
 def read_root_config(store: Store) -> dict[str, Any]:
     raw = store.read_bytes(CONFIG_FILE)
     if raw is None:
-        raise CollectionNotFoundError(
-            f"no {CONFIG_FILE} at {store.root_uri}"
-        )
+        raise CollectionNotFoundError(f"no {CONFIG_FILE} at {store.root_uri}")
     return decode_root(raw)

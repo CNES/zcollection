@@ -1,11 +1,12 @@
 """High-level Collection facade — sync + async surfaces."""
-from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
 import asyncio
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 import numpy
 
+from . import merge as merge_mod
 from ..config import get as config_get
 from ..data import Dataset, Variable
 from ..errors import (
@@ -33,16 +34,18 @@ from ..partitioning import (
 from ..schema import DatasetSchema
 from ..schema.serde import CONFIG_FILE
 from ..store.layout import CATALOG_DIR, IMMUTABLE_DIR, join_path
-from . import merge as merge_mod
 
 if TYPE_CHECKING:
     from ..partitioning import Partitioning
     from ..store import Store
     from .merge import MergeCallable
 
-
 _RESERVED_TOP_LEVEL = {
-    CATALOG_DIR, IMMUTABLE_DIR, CONFIG_FILE, "zarr.json", "_zc_meta",
+    CATALOG_DIR,
+    IMMUTABLE_DIR,
+    CONFIG_FILE,
+    "zarr.json",
+    "_zc_meta",
 }
 
 
@@ -79,7 +82,7 @@ class Collection:
         partitioning: Partitioning,
         catalog_enabled: bool = False,
         overwrite: bool = False,
-    ) -> "Collection":
+    ) -> Collection:
         if store.exists(CONFIG_FILE) and not overwrite:
             raise CollectionExistsError(
                 f"a collection already exists at {store.root_uri}"
@@ -102,7 +105,7 @@ class Collection:
         )
 
     @classmethod
-    def open(cls, store: Store, *, read_only: bool = False) -> "Collection":
+    def open(cls, store: Store, *, read_only: bool = False) -> Collection:
         try:
             doc = read_root_config(store)
         except CollectionNotFoundError:
@@ -199,9 +202,9 @@ class Collection:
         dataset: Dataset,
         *,
         overwrite: bool = True,
-        merge: "MergeCallable | str | None" = None,
+        merge: MergeCallable | str | None = None,
     ) -> list[str]:
-        from ..dask.scheduler import run_sync  # noqa: PLC0415 — break import cycle
+        from ..dask.scheduler import run_sync
 
         return run_sync(
             self.insert_async(dataset, overwrite=overwrite, merge=merge)
@@ -212,7 +215,7 @@ class Collection:
         dataset: Dataset,
         *,
         overwrite: bool = True,
-        merge: "MergeCallable | str | None" = None,
+        merge: MergeCallable | str | None = None,
     ) -> list[str]:
         self._require_writable()
         merge_fn = merge_mod.resolve(merge)
@@ -241,21 +244,31 @@ class Collection:
             async def _write(key, sl, path) -> str:
                 async with sem:
                     sub = _slice_dataset(
-                        dataset, dim=self._partitioning.dimension, sl=sl,
+                        dataset,
+                        dim=self._partitioning.dimension,
+                        sl=sl,
                     )
-                    if merge is not None and partition_exists(self._store, path):
+                    if merge is not None and partition_exists(
+                        self._store, path
+                    ):
                         existing = await open_partition_dataset_async(
-                            self._store, path, self._schema,
+                            self._store,
+                            path,
+                            self._schema,
                         )
                         sub = merge_fn(
-                            existing, sub,
+                            existing,
+                            sub,
                             axis=self._axis,
                             partitioning_dim=self._partitioning.dimension,
                         )
                     extra = {"_zc_partition_key": [list(t) for t in key]}
                     await write_partition_dataset_async(
-                        self._store, path, sub,
-                        overwrite=overwrite, extra_attrs=extra,
+                        self._store,
+                        path,
+                        sub,
+                        overwrite=overwrite,
+                        extra_attrs=extra,
                         concurrency=concurrency,
                     )
                     return path
@@ -273,7 +286,7 @@ class Collection:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> Dataset | None:
-        from ..dask.scheduler import run_sync  # noqa: PLC0415 — break import cycle
+        from ..dask.scheduler import run_sync
 
         return run_sync(self.query_async(filters=filters, variables=variables))
 
@@ -293,16 +306,22 @@ class Collection:
         async def _load(path: str) -> Dataset:
             async with sem:
                 return await open_partition_dataset_async(
-                    self._store, path, self._schema, variables=wanted,
+                    self._store,
+                    path,
+                    self._schema,
+                    variables=wanted,
                 )
 
         loaded_task = asyncio.gather(*[_load(p) for p in parts])
         immutable_task = open_immutable_dataset_async(
-            self._store, self._schema, variables=wanted,
+            self._store,
+            self._schema,
+            variables=wanted,
         )
         loaded, immutable = await asyncio.gather(loaded_task, immutable_task)
         merged = _concat_datasets(
-            list(loaded), dim=self._partitioning.dimension,
+            list(loaded),
+            dim=self._partitioning.dimension,
         )
         return _attach_immutable(merged, immutable)
 
@@ -329,7 +348,7 @@ class Collection:
         variables: Iterable[str] | None = None,
     ) -> dict[str, Any]:
         """Apply ``fn`` to each partition's dataset and return ``{path: result}``."""
-        from ..dask.scheduler import run_sync  # noqa: PLC0415 — break import cycle
+        from ..dask.scheduler import run_sync
 
         return run_sync(
             self.map_async(fn, filters=filters, variables=variables)
@@ -347,13 +366,18 @@ class Collection:
         concurrency = max(1, int(config_get("partition.concurrency")))
         sem = asyncio.Semaphore(concurrency)
         immutable = await open_immutable_dataset_async(
-            self._store, self._schema, variables=wanted,
+            self._store,
+            self._schema,
+            variables=wanted,
         )
 
         async def _apply(path: str) -> tuple[str, Any]:
             async with sem:
                 ds = await open_partition_dataset_async(
-                    self._store, path, self._schema, variables=wanted,
+                    self._store,
+                    path,
+                    self._schema,
+                    variables=wanted,
                 )
                 return path, fn(_attach_immutable(ds, immutable))
 
@@ -368,7 +392,7 @@ class Collection:
         variables: Iterable[str] | None = None,
     ) -> list[str]:
         """Read each partition, apply ``fn`` returning a new Dataset, write back."""
-        from ..dask.scheduler import run_sync  # noqa: PLC0415 — break import cycle
+        from ..dask.scheduler import run_sync
 
         return run_sync(
             self.update_async(fn, filters=filters, variables=variables)
@@ -387,18 +411,26 @@ class Collection:
         concurrency = max(1, int(config_get("partition.concurrency")))
         sem = asyncio.Semaphore(concurrency)
         immutable = await open_immutable_dataset_async(
-            self._store, self._schema, variables=wanted,
+            self._store,
+            self._schema,
+            variables=wanted,
         )
 
         async def _update(path: str) -> str:
             async with sem:
                 ds = await open_partition_dataset_async(
-                    self._store, path, self._schema, variables=wanted,
+                    self._store,
+                    path,
+                    self._schema,
+                    variables=wanted,
                 )
                 new_ds = fn(_attach_immutable(ds, immutable))
                 await write_partition_dataset_async(
-                    self._store, path, new_ds,
-                    overwrite=True, concurrency=concurrency,
+                    self._store,
+                    path,
+                    new_ds,
+                    overwrite=True,
+                    concurrency=concurrency,
                 )
                 return path
 
@@ -409,7 +441,9 @@ class Collection:
 
     def _require_writable(self) -> None:
         if self._read_only:
-            raise ReadOnlyError(f"collection at {self._store.root_uri} is read-only")
+            raise ReadOnlyError(
+                f"collection at {self._store.root_uri} is read-only"
+            )
 
 
 def _rebind_to_schema(dataset: Dataset, schema: DatasetSchema) -> Dataset:
@@ -426,16 +460,18 @@ def _rebind_to_schema(dataset: Dataset, schema: DatasetSchema) -> Dataset:
 
 
 def _attach_immutable(
-    dataset: Dataset | None,
+    dataset: Dataset,
     immutable: dict[str, Variable],
-) -> Dataset | None:
+) -> Dataset:
     """Return ``dataset`` with the immutable vars merged in (dataset wins)."""
-    if dataset is None or not immutable:
+    if not immutable:
         return dataset
     merged = dict(immutable)
     merged.update(dataset.variables)
     return Dataset(
-        schema=dataset.schema, variables=merged, attrs=dataset.attrs,
+        schema=dataset.schema,
+        variables=merged,
+        attrs=dataset.attrs,
     )
 
 
@@ -451,7 +487,9 @@ def _slice_dataset(dataset: Dataset, *, dim: str, sl: slice) -> Dataset:
         else:
             data = var.to_numpy()
         new_vars[name] = Variable(var.schema, data)
-    return Dataset(schema=dataset.schema, variables=new_vars, attrs=dataset.attrs)
+    return Dataset(
+        schema=dataset.schema, variables=new_vars, attrs=dataset.attrs
+    )
 
 
 def _concat_datasets(parts: list[Dataset], *, dim: str) -> Dataset:

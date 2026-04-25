@@ -1,10 +1,10 @@
 """Slim, v3-native View implementation."""
-from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
 import asyncio
-import json
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator
+import json
 
 from ..config import get as config_get
 from ..data import Dataset, Variable
@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from ..collection import Collection
     from ..store import Store
 
-
 VIEW_CONFIG_FILE: str = "_zcollection_view.json"
 VIEW_FORMAT_VERSION: int = 1
 
@@ -40,7 +39,7 @@ class ViewReference:
         return {"uri": self.uri}
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> "ViewReference":
+    def from_json(cls, payload: dict[str, Any]) -> ViewReference:
         return cls(uri=str(payload["uri"]))
 
 
@@ -73,16 +72,19 @@ class View:
         variables: Iterable[VariableSchema],
         reference: ViewReference | str,
         overwrite: bool = False,
-    ) -> "View":
+    ) -> View:
         if store.exists(VIEW_CONFIG_FILE) and not overwrite:
             raise CollectionExistsError(
                 f"a view already exists at {store.root_uri}",
             )
         ref = (
-            reference if isinstance(reference, ViewReference)
+            reference
+            if isinstance(reference, ViewReference)
             else ViewReference(uri=reference)
         )
-        view_vars = {v.name: _ensure_view_variable(v, base.schema) for v in variables}
+        view_vars = {
+            v.name: _ensure_view_variable(v, base.schema) for v in variables
+        }
         view_schema = DatasetSchema(
             dimensions=dict(base.schema.dimensions),
             variables=view_vars,
@@ -98,8 +100,11 @@ class View:
             json.dumps(payload, separators=(",", ":")).encode("utf-8"),
         )
         return cls(
-            store=store, base=base, view_schema=view_schema,
-            reference=ref, read_only=False,
+            store=store,
+            base=base,
+            view_schema=view_schema,
+            reference=ref,
+            read_only=False,
         )
 
     @classmethod
@@ -109,7 +114,7 @@ class View:
         *,
         base: Collection,
         read_only: bool = False,
-    ) -> "View":
+    ) -> View:
         raw = store.read_bytes(VIEW_CONFIG_FILE)
         if raw is None:
             raise CollectionNotFoundError(
@@ -119,8 +124,11 @@ class View:
         ref = ViewReference.from_json(payload["reference"])
         view_schema = DatasetSchema.from_json(payload["schema"])
         return cls(
-            store=store, base=base, view_schema=view_schema,
-            reference=ref, read_only=read_only,
+            store=store,
+            base=base,
+            view_schema=view_schema,
+            reference=ref,
+            read_only=read_only,
         )
 
     # --- properties -------------------------------------------------
@@ -162,7 +170,7 @@ class View:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> Dataset | None:
-        from ..dask.scheduler import run_sync  # noqa: PLC0415
+        from ..dask.scheduler import run_sync
 
         return run_sync(self.query_async(filters=filters, variables=variables))
 
@@ -176,14 +184,15 @@ class View:
         view_names = set(self._view_schema.variables)
         base_names = set(self._base.schema.variables)
         base_wanted = (
-            None if wanted is None else sorted((wanted & base_names) | (wanted - view_names))
+            None
+            if wanted is None
+            else sorted((wanted & base_names) | (wanted - view_names))
         )
-        view_wanted = (
-            None if wanted is None else sorted(wanted & view_names)
-        )
+        view_wanted = None if wanted is None else sorted(wanted & view_names)
 
         base_ds = await self._base.query_async(
-            filters=filters, variables=base_wanted,
+            filters=filters,
+            variables=base_wanted,
         )
         if base_ds is None:
             return None
@@ -203,11 +212,17 @@ class View:
                 if not partition_exists(self._store, path):
                     return None
                 return await open_partition_dataset_async(
-                    self._store, path, self._view_schema,
+                    self._store,
+                    path,
+                    self._view_schema,
                     variables=view_wanted,
                 )
 
-        loaded = [d for d in await asyncio.gather(*[_load(p) for p in parts]) if d is not None]
+        loaded = [
+            d
+            for d in await asyncio.gather(*[_load(p) for p in parts])
+            if d is not None
+        ]
         if not loaded:
             return base_ds
 
@@ -229,9 +244,11 @@ class View:
         mapping view-variable names to numpy arrays sized along the
         partitioning dimension.
         """
-        from ..dask.scheduler import run_sync  # noqa: PLC0415
+        from ..dask.scheduler import run_sync
 
-        return run_sync(self.update_async(fn, filters=filters, variables=variables))
+        return run_sync(
+            self.update_async(fn, filters=filters, variables=variables)
+        )
 
     async def update_async(
         self,
@@ -245,7 +262,9 @@ class View:
         view_names = set(self._view_schema.variables)
         base_names = set(self._base.schema.variables)
         base_wanted = (
-            None if wanted is None else sorted((wanted & base_names) | (wanted - view_names))
+            None
+            if wanted is None
+            else sorted((wanted & base_names) | (wanted - view_names))
         )
 
         parts = list(self.partitions(filters=filters))
@@ -255,7 +274,9 @@ class View:
         async def _step(path: str) -> str:
             async with sem:
                 base_ds = await open_partition_dataset_async(
-                    self._base.store, path, self._base.schema,
+                    self._base.store,
+                    path,
+                    self._base.schema,
                     variables=base_wanted,
                 )
                 produced = fn(base_ds)
@@ -267,11 +288,15 @@ class View:
                 if not view_vars:
                     return path
                 ds = Dataset(
-                    schema=self._view_schema, variables=view_vars,
+                    schema=self._view_schema,
+                    variables=view_vars,
                 )
                 await write_partition_dataset_async(
-                    self._store, path, ds,
-                    overwrite=True, concurrency=concurrency,
+                    self._store,
+                    path,
+                    ds,
+                    overwrite=True,
+                    concurrency=concurrency,
                 )
                 return path
 
@@ -288,7 +313,8 @@ class View:
 
 
 def _ensure_view_variable(
-    var: VariableSchema, base_schema: DatasetSchema,
+    var: VariableSchema,
+    base_schema: DatasetSchema,
 ) -> VariableSchema:
     """Reject a view variable that collides with a base-collection name."""
     if var.name in base_schema.variables:
@@ -304,7 +330,7 @@ def _ensure_view_variable(
 
 
 def _concat_along(parts: list[Dataset], *, dim: str) -> Dataset:
-    import numpy  # noqa: PLC0415
+    import numpy
 
     if len(parts) == 1:
         return parts[0]
@@ -315,7 +341,8 @@ def _concat_along(parts: list[Dataset], *, dim: str) -> Dataset:
         if dim in ref.dimensions:
             axis = ref.dimensions.index(dim)
             data = numpy.concatenate(
-                [p[name].to_numpy() for p in parts], axis=axis,
+                [p[name].to_numpy() for p in parts],
+                axis=axis,
             )
         else:
             data = ref.to_numpy()

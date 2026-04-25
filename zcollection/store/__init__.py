@@ -3,7 +3,6 @@
 Phase 1 ships :class:`LocalStore` and :class:`MemoryStore`. The factory
 function :func:`open_store` selects an implementation from a URL.
 """
-from __future__ import annotations
 
 from .base import Store, StoreSession
 from .factory import open_store
@@ -20,9 +19,11 @@ from .memory import MemoryStore
 
 def __getattr__(name: str):  # pragma: no cover — lazy optional dep
     if name == "IcechunkStore":
-        from .icechunk_store import IcechunkStore  # noqa: PLC0415
+        from .icechunk_store import IcechunkStore
+
         return IcechunkStore
     raise AttributeError(name)
+
 
 __all__ = (
     "CATALOG_DIR",

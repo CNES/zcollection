@@ -1,15 +1,14 @@
 """Phase 5 — IcechunkStore: round-trip + transactional commit/rollback."""
-from __future__ import annotations
 
 import numpy
 import pytest
 
-import zcollection3 as zc
-from zcollection3.collection import base as _cbase
-from zcollection3.store import open_store
+import zcollection as zc
+from zcollection.collection import base as _cbase
+from zcollection.store import open_store
 
 icechunk = pytest.importorskip("icechunk")
-from zcollection3.store.icechunk_store import IcechunkStore  # noqa: E402
+from zcollection.store.icechunk_store import IcechunkStore  # noqa: E402
 
 
 @pytest.fixture
@@ -19,8 +18,11 @@ def ic_store(tmp_path):
 
 def test_create_open_round_trip(ic_store, schema, dataset, partitioning):
     col = zc.create_collection(
-        ic_store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        ic_store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
@@ -28,17 +30,22 @@ def test_create_open_round_trip(ic_store, schema, dataset, partitioning):
     out = reopened.query()
     assert out is not None
     numpy.testing.assert_array_equal(
-        out["value"].to_numpy(), dataset["value"].to_numpy(),
+        out["value"].to_numpy(),
+        dataset["value"].to_numpy(),
     )
     numpy.testing.assert_array_equal(
-        out["static"].to_numpy(), dataset["static"].to_numpy(),
+        out["static"].to_numpy(),
+        dataset["static"].to_numpy(),
     )
 
 
 def test_drop_partitions_commits(ic_store, schema, dataset, partitioning):
     col = zc.create_collection(
-        ic_store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        ic_store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
     assert sorted(col.partitions()) == ["num=0", "num=1", "num=2"]
@@ -47,14 +54,21 @@ def test_drop_partitions_commits(ic_store, schema, dataset, partitioning):
 
 
 def test_failed_insert_rolls_back(
-    tmp_path, schema, dataset, partitioning, monkeypatch,
+    tmp_path,
+    schema,
+    dataset,
+    partitioning,
+    monkeypatch,
 ):
     """SIGKILL-equivalent: any exception inside insert_async must leave the
     repo in its prior committed state — not a single partition persisted."""
     store = IcechunkStore(str(tmp_path / "repo"))
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
 
     # Make a mid-insert partition write blow up to simulate a crash.
@@ -84,12 +98,18 @@ def test_failed_insert_rolls_back(
 
 
 def test_successful_insert_persists_after_reopen(
-    tmp_path, schema, dataset, partitioning,
+    tmp_path,
+    schema,
+    dataset,
+    partitioning,
 ):
     store = IcechunkStore(str(tmp_path / "repo"))
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 

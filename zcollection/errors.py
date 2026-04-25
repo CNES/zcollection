@@ -1,5 +1,4 @@
 """Exception taxonomy for zcollection v3."""
-from __future__ import annotations
 
 
 class ZCollectionError(Exception):

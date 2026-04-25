@@ -12,14 +12,13 @@ acceptance gate:
 
 Usage::
 
-    python -m zcollection3.benches all --store s3://my-bucket/zc-bench --out v3.json
-    python -m zcollection3.benches compare v3.json --baseline v2-baseline.json
+    python -m zcollection.benches all --store s3://my-bucket/zc-bench --out v3.json
+    python -m zcollection.benches compare v3.json --baseline v2-baseline.json
 
 Counter probes (PUT/GET) are best-effort: they require the store to expose a
 counting hook. For ObjectStore we wrap the inner obstore client; for local
 FS we count file writes/reads via ``os.stat`` deltas.
 """
-from __future__ import annotations
 
 from .harness import BenchResult, BenchSpec, run_suite
 from .probe import CountingProbe

@@ -1,14 +1,7 @@
 """Partitioning Protocol — pure-numpy partition key extraction."""
-from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Iterable,
-    Iterator,
-    Protocol,
-    runtime_checkable,
-)
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from collections.abc import Iterable, Iterator
 
 import numpy
 
@@ -49,8 +42,7 @@ class Partitioning(Protocol):
         """Decode a relative storage path into a key."""
         ...
 
-    def to_json(self) -> dict[str, Any]:
-        ...
+    def to_json(self) -> dict[str, Any]: ...
 
 
 def keys_from_columns(

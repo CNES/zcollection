@@ -1,23 +1,25 @@
 """End-to-end round-trip: create → insert → reopen → query."""
-from __future__ import annotations
 
 import numpy
 import pytest
 
-import zcollection3 as zc
-from zcollection3.errors import (
+import zcollection as zc
+from zcollection.errors import (
     CollectionExistsError,
     CollectionNotFoundError,
     ExpressionError,
     ReadOnlyError,
 )
-from zcollection3.partitioning import compile_filter
+from zcollection.partitioning import compile_filter
 
 
 def test_create_insert_query(store, schema, dataset, partitioning):
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     written = col.insert(dataset)
     assert written == ["num=0", "num=1", "num=2"]
@@ -25,13 +27,18 @@ def test_create_insert_query(store, schema, dataset, partitioning):
 
     out = col.query()
     assert numpy.array_equal(out["num"].to_numpy(), dataset["num"].to_numpy())
-    assert numpy.array_equal(out["value"].to_numpy(), dataset["value"].to_numpy())
+    assert numpy.array_equal(
+        out["value"].to_numpy(), dataset["value"].to_numpy()
+    )
 
 
 def test_reopen_after_close(store, schema, dataset, partitioning):
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
@@ -39,13 +46,18 @@ def test_reopen_after_close(store, schema, dataset, partitioning):
     assert reopened.read_only
     assert reopened.axis == "num"
     out = reopened.query()
-    assert numpy.array_equal(out["value"].to_numpy(), dataset["value"].to_numpy())
+    assert numpy.array_equal(
+        out["value"].to_numpy(), dataset["value"].to_numpy()
+    )
 
 
 def test_filter_pushdown(store, schema, dataset, partitioning):
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
@@ -61,8 +73,11 @@ def test_filter_pushdown(store, schema, dataset, partitioning):
 
 def test_select_variables(store, schema, dataset, partitioning):
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
@@ -72,8 +87,11 @@ def test_select_variables(store, schema, dataset, partitioning):
 
 def test_drop_partitions(store, schema, dataset, partitioning):
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
@@ -84,8 +102,11 @@ def test_drop_partitions(store, schema, dataset, partitioning):
 
 def test_read_only_blocks_writes(store, schema, dataset, partitioning):
     col = zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     col.insert(dataset)
 
@@ -98,12 +119,17 @@ def test_read_only_blocks_writes(store, schema, dataset, partitioning):
 
 def test_create_existing_raises(store, schema, partitioning):
     zc.create_collection(
-        store, schema=schema, axis="num",
-        partitioning=partitioning, overwrite=True,
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
     )
     with pytest.raises(CollectionExistsError):
         zc.create_collection(
-            store, schema=schema, axis="num",
+            store,
+            schema=schema,
+            axis="num",
             partitioning=partitioning,
         )
 

@@ -1,15 +1,11 @@
 """In-memory Dataset bound to a :class:`DatasetSchema`."""
-from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping
-
+from collections.abc import Iterable, Iterator, Mapping
 
 from ..codecs import CodecStack
-from ..schema import (
-    DatasetSchema,
-    SchemaBuilder,
-)
+from ..schema import DatasetSchema, SchemaBuilder
 from .variable import Variable
 
 if TYPE_CHECKING:
@@ -27,6 +23,7 @@ class Dataset:
         variables: Mapping[str, Variable] | Iterable[Variable],
         attrs: Mapping[str, Any] | None = None,
     ) -> None:
+        items: Iterable[tuple[str, Variable]]
         if isinstance(variables, Mapping):
             items = variables.items()
         else:
@@ -83,7 +80,7 @@ class Dataset:
     def is_lazy(self) -> bool:
         return any(v.is_lazy for v in self._variables.values())
 
-    def select(self, names: Iterable[str]) -> "Dataset":
+    def select(self, names: Iterable[str]) -> Dataset:
         wanted = list(names)
         sub_schema = self.schema.select(wanted)
         return Dataset(
@@ -94,8 +91,8 @@ class Dataset:
 
     # xarray bridge ----------------------------------------------------
 
-    def to_xarray(self) -> "xarray.Dataset":
-        import xarray as xr  # noqa: PLC0415 — lazy: xarray is heavy
+    def to_xarray(self) -> xarray.Dataset:
+        import xarray as xr
 
         data_vars = {}
         for name, var in self._variables.items():
@@ -108,15 +105,15 @@ class Dataset:
         return xr.Dataset(data_vars=data_vars, attrs=dict(self._attrs))
 
     @classmethod
-    def from_xarray(cls, ds: "xarray.Dataset") -> "Dataset":
+    def from_xarray(cls, ds: xarray.Dataset) -> Dataset:
         builder = SchemaBuilder()
         for dim_name, size in ds.sizes.items():
-            builder.with_dimension(dim_name, size=int(size))
+            builder.with_dimension(str(dim_name), size=int(size))
         for k, v in ds.attrs.items():
             builder.with_attribute(str(k), v)
 
         # Combine coords + data_vars: both become variables in zcollection.
-        all_vars: OrderedDict[str, "xarray.Variable"] = OrderedDict()
+        all_vars: OrderedDict[str, xarray.Variable] = OrderedDict()
         for n, v in ds.coords.items():
             all_vars[str(n)] = v.variable
         for n, v in ds.data_vars.items():

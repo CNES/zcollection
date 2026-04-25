@@ -3,13 +3,12 @@
 A thin wrapper around :mod:`zarr.config` that adds a few zcollection-specific
 keys. Defaults are tuned for cloud workloads; bring them down for local FS.
 """
-from __future__ import annotations
 
+from typing import Any
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Iterator
 
 from zarr.core.config import config as _zarr_config
-
 
 _DEFAULTS: dict[str, Any] = {
     # Concurrent partition writes/reads driven by the sync facade.

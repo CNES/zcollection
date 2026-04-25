@@ -1,14 +1,14 @@
 """Per-partition Zarr v3 group I/O — async path (Phase 2).
 
-Mirrors :mod:`zcollection3.io.partition` but uses :mod:`zarr.api.asynchronous`
+Mirrors :mod:`zcollection.io.partition` but uses :mod:`zarr.api.asynchronous`
 end-to-end so that callers can run many partition reads/writes concurrently
 on a single event loop.
 """
-from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
 import asyncio
+from collections.abc import Iterable
 import logging
-from typing import TYPE_CHECKING, Any, Iterable
 
 import numpy
 import zarr.api.asynchronous as zarr_async
@@ -58,7 +58,9 @@ async def write_partition_dataset_async(
             data = var.to_numpy()
             shape = data.shape
             inner_chunks = _chunks_for(var.schema, shape, dim_chunks)
-            kw = _build_array_kwargs(var.schema, shape, inner_chunks, data.dtype)
+            kw = _build_array_kwargs(
+                var.schema, shape, inner_chunks, data.dtype
+            )
             arr = await group.create_array(
                 name=name,
                 shape=shape,
@@ -71,9 +73,9 @@ async def write_partition_dataset_async(
             )
             await arr.setitem(slice(None), data)
 
-    await asyncio.gather(*[
-        _write_one(name, var) for name, var in dataset.variables.items()
-    ])
+    await asyncio.gather(
+        *[_write_one(name, var) for name, var in dataset.variables.items()]
+    )
 
 
 async def open_partition_dataset_async(
@@ -87,7 +89,9 @@ async def open_partition_dataset_async(
     """Async open of one partition group; reads variable arrays concurrently."""
     zstore = store.zarr_store()
     group = await zarr_async.open_group(
-        store=zstore, path=partition_path, mode="r",
+        store=zstore,
+        path=partition_path,
+        mode="r",
     )
 
     wanted = set(variables) if variables is not None else None
@@ -99,11 +103,12 @@ async def open_partition_dataset_async(
                 zarr_arr = await group.getitem(name)
             except KeyError:
                 return None
-            data = await zarr_arr.getitem(Ellipsis)
+            data = await zarr_arr.getitem(Ellipsis)  # type: ignore[arg-type]
             return name, Variable(schema.variables[name], numpy.asarray(data))
 
     names = [
-        n for n, v in schema.variables.items()
+        n
+        for n, v in schema.variables.items()
         if (wanted is None or n in wanted) and not v.immutable
     ]
     results = await asyncio.gather(*[_read_one(n) for n in names])

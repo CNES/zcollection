@@ -1,19 +1,17 @@
 """Phase 3 — sharding policy, sharded round-trip, store factory, bench harness."""
-from __future__ import annotations
 
 import json
 
 import numpy
 import pytest
 
-import zcollection3 as zc
-from zcollection3.benches import BenchSpec, run_suite
-from zcollection3.benches.harness import dump_json
-from zcollection3.benches.probe import CountingProbe
-from zcollection3.codecs import shard_decision, shard_target_bytes
-from zcollection3.codecs.sharding import compute_shard_shape
-from zcollection3.errors import StoreError
-
+import zcollection as zc
+from zcollection.benches import BenchSpec, run_suite
+from zcollection.benches.harness import dump_json
+from zcollection.benches.probe import CountingProbe
+from zcollection.codecs import shard_decision, shard_target_bytes
+from zcollection.codecs.sharding import compute_shard_shape
+from zcollection.errors import StoreError
 
 # --- sharding shape policy ----------------------------------------
 
@@ -44,19 +42,28 @@ def test_compute_shard_shape_clips_to_dim_size():
 
 
 def test_shard_decision_returns_none_when_disabled():
-    assert shard_decision(
-        inner_chunks=(1024,), shape=(None,),
-        dtype=numpy.dtype("float32"), target_shard_bytes=None,
-    ) is None
+    assert (
+        shard_decision(
+            inner_chunks=(1024,),
+            shape=(None,),
+            dtype=numpy.dtype("float32"),
+            target_shard_bytes=None,
+        )
+        is None
+    )
 
 
 def test_shard_decision_returns_none_when_no_growth():
     # Inner already exceeds target → no benefit to wrapping in a shard.
-    assert shard_decision(
-        inner_chunks=(1024 * 1024,), shape=(1024 * 1024,),
-        dtype=numpy.dtype("float64"),
-        target_shard_bytes=1 << 20,
-    ) is None
+    assert (
+        shard_decision(
+            inner_chunks=(1024 * 1024,),
+            shape=(1024 * 1024,),
+            dtype=numpy.dtype("float64"),
+            target_shard_bytes=1 << 20,
+        )
+        is None
+    )
 
 
 def test_profile_target_shard_bytes():
@@ -74,11 +81,15 @@ def _sharded_schema_and_dataset() -> tuple[zc.DatasetSchema, zc.Dataset]:
         .with_dimension("time", size=None, chunks=128)
         .with_dimension("x_ac", size=8, chunks=8)
         .with_variable(
-            "time", dtype="int64", dimensions=("time",),
+            "time",
+            dtype="int64",
+            dimensions=("time",),
             codecs=zc.codecs.profile("cloud-balanced"),
         )
         .with_variable(
-            "ssh", dtype="float32", dimensions=("time", "x_ac"),
+            "ssh",
+            dtype="float32",
+            dimensions=("time", "x_ac"),
             codecs=zc.codecs.profile("cloud-balanced"),
         )
         .build()
@@ -100,7 +111,9 @@ def test_sharded_round_trip_local(tmp_path):
     schema, ds = _sharded_schema_and_dataset()
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="time",
+        store,
+        schema=schema,
+        axis="time",
         partitioning=zc.partitioning.Sequence(("time",), dimension="time"),
         overwrite=True,
     )
@@ -125,25 +138,29 @@ def test_sharded_round_trip_local(tmp_path):
 
 def test_sharded_array_metadata_uses_sharding_codec(tmp_path):
     """Confirm the on-disk array carries a ShardingCodec at the serializer slot."""
-    import zarr  # noqa: PLC0415
+    import zarr
 
     schema, ds = _sharded_schema_and_dataset()
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
-        store, schema=schema, axis="time",
+        store,
+        schema=schema,
+        axis="time",
         partitioning=zc.partitioning.Sequence(("time",), dimension="time"),
         overwrite=True,
     )
-    col.insert(zc.Dataset(
-        schema=schema,
-        variables={
-            "time": zc.Variable(
-                schema.variables["time"],
-                numpy.zeros(ds["time"].to_numpy().size, dtype="int64"),
-            ),
-            "ssh": ds["ssh"],
-        },
-    ))
+    col.insert(
+        zc.Dataset(
+            schema=schema,
+            variables={
+                "time": zc.Variable(
+                    schema.variables["time"],
+                    numpy.zeros(ds["time"].to_numpy().size, dtype="int64"),
+                ),
+                "ssh": ds["ssh"],
+            },
+        )
+    )
 
     arr = zarr.open_array(store=store.zarr_store(), path="time=0/ssh", mode="r")
     meta = arr.metadata.to_dict()
@@ -166,7 +183,7 @@ def test_open_store_memory():
 
 def test_open_store_icechunk_resolves(tmp_path):
     pytest.importorskip("icechunk")
-    from zcollection3.store.icechunk_store import IcechunkStore  # noqa: PLC0415
+    from zcollection.store.icechunk_store import IcechunkStore
 
     s = zc.open_store(f"icechunk://{tmp_path / 'repo'}")
     assert isinstance(s, IcechunkStore)
@@ -179,12 +196,12 @@ def test_open_store_unknown_scheme():
 
 def test_open_store_s3_requires_obstore(monkeypatch):
     """If obstore isn't installed, the cloud path raises a clear StoreError."""
-    import importlib  # noqa: PLC0415
-    import sys  # noqa: PLC0415
+    import importlib
+    import sys
 
     real = sys.modules.pop("obstore", None)
     monkeypatch.setitem(sys.modules, "obstore", None)
-    sys.modules.pop("zcollection3.store.obstore_store", None)
+    sys.modules.pop("zcollection.store.obstore_store", None)
     try:
         with pytest.raises((StoreError, ImportError)):
             zc.open_store("s3://bucket/prefix")
@@ -207,7 +224,9 @@ def test_counting_probe_counts_writes_and_reads(tmp_path):
     store._store = probe
 
     col = zc.create_collection(
-        store, schema=schema, axis="time",
+        store,
+        schema=schema,
+        axis="time",
         partitioning=zc.partitioning.Sequence(("time",), dimension="time"),
         overwrite=True,
     )
@@ -240,7 +259,10 @@ def test_counting_probe_counts_writes_and_reads(tmp_path):
 
 def test_bench_suite_runs_locally(tmp_path):
     spec = BenchSpec(
-        n_partitions=2, rows_per_partition=128, width=8, profile="local-fast",
+        n_partitions=2,
+        rows_per_partition=128,
+        width=8,
+        profile="local-fast",
     )
     results = run_suite(f"file://{tmp_path}/bench", spec)
     names = {r.name for r in results}

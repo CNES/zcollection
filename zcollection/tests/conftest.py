@@ -1,11 +1,10 @@
-"""Shared fixtures for zcollection3 unit tests."""
-from __future__ import annotations
+"""Shared fixtures for zcollection unit tests."""
 
 import numpy
 import pytest
 
-import zcollection3 as zc
-from zcollection3.partitioning import Sequence
+import zcollection as zc
+from zcollection.partitioning import Sequence
 
 
 @pytest.fixture

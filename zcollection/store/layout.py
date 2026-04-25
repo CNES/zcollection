@@ -8,7 +8,6 @@ Path conventions:
 - immutable variables: ``<root>/_immutable/``
 - a partition: ``<root>/<partition-path>/`` (e.g. ``year=2024/month=03``)
 """
-from __future__ import annotations
 
 #: Subdirectory at the root holding the partition catalog.
 CATALOG_DIR: str = "_catalog"

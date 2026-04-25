@@ -1,10 +1,9 @@
 """Public async facade for zcollection v3.
 
-Mirrors :mod:`zcollection3.api` but every entry point is a coroutine. This
+Mirrors :mod:`zcollection.api` but every entry point is a coroutine. This
 module is the recommended surface when running inside an event loop (e.g.
 FastAPI handlers, Jupyter ``%await`` cells, or other async workloads).
 """
-from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
@@ -20,9 +19,9 @@ if TYPE_CHECKING:
 async def create_collection(
     path: str | Store,
     *,
-    schema: "DatasetSchema",
+    schema: DatasetSchema,
     axis: str,
-    partitioning: "Partitioning",
+    partitioning: Partitioning,
     catalog_enabled: bool = False,
     overwrite: bool = False,
 ) -> Collection:
@@ -48,7 +47,8 @@ async def open_collection(
         raise ValueError(f"mode must be 'r' or 'rw'; got {mode!r}")
     read_only = mode == "r"
     store = (
-        path if isinstance(path, Store)
+        path
+        if isinstance(path, Store)
         else open_store(path, read_only=read_only)
     )
     return Collection.open(store, read_only=read_only)

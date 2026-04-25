@@ -1,5 +1,4 @@
-"""``python -m zcollection3`` entry point."""
-from __future__ import annotations
+"""``python -m zcollection`` entry point."""
 
 import sys
 

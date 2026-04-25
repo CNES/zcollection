@@ -3,7 +3,6 @@
 Phase 1 uses Zarr v3's sync surface. Phase 2 swaps the implementation to
 :mod:`zarr.api.asynchronous` while keeping these function signatures.
 """
-from __future__ import annotations
 
 from .async_partition import (
     open_partition_dataset_async,

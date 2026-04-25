@@ -1,5 +1,4 @@
 """Attribute metadata (JSON-clean key/value pairs)."""
-from __future__ import annotations
 
 from typing import Any
 

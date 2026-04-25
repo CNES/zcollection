@@ -3,9 +3,9 @@
 Phase 1 ships ``format_version=1``. Future breaking changes register an
 ``Upgrader`` callable that lifts an older payload into the current schema.
 """
-from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from ..errors import FormatVersionError
 
@@ -16,7 +16,9 @@ Upgrader = Callable[[dict[str, Any]], dict[str, Any]]
 _REGISTRY: dict[tuple[int, int], Upgrader] = {}
 
 
-def register(from_version: int, to_version: int) -> Callable[[Upgrader], Upgrader]:
+def register(
+    from_version: int, to_version: int
+) -> Callable[[Upgrader], Upgrader]:
     """Decorator to register an upgrader for a (from, to) version pair."""
 
     def wrap(fn: Upgrader) -> Upgrader:
@@ -34,8 +36,7 @@ def upgrade(payload: dict[str, Any]) -> dict[str, Any]:
             upgrader = _REGISTRY[(version, version + 1)]
         except KeyError as exc:
             raise FormatVersionError(
-                f"no upgrader registered from version {version} to "
-                f"{version + 1}"
+                f"no upgrader registered from version {version} to {version + 1}"
             ) from exc
         payload = upgrader(payload)
         version += 1

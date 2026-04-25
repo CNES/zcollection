@@ -1,9 +1,9 @@
 """Dataset-level schema."""
-from __future__ import annotations
 
+from typing import Any
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping
 
 from ..errors import SchemaError
 from .attribute import encode_attrs
@@ -34,7 +34,9 @@ class DatasetSchema:
                     )
         object.__setattr__(self, "dimensions", MappingProxyType(dims))
         object.__setattr__(self, "variables", MappingProxyType(vars_))
-        object.__setattr__(self, "attrs", MappingProxyType(encode_attrs(dict(self.attrs))))
+        object.__setattr__(
+            self, "attrs", MappingProxyType(encode_attrs(dict(self.attrs)))
+        )
 
     # Convenience views ------------------------------------------------
 
@@ -46,15 +48,18 @@ class DatasetSchema:
     def dim_chunks(self) -> dict[str, int | None]:
         return {n: d.chunks for n, d in self.dimensions.items()}
 
-    def variables_by_role(self, *, immutable: bool | None = None) -> tuple[VariableSchema, ...]:
+    def variables_by_role(
+        self, *, immutable: bool | None = None
+    ) -> tuple[VariableSchema, ...]:
         return tuple(
-            v for v in self.variables.values()
+            v
+            for v in self.variables.values()
             if immutable is None or v.immutable == immutable
         )
 
     # Mutators that return a new schema --------------------------------
 
-    def with_partition_axis(self, axis: str) -> "DatasetSchema":
+    def with_partition_axis(self, axis: str) -> DatasetSchema:
         """Mark each variable immutable iff it does not span ``axis``."""
         if axis not in self.dimensions:
             raise SchemaError(
@@ -71,7 +76,7 @@ class DatasetSchema:
             format_version=self.format_version,
         )
 
-    def select(self, names: Iterable[str]) -> "DatasetSchema":
+    def select(self, names: Iterable[str]) -> DatasetSchema:
         wanted = set(names)
         missing = wanted - set(self.variables)
         if missing:
@@ -94,13 +99,15 @@ class DatasetSchema:
         }
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> "DatasetSchema":
+    def from_json(cls, payload: dict[str, Any]) -> DatasetSchema:
         payload = upgrade(payload)
         dims = {
-            d["name"]: Dimension.from_json(d) for d in payload.get("dimensions", [])
+            d["name"]: Dimension.from_json(d)
+            for d in payload.get("dimensions", [])
         }
         vars_ = {
-            v["name"]: VariableSchema.from_json(v) for v in payload.get("variables", [])
+            v["name"]: VariableSchema.from_json(v)
+            for v in payload.get("variables", [])
         }
         return cls(
             dimensions=dims,

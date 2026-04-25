@@ -1,8 +1,7 @@
 """Dimension metadata."""
-from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +39,7 @@ class Dimension:
         }
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> "Dimension":
+    def from_json(cls, payload: dict[str, Any]) -> Dimension:
         return cls(
             name=payload["name"],
             size=payload.get("size"),

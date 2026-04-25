@@ -2,10 +2,8 @@
 
 Phase 1 surface: synchronous API with LocalStore and MemoryStore.
 """
-from __future__ import annotations
 
 from . import aio, codecs, partitioning, view
-from .collection import merge
 from .api import (
     Collection,
     CollectionNotFoundError,
@@ -13,6 +11,7 @@ from .api import (
     create_collection,
     open_collection,
 )
+from .collection import merge
 from .data import Dataset, Variable
 from .errors import (
     CollectionExistsError,

@@ -4,9 +4,9 @@ Ports the v2 ``GroupedSequence`` from the ``feature/metadata_improvements``
 branch. Useful when, e.g., altimetry passes 1..100 should all live in one
 partition rather than producing 100 partitions per cycle.
 """
-from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
+from collections.abc import Iterator
 
 import numpy
 
@@ -16,7 +16,6 @@ from .sequence import Sequence
 
 if TYPE_CHECKING:
     from ..data import Dataset
-
 
 _MIN_GROUP_SIZE = 2
 
@@ -55,7 +54,7 @@ class GroupedSequence(Sequence):
     def start(self) -> int:
         return self._start
 
-    def split(self, dataset: "Dataset") -> Iterator[tuple[PartitionKey, slice]]:
+    def split(self, dataset: Dataset) -> Iterator[tuple[PartitionKey, slice]]:
         cols: dict[str, numpy.ndarray] = {}
         names = list(self.axis)
         for name in names:
@@ -79,8 +78,8 @@ class GroupedSequence(Sequence):
                 f"got dtype {last_values.dtype}"
             )
         cols[last] = (
-            (last_values - self._start) // self._size * self._size + self._start
-        )
+            last_values - self._start
+        ) // self._size * self._size + self._start
 
         unique, inverse = keys_from_columns(cols)
         for gid, sl in runs_from_inverse(inverse):
@@ -98,7 +97,7 @@ class GroupedSequence(Sequence):
         }
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> "GroupedSequence":
+    def from_json(cls, payload: dict[str, Any]) -> GroupedSequence:
         return cls(
             tuple(payload["variables"]),
             dimension=payload["dimension"],

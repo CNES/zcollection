@@ -4,9 +4,9 @@ Indexing a Collection.
 
 In this example, we will see how to index a collection.
 """
-from __future__ import annotations
 
 from typing import TYPE_CHECKING
+import itertools
 import pprint
 
 import dask.distributed
@@ -16,7 +16,6 @@ import numpy
 import zcollection
 import zcollection.indexing
 import zcollection.partitioning.tests.data
-import itertools
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

@@ -13,11 +13,11 @@ so we route them into the ``attributes`` of dedicated tiny zarr groups
 under :data:`META_DIR`. From the caller's perspective the
 :meth:`read_bytes` / :meth:`write_bytes` API is unchanged.
 """
-from __future__ import annotations
 
-import json
+from typing import TYPE_CHECKING, Any
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Iterator
+import json
 
 from zarr.core.buffer import default_buffer_prototype
 
@@ -26,7 +26,6 @@ from .base import Store, StoreSession
 
 if TYPE_CHECKING:  # pragma: no cover
     import icechunk
-
 
 #: Reserved top-level group that holds zcollection's non-zarr config blobs.
 META_DIR: str = "_zc_meta"
@@ -72,7 +71,7 @@ class IcechunkSession(StoreSession):
 
     transactional: bool = True
 
-    def __init__(self, owner: "IcechunkStore") -> None:
+    def __init__(self, owner: IcechunkStore) -> None:
         self._owner = owner
         self.message: str | None = None
 
@@ -95,12 +94,12 @@ class IcechunkStore(Store):
 
     def __init__(
         self,
-        path_or_storage: "str | icechunk.Storage",
+        path_or_storage: str | icechunk.Storage,
         *,
         branch: str = "main",
         read_only: bool = False,
     ) -> None:
-        import icechunk  # noqa: PLC0415 — optional dep
+        import icechunk
 
         if isinstance(path_or_storage, str):
             self._uri = path_or_storage
@@ -118,7 +117,7 @@ class IcechunkStore(Store):
 
     # --- session lifecycle ------------------------------------------
 
-    def _open_session(self) -> "icechunk.Session":
+    def _open_session(self) -> icechunk.Session:
         if self._read_only:
             return self._repo.readonly_session(branch=self._branch)
         return self._repo.writable_session(self._branch)
@@ -150,13 +149,19 @@ class IcechunkStore(Store):
     def _ensure_root_group(self) -> None:
         proto = default_buffer_prototype()
         if not run_sync(self._session.store.exists("zarr.json")):
-            run_sync(self._session.store.set(
-                "zarr.json", proto.buffer.from_bytes(_GROUP_DOC),
-            ))
+            run_sync(
+                self._session.store.set(
+                    "zarr.json",
+                    proto.buffer.from_bytes(_GROUP_DOC),
+                )
+            )
         if not run_sync(self._session.store.exists(f"{META_DIR}/zarr.json")):
-            run_sync(self._session.store.set(
-                f"{META_DIR}/zarr.json", proto.buffer.from_bytes(_GROUP_DOC),
-            ))
+            run_sync(
+                self._session.store.set(
+                    f"{META_DIR}/zarr.json",
+                    proto.buffer.from_bytes(_GROUP_DOC),
+                )
+            )
         # Persist the bootstrap so reopens see a valid hierarchy even if
         # the caller never explicitly commits.
         if self._session.has_uncommitted_changes:
@@ -181,7 +186,9 @@ class IcechunkStore(Store):
         if _is_zarr_key(key):
             buf = run_sync(self._session.store.get(key, prototype=proto))
             return bytes(buf.to_bytes()) if buf is not None else None
-        buf = run_sync(self._session.store.get(_meta_path(key), prototype=proto))
+        buf = run_sync(
+            self._session.store.get(_meta_path(key), prototype=proto)
+        )
         if buf is None:
             return None
         try:
@@ -195,21 +202,25 @@ class IcechunkStore(Store):
         self._require_writable()
         proto = default_buffer_prototype()
         if _is_zarr_key(key):
-            run_sync(self._session.store.set(
-                key, proto.buffer.from_bytes(data),
-            ))
+            run_sync(
+                self._session.store.set(
+                    key,
+                    proto.buffer.from_bytes(data),
+                )
+            )
             return
-        run_sync(self._session.store.set(
-            _meta_path(key), proto.buffer.from_bytes(_meta_doc(data)),
-        ))
+        run_sync(
+            self._session.store.set(
+                _meta_path(key),
+                proto.buffer.from_bytes(_meta_doc(data)),
+            )
+        )
 
     def list_prefix(self, prefix: str) -> Iterator[str]:
         return self.list_dir(prefix)
 
     def list_dir(self, prefix: str) -> Iterator[str]:
-        names = to_list_async(
-            self._session.store.list_dir(prefix.strip("/"))
-        )
+        names = to_list_async(self._session.store.list_dir(prefix.strip("/")))
         return (n for n in names if n != "zarr.json")
 
     def delete_prefix(self, prefix: str) -> None:
@@ -224,7 +235,9 @@ class IcechunkStore(Store):
             if slug == "zarr.json":
                 continue
             original = slug.replace("__", "/")
-            if target and (original == target or original.startswith(pfx_slash)):
+            if target and (
+                original == target or original.startswith(pfx_slash)
+            ):
                 run_sync(self._session.store.delete_dir(f"{META_DIR}/{slug}"))
 
     # --- helpers -----------------------------------------------------

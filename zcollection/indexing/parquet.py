@@ -8,12 +8,13 @@ concatenates the rows into the table.
 Querying with a dict of equality filters yields a ``{partition: [(start,
 stop), ...]}`` mapping that callers feed to per-partition slicing.
 """
-from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Iterable
+from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Iterable
 
 import numpy
 import pyarrow
+import pyarrow.compute as pc  # type: ignore[import-untyped]
 import pyarrow.parquet as pq
 
 if TYPE_CHECKING:
@@ -57,27 +58,31 @@ class Indexer:
         builder: IndexBuilder,
         filters: str | None = None,
         variables: Iterable[str] | None = None,
-    ) -> "Indexer":
+    ) -> Indexer:
         """Build an index by walking the collection's partitions."""
         rows: list[pyarrow.Table] = []
         per_partition = collection.map(
-            builder, filters=filters, variables=variables,
+            builder,
+            filters=filters,
+            variables=variables,
         )
         for path, payload in per_partition.items():
             tbl = _payload_to_table(payload, partition=path)
             if tbl.num_rows:
                 rows.append(tbl)
         if not rows:
-            empty = pyarrow.table({
-                PARTITION_COL: pyarrow.array([], type=pyarrow.string()),
-                START_COL: pyarrow.array([], type=pyarrow.int64()),
-                STOP_COL: pyarrow.array([], type=pyarrow.int64()),
-            })
+            empty = pyarrow.table(
+                {
+                    PARTITION_COL: pyarrow.array([], type=pyarrow.string()),
+                    START_COL: pyarrow.array([], type=pyarrow.int64()),
+                    STOP_COL: pyarrow.array([], type=pyarrow.int64()),
+                }
+            )
             return cls(empty)
         return cls(pyarrow.concat_tables(rows, promote_options="default"))
 
     @classmethod
-    def read(cls, path: str) -> "Indexer":
+    def read(cls, path: str) -> Indexer:
         return cls(pq.read_table(path))
 
     def write(self, path: str) -> None:
@@ -110,10 +115,10 @@ class Indexer:
         for col, value in predicates.items():
             arr = self._table.column(col)
             if isinstance(value, (list, tuple, set, numpy.ndarray)):
-                cond = pyarrow.compute.is_in(arr, value_set=pyarrow.array(list(value)))
+                cond = pc.is_in(arr, value_set=pyarrow.array(list(value)))  # type: ignore[attr-defined]
             else:
-                cond = pyarrow.compute.equal(arr, value)
-            mask = cond if mask is None else pyarrow.compute.and_(mask, cond)
+                cond = pc.equal(arr, value)  # type: ignore[attr-defined]
+            mask = cond if mask is None else pc.and_(mask, cond)  # type: ignore[attr-defined]
         if mask is None:
             filtered = self._table
         else:

@@ -8,14 +8,13 @@ and returns the dataset that should land on disk. Phase 2 ships two strategies:
 - :func:`time_series`: time-aware merge for monotonic datetime axes —
   non-overlapping inserts are concatenated; overlapping ranges are replaced.
 """
-from __future__ import annotations
 
-from typing import Callable, Protocol
+from typing import Protocol
+from collections.abc import Callable
 
 import numpy
 
 from ..data import Dataset, Variable
-
 
 
 class MergeCallable(Protocol):
@@ -119,7 +118,9 @@ def _concat_along(left: Dataset, right: Dataset, dim: str) -> Dataset:
 
 
 def _slice_dataset_bool(
-    dataset: Dataset, dim: str, mask: numpy.ndarray,
+    dataset: Dataset,
+    dim: str,
+    mask: numpy.ndarray,
 ) -> Dataset:
     new_vars: dict[str, Variable] = {}
     for name, var in dataset.variables.items():
@@ -131,11 +132,15 @@ def _slice_dataset_bool(
         else:
             data = var.to_numpy()
         new_vars[name] = Variable(var.schema, data)
-    return Dataset(schema=dataset.schema, variables=new_vars, attrs=dataset.attrs)
+    return Dataset(
+        schema=dataset.schema, variables=new_vars, attrs=dataset.attrs
+    )
 
 
 def _index_dataset(
-    dataset: Dataset, dim: str, idx: numpy.ndarray,
+    dataset: Dataset,
+    dim: str,
+    idx: numpy.ndarray,
 ) -> Dataset:
     new_vars: dict[str, Variable] = {}
     for name, var in dataset.variables.items():
@@ -147,17 +152,19 @@ def _index_dataset(
         else:
             data = var.to_numpy()
         new_vars[name] = Variable(var.schema, data)
-    return Dataset(schema=dataset.schema, variables=new_vars, attrs=dataset.attrs)
+    return Dataset(
+        schema=dataset.schema, variables=new_vars, attrs=dataset.attrs
+    )
 
 
-_BUILTIN: dict[str, "MergeCallable"] = {
+_BUILTIN: dict[str, MergeCallable] = {
     "replace": replace,
     "concat": concat,
     "time_series": time_series,
 }
 
 
-def resolve(strategy: "MergeCallable | str | None") -> "MergeCallable":
+def resolve(strategy: MergeCallable | str | None) -> MergeCallable:
     """Resolve ``strategy`` to a callable; ``None`` means :func:`replace`."""
     if strategy is None:
         return replace
@@ -166,8 +173,7 @@ def resolve(strategy: "MergeCallable | str | None") -> "MergeCallable":
     if isinstance(strategy, str):
         if strategy not in _BUILTIN:
             raise KeyError(
-                f"unknown merge strategy {strategy!r}; "
-                f"choose from {tuple(_BUILTIN)!r}"
+                f"unknown merge strategy {strategy!r}; choose from {tuple(_BUILTIN)!r}"
             )
         return _BUILTIN[strategy]
     raise TypeError(f"unsupported merge strategy: {strategy!r}")

@@ -6,10 +6,10 @@ dataset returned by every partition open, instead of being duplicated in
 each partition group. This shaves both PUT count on insert and GET count
 on cold open by ``O(N_partitions)`` for large collections.
 """
-from __future__ import annotations
 
+from typing import TYPE_CHECKING
+from collections.abc import Iterable
 import logging
-from typing import TYPE_CHECKING, Iterable
 
 import numpy
 import zarr
@@ -38,8 +38,7 @@ def write_immutable_dataset(
     immutable in the schema are written; the rest are silently skipped.
     """
     names = [
-        name for name, var in dataset.variables.items()
-        if var.schema.immutable
+        name for name, var in dataset.variables.items() if var.schema.immutable
     ]
     if not names:
         return []
@@ -92,19 +91,16 @@ async def open_immutable_dataset_async(
         return {}
 
     wanted = set(variables) if variables is not None else None
-    immutable_names = {
-        n for n, v in schema.variables.items() if v.immutable
-    }
-    targets = (
-        immutable_names if wanted is None
-        else immutable_names & wanted
-    )
+    immutable_names = {n for n, v in schema.variables.items() if v.immutable}
+    targets = immutable_names if wanted is None else immutable_names & wanted
     if not targets:
         return {}
 
     zstore = store.zarr_store()
     group = await zarr_async.open_group(
-        store=zstore, path=IMMUTABLE_DIR, mode="r",
+        store=zstore,
+        path=IMMUTABLE_DIR,
+        mode="r",
     )
 
     out: dict[str, Variable] = {}
@@ -113,6 +109,6 @@ async def open_immutable_dataset_async(
             zarr_arr = await group.getitem(name)
         except KeyError:
             continue
-        data = await zarr_arr.getitem(Ellipsis)
+        data = await zarr_arr.getitem(Ellipsis)  # type: ignore[arg-type]
         out[name] = Variable(schema.variables[name], numpy.asarray(data))
     return out

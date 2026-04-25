@@ -17,7 +17,6 @@ Restrictions for the v3 port:
 - Views are read-write only against a writable base collection handle;
   the view does *not* mutate the base.
 """
-from __future__ import annotations
 
 from .base import View, ViewReference
 

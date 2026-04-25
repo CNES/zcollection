@@ -1,5 +1,4 @@
-"""Command-line entry points: ``zcollection3 ls / inspect / drop``."""
-from __future__ import annotations
+"""Command-line entry points: ``zcollection ls / inspect / drop``."""
 
 from .main import main
 

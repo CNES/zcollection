@@ -5,11 +5,11 @@ we cut over to Zarr's async core in Phase 2 the same Store implementations
 will be wrapped with the AsyncStore protocol. We keep the surface narrow on
 purpose.
 """
-from __future__ import annotations
 
+from typing import Any, Self
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Iterator, Self
 
 
 class StoreSession:

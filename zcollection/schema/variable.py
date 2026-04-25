@@ -1,9 +1,8 @@
 """Variable metadata: dtype, dims, fill, codec stack, role."""
-from __future__ import annotations
 
+from typing import Any
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
 
 import numpy
 
@@ -15,9 +14,9 @@ from .attribute import encode_attrs
 class VariableRole(StrEnum):
     """Provenance / purpose of a variable in the schema."""
 
-    USER = "user"          # added by the caller
-    FILLER = "filler"      # added by the collection to satisfy schema
-    AUXILIARY = "aux"      # internal (catalog, indices, ...)
+    USER = "user"  # added by the caller
+    FILLER = "filler"  # added by the collection to satisfy schema
+    AUXILIARY = "aux"  # internal (catalog, indices, ...)
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +45,7 @@ class VariableSchema:
     def ndim(self) -> int:
         return len(self.dimensions)
 
-    def with_immutable(self, immutable: bool) -> "VariableSchema":
+    def with_immutable(self, immutable: bool) -> VariableSchema:
         return VariableSchema(
             name=self.name,
             dtype=self.dtype,
@@ -71,7 +70,7 @@ class VariableSchema:
         }
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> "VariableSchema":
+    def from_json(cls, payload: dict[str, Any]) -> VariableSchema:
         dtype = numpy.dtype(payload["dtype"])
         return cls(
             name=payload["name"],

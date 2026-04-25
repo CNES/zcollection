@@ -4,10 +4,9 @@ The schema lives in one file at the collection root. This module owns the
 JSON schema for that file. Per-partition Zarr v3 metadata (``zarr.json``) is
 written by the io layer.
 """
-from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Any
+import json
 
 from .versioning import FORMAT_VERSION
 
