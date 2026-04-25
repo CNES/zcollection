@@ -121,8 +121,10 @@ def upsert(
     Use :func:`upsert_within` to build a ``MergeCallable`` with a fixed
     tolerance for use with the string-based registry::
 
-        col.insert(ds, merge=zcollection.merge.upsert_within(
-            numpy.timedelta64(500, "ms")))
+        col.insert(
+            ds,
+            merge=zcollection.merge.upsert_within(numpy.timedelta64(500, "ms")),
+        )
     """
     if axis not in existing or axis not in inserted:
         raise ValueError(

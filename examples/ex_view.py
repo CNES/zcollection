@@ -12,11 +12,10 @@ Run with::
     python examples/ex_view.py
 """
 
-from __future__ import annotations
 
+from pathlib import Path
 import shutil
 import tempfile
-from pathlib import Path
 
 import numpy
 

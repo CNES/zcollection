@@ -13,13 +13,12 @@ Run with::
     python examples/ex_indexing.py
 """
 
-from __future__ import annotations
 
+from collections.abc import Iterator
 import itertools
+from pathlib import Path
 import shutil
 import tempfile
-from collections.abc import Iterator
-from pathlib import Path
 
 import numpy
 

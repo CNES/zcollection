@@ -425,7 +425,8 @@ def test_merge_upsert_tolerance_matches_nearby_timestamps(tmp_path):
     idx = numpy.where(
         times == numpy.datetime64("2024-04-20T12:00:00.300", "ms")
     )[0]
-    assert idx.size == 1 and values[idx[0]] == 99.0
+    assert idx.size == 1
+    assert values[idx[0]] == 99.0
 
     # 12:00:10 vs 12:00:11 (drift 1s > 500ms) → both rows survive.
     # 12:00:20 stays. 12:00:30 added.
@@ -455,9 +456,7 @@ def test_merge_upsert_empty_inserted_returns_existing():
         },
     )
     out = merge_mod.upsert(ds, empty, axis="time", partitioning_dim="time")
-    numpy.testing.assert_array_equal(
-        out["v"].to_numpy(), ds["v"].to_numpy()
-    )
+    numpy.testing.assert_array_equal(out["v"].to_numpy(), ds["v"].to_numpy())
 
 
 def test_merge_resolve_unknown_strategy():

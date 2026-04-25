@@ -12,12 +12,11 @@ Run with::
     python examples/ex_collection.py
 """
 
-from __future__ import annotations
 
+from pathlib import Path
 import pprint
 import shutil
 import tempfile
-from pathlib import Path
 
 import numpy
 
