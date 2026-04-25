@@ -5,6 +5,7 @@ import math
 
 import numpy
 
+
 if TYPE_CHECKING:
     from ..schema import VariableSchema
 

@@ -6,6 +6,7 @@ from .collection import Collection
 from .errors import CollectionNotFoundError, ReadOnlyError
 from .store import Store, open_store
 
+
 if TYPE_CHECKING:
     from .partitioning import Partitioning
     from .schema import DatasetSchema

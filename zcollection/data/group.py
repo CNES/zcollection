@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping
 
+
 if TYPE_CHECKING:
     from ..schema import GroupSchema
     from ..schema.dimension import Dimension

@@ -24,6 +24,7 @@ from zarr.core.buffer import default_buffer_prototype
 from ._async_bridge import run_sync, to_list_async
 from .base import Store, StoreSession
 
+
 if TYPE_CHECKING:  # pragma: no cover
     import icechunk
 

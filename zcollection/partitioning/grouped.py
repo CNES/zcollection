@@ -13,6 +13,7 @@ from ..errors import PartitionError
 from .base import PartitionKey, keys_from_columns, runs_from_inverse
 from .sequence import Sequence
 
+
 if TYPE_CHECKING:
     from ..data import Dataset
 

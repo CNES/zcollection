@@ -11,6 +11,7 @@ from zcollection.collection import merge as merge_mod
 from zcollection.dask import dask_map_async
 from zcollection.partitioning import Date, GroupedSequence
 
+
 # --- async facade round-trip ----------------------------------------
 
 

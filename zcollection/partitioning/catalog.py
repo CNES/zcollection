@@ -30,6 +30,7 @@ import json
 
 from ..store.layout import CATALOG_DIR, join_path
 
+
 if TYPE_CHECKING:
     from ..store import Store
 

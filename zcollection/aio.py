@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from .collection import Collection
 from .store import Store, open_store
 
+
 if TYPE_CHECKING:
     from .partitioning import Partitioning
     from .schema import DatasetSchema

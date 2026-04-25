@@ -6,6 +6,7 @@ import pytest
 import zcollection as zc
 from zcollection.data._repr import format_bytes, format_dimensions
 
+
 # Schema helpers -----------------------------------------------------------
 
 

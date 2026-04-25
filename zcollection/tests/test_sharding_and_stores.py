@@ -13,6 +13,7 @@ from zcollection.codecs import shard_decision, shard_target_bytes
 from zcollection.codecs.sharding import compute_shard_shape
 from zcollection.errors import StoreError
 
+
 # --- sharding shape policy ----------------------------------------
 
 

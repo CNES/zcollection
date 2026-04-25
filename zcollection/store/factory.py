@@ -7,6 +7,7 @@ from ..errors import StoreError
 from .local import LocalStore
 from .memory import MemoryStore
 
+
 if TYPE_CHECKING:
     from .base import Store
 

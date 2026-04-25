@@ -8,6 +8,7 @@ import numpy
 from ..errors import PartitionError
 from .base import PartitionKey, runs_from_inverse
 
+
 if TYPE_CHECKING:
     from ..data import Dataset
 

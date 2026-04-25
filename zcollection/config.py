@@ -10,6 +10,7 @@ from contextlib import contextmanager
 
 from zarr.core.config import config as _zarr_config
 
+
 _DEFAULTS: dict[str, Any] = {
     # Concurrent partition writes/reads driven by the sync facade.
     "partition.concurrency": 8,

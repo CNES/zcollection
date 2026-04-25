@@ -21,6 +21,7 @@ from ..io import (
 )
 from ..schema import DatasetSchema, VariableSchema
 
+
 if TYPE_CHECKING:
     from ..collection import Collection
     from ..store import Store

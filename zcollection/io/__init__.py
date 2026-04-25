@@ -17,6 +17,7 @@ from .partition import (
 )
 from .root import read_root_config, write_root_config
 
+
 __all__ = (
     "immutable_group_exists",
     "open_immutable_dataset_async",

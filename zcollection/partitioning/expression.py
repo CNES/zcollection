@@ -12,6 +12,7 @@ import operator
 
 from ..errors import ExpressionError
 
+
 #: A partition key is a tuple of (component, value) pairs, e.g.
 #: (("year", 2024), ("month", 3)).
 PartitionKey = tuple[tuple[str, Any], ...]

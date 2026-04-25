@@ -10,6 +10,7 @@ from collections.abc import Callable
 
 from ..errors import FormatVersionError
 
+
 #: Current format version written to ``_zcollection.json``.
 FORMAT_VERSION: int = 1
 

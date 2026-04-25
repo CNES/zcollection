@@ -23,4 +23,5 @@ FS we count file writes/reads via ``os.stat`` deltas.
 from .harness import BenchResult, BenchSpec, run_suite
 from .probe import CountingProbe
 
+
 __all__ = ("BenchResult", "BenchSpec", "CountingProbe", "run_suite")

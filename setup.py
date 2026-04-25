@@ -12,6 +12,7 @@ import pathlib
 import setuptools
 import setuptools.command.sdist
 
+
 # Working directory
 WORKING_DIRECTORY = pathlib.Path(__file__).parent.absolute()
 

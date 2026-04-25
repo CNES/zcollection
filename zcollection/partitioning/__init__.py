@@ -9,6 +9,7 @@ from .expression import compile_filter, key_to_dict
 from .grouped import GroupedSequence
 from .sequence import Sequence
 
+
 __all__ = (
     "Catalog",
     "CatalogState",

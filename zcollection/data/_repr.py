@@ -8,6 +8,7 @@ gauge memory/disk footprint at a glance.
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterable, Iterator
 
+
 if TYPE_CHECKING:
     from .group import Group
     from .variable import Variable

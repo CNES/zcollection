@@ -17,6 +17,7 @@ import pyarrow
 import pyarrow.compute as pc  # type: ignore[import-untyped]
 import pyarrow.parquet as pq
 
+
 if TYPE_CHECKING:
     from ..collection import Collection
     from ..data import Dataset

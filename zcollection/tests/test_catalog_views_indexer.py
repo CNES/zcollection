@@ -12,6 +12,7 @@ from zcollection.partitioning.catalog import CATALOG_FILE, _checksum
 from zcollection.store.layout import IMMUTABLE_DIR
 from zcollection.view import View, ViewReference
 
+
 # --- catalog --------------------------------------------------------
 
 

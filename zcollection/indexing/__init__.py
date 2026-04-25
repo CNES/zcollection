@@ -12,4 +12,5 @@ they want indexed via the ``builder`` callable.
 
 from .parquet import IndexBuilder, Indexer
 
+
 __all__ = ("IndexBuilder", "Indexer")

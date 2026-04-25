@@ -7,6 +7,7 @@ import zcollection as zc
 from zcollection.collection import base as _cbase
 from zcollection.store import open_store
 
+
 icechunk = pytest.importorskip("icechunk")
 from zcollection.store.icechunk_store import IcechunkStore  # noqa: E402
 

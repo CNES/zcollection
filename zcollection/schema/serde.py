@@ -10,6 +10,7 @@ import json
 
 from .versioning import FORMAT_VERSION
 
+
 if TYPE_CHECKING:
     from .dataset import DatasetSchema
 

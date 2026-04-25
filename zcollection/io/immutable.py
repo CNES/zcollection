@@ -23,6 +23,7 @@ from ..data import Dataset, Group, Variable
 from ..store.layout import IMMUTABLE_DIR
 from .partition import _build_array_kwargs, _chunks_for
 
+
 if TYPE_CHECKING:
     from ..schema import DatasetSchema, GroupSchema
     from ..store import Store

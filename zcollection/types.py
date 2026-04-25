@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 from collections.abc import Callable
 
+
 if TYPE_CHECKING:
     import numpy
 

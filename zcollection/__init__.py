@@ -26,6 +26,7 @@ from .schema import (
 )
 from .store import LocalStore, MemoryStore, Store, open_store
 
+
 __all__ = (
     "Collection",
     "CollectionExistsError",

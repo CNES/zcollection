@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 from ..errors import CollectionNotFoundError
 from ..schema.serde import CONFIG_FILE, decode_root, encode_root
 
+
 if TYPE_CHECKING:
     from ..schema import DatasetSchema
     from ..store import Store

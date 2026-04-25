@@ -6,7 +6,6 @@ from collections.abc import Callable, Iterable, Iterator
 
 import numpy
 
-from . import merge as merge_mod
 from ..config import get as config_get
 from ..data import Dataset, Variable
 from ..errors import (
@@ -34,6 +33,8 @@ from ..partitioning import (
 from ..schema import DatasetSchema
 from ..schema.serde import CONFIG_FILE
 from ..store.layout import CATALOG_DIR, IMMUTABLE_DIR, join_path
+from . import merge as merge_mod
+
 
 if TYPE_CHECKING:
     from ..partitioning import Partitioning

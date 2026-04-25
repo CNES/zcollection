@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import numpy
 import zarr.codecs as zcodecs
 
+
 #: A single codec is described as ``{"name": str, "configuration": dict}``,
 #: matching the Zarr v3 spec for codec metadata. This makes round-tripping
 #: through ``_zcollection.json`` trivial.

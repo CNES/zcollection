@@ -20,6 +20,7 @@ from zcollection.benches.harness import BenchSpec, dump_json, run_suite
 
 from ._s3_server import minio_server
 
+
 pytestmark = pytest.mark.perf
 
 

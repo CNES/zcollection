@@ -17,6 +17,7 @@ from ..data import Dataset, Group, Variable
 from ..store import join_path
 from .partition import _attach_nested, _build_array_kwargs, _chunks_for
 
+
 if TYPE_CHECKING:
     from ..schema import DatasetSchema, GroupSchema
     from ..store import Store

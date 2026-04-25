@@ -15,6 +15,7 @@ tall.
 from typing import TYPE_CHECKING
 import math
 
+
 if TYPE_CHECKING:
     import numpy
 

@@ -5,6 +5,7 @@ from collections.abc import Iterable, Iterator
 
 import numpy
 
+
 if TYPE_CHECKING:
     from ..data import Dataset
 
