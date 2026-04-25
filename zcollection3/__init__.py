@@ -1,0 +1,61 @@
+"""zcollection v3 — Zarr v3 native, async-friendly partitioned collections.
+
+Phase 1 surface: synchronous API with LocalStore and MemoryStore.
+"""
+from __future__ import annotations
+
+from . import codecs, partitioning
+from .api import (
+    Collection,
+    CollectionNotFoundError,
+    ReadOnlyError,
+    create_collection,
+    open_collection,
+)
+from .data import Dataset, Variable
+from .errors import (
+    CollectionExistsError,
+    SchemaError,
+    StoreError,
+    ZCollectionError,
+)
+from .schema import (
+    Attribute,
+    DatasetSchema,
+    Dimension,
+    SchemaBuilder,
+    VariableRole,
+    VariableSchema,
+)
+from .store import LocalStore, MemoryStore, Store, open_store
+
+__all__ = (
+    "Attribute",
+    "Collection",
+    "CollectionExistsError",
+    "CollectionNotFoundError",
+    "Dataset",
+    "DatasetSchema",
+    "Dimension",
+    "LocalStore",
+    "MemoryStore",
+    "ReadOnlyError",
+    "SchemaBuilder",
+    "SchemaError",
+    "Store",
+    "StoreError",
+    "Variable",
+    "VariableRole",
+    "VariableSchema",
+    "ZCollectionError",
+    "codecs",
+    "create_collection",
+    "open_collection",
+    "open_store",
+    "partitioning",
+)
+
+
+def Schema() -> SchemaBuilder:
+    """Shorthand for :class:`SchemaBuilder`."""
+    return SchemaBuilder()

@@ -187,7 +187,7 @@ def test_splits(start):
 
     split_data = partitioning._split(variables=vdata)
 
-    for split, res in zip(split_data, expected_groups):
+    for split, res in zip(split_data, expected_groups, strict=False):
         s = split[1]
         values = split[0]
 

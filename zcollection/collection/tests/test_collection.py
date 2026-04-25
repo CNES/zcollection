@@ -1493,7 +1493,7 @@ def test_partition_modified(
     ) -> tuple[int, ...]:
         """Compute the new shape of a variable."""
         return tuple(new_size if dim == selected_dim else size
-                     for dim, size in zip(var.dimensions, var.shape))
+                     for dim, size in zip(var.dimensions, var.shape, strict=False))
 
     dim, size = 'num_lines', last_month.dimensions['num_lines'] * 25
     last_month = dataset.Dataset(

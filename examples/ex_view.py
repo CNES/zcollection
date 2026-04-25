@@ -158,7 +158,7 @@ def resize(ds: zcollection.Dataset, dim: str,
     ) -> tuple[int, ...]:
         """Compute the new shape of a variable."""
         return tuple(new_size if dim == selected_dim else size
-                     for dim, size in zip(var.dimensions, var.shape))
+                     for dim, size in zip(var.dimensions, var.shape, strict=False))
 
     return zcollection.Dataset([
         zcollection.Array(

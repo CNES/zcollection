@@ -322,7 +322,7 @@ class Dataset:
                 dtype=var.dtype) if self.delayed else numpy.full(
                     shape=shape, fill_value=var.fill_value, dtype=var.dtype)
         else:
-            for dim, size in zip(var.dimensions, data.shape):
+            for dim, size in zip(var.dimensions, data.shape, strict=False):
                 if size != self.dimensions[dim]:
                     raise ValueError(
                         f'Conflicting sizes for dimension {dim!r}: '
@@ -563,7 +563,7 @@ class Dataset:
                   compressor=item.compressor,
                   fill_value=item.fill_value,
                   filters=item.filters)
-            for item, array in zip(self.variables.values(), arrays)
+            for item, array in zip(self.variables.values(), arrays, strict=False)
         ]
         zds = Dataset(variables, attrs=self.attrs, delayed=False)
 
@@ -616,7 +616,7 @@ class Dataset:
         arrays: Iterable[NDArray] = dask.base.persist(
             *tuple(item.data for item in self.variables.values()), **kwargs)
         variables: OrderedDict[str, Variable] = self.variables
-        for name, array in zip(self.variables, arrays):
+        for name, array in zip(self.variables, arrays, strict=False):
             variables[name].array = array
 
         return self

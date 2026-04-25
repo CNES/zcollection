@@ -144,7 +144,7 @@ class Date(abc.Partitioning):
         indices = abc.concatenate_item(indices, values.size)
 
         return ((((name, date), ), slice(start, indices[ix + 1], None))
-                for date, (ix, start) in zip(index, enumerate(indices[:-1])))
+                for date, (ix, start) in zip(index, enumerate(indices[:-1]), strict=False))
 
     @staticmethod
     def _stringify(partition: tuple[tuple[str, int], ...]) -> str:

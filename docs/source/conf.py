@@ -51,17 +51,17 @@ extensions = [
 autosummary_generate = True
 
 autodoc_typehints = 'description'
-autodoc_type_aliases = dict(
-    ArrayLike='ArrayLike',
-    DType='DType',
-    DTypeLike='DTypeLike',
-    Indexer='Indexer',
-    NDArray='NDArray',
-    NDMaskedArray='NDMaskedArray',
-    PartitionCallback='PartitionCallback',
-    QueryDict='QueryDict',
-    Scalar='Scalar',
-)
+autodoc_type_aliases = {
+    'ArrayLike': 'ArrayLike',
+    'DType': 'DType',
+    'DTypeLike': 'DTypeLike',
+    'Indexer': 'Indexer',
+    'NDArray': 'NDArray',
+    'NDMaskedArray': 'NDMaskedArray',
+    'PartitionCallback': 'PartitionCallback',
+    'QueryDict': 'QueryDict',
+    'Scalar': 'Scalar',
+}
 
 numpydoc_class_members_toctree = True
 numpydoc_show_class_members = False

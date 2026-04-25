@@ -41,7 +41,7 @@ def _blockdims_from_blockshape(
     return tuple(((chunk_item, ) * (shape_item // chunk_item) +
                   ((shape_item % chunk_item, ) if shape_item %
                    chunk_item else ()) if shape_item else (0, ))
-                 for shape_item, chunk_item in zip(shape, chunks))
+                 for shape_item, chunk_item in zip(shape, chunks, strict=False))
 
 
 def from_zarr_array(
@@ -76,7 +76,7 @@ def from_zarr_array(
         (_blockdims_from_blockshape(
             (shape_item, ),
             (chunk_item, )) if not isinstance(chunk_item, (tuple, list)) else
-         (chunk_item, ) for shape_item, chunk_item in zip(shape, chunks)),
+         (chunk_item, ) for shape_item, chunk_item in zip(shape, chunks, strict=False)),
         (),
     )
     dsk = dask.array.core.graph_from_arraylike(

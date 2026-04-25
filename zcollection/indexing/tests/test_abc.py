@@ -17,6 +17,7 @@ from ... import collection, convenience, dataset, partitioning
 from ...partitioning.tests import data
 from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 from ...tests.fs import local_fs  # noqa: F401
+import itertools
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -47,7 +48,7 @@ def split_half_orbit(
                                               dtype='int64'))))
     del pass_idx, cycle_idx
 
-    yield from tuple(zip(half_orbit[:-1], half_orbit[1:]))
+    yield from tuple(itertools.pairwise(half_orbit))
 
 
 # The signature of the function must follow the signature of

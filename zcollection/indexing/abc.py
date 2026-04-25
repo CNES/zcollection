@@ -18,6 +18,7 @@ import fsspec
 import numpy
 import pyarrow
 import pyarrow.parquet
+import itertools
 
 if TYPE_CHECKING:
     from .. import collection, dataset
@@ -400,7 +401,7 @@ class Indexer(abc.ABC):
         return (  # force yapf to respect the line break for flake8
             (tuple((name, data[name][ix0])
                    for name in column_names), slice(start[ix0], stop[ix1 - 1]))
-            for ix0, ix1 in zip(chunks[:-1], chunks[1:]))
+            for ix0, ix1 in itertools.pairwise(chunks))
 
     def query(
         self,

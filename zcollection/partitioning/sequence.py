@@ -124,11 +124,11 @@ class Sequence(abc.Partitioning):
         else:
 
             def concat(fields, keys):
-                return tuple(zip(fields, keys))
+                return tuple(zip(fields, keys, strict=False))
 
         return ((concat(fields,
                         tuple(item)), slice(start, indices[ix + 1], None))
-                for item, (ix, start) in zip(index, enumerate(indices[:-1])))
+                for item, (ix, start) in zip(index, enumerate(indices[:-1]), strict=False))
 
     def encode(
         self,
@@ -168,7 +168,7 @@ class Sequence(abc.Partitioning):
             (('a', 100), ('b', 10), ('c', 1))
         """
         return tuple(
-            (key, value) for key, value in zip(self.variables, values))
+            (key, value) for key, value in zip(self.variables, values, strict=False))
 
 
 class GroupedSequence(Sequence):

@@ -16,6 +16,7 @@ import numpy
 import zcollection
 import zcollection.indexing
 import zcollection.partitioning.tests.data
+import itertools
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -86,7 +87,7 @@ def split_half_orbit(
                                               dtype='int64'))))
     del pass_idx, cycle_idx
 
-    yield from tuple(zip(half_orbit[:-1], half_orbit[1:]))
+    yield from tuple(itertools.pairwise(half_orbit))
 
 
 # %%
