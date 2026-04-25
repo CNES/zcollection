@@ -73,12 +73,19 @@ class Collection:
             read_only: Whether the collection should refuse mutations.
 
         """
+        #: The backing store for the collection.
         self._store = store
+        #: The bound dataset schema describing variables.
         self._schema = schema
+        #: The name of the partition axis.
         self._axis = axis
+        #: The partitioning strategy.
         self._partitioning = partitioning
+        #: Whether the catalog is enabled.
         self._catalog_enabled = catalog_enabled
+        #: Whether the collection is read-only.
         self._read_only = read_only
+        #: The catalog instance, if enabled.
         self._catalog = Catalog(store) if catalog_enabled else None
 
     # --- Construction ------------------------------------------------

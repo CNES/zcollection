@@ -32,6 +32,13 @@ def _await_in_worker(coro_factory: Callable[[], Awaitable[T]]) -> T:
 
     Each Dask worker has its own asyncio loop available through
     :func:`distributed.get_worker`; we schedule the coroutine on it and block.
+
+    Args:
+        coro_factory: A 0-arg callable that returns the coroutine to run.
+
+    Returns:
+        The result of the coroutine.
+
     """
     from distributed import get_worker
 

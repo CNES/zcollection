@@ -14,20 +14,23 @@ class Variable:
     ``data`` is either a :class:`numpy.ndarray` (eager) or a
     :class:`dask.array.Array` (lazy). The dataset is "lazy" iff any of its
     variables holds a non-numpy backend.
+
+    Args:
+        schema: Variable schema describing dtype, dims and metadata.
+        data: Underlying array (numpy or dask).
+
     """
 
     __slots__ = ("_data", "schema")
 
     def __init__(self, schema: VariableSchema, data: Any) -> None:
-        """Initialize a Variable.
-
-        Args:
-            schema: Variable schema describing dtype, dims and metadata.
-            data: Underlying array (numpy or dask).
-
-        """
+        """Initialize a Variable."""
+        #: The variable schema describing dtype, dims and metadata.
         self.schema = schema
+        #: The underlying array (numpy or dask).
         self._data = data
+        #: Validate the data against the schema (e.g. check number of
+        #: dimensions).
         self._validate()
 
     def _validate(self) -> None:

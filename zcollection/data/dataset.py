@@ -13,7 +13,14 @@ if TYPE_CHECKING:
 
 
 class Dataset:
-    """A schema plus the in-memory data for one or more partitions."""
+    """A schema plus the in-memory data for one or more partitions.
+
+    Args:
+        schema: The dataset schema.
+        variables: Variables, either as a mapping or an iterable.
+        attrs: Optional dataset-level attributes; defaults to ``schema.attrs``.
+
+    """
 
     __slots__ = ("_attrs", "_variables", "schema")
 
@@ -23,14 +30,7 @@ class Dataset:
         variables: Mapping[str, Variable] | Iterable[Variable],
         attrs: Mapping[str, Any] | None = None,
     ) -> None:
-        """Initialize a Dataset.
-
-        Args:
-            schema: The dataset schema.
-            variables: Variables, either as a mapping or an iterable.
-            attrs: Optional dataset-level attributes; defaults to ``schema.attrs``.
-
-        """
+        """Initialize a Dataset."""
         items: Iterable[tuple[str, Variable]]
         if isinstance(variables, Mapping):
             items = variables.items()
