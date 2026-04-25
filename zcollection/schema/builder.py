@@ -27,8 +27,11 @@ class SchemaBuilder:
 
     def __init__(self) -> None:
         """Initialize an empty builder."""
+        #: Registered dimensions, keyed by name.
         self._dims: dict[str, Dimension] = {}
+        #: Registered variables, keyed by name.
         self._vars: dict[str, VariableSchema] = {}
+        #: Registered dataset-level attributes, keyed by name.
         self._attrs: dict[str, Any] = {}
 
     def with_dimension(
