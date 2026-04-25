@@ -23,13 +23,22 @@ class VariableRole(StrEnum):
 class VariableSchema:
     """All information needed to create a Zarr v3 array for one variable."""
 
+    #: Variable name, unique within the dataset.
     name: str
+    #: NumPy dtype of the variable.
     dtype: numpy.dtype
+    #: Names of the dimensions this variable spans, in order.
     dimensions: tuple[str, ...]
+    #: Optional fill value for missing data; should be compatible with the
+    #: dtype.
     fill_value: Any | None = None
+    #: Codec stack for encoding/decoding the variable's data.
     codecs: CodecStack = field(default_factory=CodecStack)
+    #: Attributes associated with the variable.
     attrs: dict[str, Any] = field(default_factory=dict)
+    #: Role of the variable in the schema.
     role: VariableRole = VariableRole.USER
+    #: Whether the variable is immutable.
     immutable: bool = False
 
     def __post_init__(self) -> None:

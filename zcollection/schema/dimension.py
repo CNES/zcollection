@@ -14,9 +14,13 @@ class Dimension:
     elements along this dimension.
     """
 
+    #: Dimension name, unique within the dataset.
     name: str
+    #: Fixed size, or ``None`` if unknown (e.g. partitioning axis).
     size: int | None = None
+    #: Chunk size along this dimension; ``None`` to use the full extent.
     chunks: int | None = None
+    #: Shard size along this dimension; ``None`` for no sharding.
     shards: int | None = None
 
     def __post_init__(self) -> None:

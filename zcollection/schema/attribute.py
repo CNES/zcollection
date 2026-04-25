@@ -6,7 +6,15 @@ import numpy
 
 
 def encode_value(value: Any) -> Any:
-    """Coerce a value to something JSON can serialize."""
+    """Coerce a value to something JSON can serialize.
+
+    Args:
+        value: The value to encode.
+
+    Returns:
+        A JSON-serializable representation of the value.
+
+    """
     if isinstance(value, numpy.ndarray):
         return value.tolist()
     if isinstance(value, numpy.generic):
@@ -19,45 +27,15 @@ def encode_value(value: Any) -> Any:
 
 
 def encode_attrs(attrs: dict[str, Any] | None) -> dict[str, Any]:
-    """Encode a full attribute dict for storage."""
+    """Encode a full attribute dict for storage.
+
+    Args:
+        attrs: The attribute dict to encode, or ``None`` for no attributes.
+
+    Returns:
+        A JSON-serializable dict with all values encoded.
+
+    """
     if not attrs:
         return {}
     return {str(k): encode_value(v) for k, v in attrs.items()}
-
-
-# Backwards-compatible alias for callers that still want a class form.
-class Attribute:
-    """Convenience wrapper for a single (name, value) pair.
-
-    The schema itself stores attributes as plain dicts; this class is offered
-    for users porting v2 code that constructed ``Attribute`` objects.
-    """
-
-    __slots__ = ("name", "value")
-
-    def __init__(self, name: str, value: Any) -> None:
-        """Initialize the attribute.
-
-        Args:
-            name: Attribute name.
-            value: Attribute value; will be JSON-encoded via :func:`encode_value`.
-
-        """
-        self.name = name
-        self.value = encode_value(value)
-
-    def __repr__(self) -> str:
-        """Return a developer-friendly representation."""
-        return f"Attribute({self.name!r}, {self.value!r})"
-
-    def __eq__(self, other: object) -> bool:
-        """Return whether two attributes share name and value."""
-        return (
-            isinstance(other, Attribute)
-            and self.name == other.name
-            and self.value == other.value
-        )
-
-    def __hash__(self) -> int:
-        """Return a hash consistent with :meth:`__eq__`."""
-        return hash((self.name, repr(self.value)))

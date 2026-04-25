@@ -25,7 +25,19 @@ def encode_root(
     catalog_enabled: bool,
     extras: dict[str, Any] | None = None,
 ) -> bytes:
-    """Serialise the root config payload to bytes (UTF-8 JSON)."""
+    """Serialise the root config payload to bytes (UTF-8 JSON).
+
+    Args:
+        schema: The dataset schema.
+        axis: The name of the partitioning axis.
+        partitioning: The partitioning config.
+        catalog_enabled: Whether the catalog is enabled for this collection.
+        extras: Optional extra fields to include in the root config.
+
+    Returns:
+        The UTF-8 encoded JSON payload to write to the root config.
+
+    """
     doc: dict[str, Any] = {
         "format_version": FORMAT_VERSION,
         "axis": axis,
@@ -39,7 +51,15 @@ def encode_root(
 
 
 def decode_root(payload: bytes | str) -> dict[str, Any]:
-    """Parse the root config payload."""
+    """Parse the root config payload.
+
+    Args:
+        payload: The UTF-8 encoded JSON payload read from the root config.
+
+    Returns:
+        The decoded root config as a dict.
+
+    """
     if isinstance(payload, bytes):
         payload = payload.decode("utf-8")
     doc = json.loads(payload)

@@ -30,7 +30,19 @@ def register(
 
 
 def upgrade(payload: dict[str, Any]) -> dict[str, Any]:
-    """Walk the upgrader chain to bring ``payload`` to ``FORMAT_VERSION``."""
+    """Walk the upgrader chain to bring ``payload`` to ``FORMAT_VERSION``.
+
+    Args:
+        payload: The JSON-decoded contents of an on-disk schema.
+
+    Returns:
+        An upgraded payload compatible with the current ``FORMAT_VERSION``.
+
+    Raises:
+        FormatVersionError: If the payload's format version is newer than
+            supported, or if no upgrader is registered for an intermediate version.
+
+    """
     version = int(payload.get("format_version", 1))
     while version < FORMAT_VERSION:
         try:

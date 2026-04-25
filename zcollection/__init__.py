@@ -17,7 +17,6 @@ from .errors import (
     ZCollectionError,
 )
 from .schema import (
-    Attribute,
     DatasetSchema,
     Dimension,
     SchemaBuilder,
@@ -27,7 +26,6 @@ from .schema import (
 from .store import LocalStore, MemoryStore, Store, open_store
 
 __all__ = (
-    "Attribute",
     "Collection",
     "CollectionExistsError",
     "CollectionNotFoundError",

@@ -16,9 +16,14 @@ from .versioning import FORMAT_VERSION, upgrade
 class DatasetSchema:
     """Immutable description of a collection's dataset."""
 
+    #: Mapping of dimension name to dimension metadata.
     dimensions: Mapping[str, Dimension]
+    #: Mapping of variable name to variable metadata.
     variables: Mapping[str, VariableSchema]
+    #: Optional global attributes associated with the dataset.
     attrs: Mapping[str, Any] = field(default_factory=dict)
+    #: Format version of this schema; used for compatibility checks and
+    #: upgrades.
     format_version: int = FORMAT_VERSION
 
     def __post_init__(self) -> None:
