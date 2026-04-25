@@ -1,6 +1,6 @@
-"""End-to-end Walkthrough.
-
-==========================
+"""
+End-to-end Walkthrough
+======================
 
 Builds a float32 dataset on a ``LocalStore``, partitions it, reopens the
 collection from disk, queries with a filter, and asserts bit-exact equality.

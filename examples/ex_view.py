@@ -1,6 +1,6 @@
-"""Overview of a View.
-
-====================
+"""
+Overview of a View
+==================
 
 A :py:class:`~zcollection.view.View` overlays *extra* variables on top of a
 read-only base :py:class:`~zcollection.Collection`. The base data is queried

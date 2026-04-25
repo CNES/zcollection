@@ -1,6 +1,6 @@
-"""Overview of a Collection.
-
-==========================
+"""
+Overview of a Collection
+========================
 
 This section walks through the main features of a v3
 :py:class:`~zcollection.Collection`: building a schema, creating a partitioned

@@ -61,6 +61,7 @@ max-args = 10
 
 [tool.ruff.lint.per-file-ignores]
 "**/{tests,docs,tools}/*" = ["PLR2004"]
+"examples/*" = ["D"]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2

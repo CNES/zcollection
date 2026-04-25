@@ -1,6 +1,6 @@
-"""Hierarchical Groups.
-
-====================
+"""
+Hierarchical Groups
+===================
 
 Builds a dataset with nested Zarr groups (``/data_01/ku/...``), persists
 it through a partitioned :py:class:`~zcollection.Collection`, and

@@ -1,6 +1,6 @@
-"""Indexing a Collection.
-
-========================
+"""
+Indexing a Collection
+=====================
 
 A secondary index lets you find which partitions and row-slices satisfy a
 key-based query without scanning the whole collection. v3 indices are a
