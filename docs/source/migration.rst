@@ -30,6 +30,12 @@ What changed at a glance
   writers are not supported.
 * **Partition catalog**: the optional ``_catalog/`` group lists partitions
   in O(1) and replaces the per-partition ``LIST`` walk on cloud stores.
+* **Hierarchical datasets**: a :py:class:`~zcollection.Dataset` is now a
+  root :py:class:`~zcollection.Group` and can declare nested child groups
+  (e.g. ``/data_01/ku/...``). Each group becomes a real Zarr v3
+  subgroup on disk; nested groups round-trip through partition I/O. The
+  schema gains :py:class:`~zcollection.GroupSchema` and a ``group=``
+  keyword on the builder methods.
 
 Entry points
 ------------
@@ -218,3 +224,17 @@ New (Zarr v3)::
        ├── zarr.json
        ├── time/{zarr.json,c/0}
        └── ssh/{zarr.json,c/0/0}
+
+When the schema declares nested groups (see
+:doc:`auto_examples/ex_groups`), each group materialises as a real
+Zarr v3 subgroup inside every partition::
+
+   collection/
+   └── year=2024/month=03/
+       ├── zarr.json
+       ├── time/{zarr.json,c/0}
+       └── data_01/
+           ├── zarr.json
+           └── ku/
+               ├── zarr.json
+               └── power/{zarr.json,c/0/0}

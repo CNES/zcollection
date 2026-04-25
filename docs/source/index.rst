@@ -32,6 +32,18 @@ this on disk::
                ├── zarr.json
                └── c/0/0
 
+Hierarchical datasets
+---------------------
+
+A :py:class:`~zcollection.Dataset` is a root :py:class:`~zcollection.Group`:
+it owns variables and attributes directly *and* may contain nested child
+groups, mirroring the native Zarr v3 group hierarchy. Groups are useful
+to organise variables that share a logical sub-domain — e.g. SWOT
+``/data_01/ku/...`` — while keeping a single, partitioned collection.
+Each child group is a real Zarr group on disk; variables placed inside
+nested groups round-trip transparently. See
+:doc:`auto_examples/ex_groups` for a worked example.
+
 Inserts can either overwrite existing partitions or merge with them
 through pluggable :py:mod:`strategies <zcollection.collection.merge>`.
 

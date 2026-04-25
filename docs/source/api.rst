@@ -13,9 +13,9 @@ Building a schema
 =================
 
 A :class:`~zcollection.DatasetSchema` is the immutable description of a
-dataset: dimensions, variables, attributes, and a format version. The
-recommended way to build one is the fluent :func:`~zcollection.Schema`
-factory:
+dataset: dimensions, variables, attributes, child groups, and a format
+version. The recommended way to build one is the fluent
+:func:`~zcollection.Schema` factory:
 
 .. code-block:: python
 
@@ -37,12 +37,51 @@ factory:
        .build()
    )
 
+Hierarchical schemas
+--------------------
+
+Variables can be placed inside nested groups by passing ``group=`` to
+:meth:`~zcollection.SchemaBuilder.with_dimension`,
+:meth:`~zcollection.SchemaBuilder.with_variable`, and
+:meth:`~zcollection.SchemaBuilder.with_attribute`. Use
+:meth:`~zcollection.SchemaBuilder.with_group` to attach group-level
+attributes ahead of time. Intermediate groups along the path are
+created on demand. Variables in a child group may reference dimensions
+declared on any ancestor (dimension inheritance):
+
+.. code-block:: python
+
+   schema = (
+       zc.Schema()
+       .with_dimension("time", chunks=4096)
+       .with_variable("time", dtype="int64", dimensions=("time",))
+       .with_group("/data_01/ku", attrs={"band": "Ku"})
+       .with_dimension("range", size=240, chunks=240, group="/data_01/ku")
+       .with_variable(
+           "power",
+           dtype="float32",
+           dimensions=("time", "range"),  # ``time`` inherited from root
+           group="/data_01/ku",
+       )
+       .build()
+   )
+
+The resulting :class:`~zcollection.DatasetSchema` exposes the hierarchy
+through :attr:`~zcollection.GroupSchema.groups` and
+:meth:`~zcollection.GroupSchema.all_variables` (keys are absolute paths).
+:meth:`~zcollection.DatasetSchema.with_partition_axis` recurses into
+nested groups, marking variables that don't span the partitioning axis
+as immutable.
+
 .. autofunction:: zcollection.Schema
 
 .. autoclass:: zcollection.SchemaBuilder
    :members:
 
 .. autoclass:: zcollection.DatasetSchema
+   :members:
+
+.. autoclass:: zcollection.GroupSchema
    :members:
 
 .. autoclass:: zcollection.Dimension
@@ -159,13 +198,45 @@ every partition.
    :members: build, read, write, table, key_columns, lookup
 
 
-Datasets and variables (in memory)
-==================================
+Datasets, groups, and variables (in memory)
+===========================================
 
 The objects you receive from :meth:`Collection.query` and pass back into
-:meth:`Collection.insert`. Both bridge to and from xarray.
+:meth:`Collection.insert`. :class:`~zcollection.Dataset` is a root
+:class:`~zcollection.Group`: it owns variables and child groups
+directly. :class:`~zcollection.Group` itself is the hierarchical
+container reused for every nested group.
+
+Both :class:`~zcollection.Dataset` and :class:`~zcollection.Variable`
+print as multi-line, xarray-like blocks that include a synthetic byte
+size for the dataset, each child group, and each variable, so you can
+gauge memory/disk footprint at a glance::
+
+   <zcollection.data.dataset.Dataset '/'> Size: 5.32 MB
+     Dimensions: (time: 100000, x_ac: 240)
+   Data variables:
+       time (time)              int64           781.25 kB  numpy.ndarray<...>
+       ssh  (time, x_ac)        float32         91.55 MB   numpy.ndarray<...>
+   Groups:
+       data_01           1.20 GB  (0 variables, 1 subgroup)
+
+Path-based access (``ds.get_variable("/data_01/ku/power")``,
+``ds["/data_01/ku/power"]``) and short-name search
+(:meth:`~zcollection.Group.find_variable`,
+:meth:`~zcollection.Group.find_group`) make navigating the hierarchy
+straightforward. :meth:`~zcollection.Group.find_dimension` walks up the
+tree so child groups inherit dimensions declared on ancestors.
+:attr:`~zcollection.Group.nbytes` recurses over the whole tree.
+
+The xarray bridge (:meth:`~zcollection.Dataset.to_xarray` /
+:meth:`~zcollection.Dataset.from_xarray`) operates on the *root* group
+only — xarray has no native group concept, so nested groups are dropped
+on conversion.
 
 .. autoclass:: zcollection.Dataset
+   :members:
+
+.. autoclass:: zcollection.Group
    :members:
 
 .. autoclass:: zcollection.Variable
