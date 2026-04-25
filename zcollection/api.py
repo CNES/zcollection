@@ -1,4 +1,4 @@
-"""Public sync facade for zcollection v3 (Phase 1)."""
+"""Public sync facade for zcollection."""
 
 from typing import TYPE_CHECKING
 

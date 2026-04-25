@@ -1,7 +1,4 @@
-"""zcollection v3 — Zarr v3 native, async-friendly partitioned collections.
-
-Phase 1 surface: synchronous API with LocalStore and MemoryStore.
-"""
+"""zcollection — Zarr v3 native, async-friendly partitioned collections."""
 
 from . import aio, codecs, partitioning, view
 from .api import (

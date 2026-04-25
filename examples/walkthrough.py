@@ -1,4 +1,4 @@
-"""End-to-end Phase 1 walkthrough for ``zcollection``.
+"""End-to-end walkthrough for ``zcollection``.
 
 Builds a ~100 MB float32 dataset on a LocalStore, partitions it, reopens the
 collection from disk, queries with a filter, and asserts bit-exact equality.

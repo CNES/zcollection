@@ -2,58 +2,56 @@ ZCollection
 ===========
 
 This project is a Python library manipulating data split into a
-:py:class:`collection <zcollection.collection.Collection>` of groups stored in
-`Zarr format <https://zarr.readthedocs.io/en/stable/>`_.
+:py:class:`collection <zcollection.Collection>` of groups stored in
+`Zarr v3 format <https://zarr.readthedocs.io/>`_.
 
-This collection allows dividing a dataset into several partitions to facilitate
-acquisitions or updates made from new products. Possible data partitioning is:
-by :py:class:`date <zcollection.partitioning.date.Date>` (hour, day, month,
-etc.) or by :py:class:`sequence <zcollection.partitioning.sequence.Sequence>`.
+A collection divides a dataset into partitions to make incremental
+acquisitions or per-product updates cheap. Built-in partitionings are
+:py:class:`by date <zcollection.partitioning.Date>`,
+:py:class:`by sequence <zcollection.partitioning.Sequence>`, and
+:py:class:`grouped sequences <zcollection.partitioning.GroupedSequence>`.
 
-A collection partitioned by date, with a monthly resolution, may look like on
-the disk: ::
+A collection partitioned by date with a monthly resolution looks like
+this on disk::
 
    collection/
-   ├── year=2022
-   │    ├── month=01/
-   │    │    ├── time/
-   │    │    │    ├── 0.0
-   │    │    │    ├── .zarray
-   │    │    │    └── .zattrs
-   │    │    ├── var1/
-   │    │    │    ├── 0.0
-   │    │    │    ├── .zarray
-   │    │    │    └── .zattrs
-   │    │    ├── .zattrs
-   │    │    ├── .zgroup
-   │    │    └── .zmetadata
-   │    └── month=02/
-   │         ├── time/
-   │         │    ├── 0.0
-   │         │    ├── .zarray
-   │         │    └── .zattrs
-   │         ├── var1/
-   │         │    ├── 0.0
-   │         │    ├── .zarray
-   │         │    └── .zattrs
-   │         ├── .zattrs
-   │         ├── .zgroup
-   │         └── .zmetadata
-   └── .zcollection
+   ├── zarr.json
+   ├── _zcollection.json
+   ├── _catalog/                       # optional partition index
+   │   ├── zarr.json
+   │   └── c/0
+   ├── _immutable/                     # non-partitioned variables
+   │   └── zarr.json
+   └── year=2024/
+       └── month=03/
+           ├── zarr.json
+           ├── time/
+           │   ├── zarr.json
+           │   └── c/0
+           └── ssh/
+               ├── zarr.json
+               └── c/0/0
 
-Partition updates can be set to overwrite existing data with new ones or to
-update them using different :py:mod:`strategies <zcollection.merging>`.
+Inserts can either overwrite existing partitions or merge with them
+through pluggable :py:mod:`strategies <zcollection.collection.merge>`.
 
-The `Dask library <https://dask.org/>`_ handles the data to scale the treatments
-quickly.
+Storage backends are selected by URL scheme:
 
-It is possible to create views on a reference collection, to add and modify
-variables contained in a reference collection, accessible in reading only.
+* ``file://`` — local filesystem
+* ``memory://`` — in-process (tests, prototyping)
+* ``s3://`` — object storage via `obstore`_ or `fsspec`_
+* ``icechunk://`` — transactional Zarr v3 via `Icechunk`_
 
-This library can store data on POSIX, S3, or any other file system supported by
-the Python library `fsspec
-<https://filesystem-spec.readthedocs.io/en/latest/>`_. Note, however, only POSIX
-and S3 file systems have been tested.
+`Dask <https://dask.org/>`_ is used to scale operations over partitions.
+The implementation is async; the sync API is a thin wrapper, and an
+:py:mod:`zcollection.aio` mirror is published for async callers.
+
+Views layered on top of a read-only base collection let you add or
+recompute variables without touching the base.
+
+.. _obstore: https://developmentseed.org/obstore/
+.. _fsspec: https://filesystem-spec.readthedocs.io/
+.. _Icechunk: https://icechunk.io/
 
 .. toctree::
    :maxdepth: 2
@@ -61,6 +59,7 @@ and S3 file systems have been tested.
 
    install
    auto_examples/index.rst
+   migration
    api
    release
 

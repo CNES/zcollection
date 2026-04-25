@@ -1,15 +1,15 @@
 """Codec profiles and the :class:`CodecStack` data class.
 
 A profile is a (named) recipe that produces a :class:`CodecStack` for a
-variable, given its dtype and shape. Phase 1 ships three profiles:
+variable, given its dtype and shape. Three profiles ship by default:
 
 - ``local-fast``: no sharding, Zstd L3.
 - ``cloud-balanced``: sharded (~64-256 MiB shards), Zstd L3. *Default*.
 - ``cloud-cold``: sharded (~512 MiB shards), Zstd L9.
 
-In Phase 1 we keep the actual codec descriptors as simple dicts so the schema
-serialises cleanly without depending on Zarr v3 codec object stability. The
-``io`` layer translates these into ``zarr.codecs`` objects at write time.
+Codec descriptors are kept as simple dicts so the schema serialises cleanly
+without depending on Zarr v3 codec object stability. The ``io`` layer
+translates these into ``zarr.codecs`` objects at write time.
 """
 
 from typing import Any

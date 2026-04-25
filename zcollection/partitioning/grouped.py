@@ -1,8 +1,7 @@
 """GroupedSequence — bucket the last ``Sequence`` variable into fixed runs.
 
-Ports the v2 ``GroupedSequence`` from the ``feature/metadata_improvements``
-branch. Useful when, e.g., altimetry passes 1..100 should all live in one
-partition rather than producing 100 partitions per cycle.
+Useful when, e.g., altimetry passes 1..100 should all live in one partition
+rather than producing 100 partitions per cycle.
 """
 
 from typing import TYPE_CHECKING, Any

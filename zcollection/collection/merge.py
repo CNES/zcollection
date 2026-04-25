@@ -1,15 +1,21 @@
 """Merge strategies for inserting into an already-existing partition.
 
 A :data:`MergeCallable` takes the existing partition and the inserted dataset
-and returns the dataset that should land on disk. Phase 2 ships two strategies:
+and returns the dataset that should land on disk. The built-in strategies are:
 
 - :func:`replace` (default): the new data wins, no merge.
 - :func:`concat`: concatenate inserted after existing along the axis.
 - :func:`time_series`: time-aware merge for monotonic datetime axes —
-  non-overlapping inserts are concatenated; overlapping ranges are replaced.
+  the existing range overlapping ``[inserted_min, inserted_max]`` is dropped
+  in bulk and replaced by the inserted block.
+- :func:`upsert`: row-wise replace-or-add by axis equality. Existing rows
+  whose axis value is **not** present in the inserted batch are preserved;
+  matching axis values get the inserted row; new axis values are appended.
+  Result is sorted by axis. Designed for re-acquisition workflows where a
+  new product partially supplements an existing partition.
 """
 
-from typing import Protocol
+from typing import Any, Protocol
 from collections.abc import Callable
 
 import numpy
@@ -88,6 +94,94 @@ def time_series(
     return _index_dataset(merged, partitioning_dim, order)
 
 
+def upsert(
+    existing: Dataset,
+    inserted: Dataset,
+    *,
+    axis: str,
+    partitioning_dim: str,
+    tolerance: Any = None,
+) -> Dataset:
+    """Row-wise replace-or-add by axis proximity.
+
+    For each row in ``existing``: keep it if its axis value has no match
+    in ``inserted[axis]``. The kept rows are then concatenated with
+    ``inserted`` and the result is sorted by axis. Use this when a new
+    acquisition may partially overlap (replace) and partially extend
+    (add) an existing partition without wiping the gaps in between.
+
+    ``tolerance`` controls what counts as a match:
+
+    * ``None`` (default) — exact equality.
+    * a scalar (e.g. ``numpy.timedelta64(500, "ms")`` for datetime axes,
+      or a float for numeric axes) — an existing row matches the nearest
+      inserted row when ``|existing - nearest_inserted| <= tolerance``.
+      Useful when re-acquired timestamps are jittered by clock drift.
+
+    Use :func:`upsert_within` to build a ``MergeCallable`` with a fixed
+    tolerance for use with the string-based registry::
+
+        col.insert(ds, merge=zcollection.merge.upsert_within(
+            numpy.timedelta64(500, "ms")))
+    """
+    if axis not in existing or axis not in inserted:
+        raise ValueError(
+            f"upsert merge requires axis variable {axis!r} on both sides"
+        )
+
+    existing_axis = existing[axis].to_numpy()
+    inserted_axis = inserted[axis].to_numpy()
+    if inserted_axis.size == 0:
+        return existing
+    if existing_axis.size == 0:
+        return inserted
+
+    if tolerance is None:
+        keep = ~numpy.isin(existing_axis, inserted_axis)
+    else:
+        sorted_ins = numpy.sort(inserted_axis)
+        n = sorted_ins.size
+        idx = numpy.searchsorted(sorted_ins, existing_axis)
+        left = numpy.clip(idx - 1, 0, n - 1)
+        right = numpy.clip(idx, 0, n - 1)
+        # numpy handles |a - b| correctly for both numeric and datetime64.
+        left_dist = numpy.abs(existing_axis - sorted_ins[left])
+        right_dist = numpy.abs(existing_axis - sorted_ins[right])
+        nearest = numpy.minimum(left_dist, right_dist)
+        keep = nearest > tolerance
+
+    trimmed = _slice_dataset_bool(existing, partitioning_dim, keep)
+    merged = _concat_along(trimmed, inserted, partitioning_dim)
+
+    merged_axis = merged[axis].to_numpy()
+    order = numpy.argsort(merged_axis, kind="stable")
+    return _index_dataset(merged, partitioning_dim, order)
+
+
+def upsert_within(tolerance: Any) -> MergeCallable:
+    """Return an :func:`upsert` strategy bound to ``tolerance``.
+
+    Pass the result as ``merge=`` to :py:meth:`Collection.insert`.
+    """
+
+    def _strategy(
+        existing: Dataset,
+        inserted: Dataset,
+        *,
+        axis: str,
+        partitioning_dim: str,
+    ) -> Dataset:
+        return upsert(
+            existing,
+            inserted,
+            axis=axis,
+            partitioning_dim=partitioning_dim,
+            tolerance=tolerance,
+        )
+
+    return _strategy
+
+
 # Helpers --------------------------------------------------------
 
 
@@ -161,6 +255,7 @@ _BUILTIN: dict[str, MergeCallable] = {
     "replace": replace,
     "concat": concat,
     "time_series": time_series,
+    "upsert": upsert,
 }
 
 
@@ -186,4 +281,6 @@ __all__ = (
     "replace",
     "resolve",
     "time_series",
+    "upsert",
+    "upsert_within",
 )

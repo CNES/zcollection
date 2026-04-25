@@ -1,14 +1,14 @@
-"""Benchmark harness for zcollection v3.
+"""Benchmark harness for zcollection.
 
 Drives a small, well-defined set of operations (open / query / insert / map)
 against any store URL and emits machine-readable results that can be diffed
-against a captured baseline (e.g. the v2 codebase). Used by the Phase 3
-acceptance gate:
+against a captured baseline. Acceptance targets versus the legacy Zarr v2
+codebase:
 
-- ``query_one_partition_full`` ≥ 3x v2 cold;
-- ``insert_one_partition`` ≥ 2x v2 with PUT count ≥ 8x lower;
-- ``open_collection_cold`` ≥ 5x v2;
-- ``local_insert_baseline`` ≥ 1.0x v2 (no regression).
+- ``query_one_partition_full`` ≥ 3x;
+- ``insert_one_partition`` ≥ 2x with PUT count ≥ 8x lower;
+- ``open_collection_cold`` ≥ 5x;
+- ``local_insert_baseline`` ≥ 1.0x (no regression).
 
 Usage::
 

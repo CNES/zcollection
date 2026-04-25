@@ -1,4 +1,4 @@
-"""Per-partition Zarr v3 group I/O — async path (Phase 2).
+"""Per-partition Zarr v3 group I/O — async path.
 
 Mirrors :mod:`zcollection.io.partition` but uses :mod:`zarr.api.asynchronous`
 end-to-end so that callers can run many partition reads/writes concurrently

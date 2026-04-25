@@ -1,7 +1,8 @@
 """On-disk format versioning for ``_zcollection.json``.
 
-Phase 1 ships ``format_version=1``. Future breaking changes register an
-``Upgrader`` callable that lifts an older payload into the current schema.
+The current on-disk format is ``format_version=1``. Future breaking changes
+register an ``Upgrader`` callable that lifts an older payload into the
+current schema.
 """
 
 from typing import Any

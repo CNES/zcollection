@@ -1,7 +1,8 @@
 """Store abstraction over Zarr v3 stores.
 
-Phase 1 ships :class:`LocalStore` and :class:`MemoryStore`. The factory
-function :func:`open_store` selects an implementation from a URL.
+The factory :func:`open_store` selects an implementation from a URL:
+``LocalStore`` (POSIX), ``MemoryStore`` (in-process), and ``IcechunkStore``
+(transactional) are built in.
 """
 
 from .base import Store, StoreSession

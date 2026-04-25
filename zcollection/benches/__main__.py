@@ -10,7 +10,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="zcollection.benches")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    run = sub.add_parser("all", help="Run the Phase 3 acceptance suite")
+    run = sub.add_parser("all", help="Run the full benchmark suite")
     run.add_argument(
         "--store", required=True, help="Store URL (e.g. file://, s3://...)"
     )

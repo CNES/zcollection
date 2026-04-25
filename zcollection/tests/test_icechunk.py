@@ -1,4 +1,4 @@
-"""Phase 5 — IcechunkStore: round-trip + transactional commit/rollback."""
+"""IcechunkStore: round-trip + transactional commit/rollback."""
 
 import numpy
 import pytest

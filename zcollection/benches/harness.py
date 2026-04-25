@@ -105,7 +105,7 @@ def _timed(
 def run_suite(
     store_url: str, spec: BenchSpec | None = None
 ) -> list[BenchResult]:
-    """Run the full Phase 3 acceptance suite against ``store_url``."""
+    """Run the full benchmark suite against ``store_url``."""
     spec = spec or BenchSpec()
     results: list[BenchResult] = []
 

@@ -1,10 +1,4 @@
-"""Store ABC.
-
-Phase 1 stays sync at this layer: the io layer uses Zarr's sync API. When
-we cut over to Zarr's async core in Phase 2 the same Store implementations
-will be wrapped with the AsyncStore protocol. We keep the surface narrow on
-purpose.
-"""
+"""Store ABC — narrow synchronous surface; the async path lives in ``io``."""
 
 from typing import Any, Self
 from abc import ABC, abstractmethod

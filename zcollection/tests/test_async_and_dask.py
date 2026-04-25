@@ -1,4 +1,4 @@
-"""Phase 2 — async API, Date / GroupedSequence partitioning, merge, map/update."""
+"""Async API, Date / GroupedSequence partitioning, merge, map/update."""
 
 import asyncio
 
@@ -286,6 +286,178 @@ def test_merge_time_series_drops_overlap_and_sorts(tmp_path):
     apr_idx = numpy.where(times == numpy.datetime64("2024-04-10"))[0]
     assert apr_idx.size == 1
     assert values[apr_idx[0]] == 99.0
+
+
+def test_merge_upsert_supplements_existing(tmp_path):
+    """Reacquisition: a new batch overlaps part of an existing partition
+    (same timestamps → replace) and extends past it (new timestamps → add).
+    Existing rows whose timestamp is not in the new batch must be kept."""
+    schema, ds = _date_dataset()
+    store = zc.LocalStore(tmp_path / "col")
+    col = zc.create_collection(
+        store,
+        schema=schema,
+        axis="time",
+        partitioning=Date("time", resolution="Y"),
+        overwrite=True,
+    )
+    col.insert(ds)
+    # Existing in 2024: 01-05, 01-20, 02-03, 02-15, 03-01 with v=[0..4]
+
+    # New acquisition: re-shoots 02-15 (replace), adds 02-20 (new in Feb),
+    # adds 04-10 (new month). 01-05, 01-20, 02-03, 03-01 are untouched.
+    new_times = numpy.array(
+        ["2024-02-15", "2024-02-20", "2024-04-10"], dtype="datetime64[s]"
+    )
+    update = zc.Dataset(
+        schema=schema,
+        variables={
+            "time": zc.Variable(schema.variables["time"], new_times),
+            "v": zc.Variable(
+                schema.variables["v"],
+                numpy.array([99.0, 77.0, 55.0], dtype="float32"),
+            ),
+        },
+    )
+    col.insert(update, merge="upsert")
+
+    out = col.query()
+    times = out["time"].to_numpy()
+    values = out["v"].to_numpy()
+
+    assert (numpy.diff(times) >= numpy.timedelta64(0, "s")).all()
+
+    # Untouched existing rows are preserved.
+    for keep_date, keep_v in [
+        ("2024-01-05", 0.0),
+        ("2024-01-20", 1.0),
+        ("2024-02-03", 2.0),
+        ("2024-03-01", 4.0),
+    ]:
+        idx = numpy.where(times == numpy.datetime64(keep_date))[0]
+        assert idx.size == 1, f"{keep_date} should have been preserved"
+        assert values[idx[0]] == keep_v
+
+    # Re-shot row replaced.
+    feb15 = numpy.where(times == numpy.datetime64("2024-02-15"))[0]
+    assert feb15.size == 1
+    assert values[feb15[0]] == 99.0
+
+    # New rows added.
+    for new_date, new_v in [("2024-02-20", 77.0), ("2024-04-10", 55.0)]:
+        idx = numpy.where(times == numpy.datetime64(new_date))[0]
+        assert idx.size == 1, f"{new_date} should have been added"
+        assert values[idx[0]] == new_v
+
+
+def test_merge_upsert_tolerance_matches_nearby_timestamps(tmp_path):
+    """Re-acquired timestamps may drift by milliseconds. With a 500 ms
+    tolerance, an existing row at 12:00:00.000 must be replaced by an
+    inserted row at 12:00:00.300, not duplicated."""
+    schema = (
+        zc.Schema()
+        .with_dimension("time", size=None, chunks=8)
+        .with_variable("time", dtype="datetime64[ms]", dimensions=("time",))
+        .with_variable("v", dtype="float32", dimensions=("time",))
+        .build()
+    )
+    base_times = numpy.array(
+        [
+            "2024-04-20T12:00:00.000",  # will match within tolerance
+            "2024-04-20T12:00:10.000",  # nearest insert > tolerance away
+            "2024-04-20T12:00:20.000",  # nearest insert > tolerance away
+        ],
+        dtype="datetime64[ms]",
+    )
+    ds = zc.Dataset(
+        schema=schema,
+        variables={
+            "time": zc.Variable(schema.variables["time"], base_times),
+            "v": zc.Variable(
+                schema.variables["v"],
+                numpy.array([1.0, 2.0, 3.0], dtype="float32"),
+            ),
+        },
+    )
+
+    store = zc.LocalStore(tmp_path / "col")
+    col = zc.create_collection(
+        store,
+        schema=schema,
+        axis="time",
+        partitioning=Date("time", resolution="D"),
+        overwrite=True,
+    )
+    col.insert(ds)
+
+    # 12:00:00.300 drifts 300ms past existing 12:00:00.000  → matches.
+    # 12:00:11.000 drifts 1s past 12:00:10.000              → no match.
+    # 12:00:30.000 is brand new                             → adds.
+    new_times = numpy.array(
+        [
+            "2024-04-20T12:00:00.300",
+            "2024-04-20T12:00:11.000",
+            "2024-04-20T12:00:30.000",
+        ],
+        dtype="datetime64[ms]",
+    )
+    update = zc.Dataset(
+        schema=schema,
+        variables={
+            "time": zc.Variable(schema.variables["time"], new_times),
+            "v": zc.Variable(
+                schema.variables["v"],
+                numpy.array([99.0, 88.0, 77.0], dtype="float32"),
+            ),
+        },
+    )
+    col.insert(
+        update,
+        merge=merge_mod.upsert_within(numpy.timedelta64(500, "ms")),
+    )
+
+    out = col.query()
+    times = out["time"].to_numpy()
+    values = out["v"].to_numpy()
+
+    # 12:00:00.000 (drift 300ms ≤ 500ms) → replaced by 12:00:00.300/v=99.
+    assert numpy.datetime64("2024-04-20T12:00:00.000", "ms") not in times
+    idx = numpy.where(
+        times == numpy.datetime64("2024-04-20T12:00:00.300", "ms")
+    )[0]
+    assert idx.size == 1 and values[idx[0]] == 99.0
+
+    # 12:00:10 vs 12:00:11 (drift 1s > 500ms) → both rows survive.
+    # 12:00:20 stays. 12:00:30 added.
+    # Total: 2 kept + 3 inserted = 5 rows.
+    assert times.size == 5
+    for must_be_present in [
+        "2024-04-20T12:00:10.000",
+        "2024-04-20T12:00:11.000",
+        "2024-04-20T12:00:20.000",
+        "2024-04-20T12:00:30.000",
+    ]:
+        assert numpy.datetime64(must_be_present, "ms") in times
+
+
+def test_merge_upsert_empty_inserted_returns_existing():
+    schema, ds = _date_dataset()
+    empty = zc.Dataset(
+        schema=schema,
+        variables={
+            "time": zc.Variable(
+                schema.variables["time"],
+                numpy.array([], dtype="datetime64[s]"),
+            ),
+            "v": zc.Variable(
+                schema.variables["v"], numpy.array([], dtype="float32")
+            ),
+        },
+    )
+    out = merge_mod.upsert(ds, empty, axis="time", partitioning_dim="time")
+    numpy.testing.assert_array_equal(
+        out["v"].to_numpy(), ds["v"].to_numpy()
+    )
 
 
 def test_merge_resolve_unknown_strategy():

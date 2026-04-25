@@ -1,224 +1,139 @@
-"""
-Indexing a Collection.
-======================
+"""Indexing a Collection.
 
-In this example, we will see how to index a collection.
+========================
+
+A secondary index lets you find which partitions and row-slices satisfy a
+key-based query without scanning the whole collection. v3 indices are a
+single Parquet table with ``(<key cols...>, _partition, _start, _stop)``
+rows, built by walking the collection with
+:py:meth:`Indexer.build<zcollection.indexing.Indexer.build>`.
+
+Run with::
+
+    python examples/ex_indexing.py
 """
 
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
 import itertools
-import pprint
+import shutil
+import tempfile
+from collections.abc import Iterator
+from pathlib import Path
 
-import dask.distributed
-import fsspec
 import numpy
 
-import zcollection
-import zcollection.indexing
-import zcollection.partitioning.tests.data
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-    import pathlib
+import zcollection as zc
+from zcollection.indexing import Indexer
 
 # %%
-# Initialization of the environment
-# ---------------------------------
-fs = fsspec.filesystem('memory')
-cluster = dask.distributed.LocalCluster(processes=False)
-client = dask.distributed.Client(cluster)
-
-# %%
-# A collection can be indexed. This allows quick access to the data without
-# having to browse the entire dataset.
+# Build a half-orbit dataset
+# --------------------------
 #
-# Creating the test collection.
-# -----------------------------
-#
-# For this latest example, we will index another data set. This one contains
-# measurements of a fictitious satellite on several half-orbits.
-zds: zcollection.Dataset = zcollection.Dataset.from_xarray(
-    zcollection.partitioning.tests.data.create_test_sequence(5, 20, 10))
-print(zds)
+# Each row carries ``cycle_number`` and ``pass_number``. A "half-orbit" is a
+# contiguous run of rows sharing the same (cycle, pass) pair.
+root = Path(tempfile.gettempdir()) / "zc-ex-indexing"
+if root.exists():
+    shutil.rmtree(root)
+base_path = root / "collection"
+index_path = root / "index.parquet"
 
-# %%
-collection: zcollection.Collection = zcollection.create_collection(
-    'time',
-    zds,
-    zcollection.partitioning.Date(('time', ), 'M'),
-    partition_base_dir='/one_other_collection',
-    filesystem=fs)
-collection.insert(zds, merge_callable=zcollection.merging.merge_time_series)
+n_cycles, n_passes, rows_per_pass = 5, 20, 10
+total = n_cycles * n_passes * rows_per_pass
 
-# %%
-# Here we have created a collection partitioned by month.
-pprint.pprint(fs.listdir('/one_other_collection/year=2000'))
+cycles = numpy.repeat(
+    numpy.arange(n_cycles, dtype="uint16"), n_passes * rows_per_pass
+)
+passes = numpy.tile(
+    numpy.repeat(numpy.arange(n_passes, dtype="uint16"), rows_per_pass), n_cycles
+)
+times = numpy.arange(total, dtype="int64")
 
+schema = (
+    zc.Schema()
+    .with_dimension("time", chunks=rows_per_pass * n_passes)
+    .with_variable("time", dtype="int64", dimensions=("time",))
+    .with_variable("cycle_number", dtype="uint16", dimensions=("time",))
+    .with_variable("pass_number", dtype="uint16", dimensions=("time",))
+    .build()
+)
+ds = zc.Dataset(
+    schema=schema,
+    variables={
+        "time": zc.Variable(schema.variables["time"], times),
+        "cycle_number": zc.Variable(schema.variables["cycle_number"], cycles),
+        "pass_number": zc.Variable(schema.variables["pass_number"], passes),
+    },
+)
 
-# %%
-# Class to implement
-# ------------------
-#
-# The idea of the implementation is to calculate for each visited partition, the
-# slice of data that has a constant quantity. In our example, we will rely on
-# the cycle and pass number information. The first method we will implement is
-# the detection of these constant parts of two vectors containing the cycle and
-# pass number.
-def split_half_orbit(
-    cycle_number: numpy.ndarray,
-    pass_number: numpy.ndarray,
-) -> Iterator[tuple[int, int]]:
-    """Calculate the indexes of the start and stop of each half-orbit.
-
-    Args:
-        cycle_number: Cycle numbers.
-        pass_number: Pass numbers.
-    Returns:
-        Iterator of start and stop indexes.
-    """
-    assert pass_number.shape == cycle_number.shape
-    pass_idx = numpy.where(numpy.roll(pass_number, 1) != pass_number)[0]
-    cycle_idx = numpy.where(numpy.roll(cycle_number, 1) != cycle_number)[0]
-
-    half_orbit = numpy.unique(
-        numpy.concatenate(
-            (pass_idx, cycle_idx, numpy.array([pass_number.size],
-                                              dtype='int64'))))
-    del pass_idx, cycle_idx
-
-    yield from tuple(itertools.pairwise(half_orbit))
+# Partition the data by cycle so each cycle is one partition.
+collection = zc.create_collection(
+    f"file://{base_path}",
+    schema=schema,
+    axis="time",
+    partitioning=zc.partitioning.Sequence(("cycle_number",), dimension="time"),
+)
+collection.insert(ds)
+print(f"collection: {len(list(collection.partitions()))} partitions")
 
 
 # %%
-# Now we will compute these constant parts from a dataset contained in a
-# partition.
-def _half_orbit(
-    zds: zcollection.Dataset,
-    *args,
-    dtype: numpy.dtype | None = None,
-    **kwargs,
-) -> numpy.ndarray:
-    """Return the indexes of the start and stop of each half-orbit.
-
-    Args:
-        zds: Datasets stored in a partition to be indexed.
-    Returns:
-        Dictionary of start and stop indexes for each half-orbit.
-    """
-    pass_number_varname = kwargs.pop('pass_number', 'pass_number')
-    cycle_number_varname = kwargs.pop('cycle_number', 'cycle_number')
-    pass_number = zds.variables[pass_number_varname].values
-    cycle_number = zds.variables[cycle_number_varname].values
-
-    generator = ((
-        i0,
-        i1,
-        cycle_number[i0],
-        pass_number[i0],
-    ) for i0, i1 in split_half_orbit(cycle_number, pass_number))
-
-    return numpy.fromiter(generator, dtype)
-
-
-# %%
-# Finally, we implement our indexing class. The base class
-# (:py:class:`zcollection.indexing.Indexer<zcollection.indexing.abc.Indexer>`)
-# implements the index update and the associated queries.
-class HalfOrbitIndexer(zcollection.indexing.Indexer):
-    """Index collection by half-orbit."""
-    #: Column name of the cycle number.
-    CYCLE_NUMBER = 'cycle_number'
-
-    #: Column name of the pass number.
-    PASS_NUMBER = 'pass_number'
-
-    def dtype(self, /, **kwargs) -> list[tuple[str, str]]:
-        """Return the columns of the index.
-
-        Returns:
-            A tuple of (name, type) pairs.
-        """
-        return [
-            *super().dtype(), (self.CYCLE_NUMBER, 'uint16'),
-            (self.PASS_NUMBER, 'uint16')
-        ]
-
-    @classmethod
-    def create(
-        cls,
-        path: pathlib.Path | str,
-        zds: zcollection.Collection,
-        filesystem: fsspec.AbstractFileSystem | None = None,
-        **kwargs,
-    ) -> HalfOrbitIndexer:
-        """Create a new index.
-
-        Args:
-            path: The path to the index.
-            zds: The collection to be indexed.
-            filesystem: The filesystem to use.
-        Returns:
-            The created index.
-        """
-        return super()._create(  # type: ignore[return-value]
-            path,
-            zds,
-            meta={'attribute': b'value'},
-            filesystem=filesystem,
-        )
-
-    def update(
-        self,
-        zds: zcollection.Collection,
-        partition_size: int | None = None,
-        npartitions: int | None = None,
-        **kwargs,
-    ) -> None:
-        """Update the index.
-
-        Args:
-            zds: New data stored in the collection to be indexed.
-            partition_size: The length of each bag partition.
-            npartitions: The number of desired bag partitions.
-            cycle_number: The name of the cycle number variable stored in the
-                collection. Defaults to "cycle_number".
-            pass_number: The name of the pass number variable stored in the
-                collection. Defaults to "pass_number".
-        """
-        super()._update(zds,
-                        _half_orbit,
-                        partition_size,
-                        npartitions,
-                        dtype=self.dtype(),
-                        **kwargs)
-
-
-# %%
-# Using the index
+# Build the index
 # ---------------
 #
-# Now we can create our index and fill it.
-indexer: HalfOrbitIndexer = HalfOrbitIndexer.create('/index.parquet',
-                                                    collection,
-                                                    filesystem=fs)
-indexer.update(collection)
+# The builder takes one partition's :class:`~zcollection.Dataset` and
+# returns a structured numpy array with the key columns plus integer
+# ``_start`` / ``_stop`` columns delineating each contiguous run. The
+# Indexer concatenates those rows over every partition.
+def split_runs(values: numpy.ndarray) -> Iterator[tuple[int, int]]:
+    """Yield (start, stop) for each contiguous run of identical values."""
+    if values.size == 0:
+        return
+    edges = numpy.concatenate(
+        [[0], numpy.where(numpy.diff(values) != 0)[0] + 1, [values.size]]
+    )
+    yield from itertools.pairwise(edges.tolist())
 
-# The following command allows us to view the information stored in our index:
-# the first and last indexes of the partition associated with the registered
-# half-orbit number and the identifier of the indexed partition.
-indexer.table.to_pandas()
+
+def half_orbit_rows(ds: zc.Dataset) -> numpy.ndarray:
+    cycle = ds["cycle_number"].to_numpy()
+    pass_ = ds["pass_number"].to_numpy()
+    # Combine cycle+pass into one composite key to find run boundaries.
+    composite = (cycle.astype(numpy.int64) << 16) | pass_.astype(numpy.int64)
+    rows = [
+        (start, stop, int(cycle[start]), int(pass_[start]))
+        for start, stop in split_runs(composite)
+    ]
+    return numpy.array(
+        rows,
+        dtype=[
+            ("_start", "int64"),
+            ("_stop", "int64"),
+            ("cycle_number", "uint16"),
+            ("pass_number", "uint16"),
+        ],
+    )
+
+
+indexer = Indexer.build(collection, builder=half_orbit_rows)
+print(f"index rows: {len(indexer)}, columns: {indexer.key_columns}")
+indexer.write(str(index_path))
+
 
 # %%
-# This index can now be used to load a part of a collection.
-selection: zcollection.Dataset | None = collection.load(
-    indexer=indexer.query({'pass_number': [1, 2]}),
-    delayed=False,
-)
-assert selection is not None
-selection.to_xarray()
+# Query the index
+# ---------------
+#
+# :py:meth:`Indexer.lookup<zcollection.indexing.Indexer.lookup>` accepts a
+# scalar (equality) or a list (set membership). It returns
+# ``{partition_path: [(start, stop), ...]}``, ready for slicing reads.
+ranges = indexer.lookup(pass_number=[1, 2])
+for path, slices in ranges.items():
+    print(f" * {path}: {len(slices)} matching ranges")
 
 # %%
-# Close the local cluster to avoid printing warning messages in the other
-# examples.
-client.close()
-cluster.close()
+# Round-trip the index from disk
+# ------------------------------
+reloaded = Indexer.read(str(index_path))
+assert len(reloaded) == len(indexer)
+print("indexer round-trip: OK")

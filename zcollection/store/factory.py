@@ -27,7 +27,7 @@ def open_store(
     - ``memory://`` → :class:`MemoryStore`
     - ``s3://``, ``gs://``, ``az://``, ``http(s)://`` → :class:`ObjectStore`
       (obstore-backed, the only cloud path)
-    - ``icechunk://`` → reserved for Phase 5
+    - ``icechunk://`` → :class:`IcechunkStore` (transactional)
     """
     if path == "memory://" or path.startswith("memory://"):
         return MemoryStore()

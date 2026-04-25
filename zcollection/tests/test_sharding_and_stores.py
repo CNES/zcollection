@@ -1,4 +1,4 @@
-"""Phase 3 — sharding policy, sharded round-trip, store factory, bench harness."""
+"""Sharding policy, sharded round-trip, store factory, bench harness."""
 
 import json
 

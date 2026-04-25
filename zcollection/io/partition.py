@@ -1,4 +1,4 @@
-"""Per-partition Zarr v3 group I/O (sync, Phase 1)."""
+"""Per-partition Zarr v3 group I/O — synchronous path."""
 
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterable
@@ -149,8 +149,8 @@ def open_partition_dataset(
 ) -> Dataset:
     """Open a partition's Zarr v3 group and return a :class:`Dataset`.
 
-    Phase 1 loads variables eagerly into numpy. Lazy / async loading lands
-    in Phase 2.
+    This sync helper loads variables eagerly into numpy; for non-blocking
+    loading, use :func:`open_partition_dataset_async`.
     """
     zstore = store.zarr_store()
     group = zarr.open_group(store=zstore, path=partition_path, mode="r")

@@ -1,4 +1,4 @@
-"""Phase 4 — partition catalog, _immutable group, views, parquet indexer."""
+"""Partition catalog, _immutable group, views, parquet indexer."""
 
 import json
 
