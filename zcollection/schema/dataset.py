@@ -1,65 +1,62 @@
-"""Dataset-level schema."""
+"""Dataset-level schema (root :class:`GroupSchema`)."""
 
 from typing import Any
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
-from types import MappingProxyType
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 from ..errors import SchemaError
-from .attribute import encode_attrs
 from .dimension import Dimension
+from .group import GroupSchema, validate_dim_refs
 from .variable import VariableSchema
 from .versioning import FORMAT_VERSION, upgrade
 
 
 @dataclass(frozen=True, slots=True)
-class DatasetSchema:
-    """Immutable description of a collection's dataset."""
+class DatasetSchema(GroupSchema):
+    """Immutable description of a collection's dataset.
 
-    #: Mapping of dimension name to dimension metadata.
-    dimensions: Mapping[str, Dimension]
-    #: Mapping of variable name to variable metadata.
-    variables: Mapping[str, VariableSchema]
-    #: Optional global attributes associated with the dataset.
-    attrs: Mapping[str, Any] = field(default_factory=dict)
+    Extends :class:`GroupSchema` with a :attr:`format_version` field and the
+    JSON envelope used by the on-disk ``_zcollection.json`` config. The root
+    name is always ``"/"``.
+    """
+
     #: Format version of this schema; used for compatibility checks and
     #: upgrades.
     format_version: int = FORMAT_VERSION
 
     def __post_init__(self) -> None:
-        """Freeze the dimension/variable/attribute maps and validate references."""
-        # Freeze maps and validate dimension references.
-        dims = dict(self.dimensions)
-        vars_ = dict(self.variables)
-        for var in vars_.values():
-            for d in var.dimensions:
-                if d not in dims:
-                    raise SchemaError(
-                        f"variable {var.name!r} references unknown dimension "
-                        f"{d!r}; known: {sorted(dims)}"
-                    )
-        object.__setattr__(self, "dimensions", MappingProxyType(dims))
-        object.__setattr__(self, "variables", MappingProxyType(vars_))
-        object.__setattr__(
-            self, "attrs", MappingProxyType(encode_attrs(dict(self.attrs)))
-        )
+        """Freeze maps and validate dimension references over the full tree."""
+        # Force the root name to "/".
+        object.__setattr__(self, "name", "/")
+        super().__post_init__()
+        validate_dim_refs(self)
 
     # Convenience views ------------------------------------------------
 
     @property
     def dim_sizes(self) -> dict[str, int | None]:
-        """Return a mapping of dimension name to declared size."""
+        """Return a mapping of dimension name to declared size (root only)."""
         return {n: d.size for n, d in self.dimensions.items()}
 
     @property
     def dim_chunks(self) -> dict[str, int | None]:
-        """Return a mapping of dimension name to declared chunk size."""
-        return {n: d.chunks for n, d in self.dimensions.items()}
+        """Return a mapping of dimension name to declared chunk size.
+
+        Walks the entire tree so chunk hints declared on ancestor groups are
+        visible to descendants.
+        """
+        out: dict[str, int | None] = {
+            n: d.chunks for n, d in self.dimensions.items()
+        }
+        for grp in self.iter_groups():
+            for n, d in grp.dimensions.items():
+                out.setdefault(n, d.chunks)
+        return out
 
     def variables_by_role(
         self, *, immutable: bool | None = None
     ) -> tuple[VariableSchema, ...]:
-        """Return the variables, optionally filtered by their immutable flag.
+        """Return root-group variables, optionally filtered by ``immutable``.
 
         Args:
             immutable: If given, keep only variables whose ``immutable``
@@ -75,45 +72,98 @@ class DatasetSchema:
             if immutable is None or v.immutable == immutable
         )
 
+    def all_variables_by_role(
+        self, *, immutable: bool | None = None
+    ) -> dict[str, VariableSchema]:
+        """Return all variables across the tree (keyed by absolute path)."""
+        return {
+            path: v
+            for path, v in self.all_variables().items()
+            if immutable is None or v.immutable == immutable
+        }
+
     # Mutators that return a new schema --------------------------------
 
     def with_partition_axis(self, axis: str) -> DatasetSchema:
-        """Mark each variable immutable iff it does not span ``axis``."""
-        if axis not in self.dimensions:
+        """Mark each variable immutable iff it does not span ``axis``.
+
+        Recurses into nested groups. Variables in nested groups that don't
+        span ``axis`` are also marked immutable.
+        """
+        if axis not in self.dimensions and not any(
+            axis in g.dimensions for g in self.iter_groups()
+        ):
             raise SchemaError(
                 f"partitioning axis {axis!r} is not a known dimension"
             )
-        new_vars = {
-            name: var.with_immutable(axis not in var.dimensions)
-            for name, var in self.variables.items()
-        }
+
+        def _retag(group: GroupSchema) -> GroupSchema:
+            new_vars = {
+                name: var.with_immutable(axis not in var.dimensions)
+                for name, var in group.variables.items()
+            }
+            new_groups = {n: _retag(g) for n, g in group.groups.items()}
+            return group._replace(variables=new_vars, groups=new_groups)
+
+        retagged = _retag(self)
         return DatasetSchema(
-            dimensions=dict(self.dimensions),
-            variables=new_vars,
-            attrs=dict(self.attrs),
+            dimensions=dict(retagged.dimensions),
+            variables=dict(retagged.variables),
+            groups=dict(retagged.groups),
+            attrs=dict(retagged.attrs),
             format_version=self.format_version,
         )
 
     def select(self, names: Iterable[str]) -> DatasetSchema:
         """Return a new schema restricted to the named variables.
 
-        Args:
-            names: Names of variables to keep.
-
-        Returns:
-            A new schema containing only the requested variables.
+        ``names`` may be short names (resolved against the root group) or
+        absolute paths (``/grp/sub/var``). Empty groups in the tree are
+        pruned from the result.
 
         Raises:
             SchemaError: If any of ``names`` is not a known variable.
 
         """
-        wanted = set(names)
-        missing = wanted - set(self.variables)
-        if missing:
-            raise SchemaError(f"unknown variables: {sorted(missing)}")
+        wanted_paths = set()
+        all_vars = self.all_variables()
+        # Resolve each requested name to its absolute path.
+        for n in names:
+            if n.startswith("/"):
+                key = n.lstrip("/")
+            else:
+                key = n
+            if key in all_vars:
+                wanted_paths.add(key)
+            elif n in self.variables:  # short name at root
+                wanted_paths.add(n)
+            else:
+                raise SchemaError(f"unknown variable {n!r}")
+
+        def _filter(group: GroupSchema, prefix: str) -> GroupSchema | None:
+            kept_vars = {
+                vn: v
+                for vn, v in group.variables.items()
+                if (f"{prefix}{vn}" if prefix else vn) in wanted_paths
+            }
+            kept_groups: dict[str, GroupSchema] = {}
+            for gn, g in group.groups.items():
+                sub = _filter(g, f"{prefix}{gn}/")
+                if sub is not None:
+                    kept_groups[gn] = sub
+            if (
+                not kept_vars
+                and not kept_groups
+                and prefix  # never prune the root
+            ):
+                return None
+            return group._replace(variables=kept_vars, groups=kept_groups)
+
+        filtered = _filter(self, "") or self._replace(variables={}, groups={})
         return DatasetSchema(
             dimensions=dict(self.dimensions),
-            variables={n: self.variables[n] for n in wanted},
+            variables=dict(filtered.variables),
+            groups=dict(filtered.groups),
             attrs=dict(self.attrs),
             format_version=self.format_version,
         )
@@ -121,13 +171,10 @@ class DatasetSchema:
     # JSON round-trip --------------------------------------------------
 
     def to_json(self) -> dict[str, Any]:
-        """Serialize the schema to a JSON-compatible dict."""
-        return {
-            "format_version": self.format_version,
-            "dimensions": [d.to_json() for d in self.dimensions.values()],
-            "variables": [v.to_json() for v in self.variables.values()],
-            "attrs": dict(self.attrs),
-        }
+        """Serialize the schema (root + nested groups) to a JSON dict."""
+        doc = super().to_json()
+        doc["format_version"] = self.format_version
+        return doc
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> DatasetSchema:
@@ -141,9 +188,14 @@ class DatasetSchema:
             v["name"]: VariableSchema.from_json(v)
             for v in payload.get("variables", [])
         }
+        groups = {
+            g["name"]: GroupSchema.from_json(g)
+            for g in payload.get("groups", [])
+        }
         return cls(
             dimensions=dims,
             variables=vars_,
+            groups=groups,
             attrs=payload.get("attrs", {}),
             format_version=payload.get("format_version", FORMAT_VERSION),
         )

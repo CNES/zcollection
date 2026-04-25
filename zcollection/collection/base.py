@@ -360,7 +360,9 @@ class Collection:
         with self._store.session():
             # Immutable variables are written once at the root; they're
             # identical across partitions by definition.
-            if any(v.schema.immutable for v in dataset.variables.values()):
+            if any(
+                v.schema.immutable for v in dataset.all_variables().values()
+            ):
                 write_immutable_dataset(self._store, dataset, overwrite=True)
 
             plan: list[tuple[Any, slice, str]] = [
@@ -657,13 +659,14 @@ class Collection:
 def _rebind_to_schema(dataset: Dataset, schema: DatasetSchema) -> Dataset:
     """Replace each variable's schema reference with ``schema``'s entry.
 
-    Lets a Dataset built from an unbound schema participate in operations
-    that depend on bound metadata (notably ``immutable``).
+    Walks the full group tree so nested-group variables are rebound too.
     """
+    all_vars = dataset.all_variables()
+    all_schema_vars = schema.all_variables()
     rebound: dict[str, Variable] = {}
-    for name, var in dataset.variables.items():
-        target = schema.variables.get(name)
-        rebound[name] = Variable(target, var.to_numpy()) if target else var
+    for path, var in all_vars.items():
+        target = all_schema_vars.get(path)
+        rebound[path] = Variable(target, var.to_numpy()) if target else var
     return Dataset(schema=schema, variables=rebound, attrs=dataset.attrs)
 
 
@@ -671,11 +674,15 @@ def _attach_immutable(
     dataset: Dataset,
     immutable: dict[str, Variable],
 ) -> Dataset:
-    """Return ``dataset`` with the immutable vars merged in (dataset wins)."""
+    """Return ``dataset`` with the immutable vars merged in (dataset wins).
+
+    Keys of ``immutable`` may be short names (root scope) or absolute paths
+    addressing nested groups; ``Dataset.__init__`` handles both.
+    """
     if not immutable:
         return dataset
-    merged = dict(immutable)
-    merged.update(dataset.variables)
+    merged: dict[str, Variable] = dict(immutable)
+    merged.update(dataset.all_variables())
     return Dataset(
         schema=dataset.schema,
         variables=merged,
@@ -684,9 +691,9 @@ def _attach_immutable(
 
 
 def _slice_dataset(dataset: Dataset, *, dim: str, sl: slice) -> Dataset:
-    """Slice every variable that spans ``dim`` by ``sl``; copy others."""
+    """Slice every variable (root or nested) that spans ``dim`` by ``sl``."""
     new_vars: dict[str, Variable] = {}
-    for name, var in dataset.variables.items():
+    for path, var in dataset.all_variables().items():
         if dim in var.dimensions:
             axis = var.dimensions.index(dim)
             slicer = [slice(None)] * var.ndim
@@ -694,25 +701,27 @@ def _slice_dataset(dataset: Dataset, *, dim: str, sl: slice) -> Dataset:
             data = var.to_numpy()[tuple(slicer)]
         else:
             data = var.to_numpy()
-        new_vars[name] = Variable(var.schema, data)
+        new_vars[path] = Variable(var.schema, data)
     return Dataset(
         schema=dataset.schema, variables=new_vars, attrs=dataset.attrs
     )
 
 
 def _concat_datasets(parts: list[Dataset], *, dim: str) -> Dataset:
+    """Concatenate a list of datasets along ``dim``, recursing into groups."""
     if len(parts) == 1:
         return parts[0]
     schema = parts[0].schema
-    names = list(parts[0].variables)
+    paths = list(parts[0].all_variables())
+    parts_vars = [p.all_variables() for p in parts]
     merged: dict[str, Variable] = {}
-    for name in names:
-        ref = parts[0][name]
+    for path in paths:
+        ref = parts_vars[0][path]
         if dim in ref.dimensions:
             axis = ref.dimensions.index(dim)
-            arrs = [p[name].to_numpy() for p in parts]
+            arrs = [pv[path].to_numpy() for pv in parts_vars]
             data = numpy.concatenate(arrs, axis=axis)
         else:
             data = ref.to_numpy()
-        merged[name] = Variable(ref.schema, data)
+        merged[path] = Variable(ref.schema, data)
     return Dataset(schema=schema, variables=merged, attrs=parts[0].attrs)

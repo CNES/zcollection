@@ -9,6 +9,7 @@ collection *is*; nothing outside ``schema/`` reads or writes the
 from .builder import SchemaBuilder
 from .dataset import DatasetSchema
 from .dimension import Dimension
+from .group import GroupSchema
 from .variable import VariableRole, VariableSchema
 from .versioning import FORMAT_VERSION
 
@@ -16,6 +17,7 @@ __all__ = (
     "FORMAT_VERSION",
     "DatasetSchema",
     "Dimension",
+    "GroupSchema",
     "SchemaBuilder",
     "VariableRole",
     "VariableSchema",

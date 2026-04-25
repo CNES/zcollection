@@ -9,7 +9,7 @@ from .api import (
     open_collection,
 )
 from .collection import merge
-from .data import Dataset, Variable
+from .data import Dataset, Group, Variable
 from .errors import (
     CollectionExistsError,
     SchemaError,
@@ -19,6 +19,7 @@ from .errors import (
 from .schema import (
     DatasetSchema,
     Dimension,
+    GroupSchema,
     SchemaBuilder,
     VariableRole,
     VariableSchema,
@@ -32,6 +33,8 @@ __all__ = (
     "Dataset",
     "DatasetSchema",
     "Dimension",
+    "Group",
+    "GroupSchema",
     "LocalStore",
     "MemoryStore",
     "ReadOnlyError",

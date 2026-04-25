@@ -1,6 +1,7 @@
 """Single, polymorphic Variable: holds numpy or dask data plus its schema."""
 
 from typing import TYPE_CHECKING, Any
+import math
 
 import numpy
 
@@ -92,6 +93,11 @@ class Variable:
         """Return the underlying array as-is."""
         return self._data
 
+    @property
+    def nbytes(self) -> int:
+        """Return the total number of bytes spanned by the underlying data."""
+        return math.prod(self.shape) * self.dtype.itemsize
+
     def to_numpy(self) -> numpy.ndarray:
         """Materialise the data as a numpy array."""
         d = self._data
@@ -102,8 +108,7 @@ class Variable:
         return numpy.asarray(d)
 
     def __repr__(self) -> str:
-        """Return a debug representation of the variable."""
-        return (
-            f"Variable(name={self.name!r}, dims={self.dimensions}, "
-            f"dtype={self.dtype}, shape={self.shape}, lazy={self.is_lazy})"
-        )
+        """Return a multi-line, xarray-like representation of the variable."""
+        from ._repr import variable_repr
+
+        return variable_repr(self)
