@@ -13,6 +13,7 @@
    {%- set special = [] -%}
    {%- set inherited_meth = [] -%}
    {%- set skip = ['__abstractmethods__',
+                   '__annotate_func__',
                    '__annotations__',
                    '__dict__',
                    '__doc__',
