@@ -12,6 +12,8 @@ import numpy
 import zcollection3 as zc
 from zcollection3.partitioning import Date
 
+from .probe import CountingProbe
+
 
 @dataclass(frozen=True, slots=True)
 class BenchSpec:
@@ -64,6 +66,13 @@ def _build_dataset(spec: BenchSpec) -> tuple[zc.DatasetSchema, zc.Dataset]:
     return schema, ds
 
 
+def _wrap_with_probe(store: Any) -> CountingProbe:
+    """Replace ``store``'s underlying zarr store with a CountingProbe."""
+    probe = CountingProbe(store.zarr_store())
+    store._store = probe  # type: ignore[attr-defined]
+    return probe
+
+
 def _make_collection(store_url: str, spec: BenchSpec) -> tuple[Any, zc.Dataset]:
     schema, ds = _build_dataset(spec)
     store = zc.open_store(store_url)
@@ -94,24 +103,30 @@ def run_suite(store_url: str, spec: BenchSpec | None = None) -> list[BenchResult
 
     # 1. insert_full_dataset — drives N partitions in one call
     col, ds = _make_collection(store_url, spec)
-    results.append(_timed("insert_full_dataset", lambda: col.insert(ds)))
-
-    # 2. open_collection_cold — fresh process / fresh store handle
-    fresh_store = zc.open_store(store_url, read_only=True)
+    insert_probe = _wrap_with_probe(col.store)
     results.append(_timed(
-        "open_collection_cold",
-        lambda: zc.open_collection(fresh_store, mode="r"),
+        "insert_full_dataset", lambda: col.insert(ds), insert_probe,
     ))
 
-    # 3. query_one_partition_full
-    col_ro = zc.open_collection(zc.open_store(store_url, read_only=True), mode="r")
+    # 2. open_collection_cold — fresh process / fresh store handle
+    open_store = zc.open_store(store_url, read_only=True)
+    open_probe = _wrap_with_probe(open_store)
+    results.append(_timed(
+        "open_collection_cold",
+        lambda: zc.open_collection(open_store, mode="r"),
+        open_probe,
+    ))
+
+    # 3 + 4. query — share one read-only store under a fresh probe per phase
+    query_store = zc.open_store(store_url, read_only=True)
+    query_probe = _wrap_with_probe(query_store)
+    col_ro = zc.open_collection(query_store, mode="r")
     results.append(_timed(
         "query_one_partition_full",
         lambda: col_ro.query(filters="year == 2024 and month == 1"),
+        query_probe,
     ))
-
-    # 4. query_full
-    results.append(_timed("query_full", col_ro.query))
+    results.append(_timed("query_full", col_ro.query, query_probe))
 
     return results
 
