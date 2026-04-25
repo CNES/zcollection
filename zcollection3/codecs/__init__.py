@@ -15,14 +15,19 @@ from .defaults import (
     profile,
     profile_names,
     resolve_codec,
+    shard_target_bytes,
 )
+from .sharding import compute_shard_shape, shard_decision
 
 __all__ = (
     "DEFAULT_PROFILE",
     "PROFILES",
     "CodecStack",
     "auto_codecs",
+    "compute_shard_shape",
     "profile",
     "profile_names",
     "resolve_codec",
+    "shard_decision",
+    "shard_target_bytes",
 )

@@ -7,9 +7,11 @@ from typing import TYPE_CHECKING, Any, Iterable
 
 import numpy
 import zarr
+import zarr.codecs as zcodecs
 from zarr.errors import ZarrUserWarning
 
 from ..codecs import resolve_codec
+from ..codecs.sharding import shard_decision
 from ..data import Dataset, Variable
 from ..store import join_path
 
@@ -20,19 +22,54 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-def _build_codec_kwargs(schema: VariableSchema) -> dict[str, Any]:
-    """Map our CodecStack onto Zarr v3's filters/serializer/compressors trio.
+def _build_array_kwargs(
+    schema: VariableSchema,
+    shape: tuple[int, ...],
+    inner_chunks: tuple[int, ...],
+    dtype: numpy.dtype,
+) -> dict[str, Any]:
+    """Build kwargs for ``create_array``.
 
-    Returns kwargs to splat into ``Group.create_array``. If the stack has no
-    explicit serializer, return an empty dict so Zarr picks defaults.
+    When the variable's :class:`CodecStack` enables sharding, we promote the
+    serializer to a :class:`ShardingCodec` whose inner ``chunk_shape`` is the
+    inner-chunk size, while the outer ``chunks=`` becomes the shard shape.
     """
     stack = schema.codecs
     if stack.array_to_bytes is None:
-        return {}
+        return {"chunks": inner_chunks}
+
+    inner_filters = [resolve_codec(c) for c in stack.array_to_array]
+    inner_compressors = [resolve_codec(c) for c in stack.bytes_to_bytes]
+    inner_serializer = resolve_codec(stack.array_to_bytes)
+
+    shard_shape = (
+        shard_decision(
+            inner_chunks=inner_chunks,
+            shape=shape,
+            dtype=dtype,
+            target_shard_bytes=stack.shard_target_bytes,
+        )
+        if stack.sharded else None
+    )
+
+    if shard_shape is None:
+        return {
+            "chunks": inner_chunks,
+            "filters": inner_filters or "auto",
+            "serializer": inner_serializer,
+            "compressors": inner_compressors or None,
+        }
+
+    inner_codecs: list[Any] = [*inner_filters, inner_serializer, *inner_compressors]
+    sharding = zcodecs.ShardingCodec(
+        chunk_shape=inner_chunks,
+        codecs=inner_codecs,
+    )
     return {
-        "filters": [resolve_codec(c) for c in stack.array_to_array] or "auto",
-        "serializer": resolve_codec(stack.array_to_bytes),
-        "compressors": [resolve_codec(c) for c in stack.bytes_to_bytes] or None,
+        "chunks": shard_shape,
+        "filters": "auto",
+        "serializer": sharding,
+        "compressors": None,
     }
 
 
@@ -72,20 +109,19 @@ def write_partition_dataset(
     for name, var in dataset.variables.items():
         data = var.to_numpy()
         shape = data.shape
-        chunks = _chunks_for(var.schema, shape, dim_chunks)
-        codec_kwargs = _build_codec_kwargs(var.schema)
+        inner_chunks = _chunks_for(var.schema, shape, dim_chunks)
+        array_kwargs = _build_array_kwargs(var.schema, shape, inner_chunks, data.dtype)
         attrs = dict(var.attrs)
         # Persist Zarr v3 dimension names natively.
         arr = group.create_array(
             name=name,
             shape=shape,
-            chunks=chunks,
             dtype=data.dtype,
             fill_value=var.fill_value,
             attributes=attrs,
             dimension_names=list(var.dimensions),
             overwrite=overwrite,
-            **codec_kwargs,
+            **array_kwargs,
         )
         arr[...] = data
 

@@ -1,7 +1,7 @@
 """URL-driven store factory."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from ..errors import StoreError
@@ -12,15 +12,24 @@ if TYPE_CHECKING:
     from .base import Store
 
 
+_CLOUD_SCHEMES = {"s3", "gs", "az", "azure", "abfs", "http", "https"}
+
+
 def open_store(
     path: str,
     *,
     read_only: bool = False,
+    storage_options: dict[str, Any] | None = None,
 ) -> Store:
     """Open a Store given a URL or filesystem path.
 
-    Phase 1 supports ``file://`` and ``memory://``. ``s3://``, ``icechunk://``
-    arrive in later phases.
+    Schemes:
+
+    - ``file://`` (default for bare paths) → :class:`LocalStore`
+    - ``memory://`` → :class:`MemoryStore`
+    - ``s3://``, ``gs://``, ``az://``, ``http(s)://`` → :class:`ObjectStore`
+      (obstore-backed, the only cloud path)
+    - ``icechunk://`` → reserved for Phase 5
     """
     if path == "memory://" or path.startswith("memory://"):
         return MemoryStore()
@@ -34,12 +43,14 @@ def open_store(
             local = parsed.path
         return LocalStore(local, read_only=read_only)
 
-    if scheme in {"s3", "gs", "az", "https", "http"}:
-        raise StoreError(
-            f"scheme {scheme!r} is not supported in Phase 1 of the rewrite; "
-            "S3/cloud arrives in Phase 3."
-        )
     if scheme == "icechunk":
         raise StoreError("Icechunk integration arrives in Phase 5.")
+
+    if scheme in _CLOUD_SCHEMES:
+        from .obstore_store import ObjectStore  # noqa: PLC0415 — optional dep
+
+        return ObjectStore(
+            path, client_options=storage_options, read_only=read_only,
+        )
 
     raise StoreError(f"unrecognised store URL: {path!r}")

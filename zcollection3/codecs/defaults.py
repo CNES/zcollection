@@ -33,6 +33,7 @@ class CodecStack:
     array_to_bytes: CodecDescriptor | None = None
     bytes_to_bytes: tuple[CodecDescriptor, ...] = ()
     sharded: bool = False
+    shard_target_bytes: int | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -40,6 +41,7 @@ class CodecStack:
             "array_to_bytes": self.array_to_bytes,
             "bytes_to_bytes": list(self.bytes_to_bytes),
             "sharded": self.sharded,
+            "shard_target_bytes": self.shard_target_bytes,
         }
 
     @classmethod
@@ -49,6 +51,7 @@ class CodecStack:
             array_to_bytes=payload.get("array_to_bytes"),
             bytes_to_bytes=tuple(payload.get("bytes_to_bytes", [])),
             sharded=bool(payload.get("sharded", False)),
+            shard_target_bytes=payload.get("shard_target_bytes"),
         )
 
 
@@ -72,13 +75,12 @@ class _Profile:
     compressor: CodecDescriptor
 
     def codecs(self, dtype: numpy.dtype) -> CodecStack:
-        # Phase 1: never emit a ShardingCodec; the io layer can promote
-        # to sharding via the ``sharded`` flag once that path lands.
         return CodecStack(
             array_to_array=(),
             array_to_bytes=_bytes_codec(),
             bytes_to_bytes=(self.compressor,),
             sharded=self.sharded,
+            shard_target_bytes=self.target_shard_bytes if self.sharded else None,
         )
 
 
@@ -92,14 +94,14 @@ PROFILES: dict[str, _Profile] = {
     ),
     "cloud-balanced": _Profile(
         name="cloud-balanced",
-        sharded=False,  # phase 1: sharding wired in phase 3
+        sharded=True,
         target_chunk_bytes=2 << 20,
         target_shard_bytes=128 << 20,
         compressor=_zstd(3),
     ),
     "cloud-cold": _Profile(
         name="cloud-cold",
-        sharded=False,
+        sharded=True,
         target_chunk_bytes=2 << 20,
         target_shard_bytes=512 << 20,
         compressor=_zstd(9),
@@ -136,6 +138,7 @@ def profile(
             (compressor,) if compressor is not None else base.bytes_to_bytes
         ),
         sharded=base.sharded,
+        shard_target_bytes=base.shard_target_bytes,
     )
 
 
@@ -148,6 +151,15 @@ def auto_codecs(
     if name not in PROFILES:
         raise KeyError(f"unknown codec profile {name!r}")
     return PROFILES[name].codecs(numpy.dtype(dtype))
+
+
+def shard_target_bytes(profile_name: str | None = None) -> int | None:
+    """Return the target shard byte budget for a profile (``None`` if disabled)."""
+    name = profile_name or DEFAULT_PROFILE
+    if name not in PROFILES:
+        raise KeyError(f"unknown codec profile {name!r}")
+    spec = PROFILES[name]
+    return spec.target_shard_bytes if spec.sharded else None
 
 
 _CODEC_BUILDERS: dict[str, Callable[[dict[str, Any]], Any]] = {

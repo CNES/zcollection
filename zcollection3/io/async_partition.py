@@ -15,27 +15,15 @@ import numpy
 import zarr.api.asynchronous as zarr_async
 from zarr.errors import ZarrUserWarning
 
-from ..codecs import resolve_codec
 from ..data import Dataset, Variable
 from ..store import join_path
-from .partition import _chunks_for
+from .partition import _build_array_kwargs, _chunks_for
 
 if TYPE_CHECKING:
-    from ..schema import DatasetSchema, VariableSchema
+    from ..schema import DatasetSchema
     from ..store import Store
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _build_codec_kwargs(schema: VariableSchema) -> dict[str, Any]:
-    stack = schema.codecs
-    if stack.array_to_bytes is None:
-        return {}
-    return {
-        "filters": [resolve_codec(c) for c in stack.array_to_array] or "auto",
-        "serializer": resolve_codec(stack.array_to_bytes),
-        "compressors": [resolve_codec(c) for c in stack.bytes_to_bytes] or None,
-    }
 
 
 async def write_partition_dataset_async(
@@ -69,12 +57,11 @@ async def write_partition_dataset_async(
         async with sem:
             data = var.to_numpy()
             shape = data.shape
-            chunks = _chunks_for(var.schema, shape, dim_chunks)
-            kw = _build_codec_kwargs(var.schema)
+            inner_chunks = _chunks_for(var.schema, shape, dim_chunks)
+            kw = _build_array_kwargs(var.schema, shape, inner_chunks, data.dtype)
             arr = await group.create_array(
                 name=name,
                 shape=shape,
-                chunks=chunks,
                 dtype=data.dtype,
                 fill_value=var.fill_value,
                 attributes=dict(var.attrs),
