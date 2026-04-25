@@ -12,7 +12,6 @@ Run with::
     python examples/ex_view.py
 """
 
-
 from pathlib import Path
 import shutil
 import tempfile
@@ -58,7 +57,9 @@ ds = zc.Dataset(
         ),
         "partition": zc.Variable(
             schema.variables["partition"],
-            numpy.repeat(numpy.arange(n_partitions, dtype="int64"), rows_per_part),
+            numpy.repeat(
+                numpy.arange(n_partitions, dtype="int64"), rows_per_part
+            ),
         ),
         "var1": zc.Variable(
             schema.variables["var1"],

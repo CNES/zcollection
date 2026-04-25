@@ -215,7 +215,7 @@ class IcechunkStore(Store):
             return None
         try:
             doc = json.loads(bytes(buf.to_bytes()).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except UnicodeDecodeError, json.JSONDecodeError:
             return None
         payload = doc.get("attributes", {}).get(_PAYLOAD_ATTR)
         return payload.encode("utf-8") if isinstance(payload, str) else None

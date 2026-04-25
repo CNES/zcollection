@@ -12,7 +12,6 @@ Run with::
     python examples/ex_collection.py
 """
 
-
 from pathlib import Path
 import pprint
 import shutil
@@ -72,13 +71,17 @@ schema = build_schema()
 # A :py:class:`~zcollection.Dataset` is the in-memory pairing of a schema
 # with concrete numpy (or dask) arrays. There is only one ``Variable`` class
 # in v3 — the ``Array`` / ``DelayedArray`` split from v2 is gone.
-def build_dataset(schema: zc.DatasetSchema, n_partitions: int = 3) -> zc.Dataset:
+def build_dataset(
+    schema: zc.DatasetSchema, n_partitions: int = 3
+) -> zc.Dataset:
     """Build a synthetic dataset matching the given schema."""
     rng = numpy.random.default_rng(42)
     rows_per_part = 10_000
     n = n_partitions * rows_per_part
     time = numpy.arange(n, dtype="int64")
-    partition = numpy.repeat(numpy.arange(n_partitions, dtype="int64"), rows_per_part)
+    partition = numpy.repeat(
+        numpy.arange(n_partitions, dtype="int64"), rows_per_part
+    )
     var1 = rng.standard_normal(size=(n, 240), dtype="float32")
     var2 = numpy.full((n, 240), numpy.float32("nan"))
     return zc.Dataset(

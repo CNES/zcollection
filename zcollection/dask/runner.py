@@ -23,7 +23,7 @@ def _try_get_client() -> Any | None:
         return None
     try:
         return get_client()
-    except (ValueError, RuntimeError):
+    except ValueError, RuntimeError:
         return None
 
 

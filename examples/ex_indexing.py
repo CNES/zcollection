@@ -13,7 +13,6 @@ Run with::
     python examples/ex_indexing.py
 """
 
-
 from collections.abc import Iterator
 import itertools
 from pathlib import Path
@@ -44,7 +43,8 @@ cycles = numpy.repeat(
     numpy.arange(n_cycles, dtype="uint16"), n_passes * rows_per_pass
 )
 passes = numpy.tile(
-    numpy.repeat(numpy.arange(n_passes, dtype="uint16"), rows_per_pass), n_cycles
+    numpy.repeat(numpy.arange(n_passes, dtype="uint16"), rows_per_pass),
+    n_cycles,
 )
 times = numpy.arange(total, dtype="int64")
 

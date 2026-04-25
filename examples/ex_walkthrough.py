@@ -58,7 +58,9 @@ ROWS_PER_PARTITION = 25_000
 rng = numpy.random.default_rng(42)
 n = N_PARTITIONS * ROWS_PER_PARTITION
 time = numpy.arange(n, dtype="int64")
-partition = numpy.repeat(numpy.arange(N_PARTITIONS, dtype="int64"), ROWS_PER_PARTITION)
+partition = numpy.repeat(
+    numpy.arange(N_PARTITIONS, dtype="int64"), ROWS_PER_PARTITION
+)
 ssh = rng.standard_normal(size=(n, 240), dtype="float32")
 
 ds = zc.Dataset(

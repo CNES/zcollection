@@ -90,7 +90,7 @@ class Catalog:
             return None
         try:
             doc = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             # Treat a corrupted catalog as missing; callers will rebuild.
             return None
         paths = tuple(doc.get("paths", ()))
