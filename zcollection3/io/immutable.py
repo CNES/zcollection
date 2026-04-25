@@ -9,13 +9,11 @@ on cold open by ``O(N_partitions)`` for large collections.
 from __future__ import annotations
 
 import logging
-import warnings
 from typing import TYPE_CHECKING, Iterable
 
 import numpy
 import zarr
 import zarr.api.asynchronous as zarr_async
-from zarr.errors import ZarrUserWarning
 
 from ..data import Dataset, Variable
 from ..store.layout import IMMUTABLE_DIR
@@ -72,9 +70,6 @@ def write_immutable_dataset(
         )
         arr[...] = data
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", ZarrUserWarning)
-        zarr.consolidate_metadata(zstore, path=IMMUTABLE_DIR)
     return names
 
 
@@ -108,11 +103,9 @@ async def open_immutable_dataset_async(
         return {}
 
     zstore = store.zarr_store()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", ZarrUserWarning)
-        group = await zarr_async.open_group(
-            store=zstore, path=IMMUTABLE_DIR, mode="r",
-        )
+    group = await zarr_async.open_group(
+        store=zstore, path=IMMUTABLE_DIR, mode="r",
+    )
 
     out: dict[str, Variable] = {}
     for name in targets:

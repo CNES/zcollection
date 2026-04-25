@@ -8,12 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import warnings
 from typing import TYPE_CHECKING, Any, Iterable
 
 import numpy
 import zarr.api.asynchronous as zarr_async
-from zarr.errors import ZarrUserWarning
 
 from ..data import Dataset, Variable
 from ..store import join_path
@@ -77,10 +75,6 @@ async def write_partition_dataset_async(
         _write_one(name, var) for name, var in dataset.variables.items()
     ])
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", ZarrUserWarning)
-        await zarr_async.consolidate_metadata(zstore, path=partition_path)
-
 
 async def open_partition_dataset_async(
     store: Store,
@@ -92,11 +86,9 @@ async def open_partition_dataset_async(
 ) -> Dataset:
     """Async open of one partition group; reads variable arrays concurrently."""
     zstore = store.zarr_store()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", ZarrUserWarning)
-        group = await zarr_async.open_group(
-            store=zstore, path=partition_path, mode="r"
-        )
+    group = await zarr_async.open_group(
+        store=zstore, path=partition_path, mode="r",
+    )
 
     wanted = set(variables) if variables is not None else None
     sem = asyncio.Semaphore(max(1, concurrency))

@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 import logging
-import warnings
 from typing import TYPE_CHECKING, Any, Iterable
 
 import numpy
 import zarr
 import zarr.codecs as zcodecs
-from zarr.errors import ZarrUserWarning
 
 from ..codecs import resolve_codec
 from ..codecs.sharding import shard_decision
@@ -126,13 +124,6 @@ def write_partition_dataset(
             **array_kwargs,
         )
         arr[...] = data
-
-    # Per-partition consolidation is by design: one GET reopens the whole
-    # partition. The Zarr v3 spec hasn't blessed it yet, so silence the
-    # advisory warning rather than letting it bubble up to users.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", ZarrUserWarning)
-        zarr.consolidate_metadata(zstore, path=partition_path)
 
 
 def partition_exists(store: Store, partition_path: str) -> bool:
