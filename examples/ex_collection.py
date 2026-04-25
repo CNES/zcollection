@@ -44,6 +44,7 @@ if target.exists():
 # :py:class:`~zcollection.SchemaBuilder` (aliased as ``zc.Schema()``) declares
 # dimensions and variables up front, including their codecs.
 def build_schema() -> zc.DatasetSchema:
+    """Build the dataset schema for the example."""
     return (
         zc.Schema()
         .with_dimension("time", chunks=4096)
@@ -72,6 +73,7 @@ schema = build_schema()
 # with concrete numpy (or dask) arrays. There is only one ``Variable`` class
 # in v3 — the ``Array`` / ``DelayedArray`` split from v2 is gone.
 def build_dataset(schema: zc.DatasetSchema, n_partitions: int = 3) -> zc.Dataset:
+    """Build a synthetic dataset matching the given schema."""
     rng = numpy.random.default_rng(42)
     rows_per_part = 10_000
     n = n_partitions * rows_per_part
@@ -168,6 +170,7 @@ print(f"variable subset: {tuple(subset.variables)}")
 # ``filters`` after applying ``fn`` to each one. ``fn`` receives a Dataset
 # and must return a new Dataset with the same dimensions.
 def square_var1(ds: zc.Dataset) -> zc.Dataset:
+    """Return a dataset with ``var1`` squared."""
     arr = ds["var1"].to_numpy() ** 2
     return zc.Dataset(
         schema=ds.schema,

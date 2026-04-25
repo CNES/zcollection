@@ -22,6 +22,14 @@ class Sequence:
     name = "sequence"
 
     def __init__(self, variables: tuple[str, ...], *, dimension: str) -> None:
+        """Initialize the sequence partitioning.
+
+        Args:
+            variables: The variable(s) to partition by; must be at least one.
+            dimension: The dimension to partition along; if ``None``, inferred
+                from the variable name.
+
+        """
         if not variables:
             raise PartitionError("Sequence requires at least one variable")
         self._axis = tuple(variables)
@@ -29,13 +37,16 @@ class Sequence:
 
     @property
     def axis(self) -> tuple[str, ...]:
+        """Return the partition-key variable names."""
         return self._axis
 
     @property
     def dimension(self) -> str:
+        """Return the dimension this partitioning splits."""
         return self._dimension
 
     def split(self, dataset: Dataset) -> Iterator[tuple[PartitionKey, slice]]:
+        """Yield ``(key, slice)`` for each unique tuple in ``dataset``."""
         cols: dict[str, numpy.ndarray] = {}
         for name in self._axis:
             if name not in dataset:
@@ -57,9 +68,11 @@ class Sequence:
             yield key, sl
 
     def encode(self, key: PartitionKey) -> str:
+        """Encode a key as a relative storage path."""
         return "/".join(f"{name}={value}" for name, value in key)
 
     def decode(self, path: str) -> PartitionKey:
+        """Decode a relative storage path into a key."""
         parts: list[tuple[str, int]] = []
         for token in path.strip("/").split("/"):
             if "=" not in token:
@@ -71,6 +84,7 @@ class Sequence:
         return tuple(parts)
 
     def to_json(self) -> dict[str, Any]:
+        """Return a JSON-serializable description of the partitioning."""
         return {
             "name": self.name,
             "variables": list(self._axis),
@@ -79,6 +93,7 @@ class Sequence:
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> Sequence:
+        """Reconstruct a Sequence partitioning from its JSON payload."""
         return cls(
             variables=tuple(payload["variables"]),
             dimension=payload["dimension"],

@@ -16,15 +16,19 @@ class StoreSession:
     transactional: bool = False
 
     def commit(self, message: str | None = None) -> None:
+        """Commit the session; the base implementation is a no-op."""
         return None
 
     def rollback(self) -> None:
+        """Roll back the session; the base implementation is a no-op."""
         return None
 
     def __enter__(self) -> Self:
+        """Enter the session context."""
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
+        """Commit on clean exit, roll back on exception."""
         if exc_type is None:
             self.commit()
         else:
@@ -55,13 +59,16 @@ class Store(ABC):
         """Return the underlying zarr.abc.store.Store instance."""
 
     @abstractmethod
-    def exists(self, key: str) -> bool: ...
+    def exists(self, key: str) -> bool:
+        """Return whether ``key`` is present in the store."""
 
     @abstractmethod
-    def read_bytes(self, key: str) -> bytes | None: ...
+    def read_bytes(self, key: str) -> bytes | None:
+        """Return the raw bytes stored at ``key`` or ``None`` if absent."""
 
     @abstractmethod
-    def write_bytes(self, key: str, data: bytes) -> None: ...
+    def write_bytes(self, key: str, data: bytes) -> None:
+        """Write ``data`` at ``key`` (overwriting any existing value)."""
 
     @abstractmethod
     def list_prefix(self, prefix: str) -> Iterator[str]:
@@ -72,10 +79,12 @@ class Store(ABC):
         """Yield direct children (groups + arrays) under ``prefix``."""
 
     @abstractmethod
-    def delete_prefix(self, prefix: str) -> None: ...
+    def delete_prefix(self, prefix: str) -> None:
+        """Recursively delete everything under ``prefix``."""
 
     @contextmanager
     def session(self) -> Iterator[StoreSession]:
+        """Yield a :class:`StoreSession` for the duration of a write block."""
         sess = StoreSession()
         with sess:
             yield sess

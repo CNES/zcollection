@@ -62,6 +62,17 @@ class Collection:
         catalog_enabled: bool = False,
         read_only: bool = False,
     ) -> None:
+        """Initialize a Collection.
+
+        Args:
+            store: Backing store for the collection.
+            schema: Bound dataset schema describing variables.
+            axis: Name of the partition axis.
+            partitioning: Partitioning strategy.
+            catalog_enabled: Whether to maintain a catalog of partitions.
+            read_only: Whether the collection should refuse mutations.
+
+        """
         self._store = store
         self._schema = schema
         self._axis = axis
@@ -83,6 +94,37 @@ class Collection:
         catalog_enabled: bool = False,
         overwrite: bool = False,
     ) -> Collection:
+        """Create a new collection on ``store`` and return its handle.
+
+        The collection's root config (``_zcollection.json``) is written
+        immediately. Variables that are not partitioned along ``axis`` are
+        treated as immutable and lifted into the ``_immutable/`` group at
+        first insert.
+
+        Args:
+            store: The backing :class:`~zcollection.store.Store`.
+            schema: The dataset schema. It is rebound to ``axis`` so that
+                variables that don't depend on ``axis`` become immutable.
+            axis: Name of the partition axis (must be a dimension of
+                ``schema``).
+            partitioning: Partitioning strategy (e.g. ``Date``, ``Sequence``,
+                ``GroupedSequence``).
+            catalog_enabled: If ``True``, maintain a sharded ``_catalog/``
+                group listing partition paths so that ``partitions()`` and
+                cold opens skip the O(N) directory walk.
+            overwrite: If ``True``, replace any existing collection root at
+                this location. If ``False`` (default) and a root exists,
+                :class:`~zcollection.errors.CollectionExistsError` is
+                raised.
+
+        Returns:
+            The newly-created :class:`Collection`, ready to ``insert``.
+
+        Raises:
+            CollectionExistsError: If a collection already exists at
+                ``store.root_uri`` and ``overwrite=False``.
+
+        """
         if store.exists(CONFIG_FILE) and not overwrite:
             raise CollectionExistsError(
                 f"a collection already exists at {store.root_uri}"
@@ -106,6 +148,26 @@ class Collection:
 
     @classmethod
     def open(cls, store: Store, *, read_only: bool = False) -> Collection:
+        """Open an existing collection from ``store``.
+
+        Reads the root config (axis, partitioning, schema, catalog flag)
+        and returns a handle pointing at it.
+
+        Args:
+            store: The store backing the collection.
+            read_only: If ``True``, mutating methods (``insert``,
+                ``drop_partitions``, ``update``, ``repair_catalog``) raise
+                :class:`~zcollection.errors.ReadOnlyError` instead of
+                writing.
+
+        Returns:
+            A :class:`Collection` bound to the existing root.
+
+        Raises:
+            CollectionNotFoundError: If no collection exists at
+                ``store.root_uri``.
+
+        """
         try:
             doc = read_root_config(store)
         except CollectionNotFoundError:
@@ -126,28 +188,47 @@ class Collection:
 
     @property
     def store(self) -> Store:
+        """Return the backing store."""
         return self._store
 
     @property
     def schema(self) -> DatasetSchema:
+        """Return the bound dataset schema."""
         return self._schema
 
     @property
     def axis(self) -> str:
+        """Return the name of the partition axis."""
         return self._axis
 
     @property
     def partitioning(self) -> Partitioning:
+        """Return the partitioning strategy."""
         return self._partitioning
 
     @property
     def read_only(self) -> bool:
+        """Return whether the collection is read-only."""
         return self._read_only
 
     # --- Listing ---------------------------------------------------
 
     def partitions(self, *, filters: str | None = None) -> Iterator[str]:
-        """Yield relative partition paths in sorted order, optionally filtered."""
+        """Yield relative partition paths in sorted order, optionally filtered.
+
+        Args:
+            filters: An optional partition-key expression (e.g.
+                ``"year == 2024 and month >= 3"``, ``"cycle in [1, 2]"``).
+                Only paths whose decoded key satisfies the expression are
+                yielded. Comparable types are integers, strings, and
+                anything that ``Partitioning.decode`` produces. ``None``
+                yields every partition.
+
+        Yields:
+            Relative partition paths (e.g. ``"year=2024/month=03"``),
+            sorted lexicographically.
+
+        """
         predicate = compile_filter(filters)
         for path in self._enumerate_partitions():
             try:
@@ -204,6 +285,45 @@ class Collection:
         overwrite: bool = True,
         merge: MergeCallable | str | None = None,
     ) -> list[str]:
+        """Insert ``dataset`` into the collection.
+
+        The dataset is split by the collection's partitioning. Each slice
+        is written under the matching partition path. Immutable variables
+        (those that don't depend on the partition axis) are written once
+        at the root and shared across partitions.
+
+        On a transactional store (e.g.
+        :class:`~zcollection.store.IcechunkStore`) the entire insert is
+        wrapped in a single commit — a crash mid-insert leaves no partial
+        state.
+
+        Args:
+            dataset: The data to insert. Variables can be backed by numpy,
+                Dask, or Zarr ``AsyncArray``.
+            overwrite: If a partition already exists, whether to overwrite
+                the chunks (``True``, default) or fail. Has no effect when
+                ``merge`` is set, since merging implies an overwrite of
+                the merged result.
+            merge: Strategy for combining the inserted data with an
+                existing partition. Either a built-in name
+                (``"replace"`` / ``"concat"`` / ``"time_series"`` /
+                ``"upsert"``), a :class:`~zcollection.merge.MergeCallable`,
+                or ``None`` (default — partitions are written as-is and
+                existing chunks are overwritten by ``overwrite=True``).
+
+        Returns:
+            The list of partition paths that were written, in the order
+            they were produced.
+
+        Raises:
+            ReadOnlyError: If the collection was opened with
+                ``read_only=True``.
+            KeyError: If ``merge`` is a string that doesn't match a
+                built-in strategy.
+            PartitionError: If ``dataset`` is missing variables required
+                by the partitioning.
+
+        """
         from ..dask.scheduler import run_sync
 
         return run_sync(
@@ -217,6 +337,7 @@ class Collection:
         overwrite: bool = True,
         merge: MergeCallable | str | None = None,
     ) -> list[str]:
+        """Async variant of :meth:`insert`."""
         self._require_writable()
         merge_fn = merge_mod.resolve(merge)
         concurrency = max(1, int(config_get("partition.concurrency")))
@@ -286,6 +407,26 @@ class Collection:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> Dataset | None:
+        """Read matching partitions and return the concatenated dataset.
+
+        Partitions are loaded concurrently up to
+        ``zcollection.config["partition.concurrency"]``. The result has
+        the immutable group's variables merged in (the partition's data
+        wins on name conflict).
+
+        Args:
+            filters: A partition-key predicate; see :meth:`partitions`.
+                ``None`` reads every partition.
+            variables: Iterable of variable names to load. ``None``
+                (default) loads every variable. Loading a subset is the
+                primary way to keep cold S3 reads cheap.
+
+        Returns:
+            The concatenated :class:`~zcollection.Dataset` along the
+            partitioning dimension, or ``None`` if no partition matched
+            ``filters``.
+
+        """
         from ..dask.scheduler import run_sync
 
         return run_sync(self.query_async(filters=filters, variables=variables))
@@ -296,6 +437,7 @@ class Collection:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> Dataset | None:
+        """Async variant of :meth:`query`."""
         wanted = list(variables) if variables is not None else None
         parts = list(self.partitions(filters=filters))
         if not parts:
@@ -328,6 +470,25 @@ class Collection:
     # --- Drop ------------------------------------------------------
 
     def drop_partitions(self, *, filters: str | None = None) -> list[str]:
+        """Delete matching partitions.
+
+        Wrapped in a store session so transactional backends commit the
+        whole drop atomically.
+
+        Args:
+            filters: A partition-key predicate; see :meth:`partitions`.
+                If ``None``, **every** partition is dropped — pass an
+                explicit filter when you don't mean that.
+
+        Returns:
+            The list of partition paths that were removed, in the order
+            they were processed.
+
+        Raises:
+            ReadOnlyError: If the collection was opened with
+                ``read_only=True``.
+
+        """
         self._require_writable()
         dropped: list[str] = []
         with self._store.session():
@@ -347,7 +508,22 @@ class Collection:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> dict[str, Any]:
-        """Apply ``fn`` to each partition's dataset and return ``{path: result}``."""
+        """Apply ``fn`` to each matching partition and collect the results.
+
+        ``fn`` receives the partition :class:`~zcollection.Dataset` with
+        the immutable group merged in. Read-only — the partition is not
+        written back. Use :meth:`update` to persist transformed data.
+
+        Args:
+            fn: Callable applied to each partition dataset; its return
+                value is stored against the partition path.
+            filters: Partition-key predicate; see :meth:`partitions`.
+            variables: Optional whitelist of variables to load.
+
+        Returns:
+            A mapping ``{partition_path: fn(dataset)}``.
+
+        """
         from ..dask.scheduler import run_sync
 
         return run_sync(
@@ -361,6 +537,7 @@ class Collection:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> dict[str, Any]:
+        """Async variant of :meth:`map`."""
         wanted = list(variables) if variables is not None else None
         parts = list(self.partitions(filters=filters))
         concurrency = max(1, int(config_get("partition.concurrency")))
@@ -391,7 +568,30 @@ class Collection:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> list[str]:
-        """Read each partition, apply ``fn`` returning a new Dataset, write back."""
+        """Read each matching partition, transform it, and write it back.
+
+        ``fn`` is called per partition with the merged dataset (immutable
+        group attached). It must return a :class:`~zcollection.Dataset`
+        with the same partitioning dimension and length, ready to
+        replace the partition's contents.
+
+        Args:
+            fn: Pure function ``Dataset -> Dataset`` applied to each
+                matching partition.
+            filters: Partition-key predicate; see :meth:`partitions`.
+            variables: Optional whitelist of variables to load before
+                calling ``fn``. Variables that are not loaded remain
+                untouched on disk.
+
+        Returns:
+            The list of partition paths that were written, in the order
+            they were processed.
+
+        Raises:
+            ReadOnlyError: If the collection was opened with
+                ``read_only=True``.
+
+        """
         from ..dask.scheduler import run_sync
 
         return run_sync(
@@ -405,6 +605,7 @@ class Collection:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> list[str]:
+        """Async variant of :meth:`update`."""
         self._require_writable()
         wanted = list(variables) if variables is not None else None
         parts = list(self.partitions(filters=filters))

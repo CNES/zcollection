@@ -20,7 +20,7 @@ _REGISTRY: dict[tuple[int, int], Upgrader] = {}
 def register(
     from_version: int, to_version: int
 ) -> Callable[[Upgrader], Upgrader]:
-    """Decorator to register an upgrader for a (from, to) version pair."""
+    """Register an upgrader for a (from, to) version pair."""
 
     def wrap(fn: Upgrader) -> Upgrader:
         _REGISTRY[(from_version, to_version)] = fn

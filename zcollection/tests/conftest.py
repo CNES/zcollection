@@ -9,6 +9,7 @@ from zcollection.partitioning import Sequence
 
 @pytest.fixture
 def schema() -> zc.DatasetSchema:
+    """Provide a small dataset schema fixture for each test."""
     return (
         zc.Schema()
         .with_dimension("num", size=None, chunks=4)
@@ -22,6 +23,7 @@ def schema() -> zc.DatasetSchema:
 
 @pytest.fixture
 def dataset(schema: zc.DatasetSchema) -> zc.Dataset:
+    """Provide a populated in-memory dataset fixture for each test."""
     return zc.Dataset(
         schema=schema,
         variables={
@@ -43,12 +45,13 @@ def dataset(schema: zc.DatasetSchema) -> zc.Dataset:
 
 @pytest.fixture
 def partitioning() -> Sequence:
+    """Provide a Sequence partitioning over the ``num`` dimension."""
     return Sequence(("num",), dimension="num")
 
 
 @pytest.fixture(params=["memory", "local"])
 def store(request, tmp_path):
-    """A fresh Store, parametrised across MemoryStore and LocalStore."""
+    """Provide a fresh Store, parametrised across MemoryStore and LocalStore."""
     if request.param == "memory":
         return zc.MemoryStore()
     return zc.LocalStore(tmp_path / "col")

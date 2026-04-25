@@ -22,6 +22,7 @@ class DatasetSchema:
     format_version: int = FORMAT_VERSION
 
     def __post_init__(self) -> None:
+        """Freeze the dimension/variable/attribute maps and validate references."""
         # Freeze maps and validate dimension references.
         dims = dict(self.dimensions)
         vars_ = dict(self.variables)
@@ -42,15 +43,27 @@ class DatasetSchema:
 
     @property
     def dim_sizes(self) -> dict[str, int | None]:
+        """Return a mapping of dimension name to declared size."""
         return {n: d.size for n, d in self.dimensions.items()}
 
     @property
     def dim_chunks(self) -> dict[str, int | None]:
+        """Return a mapping of dimension name to declared chunk size."""
         return {n: d.chunks for n, d in self.dimensions.items()}
 
     def variables_by_role(
         self, *, immutable: bool | None = None
     ) -> tuple[VariableSchema, ...]:
+        """Return the variables, optionally filtered by their immutable flag.
+
+        Args:
+            immutable: If given, keep only variables whose ``immutable``
+                attribute matches this value.
+
+        Returns:
+            A tuple of the matching variables in declaration order.
+
+        """
         return tuple(
             v
             for v in self.variables.values()
@@ -77,6 +90,18 @@ class DatasetSchema:
         )
 
     def select(self, names: Iterable[str]) -> DatasetSchema:
+        """Return a new schema restricted to the named variables.
+
+        Args:
+            names: Names of variables to keep.
+
+        Returns:
+            A new schema containing only the requested variables.
+
+        Raises:
+            SchemaError: If any of ``names`` is not a known variable.
+
+        """
         wanted = set(names)
         missing = wanted - set(self.variables)
         if missing:
@@ -91,6 +116,7 @@ class DatasetSchema:
     # JSON round-trip --------------------------------------------------
 
     def to_json(self) -> dict[str, Any]:
+        """Serialize the schema to a JSON-compatible dict."""
         return {
             "format_version": self.format_version,
             "dimensions": [d.to_json() for d in self.dimensions.values()],
@@ -100,6 +126,7 @@ class DatasetSchema:
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> DatasetSchema:
+        """Build a schema from a JSON-compatible dict, upgrading older formats."""
         payload = upgrade(payload)
         dims = {
             d["name"]: Dimension.from_json(d)

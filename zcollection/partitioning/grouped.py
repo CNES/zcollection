@@ -37,6 +37,16 @@ class GroupedSequence(Sequence):
         size: int,
         start: int = 0,
     ) -> None:
+        """Initialize the grouped-sequence partitioning.
+
+        Args:
+            variables: The variable(s) to partition by; must be at least one.
+            dimension: The dimension to partition along; if ``None``, inferred
+                from the variable name.
+            size: The bucket size for the last variable; must be ≥ 2.
+            start: The bucket origin for the last variable; defaults to 0.
+
+        """
         super().__init__(variables, dimension=dimension)
         if size < _MIN_GROUP_SIZE:
             raise PartitionError(
@@ -47,13 +57,16 @@ class GroupedSequence(Sequence):
 
     @property
     def size(self) -> int:
+        """Return the bucket size for the grouped variable."""
         return self._size
 
     @property
     def start(self) -> int:
+        """Return the bucket origin for the grouped variable."""
         return self._start
 
     def split(self, dataset: Dataset) -> Iterator[tuple[PartitionKey, slice]]:
+        """Yield ``(key, slice)`` for each contiguous bucket in ``dataset``."""
         cols: dict[str, numpy.ndarray] = {}
         names = list(self.axis)
         for name in names:
@@ -87,6 +100,7 @@ class GroupedSequence(Sequence):
             yield key, sl
 
     def to_json(self) -> dict[str, Any]:
+        """Return a JSON-serializable description of the partitioning."""
         return {
             "name": self.name,
             "variables": list(self.axis),
@@ -97,6 +111,7 @@ class GroupedSequence(Sequence):
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> GroupedSequence:
+        """Reconstruct a GroupedSequence from its JSON payload."""
         return cls(
             tuple(payload["variables"]),
             dimension=payload["dimension"],

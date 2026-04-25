@@ -2,8 +2,10 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""This script is the entry point for building, distributing and installing
-this module using distutils/setuptools."""
+"""Entry point for building, distributing and installing this module.
+
+Uses distutils/setuptools.
+"""
 
 import pathlib
 
@@ -15,8 +17,10 @@ WORKING_DIRECTORY = pathlib.Path(__file__).parent.absolute()
 
 
 class SDist(setuptools.command.sdist.sdist):
-    """Custom sdist command that copies the pytest configuration file into the
-    package."""
+    """Copy the pytest configuration file into the package.
+
+    Copies the pytest configuration file into the package.
+    """
 
     user_options = setuptools.command.sdist.sdist.user_options
 

@@ -19,6 +19,13 @@ class Variable:
     __slots__ = ("_data", "schema")
 
     def __init__(self, schema: VariableSchema, data: Any) -> None:
+        """Initialize a Variable.
+
+        Args:
+            schema: Variable schema describing dtype, dims and metadata.
+            data: Underlying array (numpy or dask).
+
+        """
         self.schema = schema
         self._data = data
         self._validate()
@@ -39,41 +46,51 @@ class Variable:
 
     @property
     def name(self) -> str:
+        """Return the variable name."""
         return self.schema.name
 
     @property
     def dimensions(self) -> tuple[str, ...]:
+        """Return the dimension names."""
         return self.schema.dimensions
 
     @property
     def dtype(self) -> numpy.dtype:
+        """Return the numpy dtype."""
         return self.schema.dtype
 
     @property
     def shape(self) -> tuple[int, ...]:
+        """Return the shape of the underlying data."""
         return tuple(getattr(self._data, "shape", ()))
 
     @property
     def ndim(self) -> int:
+        """Return the number of dimensions."""
         return self.schema.ndim
 
     @property
     def fill_value(self) -> Any:
+        """Return the schema fill value."""
         return self.schema.fill_value
 
     @property
     def attrs(self) -> dict[str, Any]:
+        """Return a copy of the schema attributes."""
         return dict(self.schema.attrs)
 
     @property
     def is_lazy(self) -> bool:
+        """Return whether the underlying data is non-numpy (e.g. dask)."""
         return not isinstance(self._data, numpy.ndarray)
 
     @property
     def data(self) -> Any:
+        """Return the underlying array as-is."""
         return self._data
 
     def to_numpy(self) -> numpy.ndarray:
+        """Materialise the data as a numpy array."""
         d = self._data
         if isinstance(d, numpy.ndarray):
             return d
@@ -82,6 +99,7 @@ class Variable:
         return numpy.asarray(d)
 
     def __repr__(self) -> str:
+        """Return a debug representation of the variable."""
         return (
             f"Variable(name={self.name!r}, dims={self.dimensions}, "
             f"dtype={self.dtype}, shape={self.shape}, lazy={self.is_lazy})"

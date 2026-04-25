@@ -28,6 +28,8 @@ class BenchSpec:
 
 @dataclass(slots=True)
 class BenchResult:
+    """Result of a single benchmark scenario."""
+
     name: str
     seconds: float
     counts: dict[str, int] = field(default_factory=dict)
@@ -148,6 +150,7 @@ def run_suite(
 
 
 def dump_json(results: list[BenchResult], path: str | Path) -> None:
+    """Write the results list to ``path`` as indented JSON."""
     Path(path).write_text(json.dumps([asdict(r) for r in results], indent=2))
 
 

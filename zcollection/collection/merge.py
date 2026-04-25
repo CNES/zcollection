@@ -33,7 +33,9 @@ class MergeCallable(Protocol):
         *,
         axis: str,
         partitioning_dim: str,
-    ) -> Dataset: ...
+    ) -> Dataset:
+        """Return the dataset to write given existing and inserted slices."""
+        ...
 
 
 def replace(
@@ -43,7 +45,18 @@ def replace(
     axis: str,
     partitioning_dim: str,
 ) -> Dataset:
-    """Drop ``existing`` entirely; only ``inserted`` is written."""
+    """Drop ``existing`` entirely; only ``inserted`` is written.
+
+    Args:
+        existing: Dataset already on disk (ignored).
+        inserted: New dataset to write.
+        axis: Unused; kept for protocol compatibility.
+        partitioning_dim: Unused; kept for protocol compatibility.
+
+    Returns:
+        ``inserted`` unchanged.
+
+    """
     return inserted
 
 
@@ -54,7 +67,19 @@ def concat(
     axis: str,
     partitioning_dim: str,
 ) -> Dataset:
-    """Append ``inserted`` after ``existing`` along ``partitioning_dim``."""
+    """Append ``inserted`` after ``existing`` along ``partitioning_dim``.
+
+    Args:
+        existing: Dataset already on disk for this partition.
+        inserted: New dataset to append.
+        axis: Unused; kept for protocol compatibility.
+        partitioning_dim: Dimension along which to concatenate.
+
+    Returns:
+        The concatenation ``existing || inserted``. No deduplication or
+        sorting is performed.
+
+    """
     return _concat_along(existing, inserted, partitioning_dim)
 
 
@@ -67,9 +92,23 @@ def time_series(
 ) -> Dataset:
     """Time-aware merge for monotonic datetime axes.
 
-    The axis variable on each side is read; rows in ``existing`` that fall
-    inside ``[inserted_min, inserted_max]`` are dropped, then the remaining
-    existing slice is concatenated with ``inserted`` and re-sorted by axis.
+    Rows in ``existing`` whose axis value falls inside
+    ``[inserted_min, inserted_max]`` are dropped wholesale, the remaining
+    rows are concatenated with ``inserted``, and the result is sorted by
+    axis.
+
+    Args:
+        existing: Dataset already on disk.
+        inserted: New dataset.
+        axis: Name of the time variable on both sides.
+        partitioning_dim: Dimension along which to slice and concat.
+
+    Returns:
+        The merged, axis-sorted dataset.
+
+    Raises:
+        ValueError: If ``axis`` is not a variable on both sides.
+
     """
     if axis not in existing or axis not in inserted:
         raise ValueError(
@@ -125,6 +164,24 @@ def upsert(
             ds,
             merge=zcollection.merge.upsert_within(numpy.timedelta64(500, "ms")),
         )
+
+    Args:
+        existing: Dataset already on disk.
+        inserted: New dataset.
+        axis: Name of the matching variable on both sides (a time
+            variable for altimetry workflows).
+        partitioning_dim: Dimension along which to slice rows.
+        tolerance: ``None`` for exact equality, or a scalar for
+            nearest-neighbour matching. For datetime axes pass a
+            ``numpy.timedelta64`` (e.g. ``timedelta64(500, "ms")``); for
+            numeric axes pass a plain float.
+
+    Returns:
+        The merged, axis-sorted dataset.
+
+    Raises:
+        ValueError: If ``axis`` is not a variable on both sides.
+
     """
     if axis not in existing or axis not in inserted:
         raise ValueError(
@@ -163,7 +220,17 @@ def upsert(
 def upsert_within(tolerance: Any) -> MergeCallable:
     """Return an :func:`upsert` strategy bound to ``tolerance``.
 
-    Pass the result as ``merge=`` to :py:meth:`Collection.insert`.
+    The returned :class:`MergeCallable` is suitable for passing to
+    :meth:`Collection.insert` via the ``merge=`` argument.
+
+    Args:
+        tolerance: ``None`` for exact equality, or a scalar (numeric or
+            ``numpy.timedelta64``) controlling the nearest-neighbour
+            match window in :func:`upsert`.
+
+    Returns:
+        A merge strategy with the tolerance baked in.
+
     """
 
     def _strategy(

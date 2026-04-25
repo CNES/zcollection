@@ -60,6 +60,18 @@ def dask_map_async(
     aren't picklable, so we ship the factories instead. If a Dask client is
     available, work is fanned out to it; otherwise the local runner gathers
     them with bounded concurrency.
+
+    Args:
+        coro_factories: A list of 0-arg callables that return coroutines to run.
+        client: An optional Dask Client to use; if ``None``, we'll try to find
+            one, and if that fails we'll run locally.
+        concurrency: The maximum number of concurrent coroutines when running
+            locally; ignored if a Dask client is used.
+
+    Returns:
+        A list of results from the coroutines, in the same order as the input
+        factories.
+
     """
     if not coro_factories:
         return []

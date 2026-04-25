@@ -72,13 +72,21 @@ class IcechunkSession(StoreSession):
     transactional: bool = True
 
     def __init__(self, owner: IcechunkStore) -> None:
+        """Initialize the session.
+
+        Args:
+            owner: The :class:`IcechunkStore` whose session this wraps.
+
+        """
         self._owner = owner
         self.message: str | None = None
 
     def commit(self, message: str | None = None) -> None:
+        """Commit the underlying icechunk session."""
         self._owner._commit(message or self.message)
 
     def rollback(self) -> None:
+        """Discard pending changes in the underlying icechunk session."""
         self._owner._discard()
 
 
@@ -99,6 +107,15 @@ class IcechunkStore(Store):
         branch: str = "main",
         read_only: bool = False,
     ) -> None:
+        """Open or create an icechunk repository.
+
+        Args:
+            path_or_storage: Either a local filesystem path or an
+                :class:`icechunk.Storage` instance.
+            branch: Branch to operate on.
+            read_only: When true, opens a read-only session.
+
+        """
         import icechunk
 
         if isinstance(path_or_storage, str):
@@ -135,6 +152,7 @@ class IcechunkStore(Store):
 
     @contextmanager
     def session(self) -> Iterator[StoreSession]:
+        """Yield an :class:`IcechunkSession`; commits on success, rolls back on error."""
         sess = IcechunkSession(self)
         try:
             yield sess
@@ -172,16 +190,20 @@ class IcechunkStore(Store):
 
     @property
     def root_uri(self) -> str:
+        """Return a human-readable URI for this repository."""
         return f"icechunk://{self._uri}"
 
     def zarr_store(self) -> Any:
+        """Return the underlying zarr store backed by the active session."""
         return self._session.store
 
     def exists(self, key: str) -> bool:
+        """Return whether ``key`` exists, routing non-zarr keys to the meta group."""
         target = key if _is_zarr_key(key) else _meta_path(key)
         return run_sync(self._session.store.exists(target))
 
     def read_bytes(self, key: str) -> bytes | None:
+        """Read raw bytes from ``key``, decoding the meta-group payload when needed."""
         proto = default_buffer_prototype()
         if _is_zarr_key(key):
             buf = run_sync(self._session.store.get(key, prototype=proto))
@@ -199,6 +221,7 @@ class IcechunkStore(Store):
         return payload.encode("utf-8") if isinstance(payload, str) else None
 
     def write_bytes(self, key: str, data: bytes) -> None:
+        """Write ``data`` at ``key``, wrapping non-zarr blobs into the meta group."""
         self._require_writable()
         proto = default_buffer_prototype()
         if _is_zarr_key(key):
@@ -217,13 +240,16 @@ class IcechunkStore(Store):
         )
 
     def list_prefix(self, prefix: str) -> Iterator[str]:
+        """Yield direct children of ``prefix``."""
         return self.list_dir(prefix)
 
     def list_dir(self, prefix: str) -> Iterator[str]:
+        """Yield direct children of ``prefix``, excluding the zarr.json marker."""
         names = to_list_async(self._session.store.list_dir(prefix.strip("/")))
         return (n for n in names if n != "zarr.json")
 
     def delete_prefix(self, prefix: str) -> None:
+        """Recursively delete everything under ``prefix`` and its meta sidecars."""
         self._require_writable()
         target = prefix.strip("/")
         if target:
@@ -247,4 +273,5 @@ class IcechunkStore(Store):
             raise PermissionError(f"{self.root_uri} is read-only")
 
     def __repr__(self) -> str:
+        """Return a developer-friendly representation."""
         return f"IcechunkStore({self._uri!r})"

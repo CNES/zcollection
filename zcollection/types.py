@@ -23,7 +23,9 @@ class IndexerCallable(Protocol):
     def __call__(
         self,
         partition: dict[str, int],
-    ) -> slice | numpy.ndarray | None: ...
+    ) -> slice | numpy.ndarray | None:
+        """Return the rows (slice or fancy index) selected within ``partition``."""
+        ...
 
 
 #: An indexer is either a callable or an iterable of (partition, slice) pairs.
@@ -33,7 +35,11 @@ Indexer: TypeAlias = IndexerCallable | None
 class JSONSerializable(Protocol):
     """Protocol for objects with a JSON config round-trip."""
 
-    def to_json(self) -> Any: ...
+    def to_json(self) -> Any:
+        """Return a JSON-compatible representation of this object."""
+        ...
 
     @classmethod
-    def from_json(cls, payload: Any) -> JSONSerializable: ...
+    def from_json(cls, payload: Any) -> JSONSerializable:
+        """Build an instance from a JSON-compatible payload."""
+        ...

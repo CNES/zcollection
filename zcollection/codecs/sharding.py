@@ -28,8 +28,17 @@ def compute_shard_shape(
 ) -> tuple[int, ...]:
     """Return a shard shape (a multiple of ``inner_chunks`` per dim).
 
-    ``shape`` may carry ``None`` for unlimited dimensions; those are treated
-    as having no upper bound when sizing the shard.
+    Args:
+        inner_chunks: The inner chunk shape of the array.
+        shape: The array shape; may carry ``None`` for unlimited dimensions.
+        dtype: The array dtype.
+        target_shard_bytes: The sharding threshold in raw bytes.
+
+    Returns:
+        A shard shape, an integer multiple of ``inner_chunks`` along every
+        dimension, whose total raw byte size is close to, but no larger than,
+        ``target_shard_bytes``.
+
     """
     if len(inner_chunks) != len(shape):
         raise ValueError(
@@ -86,13 +95,23 @@ def shard_decision(
     dtype: numpy.dtype,
     target_shard_bytes: int | None,
 ) -> tuple[int, ...] | None:
-    """Convenience: return a shard shape, or ``None`` if sharding shouldn't apply.
+    """Return a shard shape, or ``None`` if sharding shouldn't apply.
 
-    Returns ``None`` when:
+    Args:
+        inner_chunks: The inner chunk shape of the array.
+        shape: The array shape; may carry ``None`` for unlimited dimensions.
+        dtype: The array dtype.
+        target_shard_bytes: The sharding threshold in raw bytes, or ``None`` to disable sharding.
 
-    - ``target_shard_bytes`` is None (sharding disabled in the profile);
-    - the array fits inside one inner chunk along every dim;
-    - the computed shard equals the inner chunks (sharding adds no value).
+    Returns:
+        A shard shape, or ``None`` to disable sharding.
+
+    Note:
+        This function returns ``None`` when:
+        - ``target_shard_bytes`` is None (sharding disabled in the profile);
+        - the array fits inside one inner chunk along every dim;
+        - the computed shard equals the inner chunks (sharding adds no value).
+
     """
     if target_shard_bytes is None:
         return None
@@ -122,6 +141,7 @@ def _max_multiplier(chunk: int, dim_size: int | None) -> int:
 
 
 def _clip(extent: int, dim_size: int | None) -> int:
+    """Clip the shard extent to the dimension size, if known."""
     if dim_size is None:
         return max(extent, 1)
     return max(1, min(extent, dim_size))

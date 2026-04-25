@@ -15,6 +15,7 @@ from zcollection.partitioning import Date, GroupedSequence
 
 
 def test_async_create_insert_query(tmp_path, schema, dataset, partitioning):
+    """Async create/insert/query round-trips through the aio facade."""
     store = zc.LocalStore(tmp_path / "col")
 
     async def _scenario():
@@ -37,6 +38,8 @@ def test_async_create_insert_query(tmp_path, schema, dataset, partitioning):
 
 
 def test_async_open_invalid_mode(tmp_path):
+    """aio.open_collection rejects unknown modes."""
+
     async def _scenario():
         with pytest.raises(ValueError, match="mode must be"):
             await aio.open_collection(f"file://{tmp_path}/x", mode="bogus")
@@ -79,6 +82,7 @@ def _date_dataset() -> tuple[zc.DatasetSchema, zc.Dataset]:
 
 
 def test_date_partitioning_monthly(tmp_path):
+    """Monthly Date partitioning produces year/month buckets and queries them."""
     schema, ds = _date_dataset()
     store = zc.LocalStore(tmp_path / "col")
     part = Date("time", resolution="M")
@@ -101,6 +105,7 @@ def test_date_partitioning_monthly(tmp_path):
 
 
 def test_date_partitioning_roundtrip_serde(tmp_path):
+    """Date partitioning round-trips through serialisation on reopen."""
     schema, ds = _date_dataset()
     store = zc.LocalStore(tmp_path / "col")
     part = Date("time", resolution="D")
@@ -121,6 +126,7 @@ def test_date_partitioning_roundtrip_serde(tmp_path):
 
 
 def test_grouped_sequence_buckets_last_axis(tmp_path):
+    """GroupedSequence buckets the last key by size while grouping the rest."""
     schema = (
         zc.Schema()
         .with_dimension("num", size=None, chunks=4)
@@ -167,6 +173,7 @@ def test_grouped_sequence_buckets_last_axis(tmp_path):
 
 
 def test_grouped_sequence_size_validation():
+    """GroupedSequence rejects bucket sizes smaller than 2."""
     with pytest.raises(zc.errors.PartitionError):
         GroupedSequence(("a",), dimension="num", size=1)
 
@@ -175,6 +182,7 @@ def test_grouped_sequence_size_validation():
 
 
 def test_merge_replace_default(tmp_path, schema, dataset, partitioning):
+    """Default merge replaces existing partition contents on re-insert."""
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
         store,
@@ -208,6 +216,7 @@ def test_merge_replace_default(tmp_path, schema, dataset, partitioning):
 
 
 def test_merge_concat_appends(tmp_path, schema, dataset, partitioning):
+    """``merge='concat'`` appends new rows to an existing partition."""
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
         store,
@@ -243,6 +252,7 @@ def test_merge_concat_appends(tmp_path, schema, dataset, partitioning):
 
 
 def test_merge_time_series_drops_overlap_and_sorts(tmp_path):
+    """``merge='time_series'`` drops overlapping rows and sorts by axis."""
     schema, ds = _date_dataset()
     store = zc.LocalStore(tmp_path / "col")
     part = Date("time", resolution="Y")
@@ -289,9 +299,11 @@ def test_merge_time_series_drops_overlap_and_sorts(tmp_path):
 
 
 def test_merge_upsert_supplements_existing(tmp_path):
-    """Reacquisition: a new batch overlaps part of an existing partition
+    """Reacquisition: a new batch overlaps part of an existing partition.
+
     (same timestamps → replace) and extends past it (new timestamps → add).
-    Existing rows whose timestamp is not in the new batch must be kept."""
+    Existing rows whose timestamp is not in the new batch must be kept.
+    """
     schema, ds = _date_dataset()
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
@@ -351,9 +363,11 @@ def test_merge_upsert_supplements_existing(tmp_path):
 
 
 def test_merge_upsert_tolerance_matches_nearby_timestamps(tmp_path):
-    """Re-acquired timestamps may drift by milliseconds. With a 500 ms
-    tolerance, an existing row at 12:00:00.000 must be replaced by an
-    inserted row at 12:00:00.300, not duplicated."""
+    """Re-acquired timestamps may drift by milliseconds.
+
+    With a 500 ms tolerance, an existing row at 12:00:00.000 must be replaced
+    by an inserted row at 12:00:00.300, not duplicated.
+    """
     schema = (
         zc.Schema()
         .with_dimension("time", size=None, chunks=8)
@@ -442,6 +456,7 @@ def test_merge_upsert_tolerance_matches_nearby_timestamps(tmp_path):
 
 
 def test_merge_upsert_empty_inserted_returns_existing():
+    """Upsert with an empty inserted dataset returns existing rows unchanged."""
     schema, ds = _date_dataset()
     empty = zc.Dataset(
         schema=schema,
@@ -460,11 +475,14 @@ def test_merge_upsert_empty_inserted_returns_existing():
 
 
 def test_merge_resolve_unknown_strategy():
+    """``merge.resolve`` raises KeyError for unknown strategy names."""
     with pytest.raises(KeyError):
         merge_mod.resolve("nope")
 
 
 def test_merge_resolve_callable_passes_through(schema, dataset):
+    """``merge.resolve`` returns callables unchanged."""
+
     def custom(existing, inserted, *, axis, partitioning_dim):
         return inserted
 
@@ -477,6 +495,7 @@ def test_merge_resolve_callable_passes_through(schema, dataset):
 def test_map_returns_per_partition_results(
     tmp_path, schema, dataset, partitioning
 ):
+    """``Collection.map`` returns one result per partition keyed by name."""
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
         store,
@@ -492,6 +511,7 @@ def test_map_returns_per_partition_results(
 
 
 def test_update_writes_back(tmp_path, schema, dataset, partitioning):
+    """``Collection.update`` writes the transformed dataset back to each partition."""
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
         store,

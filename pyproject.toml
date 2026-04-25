@@ -25,7 +25,7 @@ max-line-length = 80
 
 [tool.ruff.lint]
 ignore = [
-  "C901", "E501", "E741", "F402", "F823",
+  "C901", "D203", "D213", "E501", "E741", "F402", "F823",
   "PLC0415",  # function-local imports are sometimes intentional (cycles, optional deps)
   "TC001", "TC002", "TC003",  # don't force imports into TYPE_CHECKING blocks
 ]

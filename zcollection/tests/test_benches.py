@@ -6,6 +6,7 @@ from zcollection.benches.harness import BenchSpec, compare, dump_json, run_suite
 
 
 def test_run_suite_against_local_store(tmp_path):
+    """``run_suite`` produces the expected named bench phases with probe counts."""
     spec = BenchSpec(n_partitions=2, rows_per_partition=100, width=4)
     store_url = f"file://{tmp_path / 'col'}"
     results = run_suite(store_url, spec)
@@ -32,6 +33,7 @@ def test_run_suite_against_local_store(tmp_path):
 
 
 def test_dump_and_compare_roundtrip(tmp_path):
+    """``dump_json``/``compare`` round-trip yields ratios near 1.0."""
     spec = BenchSpec(n_partitions=2, rows_per_partition=100, width=4)
     store_url = f"file://{tmp_path / 'col'}"
     results = run_suite(store_url, spec)

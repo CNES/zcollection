@@ -36,6 +36,7 @@ class CodecStack:
     shard_target_bytes: int | None = None
 
     def to_json(self) -> dict[str, Any]:
+        """Return the codec stack as a JSON-serialisable dictionary."""
         return {
             "array_to_array": list(self.array_to_array),
             "array_to_bytes": self.array_to_bytes,
@@ -46,6 +47,7 @@ class CodecStack:
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> CodecStack:
+        """Build a codec stack from its JSON representation."""
         return cls(
             array_to_array=tuple(payload.get("array_to_array", [])),
             array_to_bytes=payload.get("array_to_bytes"),
@@ -114,6 +116,7 @@ DEFAULT_PROFILE: str = "cloud-balanced"
 
 
 def profile_names() -> tuple[str, ...]:
+    """Return the names of all registered codec profiles."""
     return tuple(PROFILES)
 
 
@@ -123,7 +126,21 @@ def profile(
     filters: Iterable[CodecDescriptor] | None = None,
     compressor: CodecDescriptor | None = None,
 ) -> CodecStack:
-    """Build a :class:`CodecStack` from a named profile, with overrides."""
+    """Build a :class:`CodecStack` from a named profile, with overrides.
+
+    Args:
+        name: The name of the profile to use. If ``None``, the default profile
+            is used.
+        filters: Optional sequence of codec descriptors to override the
+            array-to-array codecs.
+        compressor: Optional codec descriptor to override the bytes-to-bytes
+            codec.
+
+    Returns:
+        A :class:`CodecStack` configured according to the specified profile
+        and overrides.
+
+    """
     if name is None:
         name = DEFAULT_PROFILE
     if name not in PROFILES:
@@ -147,7 +164,18 @@ def auto_codecs(
     dtype: numpy.dtype,
     profile_name: str | None = None,
 ) -> CodecStack:
-    """Pick a CodecStack for a dtype using the named (or default) profile."""
+    """Pick a CodecStack for a dtype using the named (or default) profile.
+
+    Args:
+        dtype: The variable dtype to pick codecs for.
+        profile_name: The name of the profile to use. If ``None``, the default
+            profile is used.
+
+    Returns:
+        A :class:`CodecStack` configured according to the specified profile and
+        the variable dtype.
+
+    """
     name = profile_name or DEFAULT_PROFILE
     if name not in PROFILES:
         raise KeyError(f"unknown codec profile {name!r}")
@@ -155,7 +183,17 @@ def auto_codecs(
 
 
 def shard_target_bytes(profile_name: str | None = None) -> int | None:
-    """Return the target shard byte budget for a profile (``None`` if disabled)."""
+    """Return the target shard byte budget for a profile.
+
+    Args:
+        profile_name: The name of the profile to query. If ``None``, the default
+            profile is used.
+
+    Returns:
+        The target shard byte budget for the specified profile, or ``None`` if
+        sharding is disabled.
+
+    """
     name = profile_name or DEFAULT_PROFILE
     if name not in PROFILES:
         raise KeyError(f"unknown codec profile {name!r}")
@@ -182,6 +220,14 @@ def resolve_codec(descriptor: CodecDescriptor) -> Any:
     """Convert a JSON codec descriptor into a Zarr v3 codec instance.
 
     Used by the io layer at write time.
+
+    Args:
+        descriptor: A codec descriptor dictionary, with keys "name" and
+        "configuration".
+
+    Returns:
+        An instance of the corresponding Zarr v3 codec.
+
     """
     name = descriptor["name"]
     cfg = descriptor.get("configuration", {}) or {}

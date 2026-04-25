@@ -20,6 +20,7 @@ class Dimension:
     shards: int | None = None
 
     def __post_init__(self) -> None:
+        """Validate that size, chunks and shards are positive when set."""
         for field, value in (
             ("size", self.size),
             ("chunks", self.chunks),
@@ -31,6 +32,7 @@ class Dimension:
                 )
 
     def to_json(self) -> dict[str, Any]:
+        """Serialize the dimension to a JSON-compatible dict."""
         return {
             "name": self.name,
             "size": self.size,
@@ -40,6 +42,7 @@ class Dimension:
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> Dimension:
+        """Build a dimension from a JSON-compatible dict."""
         return cls(
             name=payload["name"],
             size=payload.get("size"),

@@ -36,13 +36,22 @@ class Attribute:
     __slots__ = ("name", "value")
 
     def __init__(self, name: str, value: Any) -> None:
+        """Initialize the attribute.
+
+        Args:
+            name: Attribute name.
+            value: Attribute value; will be JSON-encoded via :func:`encode_value`.
+
+        """
         self.name = name
         self.value = encode_value(value)
 
     def __repr__(self) -> str:
+        """Return a developer-friendly representation."""
         return f"Attribute({self.name!r}, {self.value!r})"
 
     def __eq__(self, other: object) -> bool:
+        """Return whether two attributes share name and value."""
         return (
             isinstance(other, Attribute)
             and self.name == other.name
@@ -50,4 +59,5 @@ class Attribute:
         )
 
     def __hash__(self) -> int:
+        """Return a hash consistent with :meth:`__eq__`."""
         return hash((self.name, repr(self.value)))

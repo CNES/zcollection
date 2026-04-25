@@ -36,10 +36,12 @@ class ViewReference:
     uri: str
 
     def to_json(self) -> dict[str, Any]:
+        """Return the reference as a JSON-serialisable dictionary."""
         return {"uri": self.uri}
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> ViewReference:
+        """Build a ``ViewReference`` from its JSON payload."""
         return cls(uri=str(payload["uri"]))
 
 
@@ -55,6 +57,16 @@ class View:
         reference: ViewReference,
         read_only: bool = False,
     ) -> None:
+        """Initialize a View.
+
+        Args:
+            store: Backing store for the view's overlay variables.
+            base: Underlying base collection.
+            view_schema: Schema describing the overlay variables.
+            reference: Pointer to the base collection.
+            read_only: Whether the view should refuse mutations.
+
+        """
         self._store = store
         self._base = base
         self._view_schema = view_schema
@@ -73,6 +85,30 @@ class View:
         reference: ViewReference | str,
         overwrite: bool = False,
     ) -> View:
+        """Create a new view backed by ``store`` and overlaying ``base``.
+
+        Args:
+            store: Backing store for the view's overlay variables. Must
+                be different from ``base.store``.
+            base: The underlying read-only base collection.
+            variables: Schemas for the *new* variables the view adds.
+                Each must share at least the partitioning dimension with
+                the base collection.
+            reference: Either a :class:`ViewReference` or a string URI
+                identifying the base collection.
+            overwrite: If ``True``, replace any existing view at this
+                location.
+
+        Returns:
+            A writable :class:`View` ready to ``update``.
+
+        Raises:
+            CollectionExistsError: If a view already exists at
+                ``store.root_uri`` and ``overwrite=False``.
+            ZCollectionError: If a view variable's dimensions are
+                inconsistent with the base schema.
+
+        """
         if store.exists(VIEW_CONFIG_FILE) and not overwrite:
             raise CollectionExistsError(
                 f"a view already exists at {store.root_uri}",
@@ -115,6 +151,23 @@ class View:
         base: Collection,
         read_only: bool = False,
     ) -> View:
+        """Open an existing view from ``store``.
+
+        Args:
+            store: The store backing the view's overlay variables.
+            base: The base collection that this view extends. The caller
+                is responsible for ensuring it matches ``reference``.
+            read_only: If ``True``, mutating methods (``update``) raise
+                :class:`~zcollection.errors.ReadOnlyError`.
+
+        Returns:
+            A :class:`View` bound to the existing overlay.
+
+        Raises:
+            CollectionNotFoundError: If no view config exists at
+                ``store.root_uri``.
+
+        """
         raw = store.read_bytes(VIEW_CONFIG_FILE)
         if raw is None:
             raise CollectionNotFoundError(
@@ -135,31 +188,38 @@ class View:
 
     @property
     def store(self) -> Store:
+        """Return the backing store for the view overlay."""
         return self._store
 
     @property
     def base(self) -> Collection:
+        """Return the underlying base collection."""
         return self._base
 
     @property
     def view_schema(self) -> DatasetSchema:
+        """Return the view's overlay schema."""
         return self._view_schema
 
     @property
     def reference(self) -> ViewReference:
+        """Return the reference to the base collection."""
         return self._reference
 
     @property
     def variables(self) -> tuple[str, ...]:
+        """Return the names of the view's overlay variables."""
         return tuple(self._view_schema.variables)
 
     @property
     def read_only(self) -> bool:
+        """Return whether the view is read-only."""
         return self._read_only
 
     # --- listing ----------------------------------------------------
 
     def partitions(self, *, filters: str | None = None) -> Iterator[str]:
+        """Yield partition paths from the base collection, optionally filtered."""
         return self._base.partitions(filters=filters)
 
     # --- query ------------------------------------------------------
@@ -170,6 +230,24 @@ class View:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> Dataset | None:
+        """Return the merged base+overlay dataset for matching partitions.
+
+        Variables are sourced from whichever side owns them. On a name
+        collision the overlay (view) wins.
+
+        Args:
+            filters: Partition-key predicate forwarded to the base
+                collection's :meth:`~Collection.partitions`.
+            variables: Optional whitelist mixing base and overlay names.
+                ``None`` returns all base + overlay variables.
+
+        Returns:
+            The merged :class:`~zcollection.Dataset`, or ``None`` if no
+            base partition matched ``filters``. If matching partitions
+            exist but no overlay has been written for them yet, only the
+            base is returned.
+
+        """
         from ..dask.scheduler import run_sync
 
         return run_sync(self.query_async(filters=filters, variables=variables))
@@ -180,6 +258,7 @@ class View:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> Dataset | None:
+        """Async variant of :meth:`query`."""
         wanted = set(variables) if variables is not None else None
         view_names = set(self._view_schema.variables)
         base_names = set(self._base.schema.variables)
@@ -240,9 +319,28 @@ class View:
     ) -> list[str]:
         """Compute view-variable arrays for each base partition and write them.
 
-        ``fn`` receives the merged base+view dataset and must return a dict
-        mapping view-variable names to numpy arrays sized along the
-        partitioning dimension.
+        ``fn`` runs once per matching base partition. It receives the
+        merged base+view dataset and must return a mapping from
+        view-variable name to a numpy array sized along the partitioning
+        dimension. Returned keys must be a subset of
+        :attr:`view_schema`'s variables; missing keys are ignored,
+        unknown keys raise.
+
+        Args:
+            fn: Pure function ``Dataset -> {name: numpy.ndarray}``.
+            filters: Partition-key predicate (same syntax as
+                :meth:`Collection.partitions`).
+            variables: Optional whitelist of variables to load before
+                calling ``fn``. ``None`` loads everything available.
+
+        Returns:
+            The list of partition paths that were written, in the order
+            they were processed.
+
+        Raises:
+            ReadOnlyError: If the view was opened with
+                ``read_only=True``.
+
         """
         from ..dask.scheduler import run_sync
 
@@ -257,6 +355,7 @@ class View:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> list[str]:
+        """Async variant of :meth:`update`."""
         self._require_writable()
         wanted = set(variables) if variables is not None else None
         view_names = set(self._view_schema.variables)

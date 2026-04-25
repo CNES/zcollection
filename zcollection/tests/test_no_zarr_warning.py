@@ -20,6 +20,7 @@ def test_insert_then_query_emits_no_zarr_user_warning(
     dataset,
     partitioning,
 ):
+    """Insert and query must not raise any ``ZarrUserWarning``."""
     with warnings.catch_warnings():
         warnings.simplefilter("error", zarr.errors.ZarrUserWarning)
         store = zc.LocalStore(tmp_path / "col")

@@ -13,10 +13,12 @@ from zcollection.store.icechunk_store import IcechunkStore  # noqa: E402
 
 @pytest.fixture
 def ic_store(tmp_path):
+    """Provide a fresh IcechunkStore backed by a temp repo."""
     return IcechunkStore(str(tmp_path / "repo"))
 
 
 def test_create_open_round_trip(ic_store, schema, dataset, partitioning):
+    """IcechunkStore round-trips create/insert/query with bit-equal data."""
     col = zc.create_collection(
         ic_store,
         schema=schema,
@@ -40,6 +42,7 @@ def test_create_open_round_trip(ic_store, schema, dataset, partitioning):
 
 
 def test_drop_partitions_commits(ic_store, schema, dataset, partitioning):
+    """``drop_partitions`` on Icechunk commits the deletion."""
     col = zc.create_collection(
         ic_store,
         schema=schema,
@@ -60,8 +63,10 @@ def test_failed_insert_rolls_back(
     partitioning,
     monkeypatch,
 ):
-    """SIGKILL-equivalent: any exception inside insert_async must leave the
-    repo in its prior committed state — not a single partition persisted."""
+    """SIGKILL-equivalent: any exception inside insert_async must leave the repo in its prior committed state.
+
+    Not a single partition persisted.
+    """
     store = IcechunkStore(str(tmp_path / "repo"))
     col = zc.create_collection(
         store,
@@ -103,6 +108,7 @@ def test_successful_insert_persists_after_reopen(
     dataset,
     partitioning,
 ):
+    """A successful insert is visible after reopening the Icechunk repo."""
     store = IcechunkStore(str(tmp_path / "repo"))
     col = zc.create_collection(
         store,
@@ -119,5 +125,6 @@ def test_successful_insert_persists_after_reopen(
 
 
 def test_factory_routes_icechunk_url(tmp_path):
+    """``open_store`` routes ``icechunk://`` URLs to IcechunkStore."""
     s = open_store(f"icechunk://{tmp_path / 'repo'}")
     assert isinstance(s, IcechunkStore)

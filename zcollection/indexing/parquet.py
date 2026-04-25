@@ -40,6 +40,13 @@ class Indexer:
     """Lookup table over a :class:`Collection`'s rows."""
 
     def __init__(self, table: pyarrow.Table) -> None:
+        """Initialize the indexer with an underlying Parquet table.
+
+        Args:
+            table: PyArrow table containing key columns plus the reserved
+                ``_partition``, ``_start`` and ``_stop`` columns.
+
+        """
         self._table = table
         for col in (PARTITION_COL, START_COL, STOP_COL):
             if col not in table.column_names:
@@ -59,7 +66,34 @@ class Indexer:
         filters: str | None = None,
         variables: Iterable[str] | None = None,
     ) -> Indexer:
-        """Build an index by walking the collection's partitions."""
+        """Build an index by walking the collection's partitions.
+
+        Args:
+            collection: The :class:`~zcollection.Collection` to index.
+            builder: Per-partition row generator. It receives a Dataset
+                slice and must return either a structured numpy array
+                (with named fields, including ``_start`` and ``_stop``)
+                or a dict ``{column_name: 1-D numpy.ndarray}`` of equal
+                length. The user-defined columns become the queryable
+                key columns; ``_start`` / ``_stop`` carry contiguous row
+                ranges within the partition.
+            filters: Partition-key predicate forwarded to
+                :meth:`Collection.partitions` to skip whole partitions.
+            variables: Optional whitelist of variables to load before
+                calling ``builder`` — keep this tight on cloud stores.
+
+        Returns:
+            An :class:`Indexer` whose Parquet table is the concatenation
+            of every non-empty per-partition output, with a
+            ``_partition`` column added by the builder pipeline.
+
+        Raises:
+            ValueError: If ``builder``'s output for any partition omits
+                a ``_start`` or ``_stop`` column.
+            TypeError: If ``builder`` returns something other than a
+                structured array or a dict of arrays.
+
+        """
         rows: list[pyarrow.Table] = []
         per_partition = collection.map(
             builder,
@@ -83,28 +117,51 @@ class Indexer:
 
     @classmethod
     def read(cls, path: str) -> Indexer:
+        """Load an indexer from a Parquet file at ``path``."""
         return cls(pq.read_table(path))
 
     def write(self, path: str) -> None:
+        """Write the index to ``path`` as a Parquet file."""
         pq.write_table(self._table, path)
 
     # --- accessors --------------------------------------------------
 
     @property
     def table(self) -> pyarrow.Table:
+        """Return the underlying PyArrow table."""
         return self._table
 
     @property
     def key_columns(self) -> tuple[str, ...]:
+        """Return the user-defined key column names (excluding reserved ones)."""
         return tuple(c for c in self._table.column_names if c not in _RESERVED)
 
     def __len__(self) -> int:
+        """Return the number of rows in the index."""
         return self._table.num_rows
 
     # --- query ------------------------------------------------------
 
     def lookup(self, **predicates: Any) -> dict[str, list[tuple[int, int]]]:
-        """Return ``{partition: [(start, stop), ...]}`` for matching rows."""
+        """Return ``{partition: [(start, stop), ...]}`` for matching rows.
+
+        Filters are AND-ed: a row matches when every named predicate
+        matches. A scalar predicate is equality; a list / tuple / set /
+        ndarray predicate is set membership (``IN``).
+
+        Args:
+            **predicates: One ``key_column=value`` per filter. Allowed
+                column names are exactly :attr:`key_columns`.
+
+        Returns:
+            A mapping from partition path to the list of contiguous
+            ``(start, stop)`` row ranges that satisfy the predicates.
+            Partitions with no matching row are absent from the mapping.
+
+        Raises:
+            KeyError: If a predicate names an unknown column.
+
+        """
         unknown = set(predicates) - set(self.key_columns)
         if unknown:
             raise KeyError(

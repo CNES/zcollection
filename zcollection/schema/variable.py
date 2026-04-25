@@ -33,6 +33,7 @@ class VariableSchema:
     immutable: bool = False
 
     def __post_init__(self) -> None:
+        """Normalize fields and pick default codecs when none were provided."""
         if not isinstance(self.dtype, numpy.dtype):
             object.__setattr__(self, "dtype", numpy.dtype(self.dtype))
         if not isinstance(self.dimensions, tuple):
@@ -43,9 +44,11 @@ class VariableSchema:
 
     @property
     def ndim(self) -> int:
+        """Return the number of dimensions of this variable."""
         return len(self.dimensions)
 
     def with_immutable(self, immutable: bool) -> VariableSchema:
+        """Return a copy of this variable with the immutable flag overridden."""
         return VariableSchema(
             name=self.name,
             dtype=self.dtype,
@@ -58,6 +61,7 @@ class VariableSchema:
         )
 
     def to_json(self) -> dict[str, Any]:
+        """Serialize the variable to a JSON-compatible dict."""
         return {
             "name": self.name,
             "dtype": self.dtype.str,
@@ -71,6 +75,7 @@ class VariableSchema:
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> VariableSchema:
+        """Build a variable from a JSON-compatible dict."""
         dtype = numpy.dtype(payload["dtype"])
         return cls(
             name=payload["name"],

@@ -25,6 +25,7 @@ __all__ = (
 
 
 def from_json(payload: dict[str, Any]) -> Partitioning:
+    """Reconstruct a partitioning instance from its JSON payload."""
     name = payload.get("name")
     if name == "sequence":
         return Sequence.from_json(payload)

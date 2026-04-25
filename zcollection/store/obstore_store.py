@@ -36,6 +36,20 @@ class ObjectStore(Store):
         credentials: dict[str, Any] | None = None,
         read_only: bool = False,
     ) -> None:
+        """Build an ObjectStore from a URL.
+
+        Args:
+            url: A scheme-prefixed URL (``s3://``, ``gs://``, ``az://``,
+                ``http(s)://``).
+            client_options: Optional client options forwarded to obstore.
+            credentials: Optional credentials forwarded to obstore.
+            read_only: When true, writes raise :class:`PermissionError`.
+
+        Raises:
+            StoreError: If obstore is not installed or the URL has no
+                supported scheme.
+
+        """
         try:
             import obstore
         except ImportError as exc:
@@ -60,12 +74,16 @@ class ObjectStore(Store):
 
     @property
     def root_uri(self) -> str:
+        """Return the configured root URL of the store."""
         return self._url
 
     def zarr_store(self) -> Any:
+        """Return the underlying :class:`zarr.storage.ObjectStore`."""
         return self._store
 
     def exists(self, key: str) -> bool:
+        """Return whether ``key`` exists either as an object or a prefix."""
+
         async def _check() -> bool:
             if await self._store.exists(key):
                 return True
@@ -76,6 +94,8 @@ class ObjectStore(Store):
         return run_sync(_check())
 
     def read_bytes(self, key: str) -> bytes | None:
+        """Return the raw bytes at ``key`` or ``None`` if absent."""
+
         async def _get() -> bytes | None:
             from zarr.core.buffer import default_buffer_prototype
 
@@ -92,6 +112,7 @@ class ObjectStore(Store):
         return run_sync(_get())
 
     def write_bytes(self, key: str, data: bytes) -> None:
+        """Write ``data`` at ``key`` via obstore."""
         if self._read_only:
             raise PermissionError(f"store at {self.root_uri} is read-only")
 
@@ -104,17 +125,21 @@ class ObjectStore(Store):
         run_sync(_put())
 
     def list_prefix(self, prefix: str) -> Iterator[str]:
+        """Yield direct children under ``prefix``."""
         return iter(to_list_async(self._store.list_dir(prefix.rstrip("/"))))
 
     def list_dir(self, prefix: str) -> Iterator[str]:
+        """Yield direct children under ``prefix`` (alias of :meth:`list_prefix`)."""
         return self.list_prefix(prefix)
 
     def delete_prefix(self, prefix: str) -> None:
+        """Recursively delete every object under ``prefix``."""
         if self._read_only:
             raise PermissionError(f"store at {self.root_uri} is read-only")
         run_sync(self._store.delete_dir(prefix.rstrip("/")))
 
     def __repr__(self) -> str:
+        """Return a developer-friendly representation."""
         return f"ObjectStore({self._url!r})"
 
 

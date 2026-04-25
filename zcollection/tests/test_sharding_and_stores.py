@@ -17,6 +17,7 @@ from zcollection.errors import StoreError
 
 
 def test_compute_shard_shape_doubles_largest_dim():
+    """``compute_shard_shape`` grows the largest dim toward the byte target."""
     shape = compute_shard_shape(
         inner_chunks=(4096, 240),
         shape=(None, 240),
@@ -32,6 +33,7 @@ def test_compute_shard_shape_doubles_largest_dim():
 
 
 def test_compute_shard_shape_clips_to_dim_size():
+    """``compute_shard_shape`` clips the shard shape to the array shape."""
     shape = compute_shard_shape(
         inner_chunks=(64, 64),
         shape=(64, 64),
@@ -42,6 +44,7 @@ def test_compute_shard_shape_clips_to_dim_size():
 
 
 def test_shard_decision_returns_none_when_disabled():
+    """``shard_decision`` returns None when sharding is disabled."""
     assert (
         shard_decision(
             inner_chunks=(1024,),
@@ -54,6 +57,7 @@ def test_shard_decision_returns_none_when_disabled():
 
 
 def test_shard_decision_returns_none_when_no_growth():
+    """``shard_decision`` returns None when inner chunks already exceed target."""
     # Inner already exceeds target → no benefit to wrapping in a shard.
     assert (
         shard_decision(
@@ -67,6 +71,7 @@ def test_shard_decision_returns_none_when_no_growth():
 
 
 def test_profile_target_shard_bytes():
+    """``shard_target_bytes`` returns the expected target per profile."""
     assert shard_target_bytes("local-fast") is None
     assert shard_target_bytes("cloud-balanced") == 128 << 20
     assert shard_target_bytes("cloud-cold") == 512 << 20
@@ -108,6 +113,7 @@ def _sharded_schema_and_dataset() -> tuple[zc.DatasetSchema, zc.Dataset]:
 
 
 def test_sharded_round_trip_local(tmp_path):
+    """A sharded collection round-trips data on a local store."""
     schema, ds = _sharded_schema_and_dataset()
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
@@ -172,16 +178,19 @@ def test_sharded_array_metadata_uses_sharding_codec(tmp_path):
 
 
 def test_open_store_local_path(tmp_path):
+    """``open_store`` returns a LocalStore for plain filesystem paths."""
     s = zc.open_store(str(tmp_path / "x"))
     assert isinstance(s, zc.LocalStore)
 
 
 def test_open_store_memory():
+    """``open_store`` returns a MemoryStore for ``memory://`` URLs."""
     s = zc.open_store("memory://")
     assert isinstance(s, zc.MemoryStore)
 
 
 def test_open_store_icechunk_resolves(tmp_path):
+    """``open_store`` resolves ``icechunk://`` URLs to IcechunkStore."""
     pytest.importorskip("icechunk")
     from zcollection.store.icechunk_store import IcechunkStore
 
@@ -190,6 +199,7 @@ def test_open_store_icechunk_resolves(tmp_path):
 
 
 def test_open_store_unknown_scheme():
+    """``open_store`` raises StoreError for unknown URL schemes."""
     with pytest.raises(StoreError, match="unrecognised"):
         zc.open_store("ftp://example.com/data")
 
@@ -258,6 +268,7 @@ def test_counting_probe_counts_writes_and_reads(tmp_path):
 
 
 def test_bench_suite_runs_locally(tmp_path):
+    """The bench harness runs the full suite against a local file store."""
     spec = BenchSpec(
         n_partitions=2,
         rows_per_partition=128,

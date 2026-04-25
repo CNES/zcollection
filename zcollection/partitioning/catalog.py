@@ -47,6 +47,7 @@ class CatalogState:
     checksum: str
 
     def matches(self, paths: list[str] | tuple[str, ...]) -> bool:
+        """Return whether ``paths`` hash to the stored checksum."""
         return _checksum(paths) == self.checksum
 
 
@@ -54,14 +55,17 @@ class Catalog:
     """Read/write the partition catalog for one collection."""
 
     def __init__(self, store: Store) -> None:
+        """Initialize the catalog reader/writer for ``store``."""
         self._store = store
 
     # --- read --------------------------------------------------------
 
     def exists(self) -> bool:
+        """Return whether the catalog file exists in the store."""
         return self._store.exists(CATALOG_FILE)
 
     def read(self) -> CatalogState | None:
+        """Read and decode the catalog, or ``None`` if missing/corrupt."""
         raw = self._store.read_bytes(CATALOG_FILE)
         if raw is None:
             return None
@@ -75,12 +79,14 @@ class Catalog:
         return CatalogState(paths=paths, checksum=checksum)
 
     def read_paths(self) -> list[str] | None:
+        """Return the catalog's path list, or ``None`` if missing."""
         state = self.read()
         return list(state.paths) if state is not None else None
 
     # --- write -------------------------------------------------------
 
     def write(self, paths: list[str] | tuple[str, ...]) -> None:
+        """Write ``paths`` to the catalog (sorted and deduplicated)."""
         sorted_paths = sorted(set(paths))
         payload = {
             "format_version": CATALOG_FORMAT_VERSION,
@@ -93,16 +99,19 @@ class Catalog:
         )
 
     def add(self, paths: list[str] | tuple[str, ...]) -> None:
+        """Merge ``paths`` into the catalog."""
         current = self.read_paths() or []
         merged = sorted(set(current) | set(paths))
         self.write(merged)
 
     def remove(self, paths: list[str] | tuple[str, ...]) -> None:
+        """Remove ``paths`` from the catalog."""
         current = self.read_paths() or []
         gone = set(paths)
         self.write([p for p in current if p not in gone])
 
     def drop(self) -> None:
+        """Delete the catalog directory."""
         self._store.delete_prefix(CATALOG_DIR)
 
 

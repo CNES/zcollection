@@ -23,6 +23,14 @@ class Dataset:
         variables: Mapping[str, Variable] | Iterable[Variable],
         attrs: Mapping[str, Any] | None = None,
     ) -> None:
+        """Initialize a Dataset.
+
+        Args:
+            schema: The dataset schema.
+            variables: Variables, either as a mapping or an iterable.
+            attrs: Optional dataset-level attributes; defaults to ``schema.attrs``.
+
+        """
         items: Iterable[tuple[str, Variable]]
         if isinstance(variables, Mapping):
             items = variables.items()
@@ -49,27 +57,34 @@ class Dataset:
     # Mapping-style API ------------------------------------------------
 
     def __getitem__(self, name: str) -> Variable:
+        """Return the variable named ``name``."""
         return self._variables[name]
 
     def __contains__(self, name: object) -> bool:
+        """Return whether the dataset contains a variable named ``name``."""
         return name in self._variables
 
     def __iter__(self) -> Iterator[str]:
+        """Iterate over variable names."""
         return iter(self._variables)
 
     def __len__(self) -> int:
+        """Return the number of variables."""
         return len(self._variables)
 
     @property
     def variables(self) -> Mapping[str, Variable]:
+        """Return the variables mapping."""
         return self._variables
 
     @property
     def attrs(self) -> dict[str, Any]:
+        """Return dataset-level attributes."""
         return self._attrs
 
     @property
     def dimensions(self) -> dict[str, int]:
+        """Return a mapping of dimension names to their sizes."""
         sizes: dict[str, int] = {}
         for var in self._variables.values():
             for dim, size in zip(var.dimensions, var.shape, strict=False):
@@ -78,9 +93,19 @@ class Dataset:
 
     @property
     def is_lazy(self) -> bool:
+        """Return whether any variable wraps lazy data."""
         return any(v.is_lazy for v in self._variables.values())
 
     def select(self, names: Iterable[str]) -> Dataset:
+        """Return a new dataset containing only the named variables.
+
+        Args:
+            names: The variable names to select.
+
+        Returns:
+            A new Dataset containing only the specified variables.
+
+        """
         wanted = list(names)
         sub_schema = self.schema.select(wanted)
         return Dataset(
@@ -92,6 +117,7 @@ class Dataset:
     # xarray bridge ----------------------------------------------------
 
     def to_xarray(self) -> xarray.Dataset:
+        """Convert the dataset to an xarray ``Dataset``."""
         import xarray as xr
 
         data_vars = {}
@@ -106,6 +132,15 @@ class Dataset:
 
     @classmethod
     def from_xarray(cls, ds: xarray.Dataset) -> Dataset:
+        """Build a Dataset from an xarray ``Dataset``.
+
+        Args:
+            ds: An xarray ``Dataset`` to convert.
+
+        Returns:
+            A new Dataset built from the xarray ``Dataset``.
+
+        """
         builder = SchemaBuilder()
         for dim_name, size in ds.sizes.items():
             builder.with_dimension(str(dim_name), size=int(size))
@@ -136,6 +171,7 @@ class Dataset:
         return cls(schema=schema, variables=variables, attrs=dict(ds.attrs))
 
     def __repr__(self) -> str:
+        """Return a debug representation of the dataset."""
         return (
             f"Dataset(vars={list(self._variables)}, "
             f"dims={self.dimensions}, lazy={self.is_lazy})"

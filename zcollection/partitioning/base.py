@@ -42,7 +42,9 @@ class Partitioning(Protocol):
         """Decode a relative storage path into a key."""
         ...
 
-    def to_json(self) -> dict[str, Any]: ...
+    def to_json(self) -> dict[str, Any]:
+        """Return a JSON-serializable description of the partitioning."""
+        ...
 
 
 def keys_from_columns(

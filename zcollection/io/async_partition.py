@@ -125,4 +125,5 @@ async def open_partition_dataset_async(
 
 
 async def partition_exists_async(store: Store, partition_path: str) -> bool:
+    """Return whether a partition exists at ``partition_path`` in ``store``."""
     return store.exists(join_path(partition_path, "zarr.json"))

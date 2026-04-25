@@ -73,6 +73,7 @@ def write_immutable_dataset(
 
 
 def immutable_group_exists(store: Store) -> bool:
+    """Return whether the immutable group exists in ``store``."""
     return store.exists(f"{IMMUTABLE_DIR}/zarr.json")
 
 

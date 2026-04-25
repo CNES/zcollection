@@ -55,6 +55,16 @@ class Date:
         resolution: str,
         dimension: str | None = None,
     ) -> None:
+        """Initialize the Date partitioning.
+
+        Args:
+            variables: The variable(s) to partition by; must be exactly one.
+            resolution: The partitioning resolution, one of "Y", "M", "D", "h",
+                "m", or "s".
+            dimension: The dimension to partition along; if ``None``, inferred
+                from the variable name.
+
+        """
         if isinstance(variables, str):
             variables = (variables,)
         if len(variables) != 1:
@@ -73,17 +83,21 @@ class Date:
 
     @property
     def axis(self) -> tuple[str, ...]:
+        """Return the partition-key component names."""
         return tuple(name for name, _unit, _pad in self._components)
 
     @property
     def dimension(self) -> str:
+        """Return the dimension this partitioning splits."""
         return self._dimension
 
     @property
     def resolution(self) -> str:
+        """Return the resolution code (Y/M/D/h/m/s)."""
         return self._resolution
 
     def split(self, dataset: Dataset) -> Iterator[tuple[PartitionKey, slice]]:
+        """Yield ``(key, slice)`` for each contiguous bucket in ``dataset``."""
         if self._variable not in dataset:
             raise PartitionError(
                 f"variable {self._variable!r} required for Date partitioning is missing"
@@ -128,12 +142,14 @@ class Date:
         return tuple(parts)
 
     def encode(self, key: PartitionKey) -> str:
+        """Encode a key as a relative storage path."""
         pad_by_name = {name: pad for name, _unit, pad in self._components}
         return "/".join(
             f"{name}={int(val):0{pad_by_name[name]}d}" for name, val in key
         )
 
     def decode(self, path: str) -> PartitionKey:
+        """Decode a relative storage path into a key."""
         parts: list[tuple[str, int]] = []
         for token in path.strip("/").split("/"):
             if "=" not in token:
@@ -145,6 +161,7 @@ class Date:
         return tuple(parts)
 
     def to_json(self) -> dict[str, Any]:
+        """Return a JSON-serializable description of the partitioning."""
         return {
             "name": self.name,
             "variable": self._variable,
@@ -154,6 +171,7 @@ class Date:
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> Date:
+        """Reconstruct a Date partitioning from its JSON payload."""
         return cls(
             (payload["variable"],),
             resolution=payload["resolution"],

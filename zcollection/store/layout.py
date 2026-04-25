@@ -23,6 +23,7 @@ def join_path(*parts: str) -> str:
 
 
 def parent_path(path: str) -> str:
+    """Return the parent of ``path``, or the empty string at the root."""
     p = path.rstrip("/")
     if "/" not in p:
         return ""
@@ -30,6 +31,7 @@ def parent_path(path: str) -> str:
 
 
 def relative_path(path: str, base: str) -> str:
+    """Return ``path`` expressed relative to ``base``, falling back to ``path``."""
     p = path.strip("/")
     b = base.strip("/")
     if not b:

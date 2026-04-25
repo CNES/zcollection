@@ -7,6 +7,7 @@ from .harness import BenchSpec, compare, dump_json, run_suite
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the benchmark CLI and return its exit code."""
     p = argparse.ArgumentParser(prog="zcollection.benches")
     sub = p.add_subparsers(dest="cmd", required=True)
 

@@ -163,4 +163,5 @@ def _apply_op(op: ast.cmpop, a: Any, b: Any) -> bool:
 
 
 def key_to_dict(key: PartitionKey) -> dict[str, Any]:
+    """Return ``key`` as a ``{component: value}`` mapping."""
     return dict(key)

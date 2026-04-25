@@ -16,6 +16,7 @@ from zcollection.view import View, ViewReference
 
 
 def test_catalog_round_trip(tmp_path):
+    """Catalog read/write round-trips with a stable checksum."""
     store = zc.LocalStore(tmp_path / "col")
     cat = Catalog(store)
     assert cat.read() is None
@@ -30,6 +31,7 @@ def test_catalog_round_trip(tmp_path):
 
 
 def test_catalog_add_and_remove(tmp_path):
+    """Catalog ``add`` deduplicates and ``remove`` deletes paths."""
     store = zc.LocalStore(tmp_path / "col")
     cat = Catalog(store)
     cat.add(["p1", "p2"])
@@ -40,6 +42,7 @@ def test_catalog_add_and_remove(tmp_path):
 
 
 def test_catalog_drop(tmp_path):
+    """Catalog ``drop`` removes the persisted catalog file."""
     store = zc.LocalStore(tmp_path / "col")
     cat = Catalog(store)
     cat.write(["a"])
@@ -51,6 +54,7 @@ def test_catalog_drop(tmp_path):
 def test_collection_uses_catalog_when_enabled(
     tmp_path, schema, dataset, partitioning
 ):
+    """When catalog is enabled, partitions() trusts the catalog over the store."""
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
         store,
@@ -122,6 +126,7 @@ def test_catalog_drop_partitions_updates_catalog(
     dataset,
     partitioning,
 ):
+    """Dropping partitions removes them from the persisted catalog."""
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
         store,
@@ -137,6 +142,7 @@ def test_catalog_drop_partitions_updates_catalog(
 
 
 def test_catalog_corrupted_payload_treated_as_missing(tmp_path):
+    """A corrupted catalog file is treated as a missing catalog."""
     store = zc.LocalStore(tmp_path / "col")
     store.write_bytes(CATALOG_FILE, b"not-json")
     assert Catalog(store).read() is None
@@ -174,6 +180,7 @@ def test_immutable_variable_returned_by_query(
     dataset,
     partitioning,
 ):
+    """Queries return the immutable variable alongside per-partition data."""
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
         store,
@@ -200,6 +207,7 @@ def test_immutable_variable_returned_by_query(
 
 
 def test_view_create_query_update(tmp_path, schema, dataset, partitioning):
+    """Creating, updating, and querying a view round-trips derived variables."""
     base_store = zc.LocalStore(tmp_path / "col")
     base = zc.create_collection(
         base_store,
@@ -239,6 +247,7 @@ def test_view_create_query_update(tmp_path, schema, dataset, partitioning):
 
 
 def test_view_persists_and_reopens(tmp_path, schema, dataset, partitioning):
+    """A view persists its config and reopens with the same metadata."""
     base_store = zc.LocalStore(tmp_path / "col")
     base = zc.create_collection(
         base_store,
@@ -268,6 +277,7 @@ def test_view_persists_and_reopens(tmp_path, schema, dataset, partitioning):
 def test_view_rejects_colliding_variable(
     tmp_path, schema, dataset, partitioning
 ):
+    """View creation rejects derived variables that collide with base names."""
     base_store = zc.LocalStore(tmp_path / "col")
     base = zc.create_collection(
         base_store,
@@ -295,6 +305,7 @@ def test_view_rejects_colliding_variable(
 
 
 def test_indexer_build_and_lookup(tmp_path, schema, dataset, partitioning):
+    """Indexer build/persist/lookup round-trips through Parquet."""
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
         store,
@@ -333,6 +344,7 @@ def test_indexer_build_and_lookup(tmp_path, schema, dataset, partitioning):
 
 
 def test_indexer_unknown_column_raises(tmp_path, schema, dataset, partitioning):
+    """Indexer.lookup raises KeyError when given an unknown column."""
     store = zc.LocalStore(tmp_path / "col")
     col = zc.create_collection(
         store,

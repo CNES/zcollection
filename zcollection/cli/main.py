@@ -150,6 +150,7 @@ def main(
     out: TextIO | None = None,
     stdin: TextIO | None = None,
 ) -> int:
+    """Run the ``zcollection`` CLI and return its exit code."""
     args = _build_parser().parse_args(argv)
     out = out or sys.stdout
     stdin = stdin or sys.stdin

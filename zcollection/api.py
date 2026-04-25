@@ -20,7 +20,32 @@ def create_collection(
     catalog_enabled: bool = False,
     overwrite: bool = False,
 ) -> Collection:
-    """Create a new collection at ``path`` and return its handle."""
+    """Create a new collection at ``path`` and return its handle.
+
+    Convenience wrapper around :meth:`Collection.create`. If ``path`` is
+    a string it is dispatched through :func:`~zcollection.open_store`
+    using its URL scheme (``file://``, ``memory://``, ``s3://``,
+    ``icechunk://``).
+
+    Args:
+        path: A URL or a pre-built :class:`~zcollection.store.Store`.
+        schema: The dataset schema. Variables not depending on ``axis``
+            become immutable.
+        axis: Name of the partition axis (a dimension of ``schema``).
+        partitioning: A :class:`~zcollection.partitioning.Partitioning`
+            instance (e.g. ``Date``, ``Sequence``, ``GroupedSequence``).
+        catalog_enabled: If ``True``, maintain a sharded ``_catalog/``
+            of partition paths to make cold opens and listings O(1).
+        overwrite: If ``True``, replace any existing root at ``path``.
+
+    Returns:
+        A writable :class:`Collection` ready to ``insert``.
+
+    Raises:
+        CollectionExistsError: If a collection already exists at ``path``
+            and ``overwrite=False``.
+
+    """
     store = path if isinstance(path, Store) else open_store(path)
     return Collection.create(
         store,
@@ -37,7 +62,23 @@ def open_collection(
     *,
     mode: str = "r",
 ) -> Collection:
-    """Open an existing collection in ``r`` (read-only) or ``rw`` mode."""
+    """Open an existing collection in ``r`` (read-only) or ``rw`` mode.
+
+    Args:
+        path: A URL or a pre-built :class:`~zcollection.store.Store`.
+        mode: ``"r"`` for read-only access (default) or ``"rw"`` for
+            full read-write.
+
+    Returns:
+        A :class:`Collection` bound to the existing root. In ``"r"`` mode
+        all mutating methods raise
+        :class:`~zcollection.errors.ReadOnlyError`.
+
+    Raises:
+        ValueError: If ``mode`` is not one of ``"r"`` or ``"rw"``.
+        CollectionNotFoundError: If no collection exists at ``path``.
+
+    """
     if mode not in {"r", "rw"}:
         raise ValueError(f"mode must be 'r' or 'rw'; got {mode!r}")
     read_only = mode == "r"

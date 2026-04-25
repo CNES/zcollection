@@ -95,6 +95,7 @@ def split_runs(values: numpy.ndarray) -> Iterator[tuple[int, int]]:
 
 
 def half_orbit_rows(ds: zc.Dataset) -> numpy.ndarray:
+    """Return one row per (cycle, pass, half-orbit) group."""
     cycle = ds["cycle_number"].to_numpy()
     pass_ = ds["pass_number"].to_numpy()
     # Combine cycle+pass into one composite key to find run boundaries.

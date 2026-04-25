@@ -19,6 +19,7 @@ def write_root_config(
     catalog_enabled: bool,
     extras: dict[str, Any] | None = None,
 ) -> None:
+    """Encode and write the root collection config to ``store``."""
     payload = encode_root(
         schema=schema,
         axis=axis,
@@ -30,6 +31,7 @@ def write_root_config(
 
 
 def read_root_config(store: Store) -> dict[str, Any]:
+    """Read and decode the root collection config from ``store``."""
     raw = store.read_bytes(CONFIG_FILE)
     if raw is None:
         raise CollectionNotFoundError(f"no {CONFIG_FILE} at {store.root_uri}")

@@ -27,6 +27,7 @@ from zcollection.view import View, ViewReference
 # Build a base collection
 # -----------------------
 def build_schema() -> zc.DatasetSchema:
+    """Build the dataset schema for the example."""
     return (
         zc.Schema()
         .with_dimension("time", chunks=4096)
@@ -110,6 +111,7 @@ print(f"view variables: {view.variables}")
 # return a ``{view_var_name: numpy_array}`` mapping sized along the
 # partitioning dimension.
 def derive_var2(base_ds: zc.Dataset) -> dict[str, numpy.ndarray]:
+    """Return ``var2`` derived from the base dataset's ``var1``."""
     return {"var2": base_ds["var1"].to_numpy() * 2.0}
 
 

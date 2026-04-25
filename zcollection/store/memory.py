@@ -13,32 +13,40 @@ class MemoryStore(Store):
     """All keys held in a process-local dict; chiefly for tests."""
 
     def __init__(self) -> None:
+        """Initialize an empty in-memory store."""
         self._store = zarr.storage.MemoryStore()
         self._extras: dict[str, bytes] = {}
 
     @property
     def root_uri(self) -> str:
+        """Return a synthetic ``memory://`` URI keyed off the instance id."""
         return f"memory://{id(self):x}"
 
     def zarr_store(self) -> Any:
+        """Return the underlying :class:`zarr.storage.MemoryStore`."""
         return self._store
 
     def exists(self, key: str) -> bool:
+        """Return whether ``key`` exists in either the extras dict or zarr storage."""
         if key in self._extras:
             return True
         # Fall through to the zarr-managed namespace.
         return _zarr_contains(self._store, key)
 
     def read_bytes(self, key: str) -> bytes | None:
+        """Return the raw bytes stored at ``key`` or ``None`` if absent."""
         return self._extras.get(key)
 
     def write_bytes(self, key: str, data: bytes) -> None:
+        """Store ``data`` at ``key`` in the extras dict."""
         self._extras[key] = data
 
     def list_prefix(self, prefix: str) -> Iterator[str]:
+        """Yield direct children under ``prefix``."""
         yield from self.list_dir(prefix)
 
     def list_dir(self, prefix: str) -> Iterator[str]:
+        """Yield direct children under ``prefix`` from extras and zarr storage."""
         prefix_norm = prefix.strip("/")
         seen: set[str] = set()
         for key in self._extras:
@@ -52,6 +60,7 @@ class MemoryStore(Store):
                 yield head
 
     def delete_prefix(self, prefix: str) -> None:
+        """Recursively delete extras and zarr keys under ``prefix``."""
         prefix_slash = prefix.rstrip("/") + "/"
         for key in list(self._extras):
             if key == prefix or key.startswith(prefix_slash):
@@ -59,6 +68,7 @@ class MemoryStore(Store):
         _run_sync(self._store.delete_dir(prefix.strip("/")))
 
     def __repr__(self) -> str:
+        """Return the store's root URI as its representation."""
         return self.root_uri
 
 

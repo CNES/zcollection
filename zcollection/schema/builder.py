@@ -26,6 +26,7 @@ class SchemaBuilder:
     """Mutable builder that produces an immutable :class:`DatasetSchema`."""
 
     def __init__(self) -> None:
+        """Initialize an empty builder."""
         self._dims: dict[str, Dimension] = {}
         self._vars: dict[str, VariableSchema] = {}
         self._attrs: dict[str, Any] = {}
@@ -38,6 +39,18 @@ class SchemaBuilder:
         chunks: int | None = None,
         shards: int | None = None,
     ) -> SchemaBuilder:
+        """Register a dimension.
+
+        Args:
+            name: Dimension name.
+            size: Fixed size, or ``None`` if unknown (e.g. partitioning axis).
+            chunks: Chunk size along this dimension; ``None`` to use the full extent.
+            shards: Shard size along this dimension; ``None`` for no sharding.
+
+        Returns:
+            This builder, to allow chaining.
+
+        """
         self._dims[name] = Dimension(
             name, size=size, chunks=chunks, shards=shards
         )
@@ -54,6 +67,21 @@ class SchemaBuilder:
         attrs: dict[str, Any] | None = None,
         role: VariableRole = VariableRole.USER,
     ) -> SchemaBuilder:
+        """Register a variable.
+
+        Args:
+            name: Variable name.
+            dtype: NumPy dtype or anything :func:`numpy.dtype` accepts.
+            dimensions: Names of the dimensions this variable spans.
+            fill_value: Optional fill value.
+            codecs: Optional explicit codec stack; auto-detected when ``None``.
+            attrs: Optional attribute mapping.
+            role: Provenance role of the variable.
+
+        Returns:
+            This builder, to allow chaining.
+
+        """
         self._vars[name] = VariableSchema(
             name=name,
             dtype=numpy.dtype(dtype),
@@ -66,10 +94,21 @@ class SchemaBuilder:
         return self
 
     def with_attribute(self, name: str, value: Any) -> SchemaBuilder:
+        """Register a dataset-level attribute.
+
+        Args:
+            name: Attribute name.
+            value: Attribute value.
+
+        Returns:
+            This builder, to allow chaining.
+
+        """
         self._attrs[name] = value
         return self
 
     def build(self) -> DatasetSchema:
+        """Build and return the immutable :class:`DatasetSchema`."""
         return DatasetSchema(
             dimensions=dict(self._dims),
             variables=dict(self._vars),

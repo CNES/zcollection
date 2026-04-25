@@ -18,6 +18,7 @@ class AsyncRunner:
     """Owns one event loop driven by a single background thread."""
 
     def __init__(self) -> None:
+        """Start the background event loop thread."""
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(
             target=self._loop.run_forever,
@@ -28,6 +29,7 @@ class AsyncRunner:
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
+        """Return the underlying event loop."""
         return self._loop
 
     def run(self, coro: Coroutine[Any, Any, T]) -> T:
@@ -36,6 +38,7 @@ class AsyncRunner:
         return future.result()
 
     def close(self) -> None:
+        """Stop the background loop and join its thread."""
         if self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
         self._thread.join(timeout=5.0)
@@ -63,12 +66,19 @@ def run_sync(coro: Coroutine[Any, Any, T]) -> T:
     On a Dask worker we already sit inside a running loop; in that rare case
     the caller is expected to pass an awaitable directly to Dask. We still
     accept the call for symmetry but use the global runner.
+
+    Args:
+        coro: An async coroutine to run to completion.
+
+    Returns:
+        The result of the coroutine.
+
     """
     return get_runner().run(coro)
 
 
 def in_event_loop() -> bool:
-    """True if the current thread has a running asyncio event loop."""
+    """Check if the current thread has a running asyncio event loop."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:

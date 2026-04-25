@@ -14,6 +14,7 @@ from zcollection.partitioning import compile_filter
 
 
 def test_create_insert_query(store, schema, dataset, partitioning):
+    """Create/insert/query round-trips bit-exactly."""
     col = zc.create_collection(
         store,
         schema=schema,
@@ -33,6 +34,7 @@ def test_create_insert_query(store, schema, dataset, partitioning):
 
 
 def test_reopen_after_close(store, schema, dataset, partitioning):
+    """Reopening a closed collection in read-only mode returns the same data."""
     col = zc.create_collection(
         store,
         schema=schema,
@@ -52,6 +54,7 @@ def test_reopen_after_close(store, schema, dataset, partitioning):
 
 
 def test_filter_pushdown(store, schema, dataset, partitioning):
+    """Filter expressions push down to partition selection."""
     col = zc.create_collection(
         store,
         schema=schema,
@@ -72,6 +75,7 @@ def test_filter_pushdown(store, schema, dataset, partitioning):
 
 
 def test_select_variables(store, schema, dataset, partitioning):
+    """Querying with ``variables=`` returns only the requested variables."""
     col = zc.create_collection(
         store,
         schema=schema,
@@ -86,6 +90,7 @@ def test_select_variables(store, schema, dataset, partitioning):
 
 
 def test_drop_partitions(store, schema, dataset, partitioning):
+    """``drop_partitions`` removes selected partitions from the listing."""
     col = zc.create_collection(
         store,
         schema=schema,
@@ -101,6 +106,7 @@ def test_drop_partitions(store, schema, dataset, partitioning):
 
 
 def test_read_only_blocks_writes(store, schema, dataset, partitioning):
+    """Read-only collections raise ReadOnlyError on insert and drop."""
     col = zc.create_collection(
         store,
         schema=schema,
@@ -118,6 +124,7 @@ def test_read_only_blocks_writes(store, schema, dataset, partitioning):
 
 
 def test_create_existing_raises(store, schema, partitioning):
+    """Creating over an existing collection without overwrite raises."""
     zc.create_collection(
         store,
         schema=schema,
@@ -135,11 +142,13 @@ def test_create_existing_raises(store, schema, partitioning):
 
 
 def test_open_missing_raises(tmp_path):
+    """Opening a missing collection raises CollectionNotFoundError."""
     with pytest.raises(CollectionNotFoundError):
         zc.open_collection(f"file://{tmp_path}/nope")
 
 
 def test_invalid_filter_syntax():
+    """``compile_filter`` rejects unsafe or unsupported expressions."""
     with pytest.raises(ExpressionError):
         compile_filter("__import__('os')")
     with pytest.raises(ExpressionError):
