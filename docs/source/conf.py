@@ -101,4 +101,5 @@ sphinx_gallery_conf = {
     'examples_dirs': [HERE.parent.parent.joinpath('examples')],
     'filename_pattern': r'[\\\/]ex_',
     'pypandoc': False,
+    'min_reported_time': float('inf'),
 }
