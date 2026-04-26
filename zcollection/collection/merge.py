@@ -255,28 +255,45 @@ def upsert_within(tolerance: Any) -> MergeCallable:
 
 
 def _concat_along(left: Dataset, right: Dataset, dim: str) -> Dataset:
-    if not left.variables:
+    """Concatenate ``left`` and ``right`` along ``dim``.
+
+    Walks the full group tree: a variable that spans ``dim`` is
+    concatenated along that axis (the typical root-level case); a
+    variable that doesn't (e.g. a nested-group time series with its own
+    dim) is concatenated along its primary axis instead. Variables only
+    present on one side are passed through unchanged.
+    """
+    if not left.variables and not left.groups:
         return right
-    if not right.variables:
+    if not right.variables and not right.groups:
         return left
 
+    left_all = left.all_variables()
+    right_all = right.all_variables()
+
     new_vars: dict[str, Variable] = {}
-    for name, lvar in left.variables.items():
-        if name not in right.variables:
-            new_vars[name] = lvar
+    for path, lvar in left_all.items():
+        rvar = right_all.get(path)
+        if rvar is None:
+            new_vars[path] = lvar
             continue
-        rvar = right.variables[name]
-        if dim in lvar.dimensions:
-            ax = lvar.dimensions.index(dim)
+        ax = (
+            lvar.dimensions.index(dim)
+            if dim in lvar.dimensions
+            else 0
+            if lvar.dimensions
+            else None
+        )
+        if ax is None:
+            data = lvar.to_numpy()
+        else:
             data = numpy.concatenate(
                 [lvar.to_numpy(), rvar.to_numpy()], axis=ax
             )
-        else:
-            data = lvar.to_numpy()
-        new_vars[name] = Variable(lvar.schema, data)
-    for name, rvar in right.variables.items():
-        if name not in new_vars:
-            new_vars[name] = rvar
+        new_vars[path] = Variable(lvar.schema, data)
+    for path, rvar in right_all.items():
+        if path not in new_vars:
+            new_vars[path] = rvar
     return Dataset(schema=left.schema, variables=new_vars, attrs=left.attrs)
 
 
@@ -285,8 +302,14 @@ def _slice_dataset_bool(
     dim: str,
     mask: numpy.ndarray,
 ) -> Dataset:
+    """Boolean-slice every variable along ``dim`` (root + nested groups).
+
+    Variables in nested groups whose own dim differs from ``dim`` are
+    passed through unchanged — their length is independent of the
+    partitioning axis.
+    """
     new_vars: dict[str, Variable] = {}
-    for name, var in dataset.variables.items():
+    for path, var in dataset.all_variables().items():
         if dim in var.dimensions:
             ax = var.dimensions.index(dim)
             slicer: list[slice | numpy.ndarray] = [slice(None)] * var.ndim
@@ -294,7 +317,7 @@ def _slice_dataset_bool(
             data = var.to_numpy()[tuple(slicer)]
         else:
             data = var.to_numpy()
-        new_vars[name] = Variable(var.schema, data)
+        new_vars[path] = Variable(var.schema, data)
     return Dataset(
         schema=dataset.schema, variables=new_vars, attrs=dataset.attrs
     )
@@ -305,8 +328,13 @@ def _index_dataset(
     dim: str,
     idx: numpy.ndarray,
 ) -> Dataset:
+    """Fancy-index every variable along ``dim`` (root + nested groups).
+
+    Same fall-through as :func:`_slice_dataset_bool`: variables whose
+    primary dim is independent of ``dim`` are kept as-is.
+    """
     new_vars: dict[str, Variable] = {}
-    for name, var in dataset.variables.items():
+    for path, var in dataset.all_variables().items():
         if dim in var.dimensions:
             ax = var.dimensions.index(dim)
             slicer: list[slice | numpy.ndarray] = [slice(None)] * var.ndim
@@ -314,7 +342,7 @@ def _index_dataset(
             data = var.to_numpy()[tuple(slicer)]
         else:
             data = var.to_numpy()
-        new_vars[name] = Variable(var.schema, data)
+        new_vars[path] = Variable(var.schema, data)
     return Dataset(
         schema=dataset.schema, variables=new_vars, attrs=dataset.attrs
     )
