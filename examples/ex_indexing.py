@@ -24,6 +24,7 @@ import numpy
 import zcollection as zc
 from zcollection.indexing import Indexer
 
+
 # %%
 # Build a half-orbit dataset
 # --------------------------

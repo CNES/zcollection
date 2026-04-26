@@ -21,6 +21,7 @@ import numpy
 
 import zcollection as zc
 
+
 # %%
 # Initialization
 # --------------
