@@ -257,11 +257,12 @@ def upsert_within(tolerance: Any) -> MergeCallable:
 def _concat_along(left: Dataset, right: Dataset, dim: str) -> Dataset:
     """Concatenate ``left`` and ``right`` along ``dim``.
 
-    Walks the full group tree: a variable that spans ``dim`` is
-    concatenated along that axis (the typical root-level case); a
-    variable that doesn't (e.g. a nested-group time series with its own
-    dim) is concatenated along its primary axis instead. Variables only
-    present on one side are passed through unchanged.
+    Walks the full group tree (so nested-group variables that span
+    ``dim`` via dimension inheritance are concatenated too). Variables
+    that don't span ``dim`` are static across partitions by the
+    schema's partitioned-or-immutable contract, so they are passed
+    through unchanged from the left side. Variables only present on
+    one side are passed through unchanged.
     """
     if not left.variables and not left.groups:
         return right
@@ -274,22 +275,11 @@ def _concat_along(left: Dataset, right: Dataset, dim: str) -> Dataset:
     new_vars: dict[str, Variable] = {}
     for path, lvar in left_all.items():
         rvar = right_all.get(path)
-        if rvar is None:
+        if rvar is None or dim not in lvar.dimensions:
             new_vars[path] = lvar
             continue
-        ax = (
-            lvar.dimensions.index(dim)
-            if dim in lvar.dimensions
-            else 0
-            if lvar.dimensions
-            else None
-        )
-        if ax is None:
-            data = lvar.to_numpy()
-        else:
-            data = numpy.concatenate(
-                [lvar.to_numpy(), rvar.to_numpy()], axis=ax
-            )
+        ax = lvar.dimensions.index(dim)
+        data = numpy.concatenate([lvar.to_numpy(), rvar.to_numpy()], axis=ax)
         new_vars[path] = Variable(lvar.schema, data)
     for path, rvar in right_all.items():
         if path not in new_vars:
