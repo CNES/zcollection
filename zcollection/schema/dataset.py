@@ -85,17 +85,47 @@ class DatasetSchema(GroupSchema):
     # Mutators that return a new schema --------------------------------
 
     def with_partition_axis(self, axis: str) -> DatasetSchema:
-        """Mark each variable immutable iff it does not span ``axis``.
+        """Bind the partition axis and tag each variable accordingly.
 
-        Recurses into nested groups. Variables in nested groups that don't
-        span ``axis`` are also marked immutable.
+        Mark the variable immutable iff it does not span ``axis``.
+
+        The ``immutable`` tag means "constant across all partitions": the
+        variable is written once at the collection root (``_immutable/``)
+        and merged into the dataset returned by every partition open.
+
+        A :class:`~zcollection.Collection` only knows two kinds of
+        variables:
+
+        * **Partitioned** — variables that span ``axis``. Their rows are
+          split across partitions.
+        * **Immutable** — variables whose dimensions are *all* declared
+          with a fixed size. They are the same in every partition.
+
+        Anything else (an unbounded dimension other than ``axis``) is
+        forbidden: the collection has no rule to slice such a variable,
+        no rule to merge it across granules, and no rule to deduplicate
+        it. If a dataset carries two independent unbounded series (e.g.
+        a 1 Hz and a 20 Hz time series), they belong in two different
+        collections, not one.
+
+        Args:
+            axis: Name of the partition axis (a root dimension).
+
+        Returns:
+            A new :class:`DatasetSchema` with ``immutable`` flags set on
+            every variable.
+
+        Raises:
+            ~zcollection.errors.SchemaError: If ``axis`` is not a root
+                dimension, or if any variable references an unbounded
+                dimension other than ``axis``.
+
         """
-        if axis not in self.dimensions and not any(
-            axis in g.dimensions for g in self.iter_groups()
-        ):
+        if axis not in self.dimensions:
             raise SchemaError(
-                f"partitioning axis {axis!r} is not a known dimension"
+                f"partitioning axis {axis!r} is not a root dimension"
             )
+        _validate_partitionable(self, axis)
 
         def _retag(group: GroupSchema) -> GroupSchema:
             new_vars = {
@@ -199,3 +229,48 @@ class DatasetSchema(GroupSchema):
             attrs=payload.get("attrs", {}),
             format_version=payload.get("format_version", FORMAT_VERSION),
         )
+
+
+def _validate_partitionable(root: DatasetSchema, axis: str) -> None:
+    """Reject schemas that cannot be soundly partitioned along ``axis``.
+
+    Every variable must satisfy: for each ``d`` in its dimensions,
+    either ``d == axis`` or ``d`` resolves (by walking the group tree
+    upward) to a :class:`Dimension` declared with a fixed size. An
+    unbounded dimension different from the partition axis would carry
+    per-partition data the collection has no rule to slice or merge —
+    it belongs in its own collection.
+    """
+
+    def walk(group: GroupSchema, visible: dict[str, Dimension]) -> None:
+        merged = {**visible, **dict(group.dimensions)}
+        for var in group.variables.values():
+            for dim_name in var.dimensions:
+                if dim_name == axis:
+                    continue
+                dim = merged.get(dim_name)
+                if dim is None:
+                    # Unknown dimensions are caught earlier by
+                    # validate_dim_refs; bail here defensively.
+                    raise SchemaError(
+                        f"variable {var.name!r} references unknown "
+                        f"dimension {dim_name!r}"
+                    )
+                if dim.size is None:
+                    raise SchemaError(
+                        f"variable {var.name!r} (in group "
+                        f"{group.name!r}) spans dimension "
+                        f"{dim_name!r}, which has size=None and is "
+                        f"not the partition axis ({axis!r}). A "
+                        f"collection partitions data along exactly "
+                        f"one unbounded axis; every other variable "
+                        f"must either span that axis or be static "
+                        f"(all dimensions with a fixed size). Split "
+                        f"the data into one collection per unbounded "
+                        f"axis, or store it in a single Zarr group "
+                        f"instead of a collection."
+                    )
+        for child in group.groups.values():
+            walk(child, merged)
+
+    walk(root, {})
