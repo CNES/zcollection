@@ -84,3 +84,24 @@ skip-magic-trailing-comma = false
 
 # Like Black, automatically detect the appropriate line ending.
 line-ending = "auto"
+
+[tool.coverage.run]
+omit = [
+  "**/tests/*",
+  "conftest.py",
+  "setup.py",
+]
+
+[tool.coverage.report]
+omit = [
+  "**/tests/*",
+  "conftest.py",
+  "setup.py",
+  "zcollection/types.py",
+]
+# Exclude common idioms that don't run at coverage time.
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@(abc\\.)?abstractmethod",
+]
