@@ -73,29 +73,52 @@ def test_schema_all_variables_keys_by_path(
     assert set(all_) == {"time", "data_01/ku/power"}
 
 
-def test_schema_with_partition_axis_recurses(
-    hier_schema: zc.DatasetSchema,
-) -> None:
-    """``with_partition_axis`` walks nested groups marking immutability."""
-    bound = hier_schema.with_partition_axis("time")
-    assert bound.variables["time"].immutable is False
-    assert (
-        bound.groups["data_01"].groups["ku"].variables["power"].immutable
-        is False
-    )
-    # A non-partition variable inside a nested group should be marked immutable.
-    schema2 = (
+def test_schema_with_partition_axis_marks_static_nested_immutable() -> None:
+    """Nested-group vars whose dims are all fixed-size are immutable.
+
+    The contract: every variable must be either partitioned (spans
+    ``axis``) or immutable (all dims have a fixed declared size). When
+    that's the case, ``with_partition_axis`` recursively tags nested
+    static groups as immutable so they can be lifted to ``_immutable/``.
+    """
+    schema = (
         zc.Schema()
         .with_dimension("time", size=None)
-        .with_dimension("x", size=3, group="/grp")
         .with_variable("time", dtype="int64", dimensions=("time",))
+        .with_dimension("x", size=3, group="/grp")
         .with_variable(
             "static", dtype="float32", dimensions=("x",), group="/grp"
         )
         .build()
         .with_partition_axis("time")
     )
-    assert schema2.groups["grp"].variables["static"].immutable is True
+    assert schema.variables["time"].immutable is False
+    assert schema.groups["grp"].variables["static"].immutable is True
+
+
+def test_schema_with_partition_axis_rejects_unbounded_non_axis_dim() -> None:
+    """A variable with an unbounded non-axis dim makes the schema unsound.
+
+    A 20 Hz time series alongside a 1 Hz partition axis is the canonical
+    case: ``data_01_time`` is unbounded (size=None) and isn't the
+    partition axis. The collection has no rule to slice it, so binding
+    must fail with :class:`SchemaError`.
+    """
+    schema = (
+        zc.Schema()
+        .with_dimension("time", size=None)
+        .with_variable("time", dtype="int64", dimensions=("time",))
+        .with_dimension("data_01_time", size=None, group="/data_01")
+        .with_variable(
+            "time",
+            dtype="datetime64[ns]",
+            dimensions=("data_01_time",),
+            group="/data_01",
+        )
+        .build()
+    )
+    with pytest.raises(zc.SchemaError, match="data_01_time"):
+        schema.with_partition_axis("time")
 
 
 def test_schema_json_round_trip(hier_schema: zc.DatasetSchema) -> None:
