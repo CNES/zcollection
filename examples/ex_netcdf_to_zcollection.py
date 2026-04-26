@@ -7,31 +7,54 @@ A pedagogic, end-to-end script that ingests one or more NetCDF granules
 :py:class:`~zcollection.Collection` and maintains a half-orbit Parquet
 :py:class:`~zcollection.indexing.Indexer` on top of it.
 
-Highlights
-----------
+What a ZCollection partitions — and what it doesn't
+---------------------------------------------------
 
-* Reads each NetCDF granule with :mod:`netCDF4` and lifts its ``/data_01``
-  subgroup to the root of the in-memory :py:class:`~zcollection.Dataset`,
-  while keeping ``/data_20`` as a nested
-  :py:class:`~zcollection.Group`. This shows the v3 hierarchical schema in
-  action.
-* Three partitioning options selectable from the CLI:
+A :class:`~zcollection.Collection` partitions a dataset along **exactly
+one** unbounded axis. Every variable in the schema must be one of:
+
+* **Partitioned** — its dimensions include the partition axis. Its rows
+  are split across partitions according to the partitioning rule.
+* **Immutable** — every dimension has a fixed declared size. The
+  variable is then identical in every partition; ZCollection writes it
+  once at the collection root (``_immutable/``) and merges it back into
+  the dataset returned by every partition open.
+
+Anything else is rejected at schema bind time. A SWOT nadir granule
+ships **two independent unbounded series** — a 1 Hz block in
+``/data_01`` and a 20 Hz block in ``/data_20``. Putting both in the
+same collection would mean storing per-partition data on an axis the
+collection doesn't know how to slice or merge: a soundness bug. The
+right answer is two collections (one per resampling rate) or, if you
+don't need partitioning, a single Zarr group.
+
+This example builds the **1 Hz collection** from each granule's
+``/data_01`` group, lifted to the root of the Dataset (so its ``time``
+*is* the partition axis). Build a second collection for ``/data_20`` by
+re-running the script against the same granules with a different
+``--output`` URL and the same flags.
+
+What the script demonstrates
+----------------------------
+
+* **Three partitioning options** selectable from the CLI:
 
   - ``--key date`` (default): :py:class:`~zcollection.partitioning.Date`
     on ``time``, with a ``--resolution`` (default ``D`` for daily).
   - ``--key cycle``: :py:class:`~zcollection.partitioning.Sequence` on
     ``cycle_number``.
-  - ``--key cycle_pass``: :py:class:`~zcollection.partitioning.Sequence`
-    on ``(cycle_number, pass_number)``.
+  - ``--key cycle_pass``:
+    :py:class:`~zcollection.partitioning.Sequence` on
+    ``(cycle_number, pass_number)``.
 
-* If the target ZCollection does not exist yet it is **created** with the
-  inferred schema; otherwise the script **opens** it in read-write mode
-  and inserts the new granules.
-* The output URL is dispatched by scheme (``file://``, ``memory://``,
-  ``s3://``, ``icechunk://``), so the same script works locally or against
-  object storage.
-* After every insert run the half-orbit index is rebuilt and written next
-  to the collection.
+* **Open-or-create**: the target ZCollection is created from the first
+  granule's schema if it does not exist yet, otherwise opened in
+  read-write mode.
+* **Any storage backend**: the output URL is dispatched by scheme
+  (``file://``, ``memory://``, ``s3://``, ``icechunk://``).
+* **Half-orbit indexing**: after every insert run a Parquet index keyed
+  on ``(cycle_number, pass_number)`` is rebuilt, so ``Indexer.lookup``
+  returns row ranges without scanning the data files.
 
 Merge strategies
 ----------------
@@ -44,16 +67,14 @@ incoming ones. The strategy is picked through the ``--merge`` flag:
   inserted dataset. Use when the new granule is the source of truth and
   you don't care about the previous content.
 * ``concat`` — the inserted rows are simply appended after the existing
-  rows along the partitioning dimension (no deduplication, no sorting).
-  Cheapest, but fails the moment a granule overlaps with itself.
-* ``time_series`` — drops every existing row whose time falls inside
-  ``[inserted.time.min(), inserted.time.max()]`` then concatenates and
-  sorts. Right when a re-acquisition fully covers a previous one in
-  time.
-* ``upsert`` — row-wise replace-or-add by exact time equality: existing
-  rows whose time appears in the new granule are dropped; everything
-  else is kept; the result is sorted by time. Use this to patch in new
-  rows without touching unaffected gaps.
+  rows along the partition axis. Cheapest, no deduplication, no sorting.
+* ``time_series`` — drops every existing row whose ``time`` falls inside
+  ``[inserted.time.min(), inserted.time.max()]``, then concatenates and
+  sorts along ``time``. Right when a re-acquisition fully covers a
+  previous one in time.
+* ``upsert`` — row-wise replace-or-add by exact ``time`` equality.
+  Existing rows whose time appears in the new batch are dropped;
+  everything else is kept; the result is sorted by time.
 * ``upsert_within`` — same as ``upsert`` but matches existing rows
   against the **nearest** inserted timestamp within ``--tolerance``.
   Useful when re-acquired timestamps are jittered by clock drift. The
@@ -63,7 +84,7 @@ incoming ones. The strategy is picked through the ``--merge`` flag:
 Run with::
 
     python examples/ex_netcdf_to_zcollection.py \\
-        --output file:///tmp/swot-nadir \\
+        --output file:///tmp/swot-nadir-1hz \\
         --key date --resolution D \\
         --merge upsert_within --tolerance 500ms \\
         /path/to/SWOT_GPS_2PsP*.nc
@@ -73,16 +94,16 @@ A SWOT nadir granule looks like (one cycle/pass per file)::
     SWOT_GPS_2PsP031_100_20250410_165925_20250410_175052.nc
                   ^cycle ^pass ^start (UTC)
 
-This example uses the ``netCDF4`` library to access nested groups, which
-xarray cannot do natively without an explicit ``group=`` argument.
+This example uses the ``netCDF4`` library to access nested groups,
+which xarray cannot do natively without an explicit ``group=`` argument.
 """
 
-
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 import argparse
+from datetime import datetime
 import itertools
 import logging
+from pathlib import Path
 
 import netCDF4
 import numpy
@@ -92,28 +113,39 @@ from zcollection.collection import merge as merge_strategies
 from zcollection.errors import CollectionNotFoundError
 from zcollection.indexing import Indexer
 
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
 _LOGGER = logging.getLogger("ex_netcdf_to_zcollection")
 
+
 # %%
 # Reading a granule
 # -----------------
 #
-# Each SWOT nadir file carries cycle/pass numbers as global attributes and
-# two subgroups: ``/data_01`` (1 Hz) and ``/data_20`` (20 Hz). We expose
-# the 1 Hz vars at the root of the resulting :class:`~zcollection.Dataset`
-# (so the time axis is the canonical one for partitioning) and keep the
-# 20 Hz vars under a nested ``/data_20`` group with its own time
-# dimension.
+# We open each SWOT NetCDF file with :mod:`netCDF4` (xarray cannot read
+# named subgroups without an explicit ``group=``) and extract the 1 Hz
+# variables from ``/data_01``. Cycle/pass numbers come from the global
+# attributes and are broadcast over the time axis as filler columns.
 
-#: Time dimension name at the root (1 Hz, used by all partitioners).
+#: The partition axis. SWOT 1 Hz time stamps live here, so ``time`` is
+#: both the variable name and the partitioning dim.
 ROOT_TIME_DIM: str = "time"
-#: Time dimension name in the nested ``/data_20`` group (20 Hz).
-DATA_20_TIME_DIM: str = "time_20hz"
 #: Reference epoch for SWOT time variables (``seconds since ...``).
 EPOCH: numpy.datetime64 = numpy.datetime64("2000-01-01T00:00:00", "ns")
+
+#: 1 Hz variables we lift from ``/data_01`` to the collection root.
+#: Extending the list is a one-line edit; the schema is inferred from
+#: whatever the first granule exposes.
+DATA_01_VARS: tuple[str, ...] = (
+    "time",
+    "latitude",
+    "longitude",
+    "altitude",
+    "distance_to_coast",
+    "surface_classification_flag",
+)
 
 
 def _decode_time(seconds: numpy.ndarray) -> numpy.ndarray:
@@ -122,50 +154,36 @@ def _decode_time(seconds: numpy.ndarray) -> numpy.ndarray:
     return EPOCH + nanos.astype("timedelta64[ns]")
 
 
+def _parse_meas_time(text: str) -> numpy.datetime64:
+    """Parse a SWOT ``YYYY-MM-DD HH:MM:SS.ffffff`` global attr."""
+    return numpy.datetime64(datetime.fromisoformat(text), "ns")
+
+
 def read_granule(
     path: Path,
-) -> tuple[dict[str, Any], dict[str, numpy.ndarray], dict[str, numpy.ndarray]]:
-    """Open one SWOT NetCDF file and return ``(meta, data_01, data_20)``.
+) -> tuple[dict[str, Any], dict[str, numpy.ndarray]]:
+    """Open one SWOT NetCDF file and return ``(meta, data_01)``.
 
-    ``meta`` carries the global attributes we propagate to ZCollection
-    (cycle, pass, granule name). The two dicts hold per-group variable
-    arrays keyed by short name. Only the most useful 1 Hz and 20 Hz
-    variables are kept here, but extending the list is a one-line edit.
+    ``meta`` holds the global attributes (cycle/pass numbers, granule
+    name); ``data_01`` is a per-variable dict of 1 Hz arrays.
     """
     with netCDF4.Dataset(path) as nc:
         meta = {
             "cycle_number": int(nc.cycle_number),
             "pass_number": int(nc.pass_number),
+            "first_meas_time": _parse_meas_time(nc.first_meas_time),
             "granule": path.name,
         }
         data_01 = {
             name: numpy.asarray(nc["data_01"][name][:])
-            for name in (
-                "time",
-                "latitude",
-                "longitude",
-                "altitude",
-                "distance_to_coast",
-                "surface_classification_flag",
-            )
+            for name in DATA_01_VARS
             if name in nc["data_01"].variables
-        }
-        data_20 = {
-            name: numpy.asarray(nc["data_20"][name][:])
-            for name in (
-                "time",
-                "latitude",
-                "longitude",
-                "altitude",
-            )
-            if name in nc["data_20"].variables
         }
 
     # Decode SWOT 'seconds since 2000-01-01' into datetime64[ns] so the
     # Date partitioner can bucket on it directly.
     data_01["time"] = _decode_time(data_01["time"])
-    data_20["time"] = _decode_time(data_20["time"])
-    return meta, data_01, data_20
+    return meta, data_01
 
 
 # %%
@@ -174,59 +192,33 @@ def read_granule(
 #
 # A ZCollection schema is *immutable* and *declarative*. We discover it
 # once, from the first granule, then reuse it for every subsequent
-# insert. Variables that don't span the partition axis (e.g. constants
-# inferred from globals) become *immutable* — they are written once at
-# the collection root rather than being duplicated in every partition.
+# insert. ``cycle_number`` and ``pass_number`` are 1 Hz filler columns
+# (broadcast from the per-file scalars) so the Sequence partitioners
+# and the half-orbit indexer can key on them.
 
 
-def build_schema(
-    sample_data_01: dict[str, numpy.ndarray],
-    sample_data_20: dict[str, numpy.ndarray],
-) -> zc.DatasetSchema:
-    """Return a :class:`~zcollection.DatasetSchema` matching the granule layout.
-
-    The 1 Hz variables sit at the root (under :data:`ROOT_TIME_DIM`).
-    The 20 Hz variables go into a nested ``/data_20`` group with its own
-    :data:`DATA_20_TIME_DIM` dimension. Two scalar-per-row helpers,
-    ``cycle_number`` and ``pass_number``, are added at the root so the
-    Sequence partitioners can split on them.
-    """
+def build_schema(sample_data_01: dict[str, numpy.ndarray]) -> zc.DatasetSchema:
+    """Return a :class:`~zcollection.DatasetSchema` matching the granule layout."""
     builder = (
         zc.Schema()
-        # The chunk size of 86400 ≈ one day at 1 Hz. Tune to match your
-        # typical partition footprint (compression and read efficiency
-        # both depend on it).
+        # 86400 ≈ one day at 1 Hz. Tune to match your typical partition
+        # footprint; compression and read efficiency both depend on it.
         .with_dimension(ROOT_TIME_DIM, chunks=86400)
-        # Root-level variables (1 Hz).
-        .with_variable("time", dtype="datetime64[ns]", dimensions=(ROOT_TIME_DIM,))
-        .with_variable("cycle_number", dtype="uint16", dimensions=(ROOT_TIME_DIM,))
-        .with_variable("pass_number", dtype="uint16", dimensions=(ROOT_TIME_DIM,))
+        .with_variable(
+            "time", dtype="datetime64[ns]", dimensions=(ROOT_TIME_DIM,)
+        )
+        .with_variable(
+            "cycle_number", dtype="uint16", dimensions=(ROOT_TIME_DIM,)
+        )
+        .with_variable(
+            "pass_number", dtype="uint16", dimensions=(ROOT_TIME_DIM,)
+        )
     )
     for name, arr in sample_data_01.items():
         if name == "time":
             continue  # already declared
         builder = builder.with_variable(
             name, dtype=arr.dtype, dimensions=(ROOT_TIME_DIM,)
-        )
-
-    # Nested /data_20 group: declare its own time dimension and variables.
-    builder = builder.with_group("/data_20").with_dimension(
-        DATA_20_TIME_DIM, chunks=86400 * 20, group="/data_20"
-    )
-    builder = builder.with_variable(
-        "time",
-        dtype="datetime64[ns]",
-        dimensions=(DATA_20_TIME_DIM,),
-        group="/data_20",
-    )
-    for name, arr in sample_data_20.items():
-        if name == "time":
-            continue
-        builder = builder.with_variable(
-            name,
-            dtype=arr.dtype,
-            dimensions=(DATA_20_TIME_DIM,),
-            group="/data_20",
         )
     return builder.build()
 
@@ -236,25 +228,21 @@ def build_schema(
 # ----------------------------------------------
 #
 # For each input granule we instantiate one :class:`~zcollection.Dataset`
-# matching the schema. Cycle and pass numbers come from the global
-# attributes and are *broadcast* over the time dimension (one constant
-# value per row) so they can serve as partition keys *and* as the columns
-# the half-orbit index keys on.
+# matching the schema. ``cycle_number`` and ``pass_number`` are
+# broadcast over the granule's 1 Hz time axis.
 
 
 def make_dataset(
     schema: zc.DatasetSchema,
     meta: dict[str, Any],
     data_01: dict[str, numpy.ndarray],
-    data_20: dict[str, numpy.ndarray],
 ) -> zc.Dataset:
     """Bind raw arrays to the schema, returning one :class:`~zcollection.Dataset`."""
-    n_root = data_01["time"].size
-    cycle = numpy.full(n_root, meta["cycle_number"], dtype="uint16")
-    pass_ = numpy.full(n_root, meta["pass_number"], dtype="uint16")
+    n = data_01["time"].size
+    cycle = numpy.full(n, meta["cycle_number"], dtype="uint16")
+    pass_ = numpy.full(n, meta["pass_number"], dtype="uint16")
 
     variables: dict[str, zc.Variable] = {
-        # Root variables — keys without "/" go to the root group.
         "time": zc.Variable(schema.variables["time"], data_01["time"]),
         "cycle_number": zc.Variable(schema.variables["cycle_number"], cycle),
         "pass_number": zc.Variable(schema.variables["pass_number"], pass_),
@@ -264,23 +252,7 @@ def make_dataset(
             continue
         variables[name] = zc.Variable(schema.variables[name], arr)
 
-    # Nested /data_20 group — keys containing "/" are routed by the
-    # Dataset constructor into the matching child group.
-    grp_20 = schema.groups["data_20"]
-    variables["data_20/time"] = zc.Variable(
-        grp_20.variables["time"], data_20["time"]
-    )
-    for name, arr in data_20.items():
-        if name == "time":
-            continue
-        variables[f"data_20/{name}"] = zc.Variable(grp_20.variables[name], arr)
-
     return zc.Dataset(schema=schema, variables=variables)
-
-
-# %%
-# Picking the partitioning
-# ------------------------
 
 
 # %%
@@ -289,11 +261,10 @@ def make_dataset(
 #
 # A merge strategy decides what happens when an insert lands in a
 # partition that already has data. The functions live in
-# :mod:`zcollection.collection.merge` and are also exposed as
-# string aliases (``"replace"``, ``"concat"``, ``"time_series"``,
-# ``"upsert"``). For ``upsert_within`` we build a closure with the
-# tolerance baked in via
-# :func:`~zcollection.collection.merge.upsert_within`.
+# :mod:`zcollection.collection.merge` and are also exposed as string
+# aliases (``"replace"``, ``"concat"``, ``"time_series"``, ``"upsert"``).
+# For ``upsert_within`` we build a closure with the tolerance baked in
+# via :func:`~zcollection.collection.merge.upsert_within`.
 
 _TIMEDELTA_UNITS: dict[str, str] = {
     "ns": "ns",
@@ -338,7 +309,6 @@ def make_merge(
             )
         return merge_strategies.upsert_within(tolerance)
     if name in {"replace", "concat", "time_series", "upsert"}:
-        # ``Collection.insert`` accepts the string alias directly.
         return name
     raise ValueError(
         f"unknown --merge {name!r}; choose from replace, concat, "
@@ -346,7 +316,14 @@ def make_merge(
     )
 
 
-def make_partitioning(key: str, resolution: str) -> zc.partitioning.Partitioning:
+# %%
+# Picking the partitioning
+# ------------------------
+
+
+def make_partitioning(
+    key: str, resolution: str
+) -> zc.partitioning.Partitioning:
     """Resolve the CLI ``--key`` flag into a Partitioning instance."""
     if key == "date":
         return zc.partitioning.Date(
@@ -373,7 +350,6 @@ def make_partitioning(key: str, resolution: str) -> zc.partitioning.Partitioning
 def open_or_create(
     output_url: str,
     sample_data_01: dict[str, numpy.ndarray],
-    sample_data_20: dict[str, numpy.ndarray],
     *,
     key: str,
     resolution: str,
@@ -382,14 +358,14 @@ def open_or_create(
 
     On first call the schema is inferred from the first granule and the
     partitioning is materialised on disk; subsequent calls open the
-    existing root and validate the on-disk schema is unchanged.
+    existing root.
     """
     try:
         col = zc.open_collection(output_url, mode="rw")
         _LOGGER.info("opened existing collection at %s", output_url)
         return col
     except CollectionNotFoundError:
-        schema = build_schema(sample_data_01, sample_data_20)
+        schema = build_schema(sample_data_01)
         partitioning = make_partitioning(key, resolution)
         _LOGGER.info(
             "creating new collection at %s (key=%s, resolution=%s)",
@@ -410,9 +386,9 @@ def open_or_create(
 # Half-orbit indexer
 # ------------------
 #
-# A SWOT half-orbit is a contiguous run of rows sharing the same
-# ``(cycle_number, pass_number)`` pair. The Indexer keeps one Parquet row
-# per (partition, run), which lets ``Indexer.lookup(...)`` return slice
+# A SWOT half-orbit is a contiguous run of 1 Hz rows sharing the same
+# ``(cycle_number, pass_number)`` pair. The Indexer keeps one Parquet
+# row per (partition, run), letting ``Indexer.lookup(...)`` return slice
 # ranges without touching the data files.
 
 
@@ -494,7 +470,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--merge",
-        choices=("replace", "concat", "time_series", "upsert", "upsert_within"),
+        choices=(
+            "replace",
+            "concat",
+            "time_series",
+            "upsert",
+            "upsert_within",
+        ),
         default="replace",
         help=(
             "Merge strategy when an insert lands in an existing "
@@ -534,12 +516,11 @@ def main(argv: list[str] | None = None) -> int:
     # First granule seeds the schema (if the collection doesn't exist yet).
     first = args.inputs[0]
     _LOGGER.info("reading sample granule %s", first)
-    sample_meta, sample_01, sample_20 = read_granule(first)
+    _, sample_01 = read_granule(first)
 
     col = open_or_create(
         args.output,
         sample_01,
-        sample_20,
         key=args.key,
         resolution=args.resolution,
     )
@@ -553,8 +534,8 @@ def main(argv: list[str] | None = None) -> int:
 
     for path in args.inputs:
         _LOGGER.info("ingesting %s", path)
-        meta, d01, d20 = read_granule(path)
-        ds = make_dataset(col.schema, meta, d01, d20)
+        meta, d01 = read_granule(path)
+        ds = make_dataset(col.schema, meta, d01)
         col.insert(ds, merge=merge)
     _LOGGER.info(
         "collection now has %d partitions",
@@ -565,9 +546,9 @@ def main(argv: list[str] | None = None) -> int:
     index_path = args.index
     if index_path is None and args.output.startswith("file://"):
         index_path = (
-            Path(args.output.removeprefix("file://")).resolve().with_suffix(
-                ".index.parquet"
-            )
+            Path(args.output.removeprefix("file://"))
+            .resolve()
+            .with_suffix(".index.parquet")
         )
     if index_path is not None:
         rebuild_index(col, str(index_path))
