@@ -23,10 +23,15 @@ _LINE_WIDTH: int = 120
 
 
 def format_bytes(size: int) -> str:
-    """Return a human-readable byte-size string (``"5.32 MB"``).
+    """Return a human-readable byte-size string.
 
-    Uses base-1024 stepping (kB, MB, GB, TB, PB) to match the convention used
-    by Zarr's ``nbytes_stored`` reporting.
+    Uses base-1024 stepping (kB, MB, GB, TB, PB) to match the
+    convention used by Zarr's ``nbytes_stored`` reporting. Examples::
+
+        format_bytes(40)  # '40 B'   (no decimals under 1 kB)
+        format_bytes(2 * 1024)  # '2.00 kB'
+        format_bytes(5 * 1024**2)  # '5.00 MB'
+        format_bytes(1024**5)  # '1.00 PB'
     """
     value = float(size)
     for unit in ("B", "kB", "MB", "GB", "TB"):
@@ -48,7 +53,13 @@ def format_dimensions(dims: dict[str, int]) -> str:
 
 
 def calculate_column_width(items: Iterable[str]) -> int:
-    """Return the width (>= 7 chars) needed to align ``items``."""
+    """Return the column width needed to align ``items`` left-padded.
+
+    The result is ``max(7, longest_item_length)``. The 7-char floor
+    matches the convention used by xarray's repr — short names like
+    ``"time"`` still get a comfortable column even when they're the
+    only key in the table.
+    """
     items = list(items)
     if not items:
         return 7
@@ -90,7 +101,12 @@ def _data_repr(var: Variable) -> str:
 
 
 def variable_repr(var: Variable) -> str:
-    """Return a multi-line representation of a single :class:`Variable`."""
+    """Return a multi-line representation of a single :class:`Variable`.
+
+    The output has a header line (qualified class name, dimensions,
+    dtype, total bytes), a backend tag (numpy / dask / other), and an
+    optional ``Attributes:`` block listing the variable's attrs.
+    """
     dims_str = format_dimensions(
         dict(zip(var.dimensions, var.shape, strict=False))
     )
@@ -118,7 +134,21 @@ def _variable_line(name: str, var: Variable, width: int) -> str:
 
 
 def group_repr(group: Group) -> str:
-    """Return a multi-line, xarray-like representation of a :class:`Group`."""
+    """Return a multi-line, xarray-like representation of a :class:`Group`.
+
+    The output has four sections:
+
+    - a header line with the group's qualified class name, absolute
+      path, and recursive byte size;
+    - a ``Dimensions:`` line listing the dims declared on this group;
+    - a ``Data variables:`` block (one line per own variable, or
+      ``<empty>``);
+    - an ``Attributes:`` block (only if the group has attrs);
+    - a ``Groups:`` block summarising direct children (size + variable
+      and subgroup counts; only if the group has children).
+
+    Long lines are truncated by :func:`pretty_print`.
+    """
     cls = group.__class__
     head = (
         f"<{cls.__module__}.{cls.__qualname__} {group.long_name()!r}> "

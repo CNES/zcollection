@@ -2,7 +2,21 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""Root :class:`Group` bound to a :class:`DatasetSchema`."""
+"""Root :class:`Group` bound to a :class:`DatasetSchema`.
+
+A :class:`Dataset` is the root group of a zcollection tree:
+``name == "/"``, ``parent is None``, and its
+:attr:`Group.schema` is a :class:`DatasetSchema` (which extends
+:class:`~zcollection.schema.GroupSchema` with versioning and JSON
+round-tripping). On top of plain :class:`Group` semantics it adds:
+
+- A path-aware constructor that routes variables with ``/`` in
+  their key into nested groups instead of placing them at the
+  root.
+- An xarray bridge — :meth:`Dataset.to_xarray` (with optional
+  ``group=`` argument) and :meth:`Dataset.from_xarray` (always
+  builds a flat dataset, since xarray has no native group concept).
+"""
 
 from typing import TYPE_CHECKING, Any
 from collections import OrderedDict
@@ -62,17 +76,28 @@ def _build_groups_from_schema(
 class Dataset(Group):
     """A schema plus the in-memory data for one or more partitions.
 
-    A :class:`Dataset` is the root :class:`Group` (``name == "/"``,
-    ``parent is None``).
+    A :class:`Dataset` is the root :class:`Group` of a zcollection
+    tree (``name == "/"``, ``parent is None``). Compared to a plain
+    :class:`Group`, the :attr:`schema` attribute is narrowed to
+    :class:`DatasetSchema` (statically; the runtime slot is the same)
+    and the constructor has a path-aware variable router.
 
     Args:
         schema: The dataset schema (root :class:`GroupSchema`).
-        variables: Variables for the root group. Either a mapping of
-            ``name -> Variable`` (short names addressing the root group, or
-            absolute paths populating nested groups), or an iterable of
-            :class:`Variable` instances (which are placed at the root).
-        groups: Optional pre-built child groups for the root.
-        attrs: Optional dataset-level attributes; defaults to ``schema.attrs``.
+        variables: Variables for the dataset. Two forms are accepted:
+
+            - a mapping ``name -> Variable``: keys without ``/`` are
+              placed at the root; keys containing ``/`` are routed
+              into the matching nested group (intermediate groups
+              are auto-built from ``schema``);
+            - an iterable of :class:`Variable` instances — each is
+              placed at the root using its own ``schema.name``.
+        groups: Optional pre-built child groups for the root. They
+            are merged with the auto-built nested groups, with
+            ``groups`` winning on name conflict for groups it
+            already provides.
+        attrs: Optional dataset-level attributes; defaults to
+            ``schema.attrs``.
 
     """
 
@@ -91,7 +116,24 @@ class Dataset(Group):
         groups: Mapping[str, Group] | Iterable[Group] = (),
         attrs: Mapping[str, Any] | None = None,
     ) -> None:
-        """Initialize the dataset (root group)."""
+        """Initialize the dataset (root group).
+
+        Variables in ``variables`` whose key contains ``/`` are
+        **routed** into the matching nested group via
+        :func:`_build_groups_from_schema` (intermediate groups are
+        created on demand from ``schema``). This is the typical way
+        a partition dataset is built::
+
+            zc.Dataset(
+                schema=schema,
+                variables={
+                    "time": ...,
+                    "data_01/ku/power": ...,  # placed under /data_01/ku
+                },
+            )
+
+        See the class docstring for the full constructor semantics.
+        """
         # Split variables by destination group: keys without a "/" go to the
         # root; keys containing "/" address nested groups.
         if isinstance(variables, Mapping):
@@ -130,10 +172,15 @@ class Dataset(Group):
     # Convenience views ------------------------------------------------
 
     def select(self, names: Iterable[str]) -> Dataset:
-        """Return a new dataset containing only the named variables.
+        """Return a new dataset restricted to the named variables.
 
-        ``names`` may be short names (resolved against the root group) or
-        absolute paths (``/grp/var``). Empty groups are pruned.
+        Both the variables *and* the schema are subsetted: the
+        returned dataset's :attr:`schema` is built via
+        :meth:`DatasetSchema.select`, which prunes any group that
+        ends up empty after the selection.
+
+        ``names`` may be short names (resolved against the root
+        group) or absolute paths (``/grp/var``).
         """
         wanted = list(names)
         sub_schema = self.schema.select(wanted)
@@ -201,8 +248,27 @@ class Dataset(Group):
     def from_xarray(cls, ds: xarray.Dataset) -> Dataset:
         """Build a :class:`Dataset` from an xarray ``Dataset`` (flat).
 
-        xarray has no native group concept, so the result is always a flat
-        dataset (root group only).
+        Schema fields are inferred from the input:
+
+        - dimensions come from ``ds.sizes``;
+        - dataset attributes from ``ds.attrs``;
+        - each variable contributes its ``dtype``, ``dimensions``,
+          ``attrs`` (minus ``_FillValue``, which becomes the
+          variable's ``fill_value``); coordinates and data variables
+          are merged into a single flat namespace.
+
+        xarray has no native group concept, so the resulting
+        :class:`Dataset` is always flat (root group only). Round-trip
+        a hierarchical Dataset by calling :meth:`to_xarray` per group.
+
+        Args:
+            ds: The xarray Dataset to convert.
+
+        Returns:
+            A new :class:`Dataset` with an inferred schema and the
+            same variable data (no copy — the underlying arrays are
+            shared with ``ds``).
+
         """
         builder = SchemaBuilder()
         for dim_name, size in ds.sizes.items():
