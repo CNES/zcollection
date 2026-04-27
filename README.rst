@@ -1,6 +1,14 @@
 ZCollection
 ===========
 
+.. note::
+
+   **You're looking at zcollection 2026.4+**, the Zarr v3 rewrite.
+
+   If you're upgrading from the **v1 line** (last release ``2024.2.0``,
+   based on Zarr v2), pin ``zcollection >= 2024.2.0, < 2026.4.0`` to
+   stay on v1 and read :doc:`migration` before crossing over.
+
 This project is a Python library allowing manipulating data partitioned into a
 **collection** of `Zarr <https://zarr.readthedocs.io/en/stable/>`_ groups.
 
