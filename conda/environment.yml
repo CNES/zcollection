@@ -35,3 +35,7 @@ dependencies:
   - sphinx-gallery
   - sphinx-inline-tabs
   - pypandoc
+  # examples/ex_netcdf_to_zcollection.py imports netCDF4 at module
+  # level, so the docs build (which sphinx-gallery executes per
+  # example) needs the reader available.
+  - netcdf4
