@@ -5,15 +5,16 @@
 """Codec profiles and the :class:`CodecStack` data class.
 
 A profile is a (named) recipe that produces a :class:`CodecStack` for a
-variable, given its dtype and shape. Three profiles ship by default:
+variable. Three profiles ship by default:
 
 - ``local-fast``: no sharding, Zstd L3.
-- ``cloud-balanced``: sharded (~64-256 MiB shards), Zstd L3. *Default*.
+- ``cloud-balanced``: sharded (~128 MiB shards), Zstd L3. *Default*.
 - ``cloud-cold``: sharded (~512 MiB shards), Zstd L9.
 
-Codec descriptors are kept as simple dicts so the schema serialises cleanly
+Codec descriptors are kept as simple dicts so the schema serializes cleanly
 without depending on Zarr v3 codec object stability. The ``io`` layer
-translates these into ``zarr.codecs`` objects at write time.
+translates these into ``zarr.codecs`` objects at write time via
+:func:`resolve_codec`.
 """
 
 from typing import Any
@@ -32,12 +33,37 @@ CodecDescriptor = dict[str, Any]
 
 @dataclass(frozen=True, slots=True)
 class CodecStack:
-    """The full codec pipeline for one variable."""
+    """The persisted codec pipeline for one variable.
 
+    Each codec is held as a JSON-clean ``{"name": ..., "configuration": ...}``
+    dict so the schema round-trips through ``_zcollection.json`` without
+    depending on Zarr v3 codec object identity. Materialisation into
+    concrete ``zarr.codecs`` instances happens lazily in
+    :func:`resolve_codec` at write time.
+    """
+
+    #: Array-to-array codecs (Zarr v3 *filters*), applied in order to the
+    #: chunk's numpy array before serialisation.
     array_to_array: tuple[CodecDescriptor, ...] = ()
+    #: The single array-to-bytes codec (Zarr v3 *serializer*) that turns
+    #: array elements into a byte string for one chunk. The Zarr v3 spec
+    #: requires exactly one codec in this slot.
     array_to_bytes: CodecDescriptor | None = None
+    #: Bytes-to-bytes codecs (Zarr v3 *compressors*), applied in order to
+    #: the per-chunk byte string. With sharding on, they compress each
+    #: inner chunk inside a shard; with sharding off, they compress each
+    #: chunk directly.
     bytes_to_bytes: tuple[CodecDescriptor, ...] = ()
+    #: When ``True``, the variable's chunks are bundled into shards via
+    #: :class:`zarr.codecs.ShardingCodec`. The codecs in
+    #: :attr:`bytes_to_bytes` then compress each *inner chunk* inside a
+    #: shard. When ``False``, each chunk is compressed directly and shards
+    #: are not used.
     sharded: bool = False
+    #: Target byte budget for each shard when :attr:`sharded` is ``True``;
+    #: ``None`` otherwise. The actual shard shape is picked by
+    #: :func:`zcollection.codecs.sharding.shard_decision`, which honours
+    #: this as a hint, not a hard cap.
     shard_target_bytes: int | None = None
 
     def to_json(self) -> dict[str, Any]:
@@ -63,10 +89,12 @@ class CodecStack:
 
 
 def _bytes_codec() -> CodecDescriptor:
+    """Return the standard array-to-bytes serializer (little-endian ``bytes``)."""
     return {"name": "bytes", "configuration": {"endian": "little"}}
 
 
 def _zstd(level: int = 3) -> CodecDescriptor:
+    """Return a Zstd bytes-to-bytes (compressor) descriptor at ``level``."""
     return {
         "name": "zstd",
         "configuration": {"level": level, "checksum": False},
@@ -75,13 +103,22 @@ def _zstd(level: int = 3) -> CodecDescriptor:
 
 @dataclass(frozen=True, slots=True)
 class _Profile:
+    """A codec profile specification."""
+
+    #: Profile name.
     name: str
+    #: Whether the profile produces sharded stacks.
     sharded: bool
-    target_chunk_bytes: int
+    #: Target byte budget for each shard, consumed by
+    #: :class:`~zarr.codecs.ShardingCodec` (the array-to-bytes serializer
+    #: in a sharded stack). ``None`` when :attr:`sharded` is ``False``.
     target_shard_bytes: int | None
+    #: The single bytes-to-bytes codec (compressor) inserted into the
+    #: stack — profiles do not currently compose multiple compressors.
     compressor: CodecDescriptor
 
-    def codecs(self, dtype: numpy.dtype) -> CodecStack:
+    def codecs(self) -> CodecStack:
+        """Return the :class:`CodecStack` materialised from this profile."""
         return CodecStack(
             array_to_array=(),
             array_to_bytes=_bytes_codec(),
@@ -93,30 +130,29 @@ class _Profile:
         )
 
 
+#: The built-in codec profiles, keyed by name.
 PROFILES: dict[str, _Profile] = {
     "local-fast": _Profile(
         name="local-fast",
         sharded=False,
-        target_chunk_bytes=1 << 20,
         target_shard_bytes=None,
         compressor=_zstd(3),
     ),
     "cloud-balanced": _Profile(
         name="cloud-balanced",
         sharded=True,
-        target_chunk_bytes=2 << 20,
         target_shard_bytes=128 << 20,
         compressor=_zstd(3),
     ),
     "cloud-cold": _Profile(
         name="cloud-cold",
         sharded=True,
-        target_chunk_bytes=2 << 20,
         target_shard_bytes=512 << 20,
         compressor=_zstd(9),
     ),
 }
 
+#: The default profile name, used when no profile is specified.
 DEFAULT_PROFILE: str = "cloud-balanced"
 
 
@@ -134,16 +170,19 @@ def profile(
     """Build a :class:`CodecStack` from a named profile, with overrides.
 
     Args:
-        name: The name of the profile to use. If ``None``, the default profile
-            is used.
-        filters: Optional sequence of codec descriptors to override the
-            array-to-array codecs.
-        compressor: Optional codec descriptor to override the bytes-to-bytes
-            codec.
+        name: Profile name. ``None`` uses :data:`DEFAULT_PROFILE`.
+        filters: Optional array-to-array codec descriptors that override
+            the profile's empty filter list.
+        compressor: Optional bytes-to-bytes codec descriptor that
+            replaces the profile's entire compressor pipeline with this
+            single codec.
 
     Returns:
-        A :class:`CodecStack` configured according to the specified profile
-        and overrides.
+        A :class:`CodecStack` materialised from the profile, with the
+        overrides applied.
+
+    Raises:
+        KeyError: If ``name`` is not a registered profile.
 
     """
     if name is None:
@@ -153,7 +192,7 @@ def profile(
             f"unknown codec profile {name!r}; available: {profile_names()!r}"
         )
     spec = PROFILES[name]
-    base = spec.codecs(numpy.dtype("float32"))
+    base = spec.codecs()
     return CodecStack(
         array_to_array=tuple(filters) if filters else base.array_to_array,
         array_to_bytes=base.array_to_bytes,
@@ -169,34 +208,44 @@ def auto_codecs(
     dtype: numpy.dtype,
     profile_name: str | None = None,
 ) -> CodecStack:
-    """Pick a CodecStack for a dtype using the named (or default) profile.
+    """Pick a :class:`CodecStack` for a variable using the named profile.
+
+    The result is currently dtype-agnostic — ``dtype`` is accepted on
+    the public surface so future profiles can specialise (e.g. byte-grain
+    filters for booleans, transposes for high-rank arrays) without an API
+    break. For now it is ignored.
 
     Args:
-        dtype: The variable dtype to pick codecs for.
-        profile_name: The name of the profile to use. If ``None``, the default
-            profile is used.
+        dtype: The variable dtype. Reserved for forward compatibility;
+            does not affect the returned stack today.
+        profile_name: Profile name. ``None`` uses :data:`DEFAULT_PROFILE`.
 
     Returns:
-        A :class:`CodecStack` configured according to the specified profile and
-        the variable dtype.
+        A :class:`CodecStack` materialised from the profile.
+
+    Raises:
+        KeyError: If ``profile_name`` is not a registered profile.
 
     """
+    del dtype  # reserved; see docstring.
     name = profile_name or DEFAULT_PROFILE
     if name not in PROFILES:
         raise KeyError(f"unknown codec profile {name!r}")
-    return PROFILES[name].codecs(numpy.dtype(dtype))
+    return PROFILES[name].codecs()
 
 
 def shard_target_bytes(profile_name: str | None = None) -> int | None:
     """Return the target shard byte budget for a profile.
 
     Args:
-        profile_name: The name of the profile to query. If ``None``, the default
-            profile is used.
+        profile_name: Profile name. ``None`` uses :data:`DEFAULT_PROFILE`.
 
     Returns:
-        The target shard byte budget for the specified profile, or ``None`` if
-        sharding is disabled.
+        The profile's target shard byte budget, or ``None`` if the
+        profile does not shard.
+
+    Raises:
+        KeyError: If ``profile_name`` is not a registered profile.
 
     """
     name = profile_name or DEFAULT_PROFILE
@@ -206,6 +255,8 @@ def shard_target_bytes(profile_name: str | None = None) -> int | None:
     return spec.target_shard_bytes if spec.sharded else None
 
 
+#: Mapping from Zarr v3 codec names to builder functions that take a
+#: configuration dict and return a Zarr v3 codec instance.
 _CODEC_BUILDERS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "bytes": lambda cfg: zcodecs.BytesCodec(endian=cfg.get("endian", "little")),
     "zstd": lambda cfg: zcodecs.ZstdCodec(
@@ -224,14 +275,23 @@ _CODEC_BUILDERS: dict[str, Callable[[dict[str, Any]], Any]] = {
 def resolve_codec(descriptor: CodecDescriptor) -> Any:
     """Convert a JSON codec descriptor into a Zarr v3 codec instance.
 
-    Used by the io layer at write time.
+    Used by the I/O layer at write time to materialise the persisted
+    descriptors into concrete ``zarr.codecs`` objects.
 
     Args:
-        descriptor: A codec descriptor dictionary, with keys "name" and
-        "configuration".
+        descriptor: A codec descriptor dict with keys ``"name"`` and
+            ``"configuration"`` (the latter is treated as empty when
+            absent or ``None``).
 
     Returns:
         An instance of the corresponding Zarr v3 codec.
+
+    Raises:
+        KeyError: If ``descriptor["name"]`` is not in the codec
+            registry. The set of supported names is the keys of
+            :data:`_CODEC_BUILDERS` (``bytes``, ``zstd``, ``blosc``,
+            ``gzip``, ``crc32c``, ``transpose``, ``vlen-utf8``,
+            ``vlen-bytes``).
 
     """
     name = descriptor["name"]
