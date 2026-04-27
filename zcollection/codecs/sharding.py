@@ -5,15 +5,20 @@
 """Auto-shard policy for Zarr v3 sharded arrays.
 
 A *shard* is the unit Zarr writes to the store; it contains one or more
-*inner chunks*, which is the unit decoded into memory. Sharding cuts the
-PUT count on object stores by ~``shard / chunk`` while keeping per-chunk
-compression and random-read locality.
+*inner chunks*, which are the units decoded into memory. Sharding cuts
+the PUT count on object stores by approximately the shard-to-chunk
+ratio (per dimension, the chosen multiplier; combined, the product of
+those multipliers) while preserving per-chunk compression and
+random-read locality.
 
-Policy: pick a shard shape that is an integer multiple of the inner-chunk
-shape along every dimension, and whose total raw byte size is close to,
-but no larger than, ``target_shard_bytes``. We grow shard size dimension
-by dimension (largest first) so wide arrays don't end up disproportionately
-tall.
+Policy: pick a shard shape that is, along every dimension, the
+inner-chunk extent multiplied by a **power of two**, and whose total
+raw byte size is close to, but no larger than, ``target_shard_bytes``.
+The multiplier is grown by repeated doubling: at each step the
+dimension with the largest current shard extent is the one that gets
+doubled. This keeps growth tracking the array's existing aspect ratio
+— well-suited to time-series-dominated layouts where the leading axis
+is the natural growth direction.
 """
 
 from typing import TYPE_CHECKING
@@ -31,18 +36,29 @@ def compute_shard_shape(
     dtype: numpy.dtype,
     target_shard_bytes: int,
 ) -> tuple[int, ...]:
-    """Return a shard shape (a multiple of ``inner_chunks`` per dim).
+    """Return a shard shape (a power-of-two multiple of ``inner_chunks`` per dim).
+
+    The doubling loop stops as soon as the *next* doubling would
+    exceed ``target_shard_bytes`` — the returned shard's raw byte
+    footprint is therefore always ``<= target_shard_bytes``. When the
+    inner chunk already meets or exceeds the target, the chunk shape
+    (clipped to the array shape) is returned unchanged.
 
     Args:
         inner_chunks: The inner chunk shape of the array.
         shape: The array shape; may carry ``None`` for unlimited dimensions.
-        dtype: The array dtype.
-        target_shard_bytes: The sharding threshold in raw bytes.
+        dtype: The array dtype (used only for ``itemsize``).
+        target_shard_bytes: Target shard byte budget. The result's raw
+            byte size is the largest power-of-two-multiple shape that
+            does not exceed this value.
 
     Returns:
-        A shard shape, an integer multiple of ``inner_chunks`` along every
-        dimension, whose total raw byte size is close to, but no larger than,
-        ``target_shard_bytes``.
+        A shard shape whose per-dim extent is ``2**k * inner_chunks[i]``
+        for some non-negative integer ``k`` (after clipping to ``shape``).
+
+    Raises:
+        ValueError: If ``inner_chunks`` and ``shape`` have different
+            ranks.
 
     """
     if len(inner_chunks) != len(shape):
@@ -102,20 +118,29 @@ def shard_decision(
 ) -> tuple[int, ...] | None:
     """Return a shard shape, or ``None`` if sharding shouldn't apply.
 
+    See :func:`compute_shard_shape` for argument semantics; this wrapper
+    additionally short-circuits to ``None`` when sharding doesn't pay
+    off. The two independent paths to ``None`` are:
+
+    - ``target_shard_bytes is None`` — sharding disabled in the profile.
+    - The geometry can't grow past the inner chunk shape: either the
+      inner chunk already meets/exceeds ``target_shard_bytes`` (a single
+      chunk fills a shard), or the array is small enough that every
+      per-dim multiplier stays at 1.
+
+    In both of the geometry cases the proposal equals the (clipped)
+    inner-chunk shape, so wrapping it in a :class:`ShardingCodec` would
+    add overhead with no PUT-count benefit.
+
     Args:
-        inner_chunks: The inner chunk shape of the array.
-        shape: The array shape; may carry ``None`` for unlimited dimensions.
-        dtype: The array dtype.
-        target_shard_bytes: The sharding threshold in raw bytes, or ``None`` to disable sharding.
+        inner_chunks: See :func:`compute_shard_shape`.
+        shape: See :func:`compute_shard_shape`.
+        dtype: See :func:`compute_shard_shape`.
+        target_shard_bytes: Target shard byte budget, or ``None`` to
+            disable sharding outright.
 
     Returns:
-        A shard shape, or ``None`` to disable sharding.
-
-    Note:
-        This function returns ``None`` when:
-        - ``target_shard_bytes`` is None (sharding disabled in the profile);
-        - the array fits inside one inner chunk along every dim;
-        - the computed shard equals the inner chunks (sharding adds no value).
+        A shard shape, or ``None`` when sharding should be skipped.
 
     """
     if target_shard_bytes is None:
@@ -135,7 +160,12 @@ def shard_decision(
 
 
 def _max_multiplier(chunk: int, dim_size: int | None) -> int:
-    """Highest power-of-two multiplier of ``chunk`` that fits in ``dim_size``."""
+    """Maximum number of inner chunks that fit along ``dim_size``.
+
+    Returned as an integer cap on the chunk multiplier; the doubling
+    loop in :func:`compute_shard_shape` is what restricts the chosen
+    multiplier to a power of two within this cap.
+    """
     if dim_size is None:
         # Unlimited dimension — cap arbitrarily large; the doubling loop
         # is bounded by the byte target.
@@ -146,7 +176,11 @@ def _max_multiplier(chunk: int, dim_size: int | None) -> int:
 
 
 def _clip(extent: int, dim_size: int | None) -> int:
-    """Clip the shard extent to the dimension size, if known."""
+    """Clip the shard extent to ``dim_size`` (when known), with a floor of 1.
+
+    The minimum returned value is always ``1`` so callers never end up
+    with a zero-extent dimension on degenerate inputs.
+    """
     if dim_size is None:
         return max(extent, 1)
     return max(1, min(extent, dim_size))
