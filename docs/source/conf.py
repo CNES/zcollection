@@ -1,3 +1,4 @@
+"""Sphinx configuration for zcollection."""
 # Configuration file for the Sphinx documentation builder.
 #
 # This file only contains a selection of the most common options. For a full
@@ -21,16 +22,16 @@ sys.path.insert(0, str(HERE.parent.parent))
 
 # -- Project information -----------------------------------------------------
 
-project = 'zcollection'
-copyright = '(2022, CNES/CLS)'
-author = 'CLS'
+project = "zcollection"
+copyright = "(2022, CNES/CLS)"
+author = "CLS"
 
 # The full version, including alpha/beta/rc tags
 try:
     release = importlib.metadata.version(project)
 except importlib.metadata.PackageNotFoundError:
-    release = '0.0.0'
-version = '.'.join(release.split('.')[:2])
+    release = "0.0.0"
+version = ".".join(release.split(".")[:2])
 
 # -- General configuration ---------------------------------------------------
 
@@ -38,36 +39,36 @@ version = '.'.join(release.split('.')[:2])
 # extensions coming with Sphinx (named "sphinx.ext.*") or your custom
 # ones.
 extensions = [
-    'sphinx_inline_tabs',
-    'sphinx_gallery.gen_gallery',
-    'sphinx.ext.autodoc',
-    'sphinx.ext.autosummary',
-    'sphinx.ext.intersphinx',
-    'sphinx.ext.mathjax',
-    'sphinx.ext.napoleon',
-    'sphinx.ext.viewcode',
+    "sphinx_inline_tabs",
+    "sphinx_gallery.gen_gallery",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.mathjax",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.viewcode",
 ]
 
 autosummary_generate = True
 
-autodoc_typehints = 'description'
-autodoc_type_aliases = dict(
-    ArrayLike='ArrayLike',
-    DType='DType',
-    DTypeLike='DTypeLike',
-    Indexer='Indexer',
-    NDArray='NDArray',
-    NDMaskedArray='NDMaskedArray',
-    PartitionCallback='PartitionCallback',
-    QueryDict='QueryDict',
-    Scalar='Scalar',
-)
+autodoc_typehints = "description"
+autodoc_type_aliases = {
+    "ArrayLike": "ArrayLike",
+    "DType": "DType",
+    "DTypeLike": "DTypeLike",
+    "Indexer": "Indexer",
+    "NDArray": "NDArray",
+    "NDMaskedArray": "NDMaskedArray",
+    "PartitionCallback": "PartitionCallback",
+    "QueryDict": "QueryDict",
+    "Scalar": "Scalar",
+}
 
 numpydoc_class_members_toctree = True
 numpydoc_show_class_members = False
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -79,26 +80,27 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'furo'
-html_title = 'ZCollection'
+html_theme = "sphinx_book_theme"
+html_title = "ZCollection"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+html_static_path = ["_static"]
 
 intersphinx_mapping = {
-    'dask': ('https://docs.dask.org/en/latest/', None),
-    'fsspec': ('https://filesystem-spec.readthedocs.io/en/latest/', None),
-    'numpy': ('https://numpy.org/doc/stable/', None),
-    'python': ('https://docs.python.org/3/', None),
-    'xarray': ('https://docs.xarray.dev/en/stable/', None),
-    'zarr': ('https://zarr.readthedocs.io/en/stable', None),
+    "dask": ("https://docs.dask.org/en/latest/", None),
+    "fsspec": ("https://filesystem-spec.readthedocs.io/en/latest/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "python": ("https://docs.python.org/3/", None),
+    "xarray": ("https://docs.xarray.dev/en/stable/", None),
+    "zarr": ("https://zarr.readthedocs.io/en/stable", None),
 }
 
 # -- Extension configuration -------------------------------------------------
 sphinx_gallery_conf = {
-    'examples_dirs': [HERE.parent.parent.joinpath('examples')],
-    'filename_pattern': r'[\\\/]ex_',
-    'pypandoc': False,
+    "examples_dirs": [HERE.parent.parent.joinpath("examples")],
+    "filename_pattern": r"[\\\/]ex_",
+    "pypandoc": False,
+    "min_reported_time": float("inf"),
 }

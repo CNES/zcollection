@@ -1,165 +1,156 @@
-# Copyright (c) 2023 CNES
+# Copyright (c) 2022-2026 CNES.
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Partitioning a sequence of variables
-====================================
-"""
-from __future__ import annotations
+"""Sequence partitioning — one partition per unique value tuple."""
 
-from typing import Any, ClassVar, Iterator
+from typing import TYPE_CHECKING, Any
+from collections.abc import Iterator
 
-import dask.array.core
-import dask.array.routines
 import numpy
 
-from . import abc
-from ..type_hints import ArrayLike, NDArray
+from ..errors import PartitionError
+from .base import PartitionKey, keys_from_columns, runs_from_inverse
 
 
-def _is_monotonic(arr: NDArray) -> bool:
-    """Check if the array is monotonic.
-
-    The matrix will be sorted in the reverse order of the partitioning keys
-    (column in the matrix). If the order of the matrix is unchanged, the
-    different partitioning columns are monotonic.
-
-    Args:
-        arr: The array to check.
-
-    Returns:
-        True if the array is monotonic, False otherwise.
-    """
-    # `reversed` because `numpy.lexsort` wants the most significant key last.
-    values: list[NDArray] = [
-        arr[:, ix] for ix in reversed(range(arr.shape[1]))
-    ]
-    sort_order: NDArray = numpy.lexsort(numpy.array(values))
-    return numpy.all(abc.difference(sort_order) > 0)  # type: ignore
+if TYPE_CHECKING:
+    from ..data import Dataset
 
 
-def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
-    """Return unique elements and their indices.
+class Sequence:
+    """Partition by the unique value tuples of one or more variables.
+
+    The variables must all share the same single dimension, which becomes the
+    partitioning axis.
 
     Args:
-        arr: Array of elements.
-        is_delayed: If True, the array is delayed.
-    Returns:
-        Tuple of unique elements and their indices.
+        variables: The variable(s) to partition by; must be at least one.
+        dimension: The dimension to partition along; if ``None``, inferred
+            from the variable name.
+
     """
-    index: NDArray
-    indices: NDArray
 
-    if is_delayed:
-        index, indices = abc.unique(arr)  # type: ignore[arg-type]
-        if not _is_monotonic(index):
-            raise ValueError('index is not monotonic')
-        return index, indices
-    return abc.unique_and_check_monotony(arr)
+    name = "sequence"
 
+    def __init__(self, variables: tuple[str, ...], *, dimension: str) -> None:
+        """Initialize the sequence partitioning."""
+        if not variables:
+            raise PartitionError("Sequence requires at least one variable")
+        #: The partition-key variable names.
+        self._axis = tuple(variables)
+        #: The dimension this partitioning splits.
+        self._dimension = dimension
 
-class Sequence(abc.Partitioning):
-    """Initialize a partitioning scheme for a sequence of variables.
+    @property
+    def axis(self) -> tuple[str, ...]:
+        """Return the partition-key variable names."""
+        return self._axis
 
-    A sequence is a combination of variables constituting unique monotonic keys.
-    For example, the orbit number (``cycle``) and the half-orbit number
-    (``pass``) of a satellite.
+    @property
+    def dimension(self) -> str:
+        """Return the dimension this partitioning splits."""
+        return self._dimension
 
-    Args:
-        variables: A list of strings representing the variables to be used for
-            partitioning.
-        dtype: An optional sequence of strings representing the data type used
-            to store variable values in a binary representation without data
-            loss. Must be one of the following allowed data types: ``int8``,
-            ``int16``, ``int32``, ``int64``, ``uint8``, ``uint16``, ``uint32``,
-            ``uint64``. If not provided, defaults to ``int64`` for all
-            variables.
-
-    Raises:
-        ValueError: If the periodicity is not valid.
-
-    Example:
-        >>> partitioning = Sequence(["a", "b", "c"], (None, 10, 10))
-    """
-    #: The ID of the partitioning scheme.
-    ID: ClassVar[str] = 'Sequence'
-
-    # pylint: disable=arguments-differ
-    # False positive: `self` is used in the signature.
-    @staticmethod
-    def _split(variables: dict[str, ArrayLike]) -> Iterator[abc.Partition]:
-        """Split the variables constituting the partitioning into partitioning
-        schemes."""
-        index: NDArray
-        indices: NDArray
-        matrix: dask.array.core.Array | NDArray
-
-        # Determine if the variables are handled by Dask.
-        is_delayed: bool = any(
-            isinstance(item, dask.array.core.Array)
-            for item in variables.values())
-
-        # Combines the arrays of variable values into a transposed matrix.
-        matrix = dask.array.routines.vstack(tuple(
-            variables.values())).transpose() if is_delayed else numpy.vstack(
-                tuple(variables.values())).transpose()
-        if matrix.dtype.kind not in 'iu':
-            raise TypeError('The variables must be integer')
-
-        index, indices = _unique(matrix, is_delayed)  # type: ignore[arg-type]
-        indices = abc.concatenate_item(indices, matrix.shape[0])
-
-        fields = tuple(variables.keys())
-        # pylint: disable=unnecessary-lambda-assignment
-        # We want to reference a lambda function, not assign it to a variable.
-        if len(fields) == 1:
-            concat: Any = lambda fields, keys: (fields + keys, )
-        else:
-            concat = lambda fields, keys: tuple(zip(fields, keys))
-        # pylint: enable=unnecessary-lambda-assignment
-
-        return ((concat(fields,
-                        tuple(item)), slice(start, indices[ix + 1], None))
-                for item, (ix, start) in zip(index, enumerate(indices[:-1])))
-        # pylint: enable=arguments-differ
-
-    def encode(
-        self,
-        partition: tuple[tuple[str, int], ...],
-    ) -> tuple[int, ...]:
-        """Encode a partitioning scheme to the handled values.
+    def split(self, dataset: Dataset) -> Iterator[tuple[PartitionKey, slice]]:
+        """Yield ``(key, slice)`` for each unique tuple in ``dataset``.
 
         Args:
-            partition: The partitioning scheme to be encoded.
+            dataset: The dataset to split; must contain the partition-key
+                variables as 1-D arrays along the partitioning dimension.
 
-        Returns:
-            The encoded partitioning scheme.
+        Yields:
+            Tuples of the form ``(key, slice)``, where ``key`` is a partition
+            key tuple (e.g. ``(("x", 1), ("y", 2))``) representing the unique
+            value combination for the partition, and ``slice`` is a slice object
+            that can be used to index into the dataset along the partitioning
+            dimension.
 
-        Example:
-            >>> partitioning = Sequence(["a", "b", "c"])
-            >>> fields = partitioning.parse("a=100/b=10/c=1")
-            >>> fields
-            (('a', 100), ('b', 10), ('c', 1))
-            >>> partitioning.encode(fields)
-            (100, 10, 1)
         """
-        return tuple(value
-                     for _, value in self.parse(self.join(partition, '/')))
+        cols: dict[str, numpy.ndarray] = {}
+        for name in self._axis:
+            if name not in dataset:
+                raise PartitionError(
+                    f"variable {name!r} required for partitioning is missing"
+                )
+            var = dataset[name]
+            if var.dimensions != (self._dimension,):
+                raise PartitionError(
+                    f"variable {name!r} must be 1-D along {self._dimension!r}; "
+                    f"got dims={var.dimensions}"
+                )
+            cols[name] = var.to_numpy()
 
-    def decode(self, values: tuple[int, ...]) -> tuple[tuple[str, int], ...]:
-        """Decode a partitioning scheme.
+        unique, inverse = keys_from_columns(cols)
+        for gid, sl in runs_from_inverse(inverse):
+            row = unique[gid]
+            key = tuple((n, _to_py(row[i])) for i, n in enumerate(self._axis))
+            yield key, sl
+
+    def encode(self, key: PartitionKey) -> str:
+        """Encode a key as a relative storage path.
 
         Args:
-            values: The encoded partitioning scheme.
+            key: The partition key to encode.
 
         Returns:
-            The decoded partitioning scheme.
+            A relative storage path representing the encoded partition key.
 
-        Example:
-            >>> partitioning = Sequence(["a", "b", "c"])
-            >>> partitioning.decode((100, 10, 1))
-            (('a', 100), ('b', 10), ('c', 1))
         """
-        return tuple(
-            (key, value) for key, value in zip(self.variables, values))
+        return "/".join(f"{name}={value}" for name, value in key)
+
+    def decode(self, path: str) -> PartitionKey:
+        """Decode a relative storage path into a key.
+
+        Args:
+            path: The relative storage path to decode.
+
+        Returns:
+            The decoded partition key.
+
+        Raises:
+            PartitionError: If the path is not in the expected format.
+
+        """
+        parts: list[tuple[str, int]] = []
+        for token in path.strip("/").split("/"):
+            if "=" not in token:
+                raise PartitionError(
+                    f"invalid partition path segment: {token!r}"
+                )
+            name, raw = token.split("=", 1)
+            parts.append((name, int(raw)))
+        return tuple(parts)
+
+    def to_json(self) -> dict[str, Any]:
+        """Return a JSON-serializable description of the partitioning."""
+        return {
+            "name": self.name,
+            "variables": list(self._axis),
+            "dimension": self._dimension,
+        }
+
+    @classmethod
+    def from_json(cls, payload: dict[str, Any]) -> Sequence:
+        """Reconstruct a Sequence partitioning from its JSON payload.
+
+        Args:
+            payload: The JSON payload containing the partitioning information.
+
+        Returns:
+            An instance of the Sequence partitioning based on the provided
+            payload.
+
+        """
+        return cls(
+            variables=tuple(payload["variables"]),
+            dimension=payload["dimension"],
+        )
+
+
+def _to_py(value: Any) -> int:
+    arr = numpy.asarray(value)
+    if numpy.issubdtype(arr.dtype, numpy.integer):
+        return int(arr)
+    raise PartitionError(
+        f"Sequence partitioning requires integer keys; got dtype {arr.dtype}"
+    )

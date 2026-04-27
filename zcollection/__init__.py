@@ -1,54 +1,67 @@
-# Copyright (c) 2023 CNES
+# Copyright (c) 2022-2026 CNES.
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Handle a collection of Zarr groups.
-===================================
-"""
-from . import merging, partitioning
-from .collection import Collection
-from .collection.abc import Indexer, PartitionFilter, PartitionFilterCallback
-from .collection.callable_objects import (
-    MapCallable,
-    PartitionCallable,
-    UpdateCallable,
-)
-from .convenience import (
+"""zcollection — Zarr v3 native, async-friendly partitioned collections."""
+
+from . import aio, codecs, partitioning, view
+from .api import (
+    Collection,
+    CollectionNotFoundError,
+    ReadOnlyError,
     create_collection,
-    create_view,
     open_collection,
-    open_view,
 )
-from .dataset import Dataset, Expression
-from .meta import Attribute
-from .variable import Array, DelayedArray, Variable
-from .version import __version__
-from .view import View, ViewReference, ViewUpdateCallable
+from .collection import merge
+from .data import Dataset, Group, Variable
+from .errors import (
+    CollectionExistsError,
+    SchemaError,
+    StoreError,
+    ZCollectionError,
+)
+from .schema import (
+    DatasetSchema,
+    Dimension,
+    GroupSchema,
+    SchemaBuilder,
+    VariableRole,
+    VariableSchema,
+)
+from .store import LocalStore, MemoryStore, Store, open_store
+
 
 __all__ = (
-    '__version__',
-    'Array',
-    'Attribute',
-    'Collection',
-    'create_collection',
-    'create_view',
-    'Dataset',
-    'DelayedArray',
-    'Expression',
-    'Indexer',
-    'MapCallable',
-    'merging',
-    'open_collection',
-    'open_view',
-    'PartitionCallable',
-    'PartitionFilter',
-    'PartitionFilterCallback',
-    'partitioning',
-    'UpdateCallable',
-    'Variable',
-    'version',
-    'View',
-    'ViewReference',
-    'ViewUpdateCallable',
+    "Collection",
+    "CollectionExistsError",
+    "CollectionNotFoundError",
+    "Dataset",
+    "DatasetSchema",
+    "Dimension",
+    "Group",
+    "GroupSchema",
+    "LocalStore",
+    "MemoryStore",
+    "ReadOnlyError",
+    "SchemaBuilder",
+    "SchemaError",
+    "Store",
+    "StoreError",
+    "Variable",
+    "VariableRole",
+    "VariableSchema",
+    "ZCollectionError",
+    "aio",
+    "codecs",
+    "create_collection",
+    "merge",
+    "open_collection",
+    "open_store",
+    "partitioning",
+    "view",
 )
+
+
+def Schema() -> SchemaBuilder:
+    """Shorthand for :class:`SchemaBuilder`."""
+    return SchemaBuilder()

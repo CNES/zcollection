@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: check-case-conflict
       - id: check-docstring-first
@@ -8,26 +8,24 @@ repos:
       - id: check-toml
       - id: debug-statements
       - id: end-of-file-fixer
-      - id: double-quote-string-fixer
       - id: mixed-line-ending
         args: [--fix=lf]
         exclude: docs/make.bat
       - id: trailing-whitespace
         exclude: conda/meta.yaml
   - repo: https://github.com/asottile/pyupgrade
-    rev: "v3.15.0"
+    rev: "v3.21.2"
     hooks:
     - id: pyupgrade
-      args: [--py38-plus]
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
+      args: [--py314-plus]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
     hooks:
-      - id: isort
-  - repo: https://github.com/PyCQA/flake8
-    rev: 7.0.0
-    hooks:
-      - id: flake8
-        exclude: tests
+      - id: ruff
+        args: [--fix]
+        exclude: (examples/.*\.py|docs/.*\.py)
+      - id: ruff-format
+        exclude: (examples/.*\.py|docs/.*\.py)
   - repo: https://github.com/pre-commit/pygrep-hooks
     rev: "v1.10.0"
     hooks:
@@ -36,25 +34,16 @@ repos:
     - id: rst-backticks
     - id: rst-directive-colons
     - id: rst-inline-touching-normal
-  - repo: https://github.com/pre-commit/mirrors-yapf
-    rev: v0.32.0
-    hooks:
-      - id: yapf
-        additional_dependencies:
-          - toml
-  - repo: https://github.com/myint/docformatter
-    rev: "v1.7.5"
-    hooks:
-    - id: docformatter
   - repo: https://github.com/codespell-project/codespell
-    rev: "v2.2.6"
+    rev: "v2.4.2"
     hooks:
     - id: codespell
+      args: [-L, "NotIn"]
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+    rev: v1.20.2
     hooks:
       - id: mypy
-        exclude: docs
+        exclude: (docs|examples|setup\.py)
         additional_dependencies:
           # Type stubs
           - types-requests

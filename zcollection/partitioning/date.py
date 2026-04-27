@@ -1,218 +1,220 @@
-# Copyright (c) 2023 CNES
+# Copyright (c) 2022-2026 CNES.
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Partitioning by date
-====================
-"""
-from __future__ import annotations
+"""Date partitioning — bucket a datetime64 axis by Y/M/D/h/m/s."""
 
-from typing import Any, ClassVar, Iterator, Sequence
-import datetime
+from typing import TYPE_CHECKING, Any
+from collections.abc import Iterator
 
-import dask.array.core
 import numpy
 
-from . import abc
-from ..type_hints import ArrayLike, NDArray
+from ..errors import PartitionError
+from .base import PartitionKey, runs_from_inverse
 
-#: Numpy time units
-RESOLUTION = ('Y', 'M', 'D', 'h', 'm', 's')
 
-#: Numpy time unit meanings
-UNITS = ('year', 'month', 'day', 'hour', 'minute', 'second')
+if TYPE_CHECKING:
+    from ..data import Dataset
 
-#: Data type for time units
-DATA_TYPES = ('uint16', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8')
-
-#: Time separation units
-SEPARATORS: dict[str, str] = {
-    'year': '-',
-    'month': '-',
-    'day': 'T',
-    'hour': ':',
-    'minute': ':',
-    'second': '.'
+#: Mapping from a resolution code to the (component-name, datetime64 unit, padding) tuple.
+_RESOLUTIONS: dict[str, tuple[tuple[str, str, int], ...]] = {
+    "Y": (("year", "Y", 4),),
+    "M": (("year", "Y", 4), ("month", "M", 2)),
+    "D": (("year", "Y", 4), ("month", "M", 2), ("day", "D", 2)),
+    "h": (
+        ("year", "Y", 4),
+        ("month", "M", 2),
+        ("day", "D", 2),
+        ("hour", "h", 2),
+    ),
+    "m": (
+        ("year", "Y", 4),
+        ("month", "M", 2),
+        ("day", "D", 2),
+        ("hour", "h", 2),
+        ("minute", "m", 2),
+    ),
+    "s": (
+        ("year", "Y", 4),
+        ("month", "M", 2),
+        ("day", "D", 2),
+        ("hour", "h", 2),
+        ("minute", "m", 2),
+        ("second", "s", 2),
+    ),
 }
 
 
-def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
-    """Return unique elements and their indices.
+class Date:
+    """Partition by truncating a 1-D datetime64 variable to ``resolution``.
+
+    Component names match the layout (``year=2024/month=03/day=01``).
 
     Args:
-        arr: Array of elements.
-        is_delayed: If True, the array is delayed.
-    Returns:
-        Tuple of unique elements and their indices.
-    Raises:
-        ValueError: If the array is not monotonic.
+        variables: The variable(s) to partition by; must be exactly one.
+        resolution: The partitioning resolution, one of "Y", "M", "D", "h",
+            "m", or "s".
+        dimension: The dimension to partition along; if ``None``, inferred
+            from the variable name.
+
     """
-    index: NDArray
-    indices: NDArray
 
-    if is_delayed:
-        index, indices = abc.unique(arr)  # type: ignore[arg-type]
-        # We don't use here the function `numpy.diff` but `abc.difference` for
-        # optimization purposes.
-        if not numpy.all(
-                abc.difference(index.view(numpy.int64)) >= 0):  # type: ignore
-            raise ValueError('index is not monotonic')
-        return index, indices
-    return abc.unique_and_check_monotony(arr)
+    name = "date"
 
-
-class Date(abc.Partitioning):
-    """Initialize a partitioning scheme based on dates.
-
-    Args:
-        variables: A list of strings representing the variables to be used for
-            partitioning.
-        resolution: Time resolution of the partitioning. Must be in
-            :data:`RESOLUTION`.
-
-    Raises:
-        ValueError: If the resolution is not in the list of supported
-            resolutions or if the partitioning is not performed on a one
-            dimensional variable.
-
-    Example:
-        >>> partitioning = Date(variables=("time", ), resolution="Y")
-    """
-    __slots__ = ('_attrs', '_index', 'resolution')
-
-    #: The ID of the partitioning scheme
-    ID: ClassVar[str] = 'Date'
-
-    def __init__(self, variables: Sequence[str], resolution: str) -> None:
+    def __init__(
+        self,
+        variables: tuple[str, ...] | str,
+        *,
+        resolution: str,
+        dimension: str | None = None,
+    ) -> None:
+        """Initialize the Date partitioning."""
+        if isinstance(variables, str):
+            variables = (variables,)
         if len(variables) != 1:
-            raise ValueError(
-                'Partitioning on dates is performed on a single variable.')
-        if resolution not in RESOLUTION:
-            raise ValueError('resolution must be in: ' + ', '.join(RESOLUTION))
-        index: int = RESOLUTION.index(resolution) + 1
+            raise PartitionError(
+                f"Date takes exactly one variable; got {variables!r}"
+            )
+        if resolution not in _RESOLUTIONS:
+            raise PartitionError(
+                f"unsupported resolution {resolution!r}; "
+                f"choose from {tuple(_RESOLUTIONS)!r}"
+            )
+        #: The variable to partition by.
+        self._variable = variables[0]
+        #: The resolution code (Y/M/D/h/m/s).
+        self._resolution = resolution
+        #: The dimension to partition along.
+        self._dimension = dimension or variables[0]
+        #: The component names, datetime64 units, and zero-padding widths for
+        #: this resolution.
+        self._components = _RESOLUTIONS[resolution]
 
-        #: The time resolution of the partitioning
-        self.resolution: str = resolution
-        #: The time parts used for the partitioning
-        self._attrs: tuple[str, ...] = UNITS[:index + 1]
-        #: The indices of the time parts used for the partitioning
-        self._index = tuple(range(index))
-        super().__init__(variables,
-                         tuple(DATA_TYPES[ix] for ix in self._index))
+    @property
+    def axis(self) -> tuple[str, ...]:
+        """Return the partition-key component names."""
+        return tuple(name for name, _unit, _pad in self._components)
 
-    def _keys(self) -> Sequence[str]:
-        """Return the keys of the partitioning scheme."""
-        return tuple(UNITS[ix] for ix in self._index)
+    @property
+    def dimension(self) -> str:
+        """Return the dimension this partitioning splits."""
+        return self._dimension
 
-    # pylint: disable=arguments-differ
-    # False positive: the base method is static.
-    def _partition(  # type: ignore[override]
-        self,
-        selection: tuple[tuple[str, Any], ...],
-    ) -> tuple[str, ...]:
-        """Return the partitioning scheme for the given selection."""
-        datetime64: NDArray = selection[0][1]
-        py_datetime: datetime.datetime = datetime64.astype('M8[s]').item()
-        return tuple(UNITS[ix] + '=' +
-                     f'{getattr(py_datetime, self._attrs[ix]):02d}'
-                     for ix in self._index)
-        # pylint: enable=arguments-differ
+    @property
+    def resolution(self) -> str:
+        """Return the resolution code (Y/M/D/h/m/s)."""
+        return self._resolution
 
-    def _split(
-        self,
-        variables: dict[str, ArrayLike],
-    ) -> Iterator[abc.Partition]:
-        """Return the partitioning scheme for the given variables."""
-        index: NDArray
-        indices: NDArray
-        name: str
-        values: ArrayLike
+    def split(self, dataset: Dataset) -> Iterator[tuple[PartitionKey, slice]]:
+        """Yield ``(key, slice)`` for each contiguous bucket in ``dataset``."""
+        if self._variable not in dataset:
+            raise PartitionError(
+                f"variable {self._variable!r} required for Date partitioning is missing"
+            )
+        var = dataset[self._variable]
+        if var.dimensions != (self._dimension,):
+            raise PartitionError(
+                f"Date variable {self._variable!r} must be 1-D along "
+                f"{self._dimension!r}; got dims={var.dimensions}"
+            )
 
-        # Determine if the variables are handled by Dask.
-        is_delayed: bool = any(
-            isinstance(value, dask.array.core.Array)
-            for value in variables.values())
-        name, values = tuple(variables.items())[0]
+        values = var.to_numpy()
+        if not numpy.issubdtype(values.dtype, numpy.datetime64):
+            raise PartitionError(
+                f"Date partitioning requires datetime64 values; "
+                f"got dtype {values.dtype}"
+            )
 
-        if not numpy.issubdtype(values.dtype, numpy.dtype('datetime64')):
-            raise TypeError('values must be a datetime64 array')
+        # Truncate to the partition resolution.
+        last_unit = self._components[-1][1]
+        bucketed = values.astype(f"datetime64[{last_unit}]")
+        unique, inverse = numpy.unique(bucketed, return_inverse=True)
 
-        index, indices = _unique(
-            values.astype(f'datetime64[{self.resolution}]'), is_delayed)
-        indices = abc.concatenate_item(indices, values.size)
+        for gid, sl in runs_from_inverse(inverse):
+            key = self._key_from_datetime(unique[gid])
+            yield key, sl
 
-        return ((((name, date), ), slice(start, indices[ix + 1], None))
-                for date, (ix, start) in zip(index, enumerate(indices[:-1])))
+    def _key_from_datetime(self, value: numpy.datetime64) -> PartitionKey:
+        # Use Python datetime conversion for portability.
+        ts = value.astype("datetime64[s]").item()
+        parts: list[tuple[str, int]] = []
+        getters = {
+            "year": ts.year,
+            "month": ts.month,
+            "day": ts.day,
+            "hour": ts.hour,
+            "minute": ts.minute,
+            "second": ts.second,
+        }
+        for name, _unit, _pad in self._components:
+            parts.append((name, int(getters[name])))
+        return tuple(parts)
 
-    @staticmethod
-    def _stringify(partition: tuple[tuple[str, int], ...]) -> str:
-        """Return a string representation of the partitioning scheme."""
-        string = ''.join(f'{value:02d}' + SEPARATORS[item]
-                         for item, value in partition)
-        if string[-1] in SEPARATORS.values():
-            string = string[:-1]
-        return string
-
-    @staticmethod
-    def join(partition_scheme: tuple[tuple[str, int], ...], sep: str) -> str:
-        """Join a partitioning scheme.
-
-        Args:
-            partition_scheme: The partitioning scheme to be joined.
-            sep: The separator to be used.
-
-        Returns:
-            The joined partitioning scheme.
-
-        Example:
-            >>> partitioning = Date(variables=("time", ), resolution="D")
-            >>> partitioning.join((("year", 2020), ("month", 1), ("day", 1)),
-            ...                   "/")
-            'year=2020/month=01/day=01'
-        """
-        return sep.join(f'{k}={v:02d}' for k, v in partition_scheme)
-
-    def encode(
-        self,
-        partition: tuple[tuple[str, int], ...],
-    ) -> tuple[Any, ...]:
-        """Encode a partitioning scheme.
+    def encode(self, key: PartitionKey) -> str:
+        """Encode a key as a relative storage path.
 
         Args:
-            partition: The partitioning scheme to be encoded.
+            key: A tuple of (component-name, value) pairs corresponding to the
+                partition key.
 
         Returns:
-            The encoded partitioning scheme.
+            A string representing the relative storage path for the given key,
+            formatted according to the component names and zero-padding widths
+            defined for this partitioning.
 
-        Example:
-            >>> partitioning = Date(variables=("time", ), resolution="D")
-            >>> fields = partitioning.parse("year=2020/month=01/day=01")
-            >>> fields
-            (("year", 2020), ("month", 1), ("day", 1))
-            >>> partitioning.encode(fields)
-            (numpy.datetime64('2020-01-01'),)
         """
-        return (numpy.datetime64(self._stringify(partition)), )
+        pad_by_name = {name: pad for name, _unit, pad in self._components}
+        return "/".join(
+            f"{name}={int(val):0{pad_by_name[name]}d}" for name, val in key
+        )
 
-    def decode(
-        self,
-        values: tuple[Any, ...],
-    ) -> tuple[tuple[str, int], ...]:
-        """Decode a partitioning scheme.
+    def decode(self, path: str) -> PartitionKey:
+        """Decode a relative storage path into a key.
 
         Args:
-            values: The partitioning scheme to be decoded.
+            path: A string representing the relative storage path.
 
         Returns:
-            The decoded partitioning scheme.
+            A tuple of (component-name, value) pairs corresponding to the
+            partition key.
 
-        Example:
-            >>> partitioning = Date(variables=("time", ), resolution="D")
-            >>> partitioning.decode((numpy.datetime64('2020-01-01'), ))
-            (("year", 2020), ("month", 1), ("day", 1))
+        Raises:
+            PartitionError: If the path is not properly formatted or if any
+                component is missing or has an invalid value.
+
         """
-        datetime64: NDArray = values[0]
-        py_datetime: datetime.datetime = datetime64.astype('M8[s]').item()
-        return tuple((UNITS[ix], getattr(py_datetime, self._attrs[ix]))
-                     for ix in self._index)
+        parts: list[tuple[str, int]] = []
+        for token in path.strip("/").split("/"):
+            if "=" not in token:
+                raise PartitionError(
+                    f"invalid partition path segment: {token!r}"
+                )
+            name, raw = token.split("=", 1)
+            parts.append((name, int(raw)))
+        return tuple(parts)
+
+    def to_json(self) -> dict[str, Any]:
+        """Return a JSON-serializable description of the partitioning."""
+        return {
+            "name": self.name,
+            "variable": self._variable,
+            "resolution": self._resolution,
+            "dimension": self._dimension,
+        }
+
+    @classmethod
+    def from_json(cls, payload: dict[str, Any]) -> Date:
+        """Reconstruct a Date partitioning from its JSON payload.
+
+        Args:
+            payload: The JSON payload containing the partitioning information.
+
+        Returns:
+            An instance of the Date partitioning based on the provided payload.
+
+        """
+        return cls(
+            (payload["variable"],),
+            resolution=payload["resolution"],
+            dimension=payload.get("dimension"),
+        )

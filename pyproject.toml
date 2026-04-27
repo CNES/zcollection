@@ -14,3 +14,94 @@ Get software version information
 """
 __version__ = "{version}"
 '''
+
+
+[tool.ruff]
+target-version = "py314"
+line-length = 80
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 80
+
+[tool.ruff.lint]
+ignore = [
+  "C901", "D203", "D213", "E501", "E741", "F402", "F823",
+  "PLC0415",  # function-local imports are sometimes intentional (cycles, optional deps)
+  "TC001", "TC002", "TC003",  # don't force imports into TYPE_CHECKING blocks
+]
+select = [
+  "F",      # pyflakes
+  "D",      # docstring lints
+  "E",      # pycodestyle errors
+  "W",      # pycodestyle warnings
+  "I",      # isort
+  "YTT",    # flake8-2020
+  "B",      # flake8-bugbear
+  "T10",    # flake8-debugger
+  "INT",    # flake8-gettext
+  "PL",     # pylint
+  "PT",     # flake8-pytest-style
+  "PIE",    # misc lints
+  "PYI",    # flake8-pyi
+  "TCH",    # type-checking imports
+  "C4",     # comprehensions
+  "PGH",    # pygrep-hooks
+  "RUF",    # Ruff-specific rules
+  "S102",   # flake8-bandit: exec-builtin
+  "NPY002", # numpy-legacy-random
+  "PERF",   # Perflint
+  "FLY",    # flynt
+  "G",      # flake8-logging-format
+  "FA",     # flake8-future-annotations
+  "SLOT",   # flake8-slots
+  "RSE"     # flake8-raise
+]
+
+[tool.ruff.lint.pylint]
+max-args = 10
+
+[tool.ruff.lint.per-file-ignores]
+"**/{tests,docs,tools}/*" = ["PLR2004"]
+"examples/*" = ["D"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+force-to-top = ["typing"]
+lines-after-imports = 2
+split-on-trailing-comma = false
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+docstring-code-format = true
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+
+[tool.coverage.run]
+omit = [
+  "**/tests/*",
+  "conftest.py",
+  "setup.py",
+]
+
+[tool.coverage.report]
+omit = [
+  "**/tests/*",
+  "conftest.py",
+  "setup.py",
+  "zcollection/types.py",
+]
+# Exclude common idioms that don't run at coverage time.
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@(abc\\.)?abstractmethod",
+]

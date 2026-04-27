@@ -1,5 +1,0 @@
-[run]
-omit =
-    */tests/*
-    zcollection/typing.py
-    */pytest*

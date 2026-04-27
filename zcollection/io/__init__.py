@@ -1,0 +1,37 @@
+# Copyright (c) 2022-2026 CNES.
+#
+# All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
+"""I/O primitives over Zarr v3 — sync entry points wrapping the async core."""
+
+from .async_partition import (
+    open_partition_dataset_async,
+    partition_exists_async,
+    write_partition_dataset_async,
+)
+from .immutable import (
+    immutable_group_exists,
+    open_immutable_dataset_async,
+    write_immutable_dataset,
+)
+from .partition import (
+    open_partition_dataset,
+    partition_exists,
+    write_partition_dataset,
+)
+from .root import read_root_config, write_root_config
+
+
+__all__ = (
+    "immutable_group_exists",
+    "open_immutable_dataset_async",
+    "open_partition_dataset",
+    "open_partition_dataset_async",
+    "partition_exists",
+    "partition_exists_async",
+    "read_root_config",
+    "write_immutable_dataset",
+    "write_partition_dataset",
+    "write_partition_dataset_async",
+    "write_root_config",
+)

@@ -1,19 +1,33 @@
 name: ZCollection
 channels:
   - conda-forge
-  - defaults
 dependencies:
-  - dask-core
+  # Python (matches setup.cfg `python_requires = >=3.14`)
+  - python >=3.14
+  # Runtime
+  - dask-core >=2022.8.0
   - distributed
-  - furo
-  - numcodecs
+  - fsspec
+  - numcodecs >=0.13
+  - numpy >=1.20
+  - pandas
   - pyarrow
-  - pypandoc
-  - pytest
   - requests
   - s3fs
+  - xarray >=2024.10
+  - zarr >=3.1.6
+  # Optional backends (extras_require)
+  - obstore >=0.5
+  - icechunk >=2.0
+  # Test deps (extras_require: test)
+  - pytest
+  - pytest-asyncio
+  - pytest-cov
+  # Build / packaging
   - setuptools-scm
+  # Docs
+  - sphinx
+  - sphinx-book-theme
   - sphinx-gallery
   - sphinx-inline-tabs
-  - xarray
-  - zarr>=2.11.0
+  - pypandoc

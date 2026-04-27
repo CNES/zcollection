@@ -1,266 +1,212 @@
 """
-Overview of a Collection.
-=========================
+Overview of a Collection
+========================
 
-This section outlines the steps required to get started with the main features
-of a ``Collection``.
+This section walks through the main features of a v3
+:py:class:`~zcollection.Collection`: building a schema, creating a partitioned
+collection on a store, inserting data, querying with filters, and updating
+variables in place.
+
+Run with::
+
+    python examples/ex_collection.py
 """
-from __future__ import annotations
 
-from typing import Iterator
-import datetime
+from pathlib import Path
 import pprint
+import shutil
+import tempfile
 
-import dask.distributed
-import fsspec
 import numpy
 
-import zcollection
-import zcollection.tests.data
+import zcollection as zc
 
 
 # %%
-# Initialization of the environment
-# ---------------------------------
+# Initialization
+# --------------
 #
-# Before we create our first collection, we will create a dataset to record.
-def create_dataset() -> zcollection.Dataset:
-    """Create a dataset to record."""
-    generator: Iterator[zcollection.Dataset] = \
-        zcollection.tests.data.create_test_dataset_with_fillvalue()
-    return next(generator)
-
-
-zds: zcollection.Dataset | None = create_dataset()
-assert zds is not None
-zds.to_xarray()
-
-# %%
-# We will create the file system that we will use. In this example, a file
-# system in memory.
-fs: fsspec.AbstractFileSystem = fsspec.filesystem('memory')
-
-# %%
-# Finally we create a local dask cluster using only threads in order to work
-# with the file system stored in memory.
-cluster = dask.distributed.LocalCluster(processes=False)
-client = dask.distributed.Client(cluster)
-
-# %%
-# Creation of the partitioning
-# ----------------------------
-#
-# Before creating our collection, we define the partitioning of our dataset. In
-# this example, we will partition the data by ``month`` using the variable
-# ``time``.
-partition_handler = zcollection.partitioning.Date(('time', ), resolution='M')
-
-# %%
-# Finally, we create our collection:
-collection: zcollection.Collection = zcollection.create_collection(
-    'time', zds, partition_handler, '/my_collection', filesystem=fs)
-
-# %%
-# .. note::
-#
-#    The collection created can be accessed using the following command ::
-#
-#        >>> collection = zcollection.open_collection("/my_collection",
-#        >>>                                          filesystem=fs)
-#
-# When the collection has been created, a configuration file is created. This
-# file contains all the metadata to ensure that all future inserted data will
-# have the same features as the existing data (data consistency).
-pprint.pprint(collection.metadata.get_config())
-
-# %%
-# Now that the collection has been created, we can insert new records.
-collection.insert(zds)
-
-# %%
-# .. note::
-#
-#     When inserting it's possible to specify the :ref:`merge strategy of a
-#     partition <merging_datasets>`. By default, the last inserted data
-#     overwrite the existing ones. Others strategy can be defined, for example,
-#     to update existing data (overwrite the updated data, while keeping the
-#     existing ones). This last strategy allows updating incrementally an
-#     existing partition. ::
-#
-#         >>> import zcollection.merging
-#         >>> collection.insert(
-#         ...     ds, merge_callable=zcollection.merging.merge_time_series)
-#
-#     If the time series has data gaps, it is possible to specify a tolerance
-#     level for detecting data gaps in the inserted axis dataset in order to
-#     keep the existing data. ::
-#
-#         >>> collection.insert(
-#         ...     ds, merge_callable=zcollection.merging.merge_time_series,
-#         ...     tolerance=numpy.timedelta64(1, 'h'))
-#
-#
-# Let's look at the different partitions thus created.
-pprint.pprint(fs.listdir('/my_collection/year=2000'))
-
-# %%
-# This collection is composed of several partitions, but it is always handled
-# as a single data set.
-#
-# Loading data
-# ------------
-# To load the dataset call the method
-# :py:meth:`load<zcollection.collection.Collection.load>` on the instance.  By
-# default, the method loads all partitions stored in the collection.
-collection.load(delayed=True)
-
-# %%
-# .. note::
-#
-#   By default, the data is loaded as a :py:class:`dask.array<da.Array>`. It is
-#   possible to load the data as a :py:class:`numpy.ndarray` by specifying the
-#   parameter ``delayed=False``.
-#
-# You can also filter the partitions to be considered by filtering the
-# partitions using keywords used for partitioning in a valid Python expression.
-collection.load(filters='year == 2000 and month == 2')
-
-# %%
-# You can also used a callback function to filter partitions with a complex
-# condition.
-collection.load(
-    filters=lambda keys: datetime.date(2000, 2, 15) <= datetime.date(
-        keys['year'], keys['month'], 1) <= datetime.date(2000, 3, 15))
-
-# %%
-# Note that the :py:meth:`load<zcollection.collection.Collection.load>`
-# function may return None if no partition has been selected.
-assert collection.load(filters='year == 2002 and month == 2') is None
-
-# %%
-# Editing variables
-# -----------------
-#
-# .. note::
-#
-#     The functions for modifying collections are not usable if the collection
-#     is :py:meth:`open<zcollection.open_collection>` in read-only mode.
-#
-# It's possible to delete a variable from a collection.
-collection.drop_variable('var2')
-collection.load()
-
-# %%
-# The variable used for partitioning cannot be deleted.
-try:
-    collection.drop_variable('time')
-except ValueError as exc:
-    print(exc)
-
-# %%
-# The :py:meth:`add_variable<zcollection.collection.Collection.add_variable>`
-# method allows you to add a new variable to the collection.
-collection.add_variable(zds.metadata().variables['var2'])
-
-# %%
-# The newly created variable is initialized with its default value.
-zds = collection.load()
-assert zds is not None
-zds.variables['var2'].values
+# v3 stores are URL-driven. ``LocalStore`` (POSIX), ``MemoryStore``
+# (in-process, useful for tests), and ``IcechunkStore`` (transactional) are
+# built in. Pass a string URL to :func:`~zcollection.create_collection` and
+# the right backend is chosen for you.
+target = Path(tempfile.gettempdir()) / "zc-ex-collection"
+if target.exists():
+    shutil.rmtree(target)
 
 
 # %%
-# Finally it's possible to
-# :py:meth:`update<zcollection.collection.Collection.update>` the existing
-# variables.
+# Build a schema
+# --------------
 #
-# In this example, we will alter the variable ``var2`` by setting it to 1
-# anywhere the variable ``var1`` is defined.
-def ones(zds) -> dict[str, numpy.ndarray]:
-    """Returns a variable with ones everywhere."""
-    return dict(var2=zds.variables['var1'].values * 0 + 1)
+# A v3 collection is created from an explicit
+# :py:class:`~zcollection.DatasetSchema`. The fluent
+# :py:class:`~zcollection.SchemaBuilder` (aliased as ``zc.Schema()``) declares
+# dimensions and variables up front, including their codecs.
+def build_schema() -> zc.DatasetSchema:
+    """Build the dataset schema for the example."""
+    return (
+        zc.Schema()
+        .with_dimension("time", chunks=4096)
+        .with_dimension("x_ac", size=240, chunks=240)
+        .with_variable("time", dtype="int64", dimensions=("time",))
+        .with_variable("partition", dtype="int64", dimensions=("time",))
+        .with_variable("var1", dtype="float32", dimensions=("time", "x_ac"))
+        .with_variable(
+            "var2",
+            dtype="float32",
+            dimensions=("time", "x_ac"),
+            fill_value=numpy.float32("nan"),
+        )
+        .build()
+    )
 
 
-collection.update(ones)  # type: ignore[arg-type]
+schema = build_schema()
 
-zds = collection.load()
-assert zds is not None
-zds.variables['var2'].values
 
+# %%
+# Build a sample dataset
+# ----------------------
+#
+# A :py:class:`~zcollection.Dataset` is the in-memory pairing of a schema
+# with concrete numpy (or dask) arrays. There is only one ``Variable`` class
+# in v3 — the ``Array`` / ``DelayedArray`` split from v2 is gone.
+def build_dataset(
+    schema: zc.DatasetSchema, n_partitions: int = 3
+) -> zc.Dataset:
+    """Build a synthetic dataset matching the given schema."""
+    rng = numpy.random.default_rng(42)
+    rows_per_part = 10_000
+    n = n_partitions * rows_per_part
+    time = numpy.arange(n, dtype="int64")
+    partition = numpy.repeat(
+        numpy.arange(n_partitions, dtype="int64"), rows_per_part
+    )
+    var1 = rng.standard_normal(size=(n, 240), dtype="float32")
+    var2 = numpy.full((n, 240), numpy.float32("nan"))
+    return zc.Dataset(
+        schema=schema,
+        variables={
+            "time": zc.Variable(schema.variables["time"], time),
+            "partition": zc.Variable(schema.variables["partition"], partition),
+            "var1": zc.Variable(schema.variables["var1"], var1),
+            "var2": zc.Variable(schema.variables["var2"], var2),
+        },
+    )
+
+
+zds = build_dataset(schema)
+print(zds)
+
+# %%
+# Create the collection
+# ---------------------
+#
+# Every keyword is named — there is no positional ``(axis, ds, partitioner,
+# path, fs)`` form anymore. The collection inherits its schema from the call;
+# the schema is then frozen on disk and enforced by every later insert.
+#
+# Partitionings are pure-numpy splitters that map a dataset's rows to
+# partition keys. Here we use a synthetic
+# :py:class:`~zcollection.partitioning.Sequence` bucket variable. For real
+# time series, prefer :py:class:`~zcollection.partitioning.Date`.
+collection = zc.create_collection(
+    f"file://{target}",
+    schema=schema,
+    axis="time",
+    partitioning=zc.partitioning.Sequence(("partition",), dimension="time"),
+)
+
+# %%
+# Insert data
+# -----------
+#
+# Insertion is partitioned automatically. The default merge strategy is
+# ``replace`` (last write wins for a given partition); other strategies live
+# under :py:mod:`zcollection.merge`.
+written = collection.insert(zds)
+print(f"wrote {len(written)} partitions: {written}")
 
 # %%
 # .. note::
 #
-#   The method :py:meth:`update<zcollection.collection.Collection.update>`
-#   supports the ``delayed`` parameter. If ``delayed=True``, the function
-#   ``ones`` is applied to each partition using a Dask array as container
-#   for the variables data stored in the provided dataset. This is the default
-#   behavior. If ``delayed=False``, the function ``ones`` is applied to each
-#   partition using a Numpy array as container.
+#    Use :py:func:`zcollection.merge.time_series` to incrementally append
+#    along a sorted time axis without overwriting prior data::
 #
-# Sometime is it important to know the values of the neighboring partitions.
-# This can be done using the
-# :py:meth:`update<zcollection.collection.Collection.update>` method with the
-# ``depth`` argument. In this example, we will set the variable ``var2`` to 2
-# everywhere the processed partition is surrounded by at least one partition, -1
-# if the left partition is missing and -2 if the right partition is missing.
+#        from zcollection import merge
+#        collection.insert(zds, merge=merge.time_series)
 #
-# .. note::
-#
-#   ``partition_info`` contains information about the target partition: a tuple
-#   with the partitioned dimension and the slice to select the partition. If the
-#   start of the slice is 0, it means that the left partition is missing. If the
-#   stop of the slice is equal to the length of the given dataset, it means that
-#   the right partition is missing.
-def twos(ds, partition_info: tuple[str, slice]) -> dict[str, numpy.ndarray]:
-    """Returns a variable with twos everywhere if the partition is surrounded
-    by partitions on both sides, -1 if the left partition is missing and -2 if
-    the right partition is missing."""
-    data = numpy.zeros(ds.variables['var1'].shape, dtype='int8')
-    dim, indices = partition_info
-    assert dim == 'num_lines'
-    if indices.start != 0:
-        data[:] = -1
-    elif indices.stop != data.shape[0]:
-        data[:] = -2
-    else:
-        data[:] = 2
-    return dict(var2=data)
-
-
-collection.update(twos, depth=1)  # type: ignore[arg-type]
-
-zds = collection.load()
-assert zds is not None
-zds.variables['var2'].values
+# Reopen and list partitions
+# --------------------------
+collection = zc.open_collection(f"file://{target}", mode="rw")
+pprint.pprint(list(collection.partitions()))
 
 # %%
-# Map a function over the collection
-# ----------------------------------
-# It's possible to map a function over the partitions of the collection.
-for partition, array in collection.map(lambda ds: (  # type: ignore[arg-type]
-        ds['var1'].values + ds['var2'].values)).compute():
-    print(f' * partition = {partition}: mean = {array.mean()}')
+# Query
+# -----
+#
+# :py:meth:`~zcollection.Collection.query` returns a
+# :py:class:`~zcollection.Dataset` (or ``None`` if no partition matches).
+# Filters use a typed expression language over the partition keys; no
+# ``eval`` is involved.
+loaded = collection.query()
+assert loaded is not None
+print(f"full query: {loaded}")
+
+filtered = collection.query(filters="partition == 1")
+assert filtered is not None
+assert filtered["partition"].to_numpy().tolist() == [1] * 10_000
+print("filter pushdown: OK")
 
 # %%
-# .. note::
-#
-#     The :py:meth:`map<zcollection.collection.Collection.map>` method is
-#     lazy. To compute the result, you need to call the method ``compute``
-#     on the returned object.
-#
-# It's also possible to map a function over the partitions with a a number of
-# neighboring partitions, like the
-# :py:meth:`update<zcollection.collection.Collection.update>`. To do so, use the
-# :py:meth:`map_overlap<zcollection.collection.Collection.map_overlap>` method.
-for partition, array in collection.map_overlap(
-        lambda ds: (  # type: ignore[arg-type]
-            ds['var1'].values + ds['var2'].values),
-        depth=1).compute():
-    print(f' * partition = {partition}: mean = {array.mean()}')
+# Subset variables
+subset = collection.query(variables=("time", "var1"))
+assert subset is not None
+print(f"variable subset: {tuple(subset.variables)}")
+
 
 # %%
-# Close the local cluster to avoid printing warning messages in the other
-# examples.
-client.close()
-cluster.close()
+# Update variables in place
+# -------------------------
+#
+# :py:meth:`~zcollection.Collection.update` rewrites the partitions matching
+# ``filters`` after applying ``fn`` to each one. ``fn`` receives a Dataset
+# and must return a new Dataset with the same dimensions.
+def square_var1(ds: zc.Dataset) -> zc.Dataset:
+    """Return a dataset with ``var1`` squared."""
+    arr = ds["var1"].to_numpy() ** 2
+    return zc.Dataset(
+        schema=ds.schema,
+        variables={
+            **{name: ds[name] for name in ds},
+            "var1": zc.Variable(ds.schema.variables["var1"], arr),
+        },
+    )
+
+
+collection.update(square_var1, filters="partition == 0")
+after = collection.query(filters="partition == 0")
+assert after is not None
+print(f"updated max(var1)= {float(after['var1'].to_numpy().max()):.3f}")
+
+# %%
+# Map a function over partitions
+# ------------------------------
+#
+# :py:meth:`~zcollection.Collection.map` applies ``fn`` to every partition
+# (no write-back) and returns ``{partition_path: result}``. Use it for
+# reductions, statistics, or building secondary indices.
+means = collection.map(lambda ds: float(ds["var1"].to_numpy().mean()))
+for path, mu in means.items():
+    print(f" * {path}: mean(var1) = {mu:+.4f}")
+
+# %%
+# Drop partitions
+# ---------------
+#
+# Surgical deletes use the same filter language. Reserved layout files
+# (``zarr.json``, ``_immutable``, ``_catalog``) are never touched.
+deleted = collection.drop_partitions(filters="partition == 2")
+print(f"dropped: {deleted}")
+print(f"remaining: {list(collection.partitions())}")
