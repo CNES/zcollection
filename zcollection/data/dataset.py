@@ -155,23 +155,47 @@ class Dataset(Group):
 
     # xarray bridge ----------------------------------------------------
 
-    def to_xarray(self) -> xarray.Dataset:
-        """Convert the root group's variables to an xarray ``Dataset``.
+    def to_xarray(self, group: str | None = None) -> xarray.Dataset:
+        """Convert one group's variables to an xarray ``Dataset``.
 
-        Nested groups are not represented (xarray has no group concept) and
-        are silently dropped.
+        xarray has no native group concept, so a single
+        :class:`xarray.Dataset` carries exactly one flat namespace of
+        variables. Use ``group`` to pick which of this dataset's groups
+        is materialised; the rest of the tree is dropped silently.
+
+        Args:
+            group: Absolute or relative path of the group to convert.
+                ``None`` (default) and ``"/"`` both target the root
+                group (backward-compatible behaviour). For a nested
+                group, pass its path (e.g. ``"/data_01"`` or
+                ``"data_01/ku"``); ``get_group`` semantics apply.
+
+        Returns:
+            An :class:`xarray.Dataset` whose ``variables`` are the
+            named group's variables and whose ``attrs`` are that
+            group's attributes.
+
+        Raises:
+            KeyError: If ``group`` does not resolve to a known group
+                in this dataset's tree.
+
         """
         import xarray as xr
 
+        target: Group = (
+            self
+            if group is None or group in ("/", "")
+            else self.get_group(group)
+        )
         data_vars = {}
-        for name, var in self._variables.items():
+        for name, var in target.variables.items():
             data_vars[name] = xr.Variable(
                 dims=var.dimensions,
                 data=var.data,
                 attrs=var.attrs,
                 fastpath=False,
             )
-        return xr.Dataset(data_vars=data_vars, attrs=dict(self._attrs))
+        return xr.Dataset(data_vars=data_vars, attrs=dict(target.attrs))
 
     @classmethod
     def from_xarray(cls, ds: xarray.Dataset) -> Dataset:
