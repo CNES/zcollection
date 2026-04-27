@@ -103,4 +103,10 @@ sphinx_gallery_conf = {
     "filename_pattern": r"[\\\/]ex_",
     "pypandoc": False,
     "min_reported_time": float("inf"),
+    # Disable image scrapers entirely. Sphinx-gallery's default is the
+    # matplotlib scraper (used to thumbnail per-figure outputs); none
+    # of this project's examples plot anything, so we drop the
+    # dependency rather than carry a ~50 MB transitive matplotlib
+    # install just to satisfy ``builder-inited``.
+    "image_scrapers": (),
 }
