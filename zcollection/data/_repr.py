@@ -1,3 +1,7 @@
+# Copyright (c) 2022-2026 CNES.
+#
+# All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
 """Multi-line, xarray-like ``__repr__`` for :class:`Group` and :class:`Variable`.
 
 The output mirrors xarray's tabular layout while exposing a synthetic byte

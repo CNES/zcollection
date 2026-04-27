@@ -1,3 +1,7 @@
+# Copyright (c) 2022-2026 CNES.
+#
+# All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
 """Codec profiles and the :class:`CodecStack` data class.
 
 A profile is a (named) recipe that produces a :class:`CodecStack` for a

@@ -1,3 +1,7 @@
+# Copyright (c) 2022-2026 CNES.
+#
+# All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
 """Serialisation of the root ``_zcollection.json`` config.
 
 The schema lives in one file at the collection root. This module owns the

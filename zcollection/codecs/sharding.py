@@ -1,3 +1,7 @@
+# Copyright (c) 2022-2026 CNES.
+#
+# All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
 """Auto-shard policy for Zarr v3 sharded arrays.
 
 A *shard* is the unit Zarr writes to the store; it contains one or more

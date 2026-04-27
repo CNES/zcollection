@@ -1,3 +1,7 @@
+# Copyright (c) 2022-2026 CNES.
+#
+# All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
 """Backend coverage: obstore_store (S3 via moto) + dask/runner.
 
 The S3 tests spin up an in-process ``moto`` server and exercise the

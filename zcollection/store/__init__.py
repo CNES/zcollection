@@ -1,3 +1,7 @@
+# Copyright (c) 2022-2026 CNES.
+#
+# All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
 """Store abstraction over Zarr v3 stores.
 
 The factory :func:`open_store` selects an implementation from a URL:

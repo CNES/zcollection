@@ -1,3 +1,7 @@
+# Copyright (c) 2022-2026 CNES.
+#
+# All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
 """Per-partition Zarr v3 group I/O — async path.
 
 Mirrors :mod:`zcollection.io.partition` but uses :mod:`zarr.api.asynchronous`
