@@ -37,14 +37,19 @@ def open_store(
     if path == "memory://" or path.startswith("memory://"):
         return MemoryStore()
 
+    # A path without ``://`` is a bare filesystem path. We route it
+    # straight to ``LocalStore`` instead of feeding it to
+    # :func:`urllib.parse.urlparse`, which would otherwise interpret a
+    # Windows drive letter (``C:\foo``) as a one-character URL scheme
+    # and raise "unrecognised store URL".
+    if "://" not in path:
+        return LocalStore(path, read_only=read_only)
+
     parsed = urlparse(path)
-    scheme = parsed.scheme or "file"
+    scheme = parsed.scheme
 
     if scheme == "file":
-        local = parsed.path or path
-        if path.startswith("file://"):
-            local = parsed.path
-        return LocalStore(local, read_only=read_only)
+        return LocalStore(parsed.path, read_only=read_only)
 
     if scheme == "icechunk":
         from .icechunk_store import IcechunkStore
