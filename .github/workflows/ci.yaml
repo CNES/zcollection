@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: "*"
+    branches:
+      - main
+      - support/v1
   pull_request:
-    branches: master
+    branches:
+      - main
+      - support/v1
 
 jobs:
   linux:
@@ -19,6 +23,10 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        # setuptools-scm needs the full history (and tags) to compute
+        # the version on a clean clone.
+        fetch-depth: 0
 
     - name: Setup Miniconda
       uses: mamba-org/setup-micromamba@v1
@@ -32,54 +40,21 @@ jobs:
         environment-name: ZCollection
         environment-file: conda/environment.yml
 
-    - name: Run Tests
+    - name: Stamp version
       shell: bash -l {0}
       run: |
         python -m setuptools_scm
         if [[ ! -e zcollection/version.py ]]; then
-          echo "__version__ = '$(git describe --tags --always)'" > zcollection/version.py
+          echo "__version__ = '$(git describe --tags --always)'" \
+            > zcollection/version.py
         fi
-        pytest -v -ra --processes
 
-  s3-fs:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Install MinIO
-      run: |
-        mkdir -p /opt/minio/bin
-        wget -nv -P /opt/minio/bin \
-          https://dl.min.io/server/minio/release/linux-amd64/minio
-        chmod +x /opt/minio/bin/minio
-
-    - name: Add MinIO To System Path
-      run: |
-        echo /opt/minio/bin >> $GITHUB_PATH
-
-    - name: Setup Miniconda
-      uses: mamba-org/setup-micromamba@v1
-      with:
-        cache-downloads: true
-        condarc: |
-          channels:
-            - conda-forge
-        create-args: |
-          python=3.14
-        environment-name: ZCollection
-        environment-file: conda/environment.yml
-
-    - name: Run Tests
+    - name: Run tests
       shell: bash -l {0}
-      run: |
-        python -m setuptools_scm
-        python -m setuptools_scm
-        if [[ ! -e zcollection/version.py ]]; then
-          echo "__version__ = '$(git describe --tags --always)'" > zcollection/version.py
-        fi
-        pytest -v -ra --s3 --processes
+      # The S3-backed tests in test_backends.py auto-skip when ``moto``
+      # / ``boto3`` are unavailable; both are listed in
+      # conda/environment.yml so they run here.
+      run: pytest -v -ra
 
   win:
     name: win
@@ -89,6 +64,8 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Setup Miniconda
       uses: mamba-org/setup-micromamba@v1
@@ -102,11 +79,15 @@ jobs:
         environment-name: ZCollection
         environment-file: conda/environment.yml
 
-    - name: Run Tests
+    - name: Stamp version
       shell: bash -l {0}
       run: |
         python -m setuptools_scm
         if [[ ! -e zcollection/version.py ]]; then
-          echo "__version__ = '$(git describe --tags --always)'" > zcollection/version.py
+          echo "__version__ = '$(git describe --tags --always)'" \
+            > zcollection/version.py
         fi
-        pytest -v -ra --processes
+
+    - name: Run tests
+      shell: bash -l {0}
+      run: pytest -v -ra

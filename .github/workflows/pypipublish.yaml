@@ -2,28 +2,46 @@ name: Upload Python Package
 
 on:
   push:
+    # Triggers on every tag — date-based stable releases (e.g.
+    # ``2026.4.0``) and PEP-440 pre-releases (``2026.4.0aN`` /
+    # ``2026.4.0bN`` / ``2026.4.0rcN``). PyPI keeps pre-releases
+    # invisible to ``pip install zcollection`` unless ``--pre`` is
+    # passed, so it is safe to publish them through the same job.
     tags:
-    - '*'
+      - '*'
 
 jobs:
-  deploy:
+  build-and-publish:
     runs-on: ubuntu-latest
+    # Trusted publishing requires the ``id-token: write`` permission;
+    # if you opt for an API token instead, drop this block and use
+    # ``password: ${{ secrets.PYPI_API_TOKEN }}`` on the publish step.
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          submodules: 'true'
+          # setuptools-scm needs the full tag history.
+          fetch-depth: 0
+
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
-      - name: Install dependencies
+          python-version: '3.14'
+
+      - name: Install build tooling
         run: |
           python -m pip install --upgrade pip
-          pip install setuptools setuptools-scm twine
-      - name: Build and publish
-        run: |
-          echo "[pypi]" > ~/.pypirc
-          echo "username = __token__" >> ~/.pypirc
-          echo "password = ${{ secrets.PYPI_PASSWORD }}" >> ~/.pypirc
-          python setup.py sdist
-          twine upload dist/*
+          python -m pip install build
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # Configure trusted publishing on PyPI for this repo (PyPI
+        # → Manage project → Publishing). Falls back to a stored
+        # API token when ``password:`` is set.

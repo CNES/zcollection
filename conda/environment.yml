@@ -23,6 +23,10 @@ dependencies:
   - pytest
   - pytest-asyncio
   - pytest-cov
+  # In-process S3 server used by test_backends.py (auto-skipped if
+  # missing); boto3 is the bucket-seeding client.
+  - moto
+  - boto3
   # Build / packaging
   - setuptools-scm
   # Docs
