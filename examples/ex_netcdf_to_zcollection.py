@@ -436,7 +436,30 @@ def rebuild_index(col: zc.Collection, index_path: str) -> Indexer:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point — wires everything together."""
+    """Entry point — wires everything together.
+
+    When invoked without arguments — the case sphinx-gallery hits
+    when it executes this file as part of the documentation build —
+    this function prints a usage hint and returns ``0`` instead of
+    calling ``argparse``. That keeps the example renderable in the
+    gallery without needing real NetCDF granules in the build
+    environment.
+    """
+    import sys
+
+    if argv is None and len(sys.argv) <= 1:
+        sys.stdout.write(
+            "ex_netcdf_to_zcollection: this example needs NetCDF granules\n"
+            "and a target URL. Run it from the command line, e.g.\n"
+            "    python examples/ex_netcdf_to_zcollection.py \\\n"
+            "        --output file:///tmp/swot-collection \\\n"
+            "        path/to/SWOT_GPS_2PsP*.nc\n"
+            "See the module docstring at the top of the file for the\n"
+            "full set of options (--key / --resolution / --merge / "
+            "--tolerance / --index).\n"
+        )
+        return 0
+
     parser = argparse.ArgumentParser(
         description="Ingest SWOT-style NetCDF granules into a ZCollection.",
     )
@@ -562,4 +585,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Don't ``raise SystemExit(main())`` here: when sphinx-gallery
+    # executes this file as part of the docs build it treats any
+    # SystemExit (even ``SystemExit(0)``) as an example failure and
+    # aborts the build. ``main()`` already raises on every error
+    # path, so a plain call is enough — Python's default exit code
+    # of 0 covers the success case.
+    main()
