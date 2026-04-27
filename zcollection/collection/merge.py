@@ -4,23 +4,36 @@
 # BSD-style license that can be found in the LICENSE file.
 """Merge strategies for inserting into an already-existing partition.
 
-A :data:`MergeCallable` takes the existing partition and the inserted dataset
-and returns the dataset that should land on disk. The built-in strategies are:
+A :class:`MergeCallable` is the contract: given the partition already
+on disk and the dataset just sliced for that partition, return the
+dataset to actually write. ``Collection.insert(merge=…)`` looks up
+strategies through :func:`resolve`, which accepts either a built-in
+string alias or a :class:`MergeCallable` directly.
 
-- :func:`replace` (default): the new data wins, no merge.
-- :func:`concat`: concatenate inserted after existing along the axis.
-- :func:`time_series`: time-aware merge for monotonic datetime axes —
-  the existing range overlapping ``[inserted_min, inserted_max]`` is dropped
-  in bulk and replaced by the inserted block.
-- :func:`upsert`: row-wise replace-or-add by axis equality. Existing rows
-  whose axis value is **not** present in the inserted batch are preserved;
-  matching axis values get the inserted row; new axis values are appended.
-  Result is sorted by axis. Designed for re-acquisition workflows where a
-  new product partially supplements an existing partition.
+Built-in strategies:
+
+- :func:`replace` *(default)* — the inserted dataset wins outright;
+  the existing partition is overwritten.
+- :func:`concat` — append inserted after existing along the
+  partitioning dimension. No deduplication, no sorting.
+- :func:`time_series` — drop the existing rows whose axis value falls
+  in ``[inserted_min, inserted_max]``, concatenate, and sort the merged
+  result by axis. Useful when a re-acquired block fully covers a
+  contiguous time window.
+- :func:`upsert` — row-wise replace-or-add by axis equality. Existing
+  rows whose axis value matches an inserted row are dropped; the rest
+  are kept; the result is concatenated with the inserted block and
+  sorted by axis. The optional ``tolerance`` argument relaxes the
+  match to "nearest within window", useful when re-acquired
+  timestamps are jittered by clock drift.
+
+Building a tolerance-aware strategy: :func:`upsert_within` returns a
+:class:`MergeCallable` with the tolerance baked in, suitable for
+passing directly to ``Collection.insert(merge=…)`` (the string alias
+``"upsert"`` only covers exact-equality matching).
 """
 
 from typing import Any, Protocol
-from collections.abc import Callable
 
 import numpy
 
@@ -28,7 +41,14 @@ from ..data import Dataset, Variable
 
 
 class MergeCallable(Protocol):
-    """Signature for a merge strategy."""
+    """Contract for a merge strategy.
+
+    Implementations are invoked by ``Collection.insert_async`` whenever
+    the dataset slice destined for a partition collides with an
+    existing on-disk partition. The callable receives the two datasets
+    plus two metadata strings, and returns the dataset that should
+    actually be written.
+    """
 
     def __call__(
         self,
@@ -38,7 +58,29 @@ class MergeCallable(Protocol):
         axis: str,
         partitioning_dim: str,
     ) -> Dataset:
-        """Return the dataset to write given existing and inserted slices."""
+        """Compute the dataset to write for one partition collision.
+
+        Args:
+            existing: The partition's current on-disk content, already
+                read into memory.
+            inserted: The slice of the user-supplied dataset that maps
+                to the same partition key.
+            axis: Name of the variable used for row-wise comparisons
+                (typically the time variable). Both ``existing`` and
+                ``inserted`` are expected to expose it as a 1-D
+                variable.
+            partitioning_dim: Dimension along which slicing and
+                concatenation happen — the same axis the collection
+                is partitioned over.
+
+        Returns:
+            The dataset to be written. Its variables must match the
+            collection's schema; its length along
+            ``partitioning_dim`` may differ from either input (e.g.
+            longer for :func:`concat`, sorted-and-deduped for
+            :func:`upsert`).
+
+        """
         ...
 
 
@@ -94,17 +136,24 @@ def time_series(
     axis: str,
     partitioning_dim: str,
 ) -> Dataset:
-    """Time-aware merge for monotonic datetime axes.
+    """Time-aware merge: drop the existing window covered by ``inserted``.
 
     Rows in ``existing`` whose axis value falls inside
-    ``[inserted_min, inserted_max]`` are dropped wholesale, the remaining
-    rows are concatenated with ``inserted``, and the result is sorted by
-    axis.
+    ``[inserted_min, inserted_max]`` are dropped wholesale, the
+    remaining rows are concatenated with ``inserted``, and the result
+    is sorted by axis. The input axes do **not** need to be
+    monotonic — the function sorts on the way out.
+
+    Empty-input short-circuits: if ``inserted`` has zero rows along
+    ``axis`` the function returns ``existing`` unchanged; if
+    ``existing`` is empty it returns ``inserted`` unchanged.
 
     Args:
         existing: Dataset already on disk.
         inserted: New dataset.
-        axis: Name of the time variable on both sides.
+        axis: Name of the variable used for the time-window comparison.
+            Must be a 1-D variable present on both sides; comparable
+            types include numeric and ``datetime64``.
         partitioning_dim: Dimension along which to slice and concat.
 
     Returns:
@@ -147,22 +196,30 @@ def upsert(
 ) -> Dataset:
     """Row-wise replace-or-add by axis proximity.
 
-    For each row in ``existing``: keep it if its axis value has no match
-    in ``inserted[axis]``. The kept rows are then concatenated with
+    For each row in ``existing``: keep it iff its axis value has no
+    match in ``inserted[axis]``. The kept rows are concatenated with
     ``inserted`` and the result is sorted by axis. Use this when a new
     acquisition may partially overlap (replace) and partially extend
     (add) an existing partition without wiping the gaps in between.
 
+    Empty-input short-circuits: if ``inserted`` has zero rows along
+    ``axis`` the function returns ``existing`` unchanged; if
+    ``existing`` is empty it returns ``inserted`` unchanged.
+
     ``tolerance`` controls what counts as a match:
 
-    * ``None`` (default) — exact equality.
-    * a scalar (e.g. ``numpy.timedelta64(500, "ms")`` for datetime axes,
-      or a float for numeric axes) — an existing row matches the nearest
-      inserted row when ``|existing - nearest_inserted| <= tolerance``.
-      Useful when re-acquired timestamps are jittered by clock drift.
+    * ``None`` (default) — exact equality (``numpy.isin``).
+    * a scalar (e.g. ``numpy.timedelta64(500, "ms")`` for datetime
+      axes, or a float for numeric axes) — an existing row matches
+      the nearest inserted row when
+      ``|existing - nearest_inserted| <= tolerance``. Useful when
+      re-acquired timestamps are jittered by clock drift.
 
-    Use :func:`upsert_within` to build a ``MergeCallable`` with a fixed
-    tolerance for use with the string-based registry::
+    The string alias ``"upsert"`` covers only exact equality. For a
+    tolerance-aware merge passed via ``Collection.insert(merge=…)``
+    — which accepts a string alias *or* a callable, but not a string
+    plus an argument — wrap the tolerance with :func:`upsert_within`
+    and pass the returned callable::
 
         col.insert(
             ds,
@@ -172,13 +229,14 @@ def upsert(
     Args:
         existing: Dataset already on disk.
         inserted: New dataset.
-        axis: Name of the matching variable on both sides (a time
-            variable for altimetry workflows).
+        axis: Name of the matching variable. Must be a 1-D variable
+            present on both sides; comparable types include numeric
+            and ``datetime64``.
         partitioning_dim: Dimension along which to slice rows.
         tolerance: ``None`` for exact equality, or a scalar for
             nearest-neighbour matching. For datetime axes pass a
-            ``numpy.timedelta64`` (e.g. ``timedelta64(500, "ms")``); for
-            numeric axes pass a plain float.
+            ``numpy.timedelta64`` (e.g. ``timedelta64(500, "ms")``);
+            for numeric axes pass a plain float.
 
     Returns:
         The merged, axis-sorted dataset.
@@ -225,15 +283,25 @@ def upsert_within(tolerance: Any) -> MergeCallable:
     """Return an :func:`upsert` strategy bound to ``tolerance``.
 
     The returned :class:`MergeCallable` is suitable for passing to
-    :meth:`Collection.insert` via the ``merge=`` argument.
+    ``Collection.insert(merge=…)``::
+
+        import numpy
+        from zcollection.collection import merge
+
+        # 500 ms clock-drift tolerance on a datetime axis.
+        col.insert(ds, merge=merge.upsert_within(numpy.timedelta64(500, "ms")))
+
+        # Or on a numeric axis:
+        col.insert(ds, merge=merge.upsert_within(1e-6))
 
     Args:
-        tolerance: ``None`` for exact equality, or a scalar (numeric or
-            ``numpy.timedelta64``) controlling the nearest-neighbour
+        tolerance: ``None`` for exact equality, or a scalar (numeric
+            or ``numpy.timedelta64``) controlling the nearest-neighbour
             match window in :func:`upsert`.
 
     Returns:
-        A merge strategy with the tolerance baked in.
+        A :class:`MergeCallable` that calls :func:`upsert` with the
+        given tolerance.
 
     """
 
@@ -261,12 +329,14 @@ def upsert_within(tolerance: Any) -> MergeCallable:
 def _concat_along(left: Dataset, right: Dataset, dim: str) -> Dataset:
     """Concatenate ``left`` and ``right`` along ``dim``.
 
-    Walks the full group tree (so nested-group variables that span
-    ``dim`` via dimension inheritance are concatenated too). Variables
+    Both datasets are expected to share the same schema (the result
+    inherits ``left.schema`` and ``left.attrs`` without checking).
+    Walks the full group tree, so nested-group variables that span
+    ``dim`` via dimension inheritance are concatenated too. Variables
     that don't span ``dim`` are static across partitions by the
-    schema's partitioned-or-immutable contract, so they are passed
+    schema's partitioned-or-immutable contract — they are passed
     through unchanged from the left side. Variables only present on
-    one side are passed through unchanged.
+    one side are passed through unchanged from that side.
     """
     if not left.variables and not left.groups:
         return right
@@ -322,10 +392,11 @@ def _index_dataset(
     dim: str,
     idx: numpy.ndarray,
 ) -> Dataset:
-    """Fancy-index every variable along ``dim`` (root + nested groups).
+    """Reorder rows along ``dim`` using an integer index array.
 
-    Same fall-through as :func:`_slice_dataset_bool`: variables whose
-    primary dim is independent of ``dim`` are kept as-is.
+    Applies to root and nested-group variables alike. Same fall-through
+    as :func:`_slice_dataset_bool`: variables whose primary dim is
+    independent of ``dim`` are kept as-is.
     """
     new_vars: dict[str, Variable] = {}
     for path, var in dataset.all_variables().items():
@@ -351,7 +422,33 @@ _BUILTIN: dict[str, MergeCallable] = {
 
 
 def resolve(strategy: MergeCallable | str | None) -> MergeCallable:
-    """Resolve ``strategy`` to a callable; ``None`` means :func:`replace`."""
+    """Resolve ``strategy`` to a :class:`MergeCallable`.
+
+    Used by ``Collection.insert_async`` to turn the user-supplied
+    ``merge=`` argument into a callable.
+
+    Args:
+        strategy: One of:
+
+            - ``None`` — falls back to :func:`replace` (the default
+              behaviour when no merge is requested).
+            - A string alias of a built-in strategy: one of
+              ``"replace"``, ``"concat"``, ``"time_series"``,
+              ``"upsert"``.
+            - A :class:`MergeCallable` (any callable matching the
+              :class:`MergeCallable` protocol, including the result
+              of :func:`upsert_within`).
+
+    Returns:
+        The resolved :class:`MergeCallable`.
+
+    Raises:
+        KeyError: If ``strategy`` is a string that doesn't match a
+            built-in alias.
+        TypeError: If ``strategy`` is neither ``None``, a string, nor
+            a callable.
+
+    """
     if strategy is None:
         return replace
     if callable(strategy):
@@ -366,7 +463,6 @@ def resolve(strategy: MergeCallable | str | None) -> MergeCallable:
 
 
 __all__ = (
-    "Callable",
     "MergeCallable",
     "concat",
     "replace",
