@@ -32,7 +32,7 @@ def test_create_collection_with_store_instance(schema, partitioning):
 def test_create_collection_with_url(tmp_path, schema, partitioning):
     """``create_collection`` accepts a ``file://`` URL string."""
     col = api.create_collection(
-        f"file://{tmp_path / 'col'}",
+        (tmp_path / "col").as_uri(),
         schema=schema,
         axis="num",
         partitioning=partitioning,
@@ -73,7 +73,7 @@ def test_create_collection_overwrite_true_replaces(schema, partitioning):
 def test_open_collection_missing_raises_not_found(tmp_path):
     """``open_collection`` on a non-existent path raises ``CollectionNotFoundError``."""
     with pytest.raises(CollectionNotFoundError):
-        api.open_collection(f"file://{tmp_path / 'nope'}")
+        api.open_collection((tmp_path / "nope").as_uri())
 
 
 def test_open_collection_read_only_default(schema, partitioning, dataset):

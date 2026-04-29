@@ -39,7 +39,7 @@ def _make_view(tmp_path, schema, dataset, partitioning, *, read_only=False):
         view_store,
         base=base,
         variables=[derived],
-        reference=ViewReference(uri=f"file://{tmp_path / 'col'}"),
+        reference=ViewReference(uri=(tmp_path / "col").as_uri()),
     )
     if read_only:
         return View.open(view_store, base=base, read_only=True)

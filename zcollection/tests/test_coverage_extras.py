@@ -250,14 +250,14 @@ def test_view_create_existing_without_overwrite_raises(
         view_store,
         base=base,
         variables=[derived],
-        reference=ViewReference(uri=f"file://{tmp_path / 'col'}"),
+        reference=ViewReference(uri=(tmp_path / "col").as_uri()),
     )
     with pytest.raises(CollectionExistsError):
         View.create(
             view_store,
             base=base,
             variables=[derived],
-            reference=ViewReference(uri=f"file://{tmp_path / 'col'}"),
+            reference=ViewReference(uri=(tmp_path / "col").as_uri()),
         )
 
 
@@ -299,7 +299,7 @@ def test_view_create_rejects_unknown_dimension(tmp_path, schema, partitioning):
             zc.LocalStore(tmp_path / "view"),
             base=base,
             variables=[bad],
-            reference=ViewReference(uri=f"file://{tmp_path / 'col'}"),
+            reference=ViewReference(uri=(tmp_path / "col").as_uri()),
         )
 
 
@@ -326,7 +326,7 @@ def test_view_query_async_with_only_base_variables(
         view_store,
         base=base,
         variables=[derived],
-        reference=ViewReference(uri=f"file://{tmp_path / 'col'}"),
+        reference=ViewReference(uri=(tmp_path / "col").as_uri()),
     )
     out = _run(view.query_async(variables=["num", "value"]))
     assert out is not None
@@ -357,7 +357,7 @@ def test_view_update_async_returning_unknown_var_is_ignored(
         view_store,
         base=base,
         variables=[derived],
-        reference=ViewReference(uri=f"file://{tmp_path / 'col'}"),
+        reference=ViewReference(uri=(tmp_path / "col").as_uri()),
     )
     written = _run(view.update_async(lambda ds: {"unknown": numpy.zeros(1)}))
     # Step still ran for each partition but no overlay variable was produced.
@@ -427,7 +427,7 @@ def test_sequence_to_json_roundtrip():
 
 def test_create_collection_overwrite_via_url(tmp_path, schema, partitioning):
     """``create_collection(url, overwrite=True)`` replaces an existing root."""
-    url = f"file://{tmp_path / 'col'}"
+    url = (tmp_path / "col").as_uri()
     zc.create_collection(
         url, schema=schema, axis="num", partitioning=partitioning
     )
@@ -450,7 +450,7 @@ def test_open_collection_read_only_on_open_store(
     tmp_path, schema, partitioning, dataset
 ):
     """A ``Store`` instance passed to ``open_collection`` honours ``read_only``."""
-    url = f"file://{tmp_path / 'col'}"
+    url = (tmp_path / "col").as_uri()
     zc.create_collection(
         url, schema=schema, axis="num", partitioning=partitioning
     ).insert(dataset)

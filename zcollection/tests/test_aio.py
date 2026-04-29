@@ -40,7 +40,7 @@ def test_async_create_with_url(tmp_path, schema, partitioning):
 
     async def _scenario() -> Collection:
         return await aio.create_collection(
-            f"file://{tmp_path / 'col'}",
+            (tmp_path / "col").as_uri(),
             schema=schema,
             axis="num",
             partitioning=partitioning,
@@ -71,7 +71,7 @@ def test_async_open_missing_raises(tmp_path):
 
     async def _scenario() -> None:
         with pytest.raises(CollectionNotFoundError):
-            await aio.open_collection(f"file://{tmp_path / 'nope'}")
+            await aio.open_collection((tmp_path / "nope").as_uri())
 
     _run(_scenario())
 
