@@ -6,6 +6,7 @@
 
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from ..errors import StoreError
 from .local import LocalStore
@@ -49,14 +50,21 @@ def open_store(
     scheme = parsed.scheme
 
     if scheme == "file":
-        return LocalStore(parsed.path, read_only=read_only)
+        # ``url2pathname`` converts ``/C:/Users/...`` → ``C:\Users\...`` on
+        # Windows and is a no-op on POSIX, so a single ``file://`` branch
+        # works cross-platform.
+        return LocalStore(url2pathname(parsed.path), read_only=read_only)
 
     if scheme == "icechunk":
         from .icechunk_store import IcechunkStore
 
         # ``icechunk://`` carries a filesystem path; remote storage goes
         # through the IcechunkStore constructor with a prebuilt Storage.
-        local = parsed.path or path[len("icechunk://") :]
+        local = (
+            url2pathname(parsed.path)
+            if parsed.path
+            else path[len("icechunk://") :]
+        )
         return IcechunkStore(local, read_only=read_only)
 
     if scheme in _CLOUD_SCHEMES:
