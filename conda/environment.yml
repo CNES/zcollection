@@ -6,7 +6,7 @@ dependencies:
   - dask-core
   - distributed
   - furo
-  - numcodecs
+  - numcodecs<0.16
   - pyarrow
   - pypandoc
   - pytest
