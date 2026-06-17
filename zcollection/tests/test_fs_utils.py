@@ -114,8 +114,7 @@ def test_normalize_path() -> None:
     fs = fsspec.filesystem('file')
     root = str(pathlib.Path('/').resolve())
     if platform.system() == 'Windows':
-        # fsspec returns only the drive letter for the root path.
-        root = root.replace('\\', '')
+        root = root.replace('\\', '/')
 
     def istrcmp(str1, str2):
         """Case insensitive string comparison."""
