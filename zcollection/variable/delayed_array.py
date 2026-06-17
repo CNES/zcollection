@@ -2,13 +2,15 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Delayed variable arrays.
+"""Delayed variable arrays.
+
 ========================
 """
+
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping, MutableMapping, Sequence
+from typing import Any
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 import uuid
 
 import dask.array.core
@@ -210,11 +212,13 @@ class DelayedArray(Variable):
 
     @values.setter
     def values(self, data: ArrayLike[Any]) -> None:
-        """Defines the underlying dask array. If the data provided is a masked
-        array, it's converted to an array, where the masked values are replaced
-        by its fill value, and its fill value becomes the new fill value of
-        this instance. Otherwise, the underlying array is defined as the new
-        data and the fill value is set to None.
+        """Defines the underlying dask array.
+
+        If the data provided is a masked array, it's converted to an array,
+        where the masked values are replaced by its fill value, and its fill
+        value becomes the new fill value of this instance. Otherwise, the
+        underlying array is defined as the new data and the fill value is set
+        to None.
 
         Args:
             data: The new data to use
@@ -265,8 +269,9 @@ class DelayedArray(Variable):
             values, self.fill_value)
 
     def fill(self) -> DelayedArray:
-        """Fill the variable with the fill value. If the variable has no fill
-        value, this method does nothing.
+        """Fill the variable with the fill value.
+
+        If the variable has no fill value, this method does nothing.
 
         Returns:
             The variable.

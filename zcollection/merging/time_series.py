@@ -6,6 +6,7 @@
 Merging a time series
 =====================
 """
+
 import numpy
 
 from . import period
@@ -21,8 +22,7 @@ def _merge_time_series(
 ) -> dataset.Dataset:
     """Merge two time series together.
 
-    See :func:`merge_time_series` for
-    details.
+    See :func:`merge_time_series` for details.
     """
     existing_axis: NDArray = existing_ds.variables[axis].values
     inserted_axis: NDArray = inserted_ds.variables[axis].values

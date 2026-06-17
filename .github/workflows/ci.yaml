@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11']
+        python-version: ['3.11', '3.12', '3.13', '3.14']
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -67,14 +67,13 @@ jobs:
           channels:
             - conda-forge
         create-args: |
-          python=3.9
+          python=3.11
         environment-name: ZCollection
         environment-file: conda/environment.yml
 
     - name: Run Tests
       shell: bash -l {0}
       run: |
-        python -m setuptools_scm
         python -m setuptools_scm
         if [[ ! -e zcollection/version.py ]]; then
           echo "__version__ = '$(git describe --tags --always)'" > zcollection/version.py
@@ -98,7 +97,7 @@ jobs:
           channels:
             - conda-forge
         create-args: |
-          python=3.9
+          python=3.11
         environment-name: ZCollection
         environment-file: conda/environment.yml
 

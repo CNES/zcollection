@@ -6,6 +6,7 @@
 Convenience functions
 =====================
 """
+
 from __future__ import annotations
 
 import fsspec
@@ -43,7 +44,7 @@ def create_view(
         ValueError: If the path already exists.
     """
     filesystem = fs_utils.get_fs(filesystem)
-    if filesystem.exists(path):
+    if filesystem.exists(path):  # type: ignore[union-attr]
         raise ValueError(f'path {path!r} already exists.')
     return view.View(path,
                      view_ref,

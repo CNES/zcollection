@@ -6,11 +6,14 @@
 Time period
 ===========
 """
+
 from __future__ import annotations
 
-from typing import Any, Callable, Match
+from typing import Any
+from collections.abc import Callable
 import enum
 import re
+from re import Match
 
 import numpy
 
@@ -41,6 +44,7 @@ def _min_time64_unit(*args: DType[Any]) -> str:
 
 class PeriodRelation(enum.IntEnum):
     """Enumeration of the relations which can exist between two periods."""
+
     __slots__ = ()
 
     #: The first period is after.
@@ -203,6 +207,7 @@ class Period:
             (i.e. the end date is within the period), otherwise the
             interval is open.
     """
+
     __slots__: tuple[str, ...] = ('_begin', '_duration_unit', '_last')
 
     def __init__(self,
@@ -215,7 +220,7 @@ class Period:
         #: The beginning of the period.
         self._begin: numpy.datetime64 = begin
         #: The duration unit of the period.
-        self._duration_unit: numpy.timedelta64 = numpy.timedelta64(
+        self._duration_unit = numpy.timedelta64(  # type: ignore[call-overload]
             1, duration_unit)
         #: The last date of the period.
         self._last: numpy.datetime64 = (end if within else end -

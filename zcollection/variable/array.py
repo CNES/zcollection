@@ -2,13 +2,15 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-In memory variable arrays.
+"""In memory variable arrays.
+
 ==========================
 """
+
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any
+from collections.abc import Sequence
 
 import dask.array.core
 import dask.array.ma
@@ -83,9 +85,10 @@ class Array(Variable):
 
     @property
     def data(self) -> dask.array.core.Array:
-        """Return the numpy array wrapped in a dask array. If the variable has
-        a fill value, the result is a masked array where masked values are
-        equal to the fill value.
+        """Return the numpy array wrapped in a dask array.
+
+        If the variable has a fill value, the result is a masked array where
+        masked values are equal to the fill value.
 
         Returns:
             The dask array
@@ -115,11 +118,13 @@ class Array(Variable):
 
     @values.setter
     def values(self, data: Any) -> None:
-        """Defines the underlying numpy array. If the data provided is a masked
-        array, it's converted to an array, where the masked values are replaced
-        by its fill value, and its fill value becomes the new fill value of
-        this instance. Otherwise, the underlying array is defined as the new
-        data and the fill value is set to None.
+        """Defines the underlying numpy array.
+
+        If the data provided is a masked array, it's converted to an array,
+        where the masked values are replaced by its fill value, and its fill
+        value becomes the new fill value of this instance. Otherwise, the
+        underlying array is defined as the new data and the fill value is set
+        to None.
 
         Args:
             data: The new data to use
@@ -152,8 +157,9 @@ class Array(Variable):
         return self.values
 
     def fill(self) -> Array:
-        """Fill the variable with the fill value. If the variable has no fill
-        value, this method does nothing.
+        """Fill the variable with the fill value.
+
+        If the variable has no fill value, this method does nothing.
 
         Returns:
             The variable.

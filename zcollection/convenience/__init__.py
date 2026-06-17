@@ -6,6 +6,7 @@
 Convenience functions
 =====================
 """
+
 from .collection import create_collection, open_collection
 from .view import create_view, open_view
 

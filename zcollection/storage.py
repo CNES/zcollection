@@ -8,8 +8,9 @@ I/O operations
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, Sequence
+from typing import Any
 import collections
+from collections.abc import Iterable, Sequence
 import json
 import logging
 

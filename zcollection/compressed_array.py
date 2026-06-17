@@ -8,7 +8,8 @@ Compressed array class
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Sequence, Union
+from typing import Any, Union
+from collections.abc import Callable, Sequence
 
 import dask.array.backends
 import dask.array.chunk_types

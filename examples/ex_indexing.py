@@ -4,7 +4,7 @@ Indexing a Collection.
 
 In this example, we will see how to index a collection.
 """
-from typing import Iterator, List, Optional, Tuple, Union
+from collections.abc import Iterator
 import pathlib
 import pprint
 
@@ -62,7 +62,7 @@ pprint.pprint(fs.listdir('/one_other_collection/year=2000'))
 def split_half_orbit(
     cycle_number: numpy.ndarray,
     pass_number: numpy.ndarray,
-) -> Iterator[Tuple[int, int]]:
+) -> Iterator[tuple[int, int]]:
     """Calculate the indexes of the start and stop of each half-orbit.
 
     Args:
@@ -126,7 +126,7 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
     #: Column name of the pass number.
     PASS_NUMBER = 'pass_number'
 
-    def dtype(self, /, **kwargs) -> List[Tuple[str, str]]:
+    def dtype(self, /, **kwargs) -> list[tuple[str, str]]:
         """Return the columns of the index.
 
         Returns:
@@ -140,9 +140,9 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
     @classmethod
     def create(
         cls,
-        path: Union[pathlib.Path, str],
+        path: pathlib.Path | str,
         zds: zcollection.Collection,
-        filesystem: Optional[fsspec.AbstractFileSystem] = None,
+        filesystem: fsspec.AbstractFileSystem | None = None,
         **kwargs,
     ) -> 'HalfOrbitIndexer':
         """Create a new index.
@@ -162,8 +162,8 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
     def update(
         self,
         zds: zcollection.Collection,
-        partition_size: Optional[int] = None,
-        npartitions: Optional[int] = None,
+        partition_size: int | None = None,
+        npartitions: int | None = None,
         **kwargs,
     ) -> None:
         """Update the index.

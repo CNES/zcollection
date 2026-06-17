@@ -6,10 +6,12 @@
 Configuration metadata
 ======================
 """
+
 from __future__ import annotations
 
-from typing import Any, Iterable, Sequence
+from typing import Any
 import abc
+from collections.abc import Iterable, Sequence
 
 import numcodecs.abc
 import numpy
@@ -29,6 +31,7 @@ class Pair(abc.ABC):
         name: name of the key.
         value: value of the key.
     """
+
     __slots__ = ('name', 'value')
 
     def __init__(self, name: str, value: Any) -> None:
@@ -125,6 +128,7 @@ class Variable:
         ``65536``, then the ``fill_value`` parameter must be ``65536 / 1000 =
         65.536``.
     """
+
     __slots__ = ('attrs', 'compressor', 'dimensions', 'dtype', 'fill_value',
                  'filters', 'name')
 
@@ -245,6 +249,7 @@ class Dataset:
         block_size_limit: An optional integer representing the maximum size
             (in bytes) of a block/chunk of variable's data.
     """
+
     __slots__ = ('dimensions', 'variables', 'attrs', 'chunks',
                  'block_size_limit')
 

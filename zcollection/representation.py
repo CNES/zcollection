@@ -2,13 +2,15 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Representation of dataset objects.
+"""Representation of dataset objects.
+
 ==================================
 """
+
 from __future__ import annotations
 
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any
+from collections.abc import Iterable, Iterator, Sequence
 
 from .meta import Attribute
 

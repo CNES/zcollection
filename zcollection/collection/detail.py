@@ -2,13 +2,15 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Implementation details.
+"""Implementation details.
+
 =======================
 """
+
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Iterable, Sequence, Tuple
+from typing import Any
+from collections.abc import Callable, Iterable, Sequence
 import dataclasses
 import sys
 import time
@@ -26,12 +28,13 @@ from ..type_hints import ArrayLike
 from .callable_objects import UpdateCallable, WrappedPartitionCallable
 
 #: Partition's type.
-PartitionSlice = Tuple[Tuple[str, ...], Dict[str, slice]]
+PartitionSlice = tuple[tuple[str, ...], dict[str, slice]]
 
 
 @dataclasses.dataclass(frozen=True)
 class PartitioningProperties:
     """Properties of a partition."""
+
     #: The base directory of the partition.
     dir: str
     #: The name of the partitioning dimension.

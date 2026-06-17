@@ -2,10 +2,11 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Registers the partitioning codecs.
+"""Registers the partitioning codecs.
+
 ==================================
 """
+
 from __future__ import annotations
 
 from typing import Any

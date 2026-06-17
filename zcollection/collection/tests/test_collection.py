@@ -6,6 +6,7 @@
 Test of the collections
 =======================
 """
+
 from __future__ import annotations
 
 import concurrent.futures
@@ -582,7 +583,8 @@ def test_insert_with_missing_variable(
             numpy.full(zds.variables['var1'].shape,
                        zds.variables['var1'].fill_value,
                        zds.variables['var1'].dtype),
-            zds.variables['var1'].fill_value))
+            zds.variables['var1'].fill_value)  # type: ignore[arg-type]
+    )
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])

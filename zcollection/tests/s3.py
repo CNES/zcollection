@@ -2,11 +2,13 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Fixtures for testing S3 using the pytest and minio.
+"""Fixtures for testing S3 using the pytest and minio.
+
 ===================================================
 """
-from typing import Iterator, Literal
+
+from typing import Literal
+from collections.abc import Iterator
 import os
 import pathlib
 import shlex
@@ -127,6 +129,7 @@ class S3Path(type(pathlib.Path())):  # type: ignore[misc]
 
 class S3:
     """S3 filesystem."""
+
     #: Bucket ID
     ID = 0
 

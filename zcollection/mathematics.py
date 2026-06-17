@@ -2,11 +2,12 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Mathematical functions.
+"""Mathematical functions.
+
 =======================
 """
-from typing import Iterable
+
+from collections.abc import Iterable
 import functools
 import operator
 

@@ -2,13 +2,15 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-View on a reference collection.
+"""View on a reference collection.
+
 ===============================
 """
+
 from __future__ import annotations
 
-from typing import Any, ClassVar, Iterable, Iterator, Sequence
+from typing import Any, ClassVar
+from collections.abc import Iterable, Iterator, Sequence
 import copy
 import json
 import logging
@@ -67,6 +69,7 @@ class View:
         :func:`create_view <zcollection.create_view>` or :func:`open_view
         <zcollection.open_view>` to create or open a view.
     """
+
     #: Configuration filename of the view.
     CONFIG: ClassVar[str] = '.view'
 

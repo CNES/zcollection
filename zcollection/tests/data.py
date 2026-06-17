@@ -6,9 +6,10 @@
 Make test datasets
 ==================
 """
+
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterator
 import itertools
 
 import numpy
@@ -62,7 +63,6 @@ def make_dataset(dates: numpy.ndarray,
 
 def create_test_dataset(delayed: bool = True) -> Iterator[dataset.Dataset]:
     """Create a temporal dataset."""
-
     dates: NDArray = numpy.arange(START_DATE, END_DATE, DELTA)
     indices: NDArray = numpy.arange(0, len(dates))
 
@@ -76,7 +76,6 @@ def create_test_dataset(delayed: bool = True) -> Iterator[dataset.Dataset]:
 def create_test_dataset_with_fillvalue(
         delayed: bool = True) -> Iterator[dataset.Dataset]:
     """Create a dataset with a fixed scale offset filter and fill values."""
-
     dates: NDArray = numpy.arange(START_DATE, END_DATE, DELTA)
     measures: NDArray = numpy.arange(0, len(dates), dtype=numpy.float64)
     measures[measures % 2 == 0] = FILL_VALUE

@@ -6,9 +6,11 @@
 Partitioning by date
 ====================
 """
+
 from __future__ import annotations
 
-from typing import Any, ClassVar, Iterator, Sequence
+from typing import Any, ClassVar
+from collections.abc import Iterator, Sequence
 import datetime
 
 import dask.array.core

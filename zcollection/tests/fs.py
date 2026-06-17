@@ -2,11 +2,13 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Fixture for testing the file system.
+"""Fixture for testing the file system.
+
 ====================================
 """
-from typing import Any, Iterator
+
+from typing import Any
+from collections.abc import Iterator
 import pathlib
 import tempfile
 

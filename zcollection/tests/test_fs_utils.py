@@ -6,6 +6,7 @@
 Testing utilities
 =================
 """
+
 from typing import Any
 import os
 import pathlib
@@ -21,7 +22,8 @@ from .cluster import dask_client, dask_cluster
 # pylint: disable=unused-import
 
 #: Test data
-TEXT = '''Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam porta
+TEXT =\
+       '''Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam porta
 turpis dictum, porta tellus eu, convallis mi. Integer at placerat diam. Donec in
 various neque. Morbi sed nisi finibus, mattis velit non, pulvinar metus. Duis
 feugiat diam eget augue posuere, nec aliquam dolor tristique. Aliquam a dolor

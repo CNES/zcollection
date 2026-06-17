@@ -2,15 +2,17 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Dataset variable.
+"""Dataset variable.
+
 =================
 """
+
 from __future__ import annotations
 
-from typing import Any, Callable, Iterator, Sequence, TypeVar
+from typing import Any, TypeVar
 import abc
 import collections
+from collections.abc import Callable, Iterator, Sequence
 
 import dask.array.core
 import numcodecs.abc
@@ -200,9 +202,11 @@ class IVariable(abc.ABC):
     @values.setter
     @abc.abstractmethod
     def values(self, data: Any) -> None:
-        """Defines the values array. If the data provided is a masked array,
-        it's converted to an array, where the masked values are replaced by the
-        fill value of this instance.
+        """Defines the values array.
+
+        If the data provided is a masked array, it's converted to an array,
+        where the masked values are replaced by the fill value of this
+        instance.
 
         Args:
             data: The new data to use
@@ -238,8 +242,9 @@ class IVariable(abc.ABC):
 
     @abc.abstractmethod
     def fill(self: I) -> I:
-        """Fill the variable with the fill value. If the variable has no fill
-        value, this method does nothing.
+        """Fill the variable with the fill value.
+
+        If the variable has no fill value, this method does nothing.
 
         Returns:
             The variable.
@@ -314,6 +319,7 @@ class Variable(IVariable):
         fill_value: Value to use for uninitialized values
         filters: Filters to apply before writing data to disk
     """
+
     __slots__ = ('array', 'attrs', 'compressor', 'dimensions', 'fill_value',
                  'filters', 'name')
 

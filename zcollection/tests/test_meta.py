@@ -2,10 +2,11 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Metadata testing.
+"""Metadata testing.
+
 =================
 """
+
 from __future__ import annotations
 
 from typing import Any

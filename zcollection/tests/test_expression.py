@@ -6,6 +6,7 @@
 Tests of the expression evaluation
 ==================================
 """
+
 from __future__ import annotations
 
 import timeit

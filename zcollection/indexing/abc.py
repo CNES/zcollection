@@ -8,8 +8,9 @@ Abstract base class for indexing.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Protocol, Union
+from typing import Any, Protocol, Union
 import abc
+from collections.abc import Iterable
 import functools
 import pathlib
 
@@ -30,7 +31,7 @@ DType = Union[Scalar, Iterable[Scalar]]
 
 #: Type of associative dictionary used for index queries, which matches a
 #: column of the index to the requested values.
-QueryDict = Dict[str, DType]
+QueryDict = dict[str, DType]
 
 
 #: pylint: disable=too-few-public-methods
@@ -448,19 +449,23 @@ class Indexer(abc.ABC):
 
         # pylint: disable=no-member
         if values:
-            mask = functools.reduce(function, [
-                pyarrow.compute.is_in(table[name],
-                                      value_set=pyarrow.array(
-                                          value, type=self._type[name]))
-                for name, value in values.items()
-            ])
+            mask = functools.reduce(
+                function,
+                [
+                    pyarrow.compute.is_in(  # type: ignore[attr-defined]
+                        table[name],
+                        value_set=pyarrow.array(value, type=self._type[name]))
+                    for name, value in values.items()
+                ])
             # pylint: disable=no-member
             table = table.filter(mask)
 
         # The selected table is sorted by the partitioning keys and the slice.
         table = pyarrow.compute.take(
             table,
-            pyarrow.compute.sort_indices(table, sort_keys=self._sort_keys()))
+            pyarrow.compute.sort_indices(  # type: ignore[attr-defined]
+                table,
+                sort_keys=self._sort_keys()))
         return self._table_2_indexer(table, only_partition_keys)
 
     @property

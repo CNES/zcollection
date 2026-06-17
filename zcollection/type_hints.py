@@ -2,8 +2,7 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Type hints for the zcollection package.
+"""Type hints for the zcollection package.
 =======================================
 
 .. rubric:: Type aliases
@@ -27,6 +26,7 @@ Type hints for the zcollection package.
 
     Type of a numpy array with a mask.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
@@ -44,7 +44,7 @@ except ImportError:
     # pylint: enable=ungrouped-imports
 
 try:
-    from typing_extensions import TypeAlias
+    from typing import TypeAlias
 except ImportError:
     # pylint: disable=ungrouped-imports
     # TypeAlias is defined in typing starting from 3.10

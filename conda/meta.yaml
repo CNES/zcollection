@@ -11,19 +11,22 @@ source:
 build:
   number: 0
   script: {{ PYTHON }} -m pip install . -vv --use-feature=in-tree-build
-  skip: true  # [linux32 or win32 or py<36]
+  skip: true  # [linux32 or win32 or py<311]
 
 requirements:
   build:
     - python
   run:
-    - dask
+    - dask >=2022.8.0
+    - distributed
+    - fasteners
     - fsspec
     - numcodecs
     - numpy >=1.20
-    - python
+    - pandas
+    - python >=3.11
     - xarray
-    - zarr
+    - zarr >=2.11,<3
 test:
   requires:
     - pytest

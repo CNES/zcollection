@@ -6,6 +6,7 @@
 Handles the partition selection expressions
 ===========================================
 """
+
 from __future__ import annotations
 
 from typing import Any, ClassVar

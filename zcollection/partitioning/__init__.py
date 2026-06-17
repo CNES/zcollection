@@ -2,10 +2,9 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Partitioning scheme.
-====================
+"""Partitioning scheme.
 
+====================
 Entry point of the implemented partitioning schemes.
 
 * :py:class:`Sequence <zcollection.partitioning.sequence.Sequence>`:
@@ -17,6 +16,7 @@ Entry point of the implemented partitioning schemes.
 
     Alias for :class:`zcollection.partitioning.abc.Partitioning`.
 """
+
 from .abc import Partitioning
 from .date import Date
 from .registry import get_codecs, register_codec

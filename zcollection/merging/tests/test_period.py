@@ -2,10 +2,11 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Test of the time periods.
+"""Test of the time periods.
+
 =========================
 """
+
 import datetime
 import pickle
 
@@ -285,7 +286,6 @@ def test_invalid() -> None:
 
 def test_period_get_relation() -> None:
     """Test the get_relation method."""
-
     #          ##################
     #  #####
     start = _datetime64(2000, 6, 1)

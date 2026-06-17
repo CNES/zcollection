@@ -3,9 +3,10 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """Test the base class for indexing."""
+
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterator
 import pathlib
 
 import fsspec
@@ -83,6 +84,7 @@ def _half_orbit(
 
 class HalfOrbitIndexer(abc.Indexer):
     """Index SWOT collection by half-orbit."""
+
     #: Column name of the cycle number.
     CYCLE_NUMBER = 'cycle_number'
 

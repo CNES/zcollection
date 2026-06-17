@@ -6,6 +6,7 @@
 Testing datasets
 ================
 """
+
 import pickle
 
 import numpy
@@ -272,7 +273,8 @@ def test_empty_dataset(
     zds = dataset.Dataset([], attrs=[])
     assert zds.attrs == ()
     assert not list(zds.variables)
-    assert (str(zds)) == """<zcollection.dataset.Dataset>
+    assert (str(zds)) ==\
+                         """<zcollection.dataset.Dataset>
   Dimensions: ()
 Data variables:
     <empty>"""

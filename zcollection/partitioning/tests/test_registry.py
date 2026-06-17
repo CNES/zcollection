@@ -2,10 +2,11 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Test the registry module.
+"""Test the registry module.
+
 =========================
 """
+
 from typing import Any
 
 import pytest
@@ -24,6 +25,7 @@ def test_get_codecs() -> None:
 
 class MyCodec:
     """A dummy codec."""
+
     ID = 'foo'
 
     __slots__ = ('attribute', )

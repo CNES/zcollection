@@ -2,26 +2,15 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Base classes for collections.
+"""Base classes for collections.
+
 =============================
 """
+
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Callable,
-    ClassVar,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Literal,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import Any, ClassVar, Literal, Optional, Union
+from collections.abc import Callable, Iterable, Iterator, Sequence
 import dataclasses
 import itertools
 import pathlib
@@ -51,16 +40,16 @@ from .detail import (
 )
 
 #: Type of functions filtering the partitions.
-PartitionFilterCallback = Callable[[Dict[str, int]], bool]
+PartitionFilterCallback = Callable[[dict[str, int]], bool]
 
 #: Type of argument to filter the partitions.
 PartitionFilter = Optional[Union[str, PartitionFilterCallback]]
 
 #: Indexer's type.
-Indexer = Iterable[Tuple[Tuple[Tuple[str, int], ...], slice]]
+Indexer = Iterable[tuple[tuple[tuple[str, int], ...], slice]]
 
 #: Indexer arguments' type.
-IndexerArgs = Tuple[Tuple[Tuple[str, int], ...], List[slice]]
+IndexerArgs = tuple[tuple[tuple[str, int], ...], list[slice]]
 
 #: Name of the directory storing the immutable dataset.
 _IMMUTABLE = '.immutable'
@@ -150,6 +139,7 @@ def _immutable_path(
 @dataclasses.dataclass(frozen=True)
 class CollectionProperties:
     """This class contains the properties of a collection."""
+
     #: The axis of the collection.
     axis: str
 
@@ -166,6 +156,7 @@ class CollectionProperties:
 @dataclasses.dataclass(frozen=True)
 class CollectionSettings:
     """This class contains the settings of a collection."""
+
     #: The mode of access of the collection.
     mode: Literal['r', 'w']
 
@@ -187,6 +178,7 @@ class ReadOnlyCollection:
     The arguments of the constructor are detailed in the documentation
     of the parent class :py:class:`zarr_collection.Collection`.
     """
+
     #: Configuration filename of the collection.
     CONFIG: ClassVar[str] = '.zcollection'
 

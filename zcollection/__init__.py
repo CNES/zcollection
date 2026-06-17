@@ -2,10 +2,11 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Handle a collection of Zarr groups.
+"""Handle a collection of Zarr groups.
+
 ===================================
 """
+
 from . import merging, partitioning
 from .collection import Collection
 from .collection.abc import Indexer, PartitionFilter, PartitionFilterCallback

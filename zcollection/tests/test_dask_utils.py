@@ -6,6 +6,7 @@
 Testing utilities
 =================
 """
+
 import dask.distributed
 import pytest
 

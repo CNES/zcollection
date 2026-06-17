@@ -2,10 +2,11 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""
-Test partitioning by date.
+"""Test partitioning by date.
+
 ==========================
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -38,6 +39,7 @@ TIME_DELTA = numpy.timedelta64(1, 'h')
 @dataclasses.dataclass(frozen=True)
 class PartitionTestData:
     """Test data for partitioning."""
+
     timedelta: numpy.timedelta64
     indices: slice
     resolution: str
@@ -61,9 +63,9 @@ class PartitionTestData:
         assert parsed_date == numpy.datetime64(date).astype(
             f'datetime64[{self.resolution}]')
 
-        expected_selection = self.dates[
-            (self.dates >= parsed_date)
-            & (self.dates < parsed_date + self.timedelta)]
+        expected_selection = self.dates[(self.dates >= parsed_date)
+                                        & (self.dates < parsed_date +
+                                           self.timedelta)]
         assert numpy.all(zds.variables['dates'].compute(
             scheduler=dask.local.get_sync) == expected_selection)
 
@@ -108,7 +110,8 @@ def test_split_dataset(
     ]:
 
         # Time delta between two partitions
-        timedelta = numpy.timedelta64(1, resolution)
+        timedelta = numpy.timedelta64(
+            1, resolution)  # type: ignore[call-overload]
 
         # Temporal axis to split
         dates: NDArray = numpy.arange(START_DATE, end_date, TIME_DELTA)
@@ -128,7 +131,8 @@ def test_split_dataset(
         assert len(partitioning) == len(range(indices.start, indices.stop))
 
         # Date of the current partition
-        date = numpy.datetime64(START_DATE, resolution)
+        date = numpy.datetime64(START_DATE,
+                                resolution)  # type: ignore[call-overload]
 
         # Build the test dataset
         zds = dataset.Dataset.from_xarray(xds)
