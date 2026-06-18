@@ -12,6 +12,7 @@ from typing import Any, ClassVar, Optional
 import abc
 import collections
 from collections.abc import Callable, Generator, Iterator, Sequence
+import operator
 import re
 from re import Match
 
@@ -403,6 +404,10 @@ class Partitioning(metaclass=abc.ABCMeta):
         """
         return sep.join(f'{k}={v}' for k, v in partition_scheme)
 
+    import operator
+
+    ...
+
     def list_partitions(
         self,
         fs: fsspec.AbstractFileSystem,
@@ -413,14 +418,21 @@ class Partitioning(metaclass=abc.ABCMeta):
         Args:
             fs: The filesystem to be used.
             path: The path to the directory containing the partitions.
+
         Yields:
             The partitions.
         """
-        partitions = []
-        for p in list_partitions(fs, path, depth=len(self) - 1):
+        parsed_partitions = []
+
+        for partition in list_partitions(fs, path, depth=len(self) - 1):
             try:
-                self.parse(p)
+                parsed_partition = self.parse(partition)
             except ValueError:
                 continue
-            partitions.append(p)
-        yield from sorted(partitions, key=self.parse)
+
+            parsed_partitions.append((parsed_partition, partition))
+
+        parsed_partitions.sort(key=operator.itemgetter(0))
+
+        for _, partition in parsed_partitions:
+            yield partition
