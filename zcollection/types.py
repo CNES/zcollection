@@ -4,6 +4,8 @@
 # BSD-style license that can be found in the LICENSE file.
 """Public type aliases and protocols."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 from collections.abc import Callable
 

@@ -4,6 +4,8 @@
 # BSD-style license that can be found in the LICENSE file.
 """Variable metadata: dtype, dims, fill, codec stack, role."""
 
+from __future__ import annotations
+
 from typing import Any
 from dataclasses import dataclass, field
 from enum import StrEnum

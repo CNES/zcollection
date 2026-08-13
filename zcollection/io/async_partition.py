@@ -9,6 +9,8 @@ end-to-end so that callers can run many partition reads/writes concurrently
 on a single event loop.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 import asyncio
 from collections.abc import Iterable

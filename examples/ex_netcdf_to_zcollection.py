@@ -98,6 +98,8 @@ This example uses the ``netCDF4`` library to access nested groups,
 which xarray cannot do natively without an explicit ``group=`` argument.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 import argparse
 from datetime import datetime

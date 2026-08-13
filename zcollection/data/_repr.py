@@ -9,6 +9,8 @@ size for the dataset, each child group, and each variable so the user can
 gauge memory/disk footprint at a glance.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterable, Iterator
 

@@ -27,6 +27,8 @@ Two-phase / crash safety:
   back to walking. :func:`reconcile` performs the recovery write-back.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 from dataclasses import dataclass
 import hashlib
@@ -95,7 +97,7 @@ class Catalog:
             return None
         try:
             doc = json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError, UnicodeDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             # Treat a corrupted catalog as missing; callers will rebuild.
             return None
         paths = tuple(doc.get("paths", ()))

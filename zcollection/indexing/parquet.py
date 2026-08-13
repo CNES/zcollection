@@ -13,6 +13,8 @@ Querying with a dict of equality filters yields a ``{partition: [(start,
 stop), ...]}`` mapping that callers feed to per-partition slicing.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 from collections.abc import Callable, Iterable
 

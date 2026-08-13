@@ -33,6 +33,8 @@ and :func:`zcollection.open_collection`; this module's
 their direct backers.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 import asyncio
 from collections.abc import Callable, Iterable, Iterator

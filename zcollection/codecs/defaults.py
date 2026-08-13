@@ -17,6 +17,8 @@ translates these into ``zarr.codecs`` objects at write time via
 :func:`resolve_codec`.
 """
 
+from __future__ import annotations
+
 from typing import Any
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass

@@ -4,6 +4,8 @@
 # BSD-style license that can be found in the LICENSE file.
 """Read/write the ``_zcollection.json`` root config."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 from ..errors import CollectionNotFoundError

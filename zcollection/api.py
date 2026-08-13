@@ -4,6 +4,8 @@
 # BSD-style license that can be found in the LICENSE file.
 """Public sync facade for zcollection."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from .collection import Collection

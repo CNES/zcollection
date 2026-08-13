@@ -21,6 +21,8 @@ doubled. This keeps growth tracking the array's existing aspect ratio
 is the natural growth direction.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 import math
 

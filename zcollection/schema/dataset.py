@@ -4,6 +4,8 @@
 # BSD-style license that can be found in the LICENSE file.
 """Dataset-level schema (root :class:`GroupSchema`)."""
 
+from __future__ import annotations
+
 from typing import Any
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -15,7 +17,10 @@ from .variable import VariableSchema
 from .versioning import FORMAT_VERSION, upgrade
 
 
-@dataclass(frozen=True, slots=True)
+# No ``slots=True``: it rebuilds the class, which breaks zero-arg ``super()``
+# on Python 3.12 (CPython gh-90562, fixed in 3.13). Cheap to forgo here --
+# this is the root schema, instantiated about once per collection.
+@dataclass(frozen=True)
 class DatasetSchema(GroupSchema):
     """Immutable description of a collection's dataset.
 
