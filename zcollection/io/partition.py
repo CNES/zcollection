@@ -4,6 +4,8 @@
 # BSD-style license that can be found in the LICENSE file.
 """Per-partition Zarr v3 group I/O — synchronous path."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterable
 import logging

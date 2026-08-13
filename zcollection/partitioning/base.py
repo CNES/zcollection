@@ -4,6 +4,8 @@
 # BSD-style license that can be found in the LICENSE file.
 """Partitioning Protocol — pure-numpy partition key extraction."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from collections.abc import Iterable, Iterator
 

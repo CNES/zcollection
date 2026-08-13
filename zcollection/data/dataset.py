@@ -18,6 +18,8 @@ round-tripping). On top of plain :class:`Group` semantics it adds:
   builds a flat dataset, since xarray has no native group concept).
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping

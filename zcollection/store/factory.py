@@ -4,6 +4,8 @@
 # BSD-style license that can be found in the LICENSE file.
 """URL-driven store factory."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 from urllib.request import url2pathname

@@ -11,6 +11,8 @@ backend. The :attr:`Variable.is_lazy` flag is true iff the underlying
 array isn't a plain :class:`numpy.ndarray`.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 import math
 

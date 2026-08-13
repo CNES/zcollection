@@ -10,6 +10,8 @@ the root group is a :class:`~zcollection.schema.DatasetSchema`; every nested
 group is a plain :class:`GroupSchema`.
 """
 
+from __future__ import annotations
+
 from typing import Any
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field

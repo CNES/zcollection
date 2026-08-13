@@ -8,7 +8,7 @@ compatibility runtime.
 Requirements
 ------------
 
-- Python **3.14** or later
+- Python **3.12** or later
 - `zarr <https://zarr.readthedocs.io/>`_ ≥ 3.1.6
 - `numpy <https://numpy.org/>`_ ≥ 1.20
 - `numcodecs <https://numcodecs.readthedocs.io/>`_ ≥ 0.13

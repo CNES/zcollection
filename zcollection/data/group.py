@@ -17,6 +17,8 @@ absolute (``/data_01/ku``) and relative (``data_01/ku``) forms. Short
 names address direct children; paths walk down through nested groups.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping

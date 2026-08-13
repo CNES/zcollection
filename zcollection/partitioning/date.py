@@ -4,6 +4,8 @@
 # BSD-style license that can be found in the LICENSE file.
 """Date partitioning — bucket a datetime64 axis by Y/M/D/h/m/s."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterator
 

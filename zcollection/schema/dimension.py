@@ -4,6 +4,8 @@
 # BSD-style license that can be found in the LICENSE file.
 """Dimension metadata."""
 
+from __future__ import annotations
+
 from typing import Any
 from dataclasses import dataclass
 

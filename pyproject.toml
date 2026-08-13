@@ -17,7 +17,7 @@ __version__ = "{version}"
 
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py312"
 line-length = 80
 
 [tool.ruff.lint.pycodestyle]

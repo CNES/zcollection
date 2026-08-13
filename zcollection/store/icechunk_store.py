@@ -18,6 +18,8 @@ under :data:`META_DIR`. From the caller's perspective the
 :meth:`read_bytes` / :meth:`write_bytes` API is unchanged.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -220,7 +222,7 @@ class IcechunkStore(Store):
             return None
         try:
             doc = json.loads(bytes(buf.to_bytes()).decode("utf-8"))
-        except UnicodeDecodeError, json.JSONDecodeError:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             return None
         payload = doc.get("attributes", {}).get(_PAYLOAD_ATTR)
         return payload.encode("utf-8") if isinstance(payload, str) else None

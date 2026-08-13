@@ -10,6 +10,8 @@ counters whenever the underlying store is exercised. It uses
 (local, obstore, memory) and never changes data semantics.
 """
 
+from __future__ import annotations
+
 from typing import Any
 from collections import Counter
 

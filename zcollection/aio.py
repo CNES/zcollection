@@ -9,6 +9,8 @@ module is the recommended surface when running inside an event loop (e.g.
 FastAPI handlers, Jupyter ``%await`` cells, or other async workloads).
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from .collection import Collection

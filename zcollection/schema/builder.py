@@ -33,6 +33,8 @@ Hierarchical groups can be declared by passing ``group=`` to
     )
 """
 
+from __future__ import annotations
+
 from typing import Any
 from collections.abc import Iterable
 

@@ -15,6 +15,8 @@ under the matching nested path (e.g. an immutable variable at
 ``/data_01/ku/range`` is written to ``_immutable/data_01/ku/range``).
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 from collections.abc import Iterable
 import logging

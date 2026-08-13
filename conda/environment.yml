@@ -2,8 +2,8 @@ name: ZCollection
 channels:
   - conda-forge
 dependencies:
-  # Python (matches setup.cfg `python_requires = >=3.14`)
-  - python >=3.14
+  # Python (matches setup.cfg `python_requires = >=3.12`)
+  - python >=3.12
   # Runtime
   - dask-core >=2022.8.0
   - distributed

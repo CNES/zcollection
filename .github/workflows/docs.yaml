@@ -54,7 +54,7 @@ jobs:
             channels:
               - conda-forge
           create-args: |
-            python=3.14
+            python=3.12
           environment-name: ZCollection
           environment-file: conda/environment.yml
 

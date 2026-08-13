@@ -4,6 +4,8 @@
 # BSD-style license that can be found in the LICENSE file.
 """Slim, v3-native View implementation."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 import asyncio
 from collections.abc import Callable, Iterable, Iterator

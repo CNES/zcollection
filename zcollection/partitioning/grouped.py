@@ -8,6 +8,8 @@ Useful when, e.g., altimetry passes 1..100 should all live in one partition
 rather than producing 100 partitions per cycle.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterator
 
