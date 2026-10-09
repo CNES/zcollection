@@ -1,0 +1,188 @@
+{
+  "axis": "time",
+  "dataset": {
+    "attrs": [
+      [
+        "revision",
+        1
+      ],
+      [
+        "title",
+        "reference collection"
+      ]
+    ],
+    "block_size_limit": 134217728,
+    "dimensions": [
+      [
+        "num_lines",
+        -1,
+        -1
+      ],
+      [
+        "num_pixels",
+        3,
+        -1
+      ]
+    ],
+    "variables": [
+      {
+        "attrs": [
+          [
+            "units",
+            "1"
+          ]
+        ],
+        "compressor": null,
+        "dimensions": [
+          "num_lines"
+        ],
+        "dtype": "<i4",
+        "fill_value": -99,
+        "filters": [],
+        "name": "counts"
+      },
+      {
+        "attrs": [
+          [
+            "units",
+            "m"
+          ]
+        ],
+        "compressor": null,
+        "dimensions": [
+          "num_lines",
+          "num_pixels"
+        ],
+        "dtype": "<f8",
+        "fill_value": null,
+        "filters": [],
+        "name": "grid"
+      },
+      {
+        "attrs": [
+          [
+            "units",
+            "m"
+          ]
+        ],
+        "compressor": null,
+        "dimensions": [
+          "num_lines"
+        ],
+        "dtype": "<f8",
+        "fill_value": -999.0,
+        "filters": [],
+        "name": "masked"
+      },
+      {
+        "attrs": [
+          [
+            "units",
+            "1"
+          ]
+        ],
+        "compressor": null,
+        "dimensions": [
+          "num_pixels"
+        ],
+        "dtype": "<i2",
+        "fill_value": null,
+        "filters": [],
+        "name": "pixel"
+      },
+      {
+        "attrs": [
+          [
+            "units",
+            "m"
+          ]
+        ],
+        "compressor": null,
+        "dimensions": [
+          "num_lines"
+        ],
+        "dtype": "<f8",
+        "fill_value": null,
+        "filters": [],
+        "name": "plain"
+      },
+      {
+        "attrs": [
+          [
+            "units",
+            "m"
+          ]
+        ],
+        "compressor": null,
+        "dimensions": [
+          "num_lines"
+        ],
+        "dtype": "<f8",
+        "fill_value": null,
+        "filters": [
+          {
+            "astype": "<i4",
+            "dtype": "<f8",
+            "id": "fixedscaleoffset",
+            "offset": 0,
+            "scale": 1000
+          }
+        ],
+        "name": "scaled"
+      },
+      {
+        "attrs": [
+          [
+            "units",
+            "m"
+          ]
+        ],
+        "compressor": null,
+        "dimensions": [
+          "num_lines"
+        ],
+        "dtype": "<f8",
+        "fill_value": -10.0,
+        "filters": [
+          {
+            "astype": "<i4",
+            "dtype": "<f8",
+            "id": "fixedscaleoffset",
+            "offset": 0,
+            "scale": 1000
+          }
+        ],
+        "name": "scaled_masked"
+      },
+      {
+        "attrs": [
+          [
+            "units",
+            "ns"
+          ]
+        ],
+        "compressor": {
+          "blocksize": 0,
+          "clevel": 5,
+          "cname": "lz4",
+          "id": "blosc",
+          "shuffle": 1
+        },
+        "dimensions": [
+          "num_lines"
+        ],
+        "dtype": "<M8[ns]",
+        "fill_value": null,
+        "filters": [],
+        "name": "time"
+      }
+    ]
+  },
+  "partitioning": {
+    "id": "Date",
+    "resolution": "D",
+    "variables": [
+      "time"
+    ]
+  }
+}
