@@ -10,14 +10,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import numcodecs.abc
 import numpy
-import zarr.codecs
-import zarr.meta
+
+from . import serialization
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
-
-    import numcodecs.abc
 
     from .type_hints import DTypeLike
 
@@ -188,14 +187,20 @@ class Variable:
         ) if compressor is not None else None
 
         return {
-            'attrs': sorted(item.get_config() for item in self.attrs),
-            'compressor': compressor_config,
-            'dimensions': self.dimensions,
-            'dtype': zarr.meta.encode_dtype(self.dtype),
-            'fill_value': zarr.meta.encode_fill_value(self.fill_value,
-                                                      self.dtype),
-            'filters': tuple(item.get_config() for item in self.filters),
-            'name': self.name,
+            'attrs':
+            sorted(item.get_config() for item in self.attrs),
+            'compressor':
+            compressor_config,
+            'dimensions':
+            self.dimensions,
+            'dtype':
+            serialization.encode_dtype(self.dtype),
+            'fill_value':
+            serialization.encode_fill_value(self.fill_value, self.dtype),
+            'filters':
+            tuple(item.get_config() for item in self.filters),
+            'name':
+            self.name,
         }
 
     @staticmethod
@@ -211,11 +216,11 @@ class Variable:
 
         def get_codec(codec) -> numcodecs.abc.Codec | None:
             """Get the codec from its configuration."""
-            return zarr.codecs.get_codec(codec) if codec is not None else None
+            return numcodecs.get_codec(codec) if codec is not None else None
 
-        dtype: DTypeLike = zarr.meta.decode_dtype(data['dtype'])
+        dtype: numpy.dtype = serialization.decode_dtype(data['dtype'])
         filters: Sequence[numcodecs.abc.Codec] = tuple(
-            zarr.codecs.get_codec(item) for item in data['filters']
+            numcodecs.get_codec(item) for item in data['filters']
             if item is not None)
 
         return Variable(
@@ -224,7 +229,8 @@ class Variable:
             dimensions=data['dimensions'],
             attrs=tuple(Attribute.from_config(item) for item in data['attrs']),
             compressor=get_codec(data['compressor']),
-            fill_value=zarr.meta.decode_fill_value(data['fill_value'], dtype),
+            fill_value=serialization.decode_fill_value(data['fill_value'],
+                                                       dtype),
             filters=filters,
         )
 
