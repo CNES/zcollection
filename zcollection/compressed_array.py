@@ -243,7 +243,10 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         ]
         return func(*arrays, **kwargs)
 
-    def __array_ufunc__(
+    # NDArrayOperatorsMixin types `method` as a literal of the six ufunc
+    # methods. This class accepts any string and returns NotImplemented for
+    # the methods it does not handle.
+    def __array_ufunc__(  # type: ignore[override]
         self,
         ufunc: Callable,
         method: str,

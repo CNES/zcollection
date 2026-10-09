@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-case-conflict
       - id: check-docstring-first
@@ -15,10 +15,10 @@ repos:
       - id: trailing-whitespace
         exclude: conda/meta.yaml
   - repo: https://github.com/asottile/pyupgrade
-    rev: "v3.20.0"
+    rev: "v3.21.2"
     hooks:
     - id: pyupgrade
-      args: [--py310-plus]
+      args: [--py311-plus]
   - repo: https://github.com/PyCQA/isort
     rev: 6.0.1
     hooks:
@@ -43,12 +43,8 @@ repos:
       - id: yapf
         additional_dependencies:
           - toml
-  - repo: https://github.com/myint/docformatter
-    rev: "v1.7.7"
-    hooks:
-    - id: docformatter
   - repo: https://github.com/codespell-project/codespell
-    rev: "v2.4.1"
+    rev: "v2.4.2"
     hooks:
     - id: codespell
   - repo: https://github.com/pre-commit/mirrors-mypy

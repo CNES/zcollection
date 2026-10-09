@@ -8,13 +8,12 @@ Dataset variable.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Self, TypeVar
 import abc
 import collections
 from collections.abc import Callable, Iterator, Sequence
 import numbers
 
-from typing_extensions import Self
 import xarray
 
 from .. import mathematics, meta, representation
