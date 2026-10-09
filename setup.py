@@ -29,4 +29,6 @@ class SDist(setuptools.command.sdist.sdist):
             target.rename(source)
 
 
-setuptools.setup(cmdclass={'sdist': SDist})
+setuptools.setup(
+    cmdclass={'sdist': SDist},  # type: ignore[arg-type]
+)

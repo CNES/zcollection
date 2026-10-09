@@ -934,6 +934,7 @@ def test_insert_with_missing_variable(
 
     data = zcol.load()
     assert data is not None
+    assert zds_v1.fill_value is not None
     assert numpy.ma.allequal(
         data.variables['var1'].values,
         numpy.ma.masked_equal(

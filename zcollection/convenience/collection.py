@@ -118,14 +118,14 @@ def update_deprecated_collection(
     from ..fs_utils import join_path
 
     _LOGGER.warning('Updating collection: %r', path)
-    filesystem = fs_utils.get_fs(filesystem)
+    fs = fs_utils.get_fs(filesystem)
 
     config = collection.Collection._config(path)
 
-    if not filesystem.exists(config):
+    if not fs.exists(config):
         raise ValueError(f'zarr collection not found at path {path!r}')
 
-    with filesystem.open(config) as stream:
+    with fs.open(config) as stream:
         data: dict[str, Any] = json.load(stream)
 
     if data.get('version', '0') != '0':
@@ -139,8 +139,7 @@ def update_deprecated_collection(
     dimensions_source = _dimensions_source(ds, main_dimension)
 
     zcol_partitioning = partitioning.get_codecs(data['partitioning'])
-    partitions = list(
-        zcol_partitioning.list_partitions(fs=filesystem, path=path))
+    partitions = list(zcol_partitioning.list_partitions(fs=fs, path=path))
 
     if not partitions:
         raise ValueError(
@@ -161,7 +160,7 @@ def update_deprecated_collection(
                             variable.name)
             var_path = join_path(path, collection.IMMUTABLE, variable.name)
 
-        var_shape = zarr.open(filesystem.get_mapper(var_path)).shape
+        var_shape = zarr.open(fs.get_mapper(var_path)).shape
 
         dim_size = var_shape[dim_index]
         _LOGGER.warning('Assigning size %r to dimension %r.', dim_size,
@@ -179,13 +178,13 @@ def update_deprecated_collection(
                                  zcol_partitioning,
                                  path,
                                  mode='w',
-                                 filesystem=filesystem)
+                                 filesystem=fs)
 
     config = zcol._config(path)
 
     config_back = f'{config}.bak'
     _LOGGER.warning('Copying old configuration to: %r', config_back)
-    filesystem.copy(config, config_back)
+    fs.copy(config, config_back)
 
     _LOGGER.warning('Writing new configuration: %r', path)
 

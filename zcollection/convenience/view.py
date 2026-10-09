@@ -48,13 +48,13 @@ def create_view(path: str,
     Raises:
         ValueError: If the path already exists.
     """
-    filesystem = fs_utils.get_fs(filesystem)
-    if filesystem.exists(path):
+    fs = fs_utils.get_fs(filesystem)
+    if fs.exists(path):
         raise ValueError(f'path {path!r} already exists.')
     return view.View(path,
                      view_ref,
                      ds=None,
-                     filesystem=filesystem,
+                     filesystem=fs,
                      filters=filters,
                      synchronizer=synchronizer,
                      distributed=distributed)

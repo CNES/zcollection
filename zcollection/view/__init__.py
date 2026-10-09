@@ -632,7 +632,7 @@ class View:
                                                       func, self.fs,
                                                       self.view_ref, trim)
 
-        if distributed:
+        if client is not None:
             batches: Iterator[Sequence[Any]] = dask_utils.split_sequence(
                 datasets_list, npartitions
                 or dask_utils.dask_workers(client, cores_only=True))
