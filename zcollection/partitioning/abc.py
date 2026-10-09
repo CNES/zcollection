@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Optional
 import abc
 import collections
 from collections.abc import Callable, Generator, Iterator, Sequence
+import operator
 import re
 from re import Match
 
@@ -414,5 +415,17 @@ class Partitioning(metaclass=abc.ABCMeta):
         Yields:
             The partitions.
         """
-        yield from sorted(list_partitions(fs, path, depth=len(self) - 1),
-                          key=self.parse)
+        parsed_partitions = []
+
+        for partition in list_partitions(fs, path, depth=len(self) - 1):
+            try:
+                parsed_partition = self.parse(partition)
+            except ValueError:
+                continue
+
+            parsed_partitions.append((parsed_partition, partition))
+
+        parsed_partitions.sort(key=operator.itemgetter(0))
+
+        for _, partition in parsed_partitions:
+            yield partition
