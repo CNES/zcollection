@@ -80,12 +80,13 @@ def test_perform(
 
     path = str(local_fs.root.joinpath('variable=1'))
 
-    future = dask_client.submit(_update_fs, path, dask_client.scatter(zds),
-                                local_fs.fs)
+    scattered = dask_client.scatter(zds)
+
+    future = dask_client.submit(_update_fs, path, scattered, local_fs.fs)
     dask_client.gather(future)
 
     future = dask_client.submit(perform,
-                                dask_client.scatter(zds),
+                                scattered,
                                 path,
                                 axis='time',
                                 fs=local_fs.fs,
