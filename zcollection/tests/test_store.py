@@ -175,3 +175,26 @@ def test_a_read_only_array_refuses_a_write(local_fs) -> None:  # noqa: F811
     array = store.open_array(local_fs.fs, path, mode='r')
     with pytest.raises(zarr.errors.ReadOnlyError):
         array[...] = 1
+
+
+def test_a_group_opens_read_only(local_fs) -> None:  # noqa: F811
+    """A group opened with the default mode refuses a write.
+
+    Consolidated metadata is read-only whatever the mode, the chunks are
+    not: a group opened in ``r+`` hands back writable arrays.
+    """
+    path = join_path(str(local_fs.root), 'group')
+    store.create_group(local_fs.fs, path)
+    store.create_array(local_fs.fs,
+                       path,
+                       name='variable',
+                       shape=(4, ),
+                       dtype=numpy.dtype('int32'))
+    store.consolidate(local_fs.fs, path)
+
+    group = store.open_group(local_fs.fs, path)
+    assert group.read_only
+    with pytest.raises(zarr.errors.ReadOnlyError):
+        group['variable'][...] = 1
+
+    assert not store.open_group(local_fs.fs, path, mode='r+').read_only

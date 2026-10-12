@@ -478,7 +478,7 @@ def _calculate_axis_reference(
     Returns:
         The axis reference of the partition.
     """
-    group: zarr.Group = store.open_group(view_ref.fs, path, mode='r+')
+    group: zarr.Group = store.open_group(view_ref.fs, path)
     array: zarr.Array = group[view_ref.axis]  # type: ignore[arg-type]
     axis: NDArray = array[...]
     checksum: str = hashlib.sha256(axis.tobytes()).hexdigest()
