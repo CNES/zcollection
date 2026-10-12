@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import numcodecs
 import numpy
-import zarr
 
 from .. import dataset, partitioning
 
@@ -144,7 +143,7 @@ def make_dataset(delayed: bool = False,
             data=axis(),
             dimensions=(DIMENSION, ),
             attrs=(dataset.Attribute(name='units', value='ns'), ),
-            compressor=zarr.Blosc(),
+            compressor=numcodecs.Blosc(),
         ),
         array(
             name='plain',

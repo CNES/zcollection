@@ -11,9 +11,9 @@ import pickle
 
 import dask.array.core
 import dask.array.ma
+import numcodecs
 import numpy
 import pytest
-import zarr
 
 from ... import meta
 from ...tests.cluster import dask_client  # noqa: F401
@@ -75,8 +75,8 @@ def test_constructor(
     assert var1.size == 10
     assert var1.nbytes == 80
     assert var1.filters == (
-        zarr.Delta('int64', 'int32'),
-        zarr.Delta('int32', 'int32'),
+        numcodecs.Delta('int64', 'int32'),
+        numcodecs.Delta('int32', 'int32'),
     )
     assert numpy.all(var1.values == numpy.arange(10).reshape(5, 2))
     assert numpy.all(var1.values == var1.values)
@@ -97,8 +97,8 @@ def test_constructor(
     assert var2.size == 10
     assert var2.nbytes == 80
     assert var2.filters == (
-        zarr.Delta('int64', 'int32'),
-        zarr.Delta('int32', 'int32'),
+        numcodecs.Delta('int64', 'int32'),
+        numcodecs.Delta('int32', 'int32'),
     )
     assert numpy.all(var1.values == var2.values)
 
@@ -140,8 +140,8 @@ def test_duplicate(
     assert var2.compressor.clevel == 1  # type: ignore[union-attr]
     assert var2.fill_value == 0
     assert var2.filters == (
-        zarr.Delta('int64', 'int32'),
-        zarr.Delta('int32', 'int32'),
+        numcodecs.Delta('int64', 'int32'),
+        numcodecs.Delta('int32', 'int32'),
     )
     assert numpy.all(var1.values == var2.values / 2)
     assert var1.metadata() == var2.metadata()
@@ -260,8 +260,8 @@ def test_timedelta64_to_xarray(
         data=delta,
         dimensions=('num_lines', ),
         attrs=(meta.Attribute(name='attr', value=1), ),
-        compressor=zarr.Blosc(),
-        filters=(zarr.Delta('int64', 'int64'), ),
+        compressor=numcodecs.Blosc(),
+        filters=(numcodecs.Delta('int64', 'int64'), ),
     )
     xr_var: xarray.Variable = var.to_xarray()
     assert xr_var.dims == ('num_lines', )
@@ -285,8 +285,8 @@ def test_datetime64_to_xarray(
         data=dates,
         dimensions=('num_lines', ),
         attrs=(meta.Attribute(name='attr', value=1), ),
-        compressor=zarr.Blosc(),
-        filters=(zarr.Delta('int64', 'int64'), ),
+        compressor=numcodecs.Blosc(),
+        filters=(numcodecs.Delta('int64', 'int64'), ),
     )
     xr_var: xarray.Variable = var.to_xarray()
     assert xr_var.dims == ('num_lines', )

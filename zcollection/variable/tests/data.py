@@ -6,8 +6,8 @@
 Create test variables.
 ======================
 """
+import numcodecs
 import numpy
-import zarr
 
 from .. import Array, DelayedArray
 from ... import meta
@@ -28,10 +28,10 @@ def array(name='var1', fill_value=0) -> Array:
                  data=numpy.arange(10, dtype='int64').reshape(5, 2),
                  dimensions=('x', 'y'),
                  attrs=(meta.Attribute(name='attr', value=1), ),
-                 compressor=zarr.Blosc(cname='zstd', clevel=1),
+                 compressor=numcodecs.Blosc(cname='zstd', clevel=1),
                  fill_value=fill_value,
-                 filters=(zarr.Delta('int64',
-                                     'int32'), zarr.Delta('int32', 'int32')))
+                 filters=(numcodecs.Delta('int64', 'int32'),
+                          numcodecs.Delta('int32', 'int32')))
 
 
 def delayed_array(name='var1', fill_value=0) -> DelayedArray:
@@ -49,7 +49,7 @@ def delayed_array(name='var1', fill_value=0) -> DelayedArray:
                         data=numpy.arange(10, dtype='int64').reshape(5, 2),
                         dimensions=('x', 'y'),
                         attrs=(meta.Attribute(name='attr', value=1), ),
-                        compressor=zarr.Blosc(cname='zstd', clevel=1),
+                        compressor=numcodecs.Blosc(cname='zstd', clevel=1),
                         fill_value=fill_value,
-                        filters=(zarr.Delta('int64', 'int32'),
-                                 zarr.Delta('int32', 'int32')))
+                        filters=(numcodecs.Delta('int64', 'int32'),
+                                 numcodecs.Delta('int32', 'int32')))

@@ -9,10 +9,10 @@ Testing datasets
 from typing import TYPE_CHECKING
 import pickle
 
+import numcodecs
 import numpy
 import pytest
 import xarray
-import zarr
 
 from .. import dataset, meta
 from ..variable.tests.data import array, delayed_array
@@ -84,24 +84,27 @@ def test_dataset_dimensions_conflict(
     with pytest.raises(ValueError,
                        match='variable .* has conflicting dimensions'):
         dataset.Dataset([
-            dataset.DelayedArray(
-                name='var1',
-                data=numpy.arange(10, dtype='int64').reshape(5, 2),
-                dimensions=('x', 'y'),
-                attrs=(dataset.Attribute(name='attr', value=1), ),
-                compressor=zarr.Blosc(cname='zstd', clevel=1),
-                fill_value=0,
-                filters=(zarr.Delta('int64',
-                                    'int32'), zarr.Delta('int32', 'int32'))),
+            dataset.DelayedArray(name='var1',
+                                 data=numpy.arange(10, dtype='int64').reshape(
+                                     5, 2),
+                                 dimensions=('x', 'y'),
+                                 attrs=(dataset.Attribute(name='attr',
+                                                          value=1), ),
+                                 compressor=numcodecs.Blosc(cname='zstd',
+                                                            clevel=1),
+                                 fill_value=0,
+                                 filters=(numcodecs.Delta('int64', 'int32'),
+                                          numcodecs.Delta('int32', 'int32'))),
             dataset.DelayedArray(name='var2',
                                  data=numpy.arange(20, dtype='int64'),
                                  dimensions=('x'),
                                  attrs=(dataset.Attribute(name='attr',
                                                           value=1), ),
-                                 compressor=zarr.Blosc(cname='zstd', clevel=1),
+                                 compressor=numcodecs.Blosc(cname='zstd',
+                                                            clevel=1),
                                  fill_value=0,
-                                 filters=(zarr.Delta('int64', 'int32'),
-                                          zarr.Delta('int32', 'int32'))),
+                                 filters=(numcodecs.Delta('int64', 'int32'),
+                                          numcodecs.Delta('int32', 'int32'))),
         ])
 
 
@@ -217,17 +220,18 @@ def test_dataset_add_variable(
                         numpy.int64,
                         dimensions=('x', 'y'),
                         attrs=(dataset.Attribute('attr', 1), ),
-                        compressor=zarr.Blosc(),
+                        compressor=numcodecs.Blosc(),
                         fill_value=255,
-                        filters=(zarr.Delta('int64', 'int64'), ))
+                        filters=(numcodecs.Delta('int64', 'int64'), ))
     zds.add_variable(var)
 
     assert zds.variables['var2'].attrs == (dataset.Attribute(name='attr',
                                                              value=1), )
     assert zds.variables['var2'].dtype == numpy.int64
     assert zds.variables['var2'].dimensions == ('x', 'y')
-    assert zds.variables['var2'].compressor == zarr.Blosc()
-    assert zds.variables['var2'].filters == (zarr.Delta('int64', 'int64'), )
+    assert zds.variables['var2'].compressor == numcodecs.Blosc()
+    assert zds.variables['var2'].filters == (numcodecs.Delta('int64',
+                                                             'int64'), )
     assert zds.variables['var2'].fill_value == 255
     assert zds.variables['var2'].name == 'var2'
     assert zds.variables['var2'].shape == (5, 2)
@@ -246,9 +250,9 @@ def test_dataset_add_variable(
                         numpy.int64,
                         dimensions=('x', 'y'),
                         attrs=(dataset.Attribute('attr', 1), ),
-                        compressor=zarr.Blosc(),
+                        compressor=numcodecs.Blosc(),
                         fill_value=255,
-                        filters=(zarr.Delta('int64', 'int64'), ))
+                        filters=(numcodecs.Delta('int64', 'int64'), ))
     zds.add_variable(var, data)
     assert numpy.ma.allequal(
         zds.variables['var2'].values,
@@ -262,9 +266,9 @@ def test_dataset_add_variable(
                         numpy.int64,
                         dimensions=('xx', 'y'),
                         attrs=(dataset.Attribute('attr', 1), ),
-                        compressor=zarr.Blosc(),
+                        compressor=numcodecs.Blosc(),
                         fill_value=255,
-                        filters=(zarr.Delta('int64', 'int64'), ))
+                        filters=(numcodecs.Delta('int64', 'int64'), ))
     with pytest.raises(ValueError, match='has dimension'):
         zds.add_variable(var)
 

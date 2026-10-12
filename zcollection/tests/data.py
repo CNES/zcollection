@@ -11,8 +11,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 import itertools
 
+import numcodecs
 import numpy
-import zarr
 
 from .. import collection, dataset, partitioning
 
@@ -46,7 +46,7 @@ def make_dataset(dates: numpy.ndarray,
                 data=dates,
                 dimensions=('num_lines', ),
                 attrs=(dataset.Attribute(name='attr', value=1), ),
-                compressor=zarr.Blosc(),
+                compressor=numcodecs.Blosc(),
             ),
             array_class(name='var1',
                         data=measures,
@@ -90,10 +90,10 @@ def create_test_dataset_with_fillvalue(
                        measures,
                        delayed=delayed,
                        fill_value=FILL_VALUE * 1e-4,
-                       filters=(zarr.FixedScaleOffset(scale=10000,
-                                                      offset=0,
-                                                      dtype='<f8',
-                                                      astype='i4'), ))
+                       filters=(numcodecs.FixedScaleOffset(scale=10000,
+                                                           offset=0,
+                                                           dtype='<f8',
+                                                           astype='i4'), ))
 
 
 def create_test_collection(tested_fs,

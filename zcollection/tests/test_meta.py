@@ -13,9 +13,9 @@ import json
 import pathlib
 import pickle
 
+import numcodecs
 import numpy
 import pytest
-import zarr.codecs
 
 from .. import meta
 
@@ -62,10 +62,10 @@ def test_variable() -> None:
                         numpy.dtype('int16'),
                         dimensions=('a', ),
                         attrs=(meta.Attribute('x', 12), ),
-                        compressor=zarr.codecs.Zlib(),
-                        filters=(zarr.codecs.Delta(numpy.float64, numpy.int16),
-                                 zarr.codecs.FixedScaleOffset(
-                                     0, 1, numpy.int16)))
+                        compressor=numcodecs.Zlib(),
+                        filters=(numcodecs.Delta(numpy.float64, numpy.int16),
+                                 numcodecs.FixedScaleOffset(0, 1,
+                                                            numpy.int16)))
     assert isinstance(var, meta.Variable)
     assert str(var) == "Variable('a')"
 
