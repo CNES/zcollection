@@ -8,6 +8,7 @@ Test of views
 """
 from __future__ import annotations
 
+import json
 import logging
 import pathlib
 import shutil
@@ -700,3 +701,30 @@ def test_view_with_empty_collection(fs, request, caplog):
 
     with pytest.warns(Warning, match='function is not applied'):
         zview.update(update, varname=var.name, distributed=False)
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_view_written_in_a_newer_layout(fs, request) -> None:
+    """A view written in a layout this code does not know is refused."""
+    tested_fs = request.getfixturevalue(fs)
+    zds = next(create_test_dataset())
+    collection.Collection('time',
+                          zds.metadata(),
+                          partitioning.Date(('time', ), 'D'),
+                          str(tested_fs.collection),
+                          filesystem=tested_fs.fs)
+    convenience.create_view(path=str(tested_fs.view),
+                            view_ref=view.ViewReference(
+                                str(tested_fs.collection), tested_fs.fs),
+                            filesystem=tested_fs.fs,
+                            distributed=False)
+
+    config = view.View._config(str(tested_fs.view))
+    with tested_fs.fs.open(config) as stream:
+        data = json.load(stream)
+    data['version'] = meta.FORMAT_VERSION + 1
+    with tested_fs.fs.open(config, mode='w') as stream:
+        json.dump(data, stream)
+
+    with pytest.raises(ValueError, match='written in version'):
+        convenience.open_view(str(tested_fs.view), filesystem=tested_fs.fs)

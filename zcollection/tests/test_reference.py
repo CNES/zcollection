@@ -116,15 +116,10 @@ def test_partition_filter_selects_one_day(written) -> None:
 
 
 def test_configuration_is_unchanged(written) -> None:
-    """The collection configuration keeps the shape it is read with.
-
-    ``version`` carries the version of the package that wrote the
-    collection and is left out of the comparison.
-    """
+    """The collection configuration keeps the shape it is read with."""
     path = fs_utils.join_path(written.partition_properties.dir, written.CONFIG)
     with written.fs.open(path) as stream:
         written_config = json.load(stream)
-    del written_config['version']
 
     expected = json.loads((pathlib.Path(__file__).parent /
                            'reference_collection.json').read_text())

@@ -286,3 +286,33 @@ def test_select_variables_by_dims() -> None:
         (), predicate=False) == {'a', 'b', 'c', 'd', 'e', 'f'}
     assert ds.select_variables_by_dims(
         ('z', ), predicate=False) == {'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+
+
+@pytest.mark.parametrize(('config', 'expected'), [
+    ({}, meta.DEPRECATED_FORMAT_VERSION),
+    ({
+        'version': '0'
+    }, meta.DEPRECATED_FORMAT_VERSION),
+    ({
+        'version': 0
+    }, meta.DEPRECATED_FORMAT_VERSION),
+    ({
+        'version': '2026.6.0'
+    }, meta.FORMAT_VERSION),
+    ({
+        'version': '2026.6.1.dev3+g5943e72'
+    }, meta.FORMAT_VERSION),
+    ({
+        'version': 1
+    }, 1),
+    ({
+        'version': 7
+    }, 7),
+])
+def test_format_version(config: dict[str, Any], expected: int) -> None:
+    """Read the version of the layout a configuration is written in.
+
+    Before the layout carried a version of its own, the key held the version
+    of the package, which names the layout only through ``'0'``.
+    """
+    assert meta.format_version(config) == expected

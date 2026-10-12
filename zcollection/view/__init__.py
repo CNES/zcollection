@@ -24,7 +24,6 @@ import fsspec
 from .. import collection, dask_utils, dataset, fs_utils, meta, storage, sync
 from ..collection.detail import _try_infer_callable
 from ..convenience import collection as convenience
-from ..version import __version__
 from .detail import (
     ViewReference,
     ViewUpdateCallable,
@@ -158,7 +157,7 @@ class View:
                 'path': self.view_ref.partition_properties.dir,
                 'fs': fs,
             },
-            'version': __version__,
+            'version': meta.FORMAT_VERSION,
         }
 
         with self.fs.open(config, 'w') as stream:
@@ -197,9 +196,15 @@ class View:
         with fs.open(config) as stream:
             data: dict[str, Any] = json.load(stream)
 
-        version = data.get('version', '0')
+        version = meta.format_version(data)
 
-        if version == '0':
+        if version > meta.FORMAT_VERSION:
+            raise ValueError(
+                f'This view is written in version {version} of the layout. '
+                'This version of zcollection reads up to version '
+                f'{meta.FORMAT_VERSION}.')
+
+        if version == meta.DEPRECATED_FORMAT_VERSION:
             raise ValueError('View configuration needs to be updated. '
                              "Use the 'zcollection.update_deprecated_view' "
                              'function to update it.')

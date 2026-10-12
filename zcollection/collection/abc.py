@@ -28,7 +28,6 @@ from .. import (
     storage,
     sync,
 )
-from ..version import __version__
 from .detail import (
     PartitioningProperties,
     _load_and_apply_indexer,
@@ -220,7 +219,8 @@ class ReadOnlyCollection:
         #: to the partitioning.
         self._immutable = _immutable_path(self._properties.partition)
 
-        self.version = __version__
+        #: Version of the layout the collection is written in.
+        self.version: int = meta.FORMAT_VERSION
 
     @property
     def axis(self) -> str:

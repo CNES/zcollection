@@ -26,6 +26,32 @@ BLOCK_SIZE_LIMIT = 134217728
 #: Alias to type hint for the dimensions of a dataset.
 DimensionType = dict[str, int]
 
+#: Version of the layout the configuration of a collection or of a view is
+#: written in. Raised by a change that makes what is written unreadable by
+#: the code preceding it.
+FORMAT_VERSION = 1
+
+#: Version of the layout the releases of the package write.
+DEPRECATED_FORMAT_VERSION = 0
+
+
+def format_version(config: dict[str, Any]) -> int:
+    """Read the version of the layout a configuration is written in.
+
+    Args:
+        config: The configuration of a collection or of a view.
+
+    Returns:
+        The version of the layout.
+    """
+    version: Any = config.get('version', DEPRECATED_FORMAT_VERSION)
+    if isinstance(version, int):
+        return version
+    # Before the layout carried a version of its own, this key held the
+    # version of the package that wrote the configuration. '0' marks the
+    # layout the releases write, any other string the one that follows it.
+    return (DEPRECATED_FORMAT_VERSION if version == '0' else FORMAT_VERSION)
+
 
 class Attribute:
     """Handle the metadata of a dataset attribute.

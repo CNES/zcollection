@@ -12,6 +12,7 @@ import concurrent.futures
 import copy
 import datetime
 import io
+import json
 import logging
 import multiprocessing
 
@@ -83,6 +84,59 @@ def test_collection_creation(
         collection.Collection('time_tai', zds.metadata(),
                               partitioning.Date(('time', ), 'D'),
                               str(tested_fs.collection))
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_collection_written_in_a_newer_layout(fs, request) -> None:
+    """A collection written in a layout this code does not know is refused."""
+    tested_fs = request.getfixturevalue(fs)
+    zds = next(create_test_dataset(False))
+    collection.Collection(axis='time',
+                          ds=zds.metadata(),
+                          partition_handler=partitioning.Date(('time', ), 'D'),
+                          partition_base_dir=str(tested_fs.collection),
+                          filesystem=tested_fs.fs)
+
+    config = collection.Collection._config(str(tested_fs.collection))
+    with tested_fs.fs.open(config) as stream:
+        data = json.load(stream)
+    data['version'] = meta.FORMAT_VERSION + 1
+    with tested_fs.fs.open(config, mode='w') as stream:
+        json.dump(data, stream)
+
+    with pytest.raises(ValueError, match='written in version'):
+        collection.Collection.from_config(path=str(tested_fs.collection),
+                                          filesystem=tested_fs.fs)
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_collection_holding_a_package_version(fs, request) -> None:
+    """A collection whose version key holds a package version opens.
+
+    Before the layout carried a version of its own, the key held the version
+    of the package that wrote the collection. Such collections name the
+    current layout.
+    """
+    tested_fs = request.getfixturevalue(fs)
+    zds = next(create_test_dataset(False))
+    collection.Collection(axis='time',
+                          ds=zds.metadata(),
+                          partition_handler=partitioning.Date(('time', ), 'D'),
+                          partition_base_dir=str(tested_fs.collection),
+                          filesystem=tested_fs.fs)
+
+    config = collection.Collection._config(str(tested_fs.collection))
+    with tested_fs.fs.open(config) as stream:
+        data = json.load(stream)
+    data['version'] = '2026.6.1.dev3+g5943e72'
+    with tested_fs.fs.open(config, mode='w') as stream:
+        json.dump(data, stream)
+
+    zcol = collection.Collection.from_config(path=str(tested_fs.collection),
+                                             mode='w',
+                                             filesystem=tested_fs.fs)
+    assert zcol.version == meta.FORMAT_VERSION
+    assert zcol.mode == 'w'
 
     with pytest.raises(
             ValueError,

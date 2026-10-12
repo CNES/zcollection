@@ -130,9 +130,7 @@ def written_today(path: pathlib.Path) -> dict:
                                                reference.make_partitioning(),
                                                str(path / 'today'))
     collection.insert(zds, distributed=False)
-    config = read_config(str(path / 'today'))
-    del config['version']
-    return config
+    return read_config(str(path / 'today'))
 
 
 def test_update_yields_the_configuration_written_today(deprecated,
@@ -145,7 +143,7 @@ def test_update_yields_the_configuration_written_today(deprecated,
     zcollection.update_deprecated_collection(deprecated)
 
     config = read_config(deprecated)
-    del config['version']
+    assert config['version'] == zcollection.meta.FORMAT_VERSION
     assert config == written_today(tmp_path)
 
 

@@ -34,7 +34,6 @@ from .. import (
     sync,
     variable as zvariable,
 )
-from ..version import __version__
 from .abc import IMMUTABLE, Indexer, PartitionFilter, ReadOnlyCollection
 from .callable_objects import UpdateCallable, WrappedPartitionCallable
 from .detail import (
@@ -249,7 +248,7 @@ class Collection(ReadOnlyCollection):
             'axis': self.axis,
             'dataset': self.metadata.get_config(),
             'partitioning': self.partitioning.get_config(),
-            'version': __version__,
+            'version': meta.FORMAT_VERSION,
         }
 
         with self.fs.open(config, mode='w') as stream:
@@ -299,10 +298,16 @@ class Collection(ReadOnlyCollection):
         with fs.open(config) as stream:
             data: dict[str, Any] = json.load(stream)
 
-        version = data.get('version', '0')
+        version = meta.format_version(data)
         load_dataset = meta.Dataset.from_config
 
-        if version == '0':
+        if version > meta.FORMAT_VERSION:
+            raise ValueError(
+                f'This collection is written in version {version} of the '
+                'layout. This version of zcollection reads up to version '
+                f'{meta.FORMAT_VERSION}.')
+
+        if version == meta.DEPRECATED_FORMAT_VERSION:
             msg_import = ("Use the 'zcollection.update_deprecated_collection' "
                           'function to update it.')
             warnings.warn(
