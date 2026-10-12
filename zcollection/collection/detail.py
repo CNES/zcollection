@@ -15,9 +15,8 @@ import time
 import traceback
 
 import dask.utils
-import zarr.storage
 
-from .. import dataset, merging, partitioning, sync
+from .. import dataset, merging, partitioning, store, sync
 from ..fs_utils import join_path
 from ..storage import open_zarr_group, update_zarr_array, write_zarr_group
 
@@ -431,7 +430,7 @@ def _insert(
     # The current partition does not exist, so we need to create
     # it and insert the dataset.
     try:
-        zarr.storage.init_group(store=fs.get_mapper(dirname))
+        store.create_group(fs, dirname)
 
         # The synchronization is done by the caller.
         write_zarr_group(zds.isel(indexer),

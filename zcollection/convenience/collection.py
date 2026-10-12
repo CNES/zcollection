@@ -13,7 +13,7 @@ import logging
 
 import xarray
 
-from .. import collection, dataset, fs_utils, meta, partitioning
+from .. import collection, dataset, fs_utils, meta, partitioning, store
 
 if TYPE_CHECKING:
     import fsspec
@@ -113,8 +113,6 @@ def update_deprecated_collection(
 
     import json
 
-    import zarr
-
     from ..fs_utils import join_path
 
     _LOGGER.warning('Updating collection: %r', path)
@@ -160,7 +158,7 @@ def update_deprecated_collection(
                             variable.name)
             var_path = join_path(path, collection.IMMUTABLE, variable.name)
 
-        var_shape = zarr.open(fs.get_mapper(var_path)).shape
+        var_shape = store.open_array(fs, var_path).shape
 
         dim_size = var_shape[dim_index]
         _LOGGER.warning('Assigning size %r to dimension %r.', dim_size,

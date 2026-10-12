@@ -22,9 +22,8 @@ import warnings
 import dask.array.core
 import dask.bag.core
 import numpy
-import zarr
 
-from .. import collection, dataset, meta
+from .. import collection, dataset, meta, store
 from ..collection.detail import _update_with_overlap
 from ..fs_utils import get_fs, join_path
 from ..storage import (
@@ -39,6 +38,7 @@ from ..storage import (
 if TYPE_CHECKING:
     import dask.distributed
     import fsspec
+    import zarr
 
     from ..type_hints import ArrayLike, NDArray
 
@@ -126,15 +126,15 @@ def _create_zarr_array(args: tuple[str, str],
         chunks.get(dim, var_shape[ix])
         for ix, dim in enumerate(variable.dimensions))
 
-    store: fsspec.FSMap = fs.get_mapper(join_path(dirname, variable.name))
-    zarr.full(var_shape,
-              chunks=var_chunks,
-              dtype=variable.dtype,
-              compressor=variable.compressor,
-              fill_value=variable.fill_value,
-              store=store,
-              overwrite=True,
-              filters=variable.filters)
+    store.create_array(fs,
+                       join_path(dirname, variable.name),
+                       shape=var_shape,
+                       chunks=var_chunks,
+                       dtype=variable.dtype,
+                       compressor=variable.compressor,
+                       fill_value=variable.fill_value,
+                       overwrite=True,
+                       filters=variable.filters)
     write_zattrs(dirname, variable, fs)
     if invalidate_cache:
         fs.invalidate_cache(dirname)
@@ -213,11 +213,10 @@ def _load_one_dataset(
         zds.dimensions[name] = mds.dimensions[name].value
 
     data = list(zds.variables.values()) + [
-        open_zarr_array(
-            zarr.open(  # type: ignore[arg-type]
-                fs.get_mapper(join_path(base_dir, partition, variable)), 'r'),
-            variable,
-            delayed=delayed) for variable in variables
+        open_zarr_array(store.open_array(
+            fs, join_path(base_dir, partition, variable), mode='r'),
+                        variable,
+                        delayed=delayed) for variable in variables
     ]
 
     zds = dataset.Dataset(data, attrs=zds.attrs, delayed=zds.delayed)
@@ -479,8 +478,8 @@ def _calculate_axis_reference(
     Returns:
         The axis reference of the partition.
     """
-    store: zarr.Group = zarr.open_consolidated(view_ref.fs.get_mapper(path))
-    array: zarr.Array = store[view_ref.axis]  # type: ignore[arg-type]
+    group: zarr.Group = store.open_group(view_ref.fs, path, mode='r+')
+    array: zarr.Array = group[view_ref.axis]  # type: ignore[arg-type]
     axis: NDArray = array[...]
     checksum: str = hashlib.sha256(axis.tobytes()).hexdigest()
     return AxisReference(axis, array.attrs[DIMENSIONS][0], checksum)
@@ -500,13 +499,13 @@ def _write_checksum_array(
     """
     array: zarr.Array
     checksum_path = join_path(partition, CHECKSUM_FILE)
-    mapper: fsspec.FSMap = fs.get_mapper(checksum_path)
     if fs.exists(checksum_path):
-        array = zarr.open(mapper)  # type: ignore[arg-type]
+        array = store.open_array(fs, checksum_path)
     else:
-        array = zarr.create(shape=axis_ref.array.shape,
-                            dtype=axis_ref.array.dtype,
-                            store=mapper)
+        array = store.create_array(fs,
+                                   checksum_path,
+                                   shape=axis_ref.array.shape,
+                                   dtype=axis_ref.array.dtype)
         array.attrs[DIMENSIONS] = axis_ref.dimension
     array[...] = axis_ref.array
     array.attrs[CHECKSUM_ATTR] = axis_ref.checksum
@@ -526,9 +525,7 @@ def _load_checksum_array(
     Returns:
         The checksum of the partition and the axis of the reference partition.
     """
-    checksum_path = join_path(partition, CHECKSUM_FILE)
-    mapper: fsspec.FSMap = fs.get_mapper(checksum_path)
-    return zarr.open_array(mapper)
+    return store.open_array(fs, join_path(partition, CHECKSUM_FILE))
 
 
 def _write_checksum(
@@ -612,8 +609,7 @@ def _extend_partition(
     new_size: int = axis_ref.array.shape[0]
     try:
         for variable in fs.listdir(partition):
-            array: zarr.Array = zarr.open_array(fs.get_mapper(
-                variable['name']))
+            array: zarr.Array = store.open_array(fs, variable['name'])
             dimensions: Sequence[str] = array.attrs[DIMENSIONS]
             if axis_name in dimensions:
                 axis: int = dimensions.index(axis_name)

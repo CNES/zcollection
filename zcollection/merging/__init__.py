@@ -14,11 +14,10 @@ import shutil
 
 import fsspec
 import fsspec.implementations.local
-import zarr.storage
 
 from zcollection import fs_utils
 
-from .. import dataset, storage, sync
+from .. import dataset, storage, store, sync
 from .time_series import merge_time_series
 
 __all__ = ('MergeCallable', 'merge_time_series', 'perform')
@@ -118,7 +117,7 @@ def _update_fs(
         fs.rm(temp, recursive=True)
 
     # Initializing Zarr group
-    zarr.storage.init_group(store=fs.get_mapper(temp))
+    store.create_group(fs, temp)
 
     # Writing new data.
     try:

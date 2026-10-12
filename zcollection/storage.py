@@ -20,9 +20,8 @@ import dask.local
 import numcodecs.abc
 import numcodecs.blosc
 import numpy
-import zarr
 
-from . import dataset, meta, serialization, sync
+from . import dataset, meta, serialization, store, sync
 from .fs_utils import join_path
 from .variable.abc import FILL_VALUE
 
@@ -31,6 +30,7 @@ if TYPE_CHECKING:
 
     from dask.delayed import Delayed as dask_Delayed
     import fsspec
+    import zarr
 
     from .type_hints import ArrayLike, NDArray
 
@@ -88,29 +88,30 @@ def execute_transaction(
         raise
 
 
-def _to_zarr(array: dask.array.core.Array, mapper: fsspec.FSMap, path: str,
-             **kwargs) -> None:
+def _to_zarr(array: dask.array.core.Array, dirname: str, name: str,
+             fs: fsspec.AbstractFileSystem, **kwargs) -> None:
     """Write a Dask array to a Zarr dataset.
 
     Args:
         array: The Dask array to write.
-        mapper: The file system mapper.
-        path: The path to the Zarr dataset.
-        **kwargs: Additional keyword arguments to pass to the `zarr.create`
-            function.
+        dirname: The storage directory of the Zarr dataset.
+        name: The name of the variable to write.
+        fs: The file system on which the Zarr dataset is stored.
+        **kwargs: Additional keyword arguments to pass to
+            :func:`zcollection.store.create_array`.
     """
-    _LOGGER.debug('Writing Zarr variable %r', path)
+    _LOGGER.debug('Writing Zarr variable %r', name)
 
-    chunks: list[tuple[int, ...]] = [chunk[0] for chunk in array.chunks]
-    target: dask.array.core.Array = zarr.create(
-        shape=array.shape,
-        chunks=chunks,  # type: ignore[arg-type]
-        dtype=array.dtype,
-        store=mapper,
-        path=path,
-        overwrite=True,
-        write_empty_chunks=False,
-        **kwargs)
+    chunks: list[int] = [chunk[0] for chunk in array.chunks]
+    target: zarr.Array = store.create_array(fs,
+                                            dirname,
+                                            name=name,
+                                            shape=array.shape,
+                                            chunks=chunks,
+                                            dtype=array.dtype,
+                                            overwrite=True,
+                                            write_empty_chunks=False,
+                                            **kwargs)
     dask.array.core.store(array,
                           target,
                           flush=True,
@@ -184,8 +185,9 @@ def write_zarr_variable(
 
     try:
         _to_zarr(data,
-                 fs.get_mapper(dirname),
+                 dirname,
                  name,
+                 fs,
                  compressor=variable.compressor,
                  fill_value=variable.fill_value,
                  **kwargs)
@@ -219,7 +221,7 @@ def _write_meta(
             stream,  # type: ignore[arg-type]
             indent=2,
         )
-    zarr.consolidate_metadata(fs.get_mapper(dirname))  # type: ignore[arg-type]
+    store.consolidate(fs, dirname)
     fs.invalidate_cache(dirname)
 
 
@@ -304,8 +306,8 @@ def write_zarr_group_missing(
     """
 
     _LOGGER.debug('Opening Zarr group %r', dirname)
-    store = zarr.open_consolidated(fs.get_mapper(dirname), mode='r')
-    selected_variables = set(zds.variables) - set(store)
+    group = store.open_group(fs, dirname)
+    selected_variables = set(zds.variables) - set(group)
 
     if not selected_variables:
         return
@@ -347,10 +349,8 @@ def init_zarr_group(dirname, fs: fsspec.AbstractFileSystem) -> None:
         return
 
     _LOGGER.debug('Initializing zarr group: %s', dirname)
-    store = fs.get_mapper(dirname)
-
-    zarr.storage.init_group(store)
-    zarr.consolidate_metadata(store)
+    store.create_group(fs, dirname)
+    store.consolidate(fs, dirname)
 
 
 def open_zarr_group(
@@ -375,21 +375,21 @@ def open_zarr_group(
         If an error occurs, None will be returned.
     """
     _LOGGER.debug('Opening Zarr group %r', dirname)
-    store = zarr.open_consolidated(store=fs.get_mapper(dirname), mode='r')
+    group = store.open_group(fs, dirname)
     # Ignore unknown variables to retain.
     selected_variables = set(selected_variables) & set(
-        store) if selected_variables is not None else set(store)
+        group) if selected_variables is not None else set(group)
 
     variables = [
         open_zarr_array(
-            store[name],  # type: ignore[arg-type]
+            group[name],  # type: ignore[arg-type]
             name,
             delayed=delayed) for name in selected_variables
     ]
 
     return dataset.Dataset(
         variables,
-        attrs=tuple(dataset.Attribute(*item) for item in store.attrs.items()),
+        attrs=tuple(dataset.Attribute(*item) for item in group.attrs.items()),
         delayed=delayed)
 
 
@@ -413,16 +413,16 @@ def update_zarr_array(
         array.
     """
     _LOGGER.debug('Updating Zarr array %r', dirname)
-    store: zarr.Array = zarr.open_array(fs.get_mapper(dirname), mode='a')
+    target: zarr.Array = store.open_array(fs, dirname, mode='a')
 
     if isinstance(array, dask.array.core.Array):
         array = array.compute()
 
     if isinstance(array,
-                  numpy.ma.MaskedArray) and store.fill_value is not None:
-        array = array.filled(store.fill_value)
+                  numpy.ma.MaskedArray) and target.fill_value is not None:
+        array = array.filled(target.fill_value)
 
-    store[:] = array
+    target[:] = array
 
     # Invalidate any cached directory information.
     fs.invalidate_cache(dirname)
@@ -444,9 +444,7 @@ def del_zarr_array(
     path = join_path(dirname, name)
     if fs.exists(path):
         fs.rm(path, recursive=True)
-        zarr.consolidate_metadata(
-            fs.get_mapper(dirname),  # type: ignore[arg-type]
-        )
+        store.consolidate(fs, dirname)
         # Invalidate any cached directory information.
         fs.invalidate_cache(dirname)
 
@@ -478,7 +476,7 @@ def variable_shape(
         # We do not want to change to original dimensions
         dimensions = dimensions.copy()
         dim_main, = dims
-        dimensions[dim_main] = zarr.open(store=fs.get_mapper(axis)).size
+        dimensions[dim_main] = store.open_array(fs, axis).size
 
     return tuple(dimensions[x] for x in variable.dimensions)
 
@@ -501,7 +499,7 @@ def add_zarr_array(
         fs: The file system that the dataset is stored on.
         axis: Axis containing the main dimension data and size.
         chunks: Chunk size for each dimension. Defaults to None. See
-            :func:`zarr.create` for more information.
+            :func:`zcollection.store.create_array` for more information.
 
     Notes:
         This function adds a new variable to an existing Zarr dataset. The new
@@ -521,17 +519,16 @@ def add_zarr_array(
         chunks.get(dim, var_shape[ix])
         for ix, dim in enumerate(variable.dimensions))
 
-    store: fsspec.FSMap = fs.get_mapper(join_path(dirname, variable.name))
-    zarr.create(
-        var_shape,
-        chunks=var_chunks,
-        dtype=variable.dtype,
-        compressor=variable.compressor,  # type: ignore[arg-type]
-        fill_value=variable.fill_value,  # type: ignore[arg-type]
-        store=store,
-        filters=variable.filters)
+    store.create_array(fs,
+                       join_path(dirname, variable.name),
+                       shape=var_shape,
+                       chunks=var_chunks,
+                       dtype=variable.dtype,
+                       compressor=variable.compressor,
+                       fill_value=variable.fill_value,
+                       filters=variable.filters)
     write_zattrs(dirname=dirname, variable=variable, fs=fs)
-    zarr.consolidate_metadata(fs.get_mapper(dirname))  # type: ignore[arg-type]
+    store.consolidate(fs, dirname)
 
 
 def check_zarr_group(
@@ -548,9 +545,8 @@ def check_zarr_group(
         True if the directory contains a valid Zarr group, False otherwise.
     """
     try:
-        store: zarr.Group = zarr.open_consolidated(fs.get_mapper(dirname),
-                                                   mode='r')
-        for _, array in store.arrays():
+        group: zarr.Group = store.open_group(fs, dirname)
+        for _, array in group.arrays():
             data: NDArray = array[...]
             del data
     except (ValueError, TypeError, RuntimeError):
