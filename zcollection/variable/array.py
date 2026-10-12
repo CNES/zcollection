@@ -14,8 +14,7 @@ import dask.array.core
 import dask.array.ma
 import numpy
 
-from ..meta import Attribute
-from .abc import Variable, concat, new_variable, not_equal
+from .abc import Variable, concat, new_variable, not_equal, read_attributes
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -23,6 +22,7 @@ if TYPE_CHECKING:
     import numcodecs.abc
     import zarr
 
+    from ..meta import Attribute
     from ..type_hints import ArrayLike, NDArray, NDMaskedArray
 
 
@@ -188,15 +188,14 @@ class Array(Variable):
         Returns:
             The variable
         """
-        attrs = tuple(
-            Attribute(k, v) for k, v in array.attrs.items() if k != dimension)
+        attrs, fill_value = read_attributes(array, dimension)
         return new_variable(cls,
                             name=name,
                             array=array[...],
                             dimensions=array.attrs[dimension],
                             attrs=attrs,
                             compressor=array.compressor,
-                            fill_value=array.fill_value,
+                            fill_value=fill_value,
                             filters=tuple(array.filters or ()))
 
     def concat(self, other: Array | Sequence[Array], dim: str) -> Array:

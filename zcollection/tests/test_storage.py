@@ -7,6 +7,7 @@ Testing the storage module.
 ===========================
 """
 from typing import Any
+import json
 import math
 import platform
 import time
@@ -385,3 +386,34 @@ def test_add_zarr_array(
                                fs=local_fs.fs,
                                axis='y',
                                chunks=chunks)
+
+
+@pytest.mark.parametrize(('dtype', 'fill_value', 'expected'), [
+    ('uint8', None, None),
+    ('uint8', 255, 255),
+    ('float64', -999.0, -999.0),
+    ('float64', numpy.nan, 'NaN'),
+])
+def test_write_attrs_fill_value(
+    local_fs,  # noqa: F811
+    dtype,
+    fill_value,
+    expected,
+) -> None:
+    """The value marking absence is written, encoded, when declared."""
+    var = dataset.DelayedArray(name='var',
+                               data=numpy.ones((4, ), dtype=dtype),
+                               dimensions=('x', ),
+                               fill_value=fill_value)
+    path = local_fs.root.joinpath('var')
+    local_fs.mkdir(str(path))
+
+    storage.write_zattrs(str(local_fs.root), var, local_fs.fs)
+
+    with local_fs.open(str(path.joinpath(storage.ZATTRS))) as stream:
+        attrs = json.load(stream)
+
+    if expected is None:
+        assert storage.FILL_VALUE not in attrs
+    else:
+        assert attrs[storage.FILL_VALUE] == expected

@@ -22,8 +22,9 @@ import numcodecs.blosc
 import numpy
 import zarr
 
-from . import dataset, meta, sync
+from . import dataset, meta, serialization, sync
 from .fs_utils import join_path
+from .variable.abc import FILL_VALUE
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -134,6 +135,9 @@ def write_zattrs(
     attrs = collections.OrderedDict(item.get_config()
                                     for item in variable.attrs)
     attrs[DIMENSIONS] = variable.dimensions
+    if variable.fill_value is not None:
+        attrs[FILL_VALUE] = serialization.encode_fill_value(
+            variable.fill_value, variable.dtype)
     with fs.open(join_path(dirname, variable.name, ZATTRS),
                  mode='w') as stream:
         json.dump(attrs, stream, indent=2)  # type: ignore[arg-type]

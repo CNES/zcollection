@@ -19,8 +19,7 @@ import dask.highlevelgraph
 import dask.threaded
 import numpy
 
-from ..meta import Attribute
-from .abc import Variable, concat, new_variable, not_equal
+from .abc import Variable, concat, new_variable, not_equal, read_attributes
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, MutableMapping, Sequence
@@ -28,6 +27,7 @@ if TYPE_CHECKING:
     import numcodecs.abc
     import zarr
 
+    from ..meta import Attribute
     from ..type_hints import ArrayLike, NDArray, NDMaskedArray
 
 #: The dask array getter used to access the data.
@@ -300,8 +300,7 @@ class DelayedArray(Variable):
         Returns:
             The variable
         """
-        attrs = tuple(
-            Attribute(k, v) for k, v in array.attrs.items() if k != dimension)
+        attrs, fill_value = read_attributes(array, dimension)
         data: dask.array.core.Array = from_zarr_array(
             array,
             array.shape,
@@ -318,7 +317,7 @@ class DelayedArray(Variable):
                             dimensions=array.attrs[dimension],
                             attrs=attrs,
                             compressor=array.compressor,
-                            fill_value=array.fill_value,
+                            fill_value=fill_value,
                             filters=tuple(array.filters or ()))
 
     def concat(self, other: DelayedArray | Sequence[DelayedArray],

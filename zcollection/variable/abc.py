@@ -27,6 +27,14 @@ if TYPE_CHECKING:
     from ..meta import Attribute
     from ..type_hints import ArrayLike, NDArray, NDMaskedArray
 
+#: Name of the attribute holding the value that marks a missing measure.
+#:
+#: The fill value of a Zarr array says what an unwritten chunk reads as.
+#: That is a storage concern, and Zarr v3 requires one of every array. This
+#: attribute says which value stands for an absent measure, which is a
+#: concern of the data model, and only variables that have one carry it.
+FILL_VALUE = '_FillValue'
+
 #: Generic type for a variable interface.
 I = TypeVar('I', bound='IVariable')
 
@@ -104,6 +112,30 @@ def concat(
                             compressor=self.compressor,
                             fill_value=self.fill_value,
                             filters=self.filters)
+
+
+def read_attributes(
+    array: Any,
+    dimension: str,
+) -> tuple[tuple[meta.Attribute, ...], Any]:
+    """Read the attributes of a Zarr array and the value they mark absence
+    with.
+
+    Args:
+        array: The Zarr array.
+        dimension: Name of the attribute holding the dimensions of the
+            array.
+
+    Returns:
+        The attributes of the variable, and the value standing for an
+        absent measure, or None when the variable has none. Collections
+        written before :data:`FILL_VALUE` existed carry that value in the
+        fill value of the array, which is read instead.
+    """
+    attrs = tuple(
+        meta.Attribute(name, value) for name, value in array.attrs.items()
+        if name not in (dimension, FILL_VALUE))
+    return attrs, array.attrs.get(FILL_VALUE, array.fill_value)
 
 
 def not_equal(first: Any, second: Any) -> bool:
