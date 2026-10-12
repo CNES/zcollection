@@ -23,9 +23,12 @@ def test_get_client_with_no_cluster():
 def test_get_client_with_cluster(
         dask_client,  # noqa: F811
 ):
-    """Test the get_client function with a cluster."""
-    with dask_utils.get_client() as client:
-        assert isinstance(client, dask.distributed.Client)
+    """Test the get_client function with a cluster.
+
+    The client is the one already connected, and closing it is the business
+    of whoever opened it.
+    """
+    assert dask_utils.get_client() is dask_client
 
 
 def test_dask_workers(

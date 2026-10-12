@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from collections.abc import Iterator
 import contextlib
 import logging
-import weakref
 
 import dask.config
 import dask.distributed
@@ -20,13 +19,16 @@ if TYPE_CHECKING:
     import py
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def dask_cluster(
     pytestconfig,
     tmpdir_factory,
-    scope='session',
-) -> str:
-    """Launch a Dask LocalCluster with a configurable number of workers."""
+) -> Iterator[str]:
+    """Launch a Dask LocalCluster with a configurable number of workers.
+
+    Under xdist each worker holds a base directory of its own, so each one
+    runs a cluster of its own.
+    """
     n_workers: int | None
     threads_per_worker: int | None
     processes: bool
@@ -48,8 +50,6 @@ def dask_cluster(
 
     tmp_path: py.path.local = tmpdir_factory.getbasetemp()
     scheduler_file: py.path.local = tmp_path / 'scheduler.json'
-    if scheduler_file.exists():
-        return str(scheduler_file)
 
     # Use the root path of the test session for the dask worker space
     dask_worker: py.path.local = tmp_path / 'dask_worker_space'
@@ -63,20 +63,18 @@ def dask_cluster(
         processes=processes,
     )
 
-    def teardown() -> None:
-        """Stop the cluster and remove the scheduler file."""
+    try:
+        # Make sure we can connect to the cluster.
+        with dask.distributed.Client(cluster) as client:
+            client.write_scheduler_file(scheduler_file)
+            client.wait_for_workers(1)
+
+        logging.info('Dask local cluster started')
+        yield str(scheduler_file)
+    finally:
+        cluster.close()
         if scheduler_file.exists():
             scheduler_file.remove()
-
-    weakref.finalize(cluster, teardown)
-
-    # Make sure we can connect to the cluster.
-    with dask.distributed.Client(cluster) as client:
-        client.write_scheduler_file(scheduler_file)
-        client.wait_for_workers(1)
-
-    logging.info('Dask local cluster started')
-    return str(scheduler_file)
 
 
 @contextlib.contextmanager

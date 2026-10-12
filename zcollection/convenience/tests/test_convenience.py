@@ -28,13 +28,14 @@ def test_update_deprecated_view(fs, request, caplog):
                                     view_ref=view.ViewReference(
                                         str(tested_fs.collection),
                                         tested_fs.fs),
-                                    filesystem=tested_fs.fs)
+                                    filesystem=tested_fs.fs,
+                                    distributed=False)
 
     var = meta.Variable(name='var3',
                         dtype=numpy.float64,
                         dimensions=('num_lines', 'num_pixels'))
 
-    zview.add_variable(var)
+    zview.add_variable(var, distributed=False)
 
     def to_zero(zds: dataset.Dataset, varname):
         """Update function used to set a variable to 0."""

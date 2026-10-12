@@ -683,7 +683,10 @@ def test_variable_immutable(  # noqa: PLR0915
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
-def test_dimension_add_drop(arg, request) -> None:
+def test_dimension_add_drop(
+        dask_client,  # noqa: F811
+        arg,
+        request) -> None:
     """Test the adding of a variable."""
     tested_fs = request.getfixturevalue(arg)
     zcol = create_test_collection(tested_fs, delayed=False)
