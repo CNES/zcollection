@@ -82,7 +82,12 @@ def _rename(
         return
 
     fs.rm(dest, recursive=True)
-    fs.mv(source, dest, recursive=True)
+
+    # A recursive expansion yields the prefixes of a store as well as its
+    # keys, and copying a prefix raises. find() yields the keys alone.
+    keys: list[str] = fs.find(source)
+    fs.copy(keys, [f'{dest}{key[len(source):]}' for key in keys])
+    fs.rm(source, recursive=True)
 
 
 def _extract_root_dirname(dirname: str, sep: str) -> str:
