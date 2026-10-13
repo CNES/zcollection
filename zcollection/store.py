@@ -197,11 +197,14 @@ def write_group_attributes(
     zarr.open_group(store=_store(fs, path), mode='r+').attrs.put(attributes)
 
 
-def consolidate(fs: fsspec.AbstractFileSystem, path: str) -> None:
+def consolidate(fs: fsspec.AbstractFileSystem, path: str) -> zarr.Group:
     """Gather the metadata of a group and of its arrays in one entry.
 
     Args:
         fs: The file system the group is held on.
         path: The path of the group.
+
+    Returns:
+        The group, holding the arrays the store lists under it.
     """
-    zarr.consolidate_metadata(_store(fs, path))
+    return zarr.consolidate_metadata(_store(fs, path))

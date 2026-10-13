@@ -197,10 +197,17 @@ def _write_meta(
         zds: The dataset to process.
         dirname: The storage directory of the Zarr dataset.
         fs: The file system on which the Zarr dataset is stored.
+
+    Raises:
+        OSError: If the group does not hold every variable of the dataset.
     """
     attrs = collections.OrderedDict(item.get_config() for item in zds.attrs)
     store.write_group_attributes(fs, dirname, attrs)
-    store.consolidate(fs, dirname)
+    group: zarr.Group = store.consolidate(fs, dirname)
+    missing: set[str] = set(zds.variables) - set(group)
+    if missing:
+        raise OSError(f'{dirname!r} does not hold the variables written to '
+                      f'it: {", ".join(sorted(missing))}')
     fs.invalidate_cache(dirname)
 
 

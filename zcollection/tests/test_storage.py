@@ -16,7 +16,7 @@ import numpy
 import pytest
 import zarr
 
-from .. import dataset, storage, sync
+from .. import dataset, storage, store, sync
 from .cluster import dask_client, dask_cluster  # noqa: F401
 from .fs import local_fs  # noqa: F401
 
@@ -229,6 +229,20 @@ def test_write_zarr_group(
 
     other = storage.open_zarr_group(str(local_fs.root), local_fs.fs)
     assert other.metadata() == zds.metadata()
+
+
+def test_write_meta_checks_the_group_holds_the_variables(
+        local_fs,  # noqa: F811
+) -> None:
+    """A group that lists none of the variables written to it is an error."""
+    zds = create_dataset((16, 16))
+    path = str(local_fs.root)
+    store.create_group(local_fs.fs, path)
+
+    #: pylint: disable=protected-access
+    with pytest.raises(OSError, match='does not hold the variables'):
+        storage._write_meta(zds, path, local_fs.fs)
+    #: pylint: enable=protected-access
 
 
 @pytest.mark.parametrize(('chunks', 'chunks_expected'), [
