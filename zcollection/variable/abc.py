@@ -35,6 +35,14 @@ if TYPE_CHECKING:
 #: concern of the data model, and only variables that have one carry it.
 FILL_VALUE = '_FillValue'
 
+#: Name of the attribute a Zarr 2 array holds the names of its dimensions
+#: in. A Zarr 3 array holds them in a field of its own.
+DIMENSIONS = '_ARRAY_DIMENSIONS'
+
+#: The version of Zarr that holds the dimensions and the fill value of an
+#: array the way the releases of the package wrote them.
+ZARR_FORMAT_2 = 2
+
 #: Generic type for a variable interface.
 I = TypeVar('I', bound='IVariable')
 
@@ -114,28 +122,61 @@ def concat(
                             filters=self.filters)
 
 
-def read_attributes(
-    array: Any,
-    dimension: str,
-) -> tuple[tuple[meta.Attribute, ...], Any]:
+def read_attributes(array: Any) -> tuple[tuple[meta.Attribute, ...], Any]:
     """Read the attributes of a Zarr array and the value they mark absence
     with.
 
     Args:
         array: The Zarr array.
-        dimension: Name of the attribute holding the dimensions of the
-            array.
 
     Returns:
         The attributes of the variable, and the value standing for an
-        absent measure, or None when the variable has none. Collections
-        written before :data:`FILL_VALUE` existed carry that value in the
-        fill value of the array, which is read instead.
+        absent measure, or None when the variable has none.
+
+    Notes:
+        A Zarr 3 array always carries a fill value: the one it is given, or
+        the default of its data type. The value marking an absence is read
+        from :data:`FILL_VALUE` alone, so that a variable carrying none
+        keeps its zeros. A Zarr 2 array carries None when it was given
+        none, and collections written before :data:`FILL_VALUE` existed
+        hold the value there.
     """
     attrs = tuple(
         meta.Attribute(name, value) for name, value in array.attrs.items()
-        if name not in (dimension, FILL_VALUE))
-    return attrs, array.attrs.get(FILL_VALUE, array.fill_value)
+        if name not in (DIMENSIONS, FILL_VALUE))
+    if array.metadata.zarr_format == ZARR_FORMAT_2:
+        return attrs, array.attrs.get(FILL_VALUE, array.fill_value)
+    return attrs, array.attrs.get(FILL_VALUE)
+
+
+def read_dimensions(array: Any) -> tuple[str, ...]:
+    """Read the name of each dimension of a Zarr array.
+
+    Args:
+        array: The Zarr array.
+
+    Returns:
+        The names. A Zarr 2 array holds them in an attribute, a Zarr 3
+        array in a field of its own.
+    """
+    if array.metadata.zarr_format == ZARR_FORMAT_2:
+        return tuple(array.attrs.get(DIMENSIONS, ()))
+    return tuple(array.metadata.dimension_names or ())
+
+
+def read_compressor(array: Any) -> Any:
+    """Read the compressor the chunks of a Zarr array are held behind.
+
+    Args:
+        array: The Zarr array.
+
+    Returns:
+        The compressor, or None when the chunks are held as they are. Zarr
+        holds a chain where a variable holds one codec, so the first of the
+        chain is read.
+    """
+    compressors = array.compressors
+    return compressors[0] if compressors else None
 
 
 def not_equal(first: Any, second: Any) -> bool:
@@ -277,15 +318,12 @@ class IVariable(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def from_zarr(cls: type[I], array: zarr.Array, name: str, dimension: str,
-                  **kwargs) -> I:
+    def from_zarr(cls: type[I], array: zarr.Array, name: str, **kwargs) -> I:
         """Create a new variable from a zarr array.
 
         Args:
             array: The zarr array
             name: Name of the variable
-            dimension: Name of the attribute that defines the dimensions of the
-                variable
             **kwargs: Additional arguments to pass to the method.
 
         Returns:

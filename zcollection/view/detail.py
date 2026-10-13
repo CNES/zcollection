@@ -27,12 +27,11 @@ from .. import collection, dataset, meta, store
 from ..collection.detail import _update_with_overlap
 from ..fs_utils import get_fs, join_path
 from ..storage import (
-    DIMENSIONS,
     open_zarr_array,
     open_zarr_group,
     update_zarr_array,
+    variable_attributes,
     variable_shape,
-    write_zattrs,
 )
 
 if TYPE_CHECKING:
@@ -134,8 +133,9 @@ def _create_zarr_array(args: tuple[str, str],
                        compressor=variable.compressor,
                        fill_value=variable.fill_value,
                        overwrite=True,
-                       filters=variable.filters)
-    write_zattrs(dirname, variable, fs)
+                       filters=variable.filters,
+                       dimensions=variable.dimensions,
+                       attributes=variable_attributes(variable))
     if invalidate_cache:
         fs.invalidate_cache(dirname)
 
@@ -482,7 +482,7 @@ def _calculate_axis_reference(
     array: zarr.Array = group[view_ref.axis]  # type: ignore[arg-type]
     axis: NDArray = array[...]
     checksum: str = hashlib.sha256(axis.tobytes()).hexdigest()
-    return AxisReference(axis, array.attrs[DIMENSIONS][0], checksum)
+    return AxisReference(axis, array.metadata.dimension_names[0], checksum)
 
 
 def _write_checksum_array(
@@ -505,8 +505,8 @@ def _write_checksum_array(
         array = store.create_array(fs,
                                    checksum_path,
                                    shape=axis_ref.array.shape,
-                                   dtype=axis_ref.array.dtype)
-        array.attrs[DIMENSIONS] = axis_ref.dimension
+                                   dtype=axis_ref.array.dtype,
+                                   dimensions=(axis_ref.dimension, ))
     array[...] = axis_ref.array
     array.attrs[CHECKSUM_ATTR] = axis_ref.checksum
     fs.invalidate_cache(checksum_path)
@@ -610,7 +610,7 @@ def _extend_partition(
     try:
         for variable in fs.listdir(partition):
             array: zarr.Array = store.open_array(fs, variable['name'])
-            dimensions: Sequence[str] = array.attrs[DIMENSIONS]
+            dimensions: Sequence[str] = array.metadata.dimension_names
             if axis_name in dimensions:
                 axis: int = dimensions.index(axis_name)
                 shape = list(array.shape)

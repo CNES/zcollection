@@ -28,35 +28,68 @@ def test_variable_not_equal() -> None:
     assert not_equal(numpy.datetime64('NaT'), 1) is True
 
 
-#: Name of the attribute holding the dimensions of a Zarr array.
+#: Name of the attribute a Zarr 2 array holds its dimensions in.
 DIMENSIONS = '_ARRAY_DIMENSIONS'
 
+#: The variable implementations the rules hold for.
+IMPLEMENTATIONS = [Array, DelayedArray]
 
-def make_zarr_array(fill_value, attributes):
+#: The versions of Zarr a collection is read from.
+FORMATS = [2, 3]
+
+
+def make_zarr_array(fill_value, attributes, zarr_format=3):
     """Create a Zarr array carrying the given attributes."""
-    array = zarr.array(numpy.arange(4, dtype='float64'), fill_value=fill_value)
-    array.attrs[DIMENSIONS] = ['num_lines']
-    array.attrs.update(attributes)
+    named = {'dimension_names': ('num_lines', )} if zarr_format == 3 else {}
+    array = zarr.create_array(store={},
+                              shape=(4, ),
+                              dtype='float64',
+                              fill_value=fill_value,
+                              zarr_format=zarr_format,
+                              attributes=dict(attributes),
+                              **named)
+    array[...] = numpy.arange(4, dtype='float64')
+    if zarr_format == 2:
+        array.attrs[DIMENSIONS] = ['num_lines']
     return array
 
 
-@pytest.mark.parametrize('cls', [Array, DelayedArray])
-def test_from_zarr_reads_the_declared_fill_value(cls) -> None:
-    """The value marking absence is read from its own attribute."""
-    array = make_zarr_array(None, {FILL_VALUE: -999.0, 'units': 'm'})
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+@pytest.mark.parametrize('zarr_format', FORMATS)
+def test_from_zarr_reads_the_dimensions(cls, zarr_format) -> None:
+    """A Zarr 2 array names its dimensions in an attribute, a Zarr 3 array
+    in a field of its own."""
+    array = make_zarr_array(None, {'units': 'm'}, zarr_format)
 
-    variable = cls.from_zarr(array, 'var', DIMENSIONS)
+    variable = cls.from_zarr(array, 'var')
+
+    assert variable.dimensions == ('num_lines', )
+    assert {attr.name for attr in variable.attrs} == {'units'}
+
+
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+@pytest.mark.parametrize('zarr_format', FORMATS)
+def test_from_zarr_reads_the_declared_fill_value(cls, zarr_format) -> None:
+    """The value marking absence is read from its own attribute."""
+    array = make_zarr_array(None, {
+        FILL_VALUE: -999.0,
+        'units': 'm'
+    }, zarr_format)
+
+    variable = cls.from_zarr(array, 'var')
 
     assert variable.fill_value == -999.0
     assert {attr.name for attr in variable.attrs} == {'units'}
 
 
-@pytest.mark.parametrize('cls', [Array, DelayedArray])
-def test_from_zarr_reads_no_fill_value_when_none_is_declared(cls) -> None:
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+@pytest.mark.parametrize('zarr_format', FORMATS)
+def test_from_zarr_reads_no_fill_value_when_none_is_declared(
+        cls, zarr_format) -> None:
     """Without the attribute, and without a fill value, nothing is masked."""
-    array = make_zarr_array(None, {'units': 'm'})
+    array = make_zarr_array(None, {'units': 'm'}, zarr_format)
 
-    variable = cls.from_zarr(array, 'var', DIMENSIONS)
+    variable = cls.from_zarr(array, 'var')
 
     assert variable.fill_value is None
     # A closed client may still be the default scheduler at this point.
@@ -64,25 +97,41 @@ def test_from_zarr_reads_no_fill_value_when_none_is_declared(cls) -> None:
         assert not numpy.ma.getmaskarray(variable.values).any()
 
 
-@pytest.mark.parametrize('cls', [Array, DelayedArray])
-def test_from_zarr_falls_back_to_the_fill_value_of_the_array(cls) -> None:
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+def test_from_zarr_falls_back_to_the_fill_value_of_a_zarr_2_array(cls) -> None:
     """Collections written before the attribute existed keep their meaning.
 
     Their value marking absence sits in the fill value of the Zarr array,
     which is where it is read from when the attribute is absent.
     """
-    array = make_zarr_array(-999.0, {'units': 'm'})
+    array = make_zarr_array(-999.0, {'units': 'm'}, zarr_format=2)
 
-    variable = cls.from_zarr(array, 'var', DIMENSIONS)
+    variable = cls.from_zarr(array, 'var')
 
     assert variable.fill_value == -999.0
 
 
-@pytest.mark.parametrize('cls', [Array, DelayedArray])
-def test_from_zarr_prefers_the_attribute_over_the_array(cls) -> None:
-    """The attribute wins: the fill value of the array is storage only."""
-    array = make_zarr_array(0.0, {FILL_VALUE: -999.0})
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+def test_from_zarr_ignores_the_fill_value_of_a_zarr_3_array(cls) -> None:
+    """A Zarr 3 array always carries a fill value, so it marks nothing.
 
-    variable = cls.from_zarr(array, 'var', DIMENSIONS)
+    Reading it would turn every value it equals into an absence, and a
+    Zarr 3 array that was given none carries the default of its data type.
+    """
+    array = make_zarr_array(-999.0, {'units': 'm'}, zarr_format=3)
+
+    variable = cls.from_zarr(array, 'var')
+
+    assert variable.fill_value is None
+
+
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+@pytest.mark.parametrize('zarr_format', FORMATS)
+def test_from_zarr_prefers_the_attribute_over_the_array(cls,
+                                                        zarr_format) -> None:
+    """The attribute wins: the fill value of the array is storage only."""
+    array = make_zarr_array(0.0, {FILL_VALUE: -999.0}, zarr_format)
+
+    variable = cls.from_zarr(array, 'var')
 
     assert variable.fill_value == -999.0

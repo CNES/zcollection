@@ -19,7 +19,15 @@ import dask.highlevelgraph
 import dask.threaded
 import numpy
 
-from .abc import Variable, concat, new_variable, not_equal, read_attributes
+from .abc import (
+    Variable,
+    concat,
+    new_variable,
+    not_equal,
+    read_attributes,
+    read_compressor,
+    read_dimensions,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, MutableMapping, Sequence
@@ -285,22 +293,19 @@ class DelayedArray(Variable):
         return self
 
     @classmethod
-    def from_zarr(cls, array: zarr.Array, name: str, dimension: str,
-                  **kwargs) -> DelayedArray:
+    def from_zarr(cls, array: zarr.Array, name: str, **kwargs) -> DelayedArray:
         """Create a new variable from a zarr array.
 
         Args:
             array: The zarr array
             name: Name of the variable
-            dimension: Name of the attribute that defines the dimensions of the
-                variable
             **kwargs: Keyword arguments passed to
                 :func:`dask.array.from_array`
 
         Returns:
             The variable
         """
-        attrs, fill_value = read_attributes(array, dimension)
+        attrs, fill_value = read_attributes(array)
         data: dask.array.core.Array = from_zarr_array(
             array,
             array.shape,
@@ -314,9 +319,9 @@ class DelayedArray(Variable):
         return new_variable(cls,
                             name=name,
                             array=data,
-                            dimensions=array.attrs[dimension],
+                            dimensions=read_dimensions(array),
                             attrs=attrs,
-                            compressor=array.compressor,
+                            compressor=read_compressor(array),
                             fill_value=fill_value,
                             filters=tuple(array.filters or ()))
 

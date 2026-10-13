@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 import collections
-import json
 import logging
 
 import dask.array.core
@@ -33,15 +32,6 @@ if TYPE_CHECKING:
     import zarr
 
     from .type_hints import ArrayLike, NDArray
-
-#: Name of the attribute storing the names of the dimensions of an array.
-DIMENSIONS = '_ARRAY_DIMENSIONS'
-
-#: Configuration file that describes the attributes of an array.
-ZATTRS = '.zattrs'
-
-#: Configuration file that describes the attributes of a group.
-ZGROUP = '.zgroup'
 
 #: Module logger.
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -121,27 +111,23 @@ def _to_zarr(array: dask.array.core.Array, dirname: str, name: str,
                           return_stored=False)
 
 
-def write_zattrs(
-    dirname: str,
-    variable: meta.Variable | dataset.Variable,
-    fs: fsspec.AbstractFileSystem,
-) -> None:
-    """Write the attributes of a variable to a Zarr dataset.
+def variable_attributes(
+        variable: meta.Variable | dataset.Variable) -> dict[str, Any]:
+    """Return the attributes an array holds for a variable.
 
     Args:
-        dirname: The storage directory of the Zarr dataset.
         variable: The variable to process.
-        fs: The file system on which the Zarr dataset is stored.
+
+    Returns:
+        Its attributes, and the value marking an absent measure when it has
+        one.
     """
     attrs = collections.OrderedDict(item.get_config()
                                     for item in variable.attrs)
-    attrs[DIMENSIONS] = variable.dimensions
     if variable.fill_value is not None:
         attrs[FILL_VALUE] = serialization.encode_fill_value(
             variable.fill_value, variable.dtype)
-    with fs.open(join_path(dirname, variable.name, ZATTRS),
-                 mode='w') as stream:
-        json.dump(attrs, stream, indent=2)  # type: ignore[arg-type]
+    return attrs
 
 
 def write_zarr_variable(
@@ -190,8 +176,9 @@ def write_zarr_variable(
                  fs,
                  compressor=variable.compressor,
                  fill_value=variable.fill_value,
+                 dimensions=variable.dimensions,
+                 attributes=variable_attributes(variable),
                  **kwargs)
-        write_zattrs(dirname, variable, fs)
     except Exception:
         # If an exception is thrown, we delete the variable from the Zarr
         # dataset.
@@ -212,15 +199,7 @@ def _write_meta(
         fs: The file system on which the Zarr dataset is stored.
     """
     attrs = collections.OrderedDict(item.get_config() for item in zds.attrs)
-    with fs.open(join_path(dirname, ZATTRS), mode='w') as stream:
-        json.dump(attrs, stream, indent=2)  # type: ignore[arg-type]
-
-    with fs.open(join_path(dirname, ZGROUP), mode='w') as stream:
-        json.dump(
-            {'zarr_format': 2},
-            stream,  # type: ignore[arg-type]
-            indent=2,
-        )
+    store.write_group_attributes(fs, dirname, attrs)
     store.consolidate(fs, dirname)
     fs.invalidate_cache(dirname)
 
@@ -334,8 +313,8 @@ def open_zarr_array(
         The variable as a Dask array or a NumPy array.
     """
     if delayed:
-        return dataset.DelayedArray.from_zarr(array, name, DIMENSIONS)
-    return dataset.Array.from_zarr(array, name, DIMENSIONS)
+        return dataset.DelayedArray.from_zarr(array, name)
+    return dataset.Array.from_zarr(array, name)
 
 
 def init_zarr_group(dirname, fs: fsspec.AbstractFileSystem) -> None:
@@ -526,8 +505,9 @@ def add_zarr_array(
                        dtype=variable.dtype,
                        compressor=variable.compressor,
                        fill_value=variable.fill_value,
-                       filters=variable.filters)
-    write_zattrs(dirname=dirname, variable=variable, fs=fs)
+                       filters=variable.filters,
+                       dimensions=variable.dimensions,
+                       attributes=variable_attributes(variable))
     store.consolidate(fs, dirname)
 
 

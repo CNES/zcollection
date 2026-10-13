@@ -7,9 +7,7 @@ Testing the storage module.
 ===========================
 """
 from typing import Any
-import json
 import math
-import platform
 import time
 
 import dask.array
@@ -88,34 +86,19 @@ def create_dataset(shape) -> dataset.Dataset:
                            ])
 
 
-def test_write_attrs(
-        local_fs,  # noqa: F811
-        dask_client,  # noqa: F811
-) -> None:
-    """Test the write_attrs function."""
+def test_variable_attributes() -> None:
+    """The attributes of a variable are the ones it declares.
+
+    The names of its dimensions are not among them: an array holds them in
+    a field of its own.
+    """
     var = create_variable((10, 2))
-    path = local_fs.root.joinpath('var')
-    local_fs.mkdir(str(path))
-    storage.write_zattrs(str(local_fs.root), var, local_fs.fs)
-    path = str(path.joinpath(storage.ZATTRS))
-    expected = [
-        b'{\n',
-        b'  "a": 1,\n',
-        b'  "b": 2,\n',
-        b'  "long_name": "long name",\n',
-        b'  "_ARRAY_DIMENSIONS": [\n',
-        b'    "x",\n',
-        b'    "y"\n',
-        b'  ]\n',
-        b'}',
-    ]
-    if platform.platform().startswith('Windows'):
-        expected = [item.replace(b'\n', b'\r\n') for item in expected]
-    assert local_fs.exists(path)
-    with local_fs.open(path) as stream:
-        lines = stream.readlines()
-        assert lines == expected
-    assert local_fs.exists(str(local_fs.root.joinpath('var', storage.ZATTRS)))
+
+    assert storage.variable_attributes(var) == {
+        'a': 1,
+        'b': 2,
+        'long_name': 'long name',
+    }
 
 
 @pytest.mark.parametrize(('chunks', 'chunks_expected'), [
@@ -242,7 +225,7 @@ def test_write_zarr_group(
     assert zarray.attrs['a'] == 1
     assert zarray.attrs['b'] == 2
     assert zarray.attrs['long_name'] == 'long name'
-    assert zarray['var'].attrs['_ARRAY_DIMENSIONS'] == ['x', 'y']
+    assert zarray['var'].metadata.dimension_names == ('x', 'y')
 
     other = storage.open_zarr_group(str(local_fs.root), local_fs.fs)
     assert other.metadata() == zds.metadata()
@@ -394,24 +377,18 @@ def test_add_zarr_array(
     ('float64', -999.0, -999.0),
     ('float64', numpy.nan, 'NaN'),
 ])
-def test_write_attrs_fill_value(
-    local_fs,  # noqa: F811
+def test_variable_attributes_fill_value(
     dtype,
     fill_value,
     expected,
 ) -> None:
-    """The value marking absence is written, encoded, when declared."""
+    """The value marking absence is held, encoded, when declared."""
     var = dataset.DelayedArray(name='var',
                                data=numpy.ones((4, ), dtype=dtype),
                                dimensions=('x', ),
                                fill_value=fill_value)
-    path = local_fs.root.joinpath('var')
-    local_fs.mkdir(str(path))
 
-    storage.write_zattrs(str(local_fs.root), var, local_fs.fs)
-
-    with local_fs.open(str(path.joinpath(storage.ZATTRS))) as stream:
-        attrs = json.load(stream)
+    attrs = storage.variable_attributes(var)
 
     if expected is None:
         assert storage.FILL_VALUE not in attrs

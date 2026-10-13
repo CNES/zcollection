@@ -411,9 +411,8 @@ def _insert(
     partition, indexer = args
     dirname = join_path(*((partitioning_properties.dir, *partition)))
 
-    # If the consolidated zarr metadata does not exist, we consider the
-    # partition as empty.
-    if fs.exists(join_path(dirname, '.zmetadata')):
+    # A partition that holds no group is empty.
+    if store.contains_group(fs, dirname):
         # The current partition already exists, so we need to merge
         # the dataset.
         merging.perform(zds.isel(indexer),

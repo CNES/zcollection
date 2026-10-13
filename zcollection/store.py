@@ -18,6 +18,7 @@ import fsspec.implementations.local
 import zarr
 import zarr.abc.codec
 import zarr.abc.store
+import zarr.errors
 import zarr.storage
 
 from . import codecs
@@ -30,8 +31,9 @@ if TYPE_CHECKING:
 
     from .type_hints import DTypeLike
 
-__all__ = ('DEFAULT_COMPRESSOR', 'consolidate', 'create_array', 'create_group',
-           'open_array', 'open_group')
+__all__ = ('DEFAULT_COMPRESSOR', 'consolidate', 'contains_group',
+           'create_array', 'create_group', 'open_array', 'open_group',
+           'write_group_attributes')
 
 #: Marker letting Zarr pick the shape of a chunk.
 DEFAULT_CHUNKS = 'auto'
@@ -108,6 +110,8 @@ def create_array(  # noqa: PLR0913
     fill_value: Any = 0,
     filters: Sequence[numcodecs.abc.Codec | zarr.abc.codec.Codec]
     | None = None,
+    dimensions: Sequence[str] | None = None,
+    attributes: dict[str, Any] | None = None,
     overwrite: bool = False,
     write_empty_chunks: bool = True,
 ) -> zarr.Array:
@@ -127,6 +131,8 @@ def create_array(  # noqa: PLR0913
         fill_value: The value an uninitialized portion of the array reads
             as.
         filters: The codecs applied to the values before compression.
+        dimensions: The name of each dimension of the array.
+        attributes: The attributes the array carries.
         overwrite: Whether to replace an array already at that path.
         write_empty_chunks: Whether to write a chunk whose values all equal
             the fill value.
@@ -143,6 +149,8 @@ def create_array(  # noqa: PLR0913
         compressors=codecs.compressors(compressor),
         filters=codecs.filters(filters),
         fill_value=fill_value,
+        dimension_names=dimensions,
+        attributes=attributes,
         overwrite=overwrite,
         config={'write_empty_chunks': write_empty_chunks})
 
@@ -155,6 +163,38 @@ def create_group(fs: fsspec.AbstractFileSystem, path: str) -> None:
         path: The path of the group.
     """
     zarr.create_group(store=_store(fs, path))
+
+
+def contains_group(fs: fsspec.AbstractFileSystem, path: str) -> bool:
+    """Say whether a path holds a group.
+
+    Args:
+        fs: The file system to look on.
+        path: The path to look at.
+
+    Returns:
+        Whether a group is held there.
+    """
+    try:
+        zarr.open_group(store=_store(fs, path), mode='r')
+    except (FileNotFoundError, zarr.errors.GroupNotFoundError):
+        return False
+    return True
+
+
+def write_group_attributes(
+    fs: fsspec.AbstractFileSystem,
+    path: str,
+    attributes: dict[str, Any],
+) -> None:
+    """Hold the attributes of a group, in place of the ones it carries.
+
+    Args:
+        fs: The file system the group is held on.
+        path: The path of the group.
+        attributes: The attributes to hold.
+    """
+    zarr.open_group(store=_store(fs, path), mode='r+').attrs.put(attributes)
 
 
 def consolidate(fs: fsspec.AbstractFileSystem, path: str) -> None:

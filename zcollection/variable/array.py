@@ -14,7 +14,15 @@ import dask.array.core
 import dask.array.ma
 import numpy
 
-from .abc import Variable, concat, new_variable, not_equal, read_attributes
+from .abc import (
+    Variable,
+    concat,
+    new_variable,
+    not_equal,
+    read_attributes,
+    read_compressor,
+    read_dimensions,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -173,28 +181,25 @@ class Array(Variable):
         return self
 
     @classmethod
-    def from_zarr(cls, array: zarr.Array, name: str, dimension: str,
-                  **kwargs) -> Array:
+    def from_zarr(cls, array: zarr.Array, name: str, **kwargs) -> Array:
         """Create a new variable from a zarr array.
 
         Args:
             array: The zarr array
             name: Name of the variable
-            dimension: Name of the attribute that defines the dimensions of the
-                variable
             **kwargs: Additional arguments. These arguments are ignored, but
                 they are accepted to be compatible with the base class.
 
         Returns:
             The variable
         """
-        attrs, fill_value = read_attributes(array, dimension)
+        attrs, fill_value = read_attributes(array)
         return new_variable(cls,
                             name=name,
                             array=array[...],
-                            dimensions=array.attrs[dimension],
+                            dimensions=read_dimensions(array),
                             attrs=attrs,
-                            compressor=array.compressor,
+                            compressor=read_compressor(array),
                             fill_value=fill_value,
                             filters=tuple(array.filters or ()))
 

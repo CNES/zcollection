@@ -46,14 +46,14 @@ def test_update_fs(
 
     partition_folder = local_fs.root.joinpath('variable=1')
 
-    zattrs = str(partition_folder.joinpath('.zattrs'))
+    metadata = str(partition_folder.joinpath('zarr.json'))
     future = dask_client.submit(_update_fs, str(partition_folder), zds_sc,
                                 local_fs.fs)
     dask_client.gather(future)
-    assert local_fs.exists(zattrs)
+    assert local_fs.exists(metadata)
 
     local_fs.fs.rm(str(partition_folder), recursive=True)
-    assert not local_fs.exists(zattrs)
+    assert not local_fs.exists(metadata)
 
     with pytest.raises(MyError):
         dask_client.gather(
@@ -63,7 +63,7 @@ def test_update_fs(
                                local_fs.fs,
                                synchronizer=ThrowError()))
 
-    assert not local_fs.exists(zattrs)
+    assert not local_fs.exists(metadata)
 
 
 @pytest.mark.parametrize('arrays_type', ['dask_arrays', 'numpy_arrays'])
