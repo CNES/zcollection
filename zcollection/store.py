@@ -12,24 +12,35 @@ path, and knows nothing of the mapping between the two.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import fsspec.implementations.local
 import zarr
+import zarr.abc.codec
+import zarr.abc.store
 import zarr.storage
+
+from . import codecs
+from .codecs import DEFAULT_COMPRESSOR
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    import fsspec
     import numcodecs.abc
 
     from .type_hints import DTypeLike
 
-#: Marker selecting the compressor Zarr applies when none is named.
-DEFAULT_COMPRESSOR = 'default'
+__all__ = ('DEFAULT_COMPRESSOR', 'consolidate', 'create_array', 'create_group',
+           'open_array', 'open_group')
+
+#: Marker letting Zarr pick the shape of a chunk.
+DEFAULT_CHUNKS = 'auto'
 
 
-def _mapper(fs: fsspec.AbstractFileSystem, path: str) -> fsspec.FSMap:
+def _store(
+    fs: fsspec.AbstractFileSystem,
+    path: str,
+) -> zarr.abc.store.Store:
     """Map a path on a file system to the store Zarr addresses.
 
     Args:
@@ -37,9 +48,12 @@ def _mapper(fs: fsspec.AbstractFileSystem, path: str) -> fsspec.FSMap:
         path: The path of the store.
 
     Returns:
-        The mapping.
+        The store. A local file system is addressed by the store Zarr holds
+        for it, which creates the directories a chunk is written in.
     """
-    return fs.get_mapper(path)
+    if isinstance(fs, fsspec.implementations.local.LocalFileSystem):
+        return zarr.storage.LocalStore(path)
+    return zarr.storage.FsspecStore.from_mapper(fs.get_mapper(path))
 
 
 def open_array(
@@ -58,7 +72,7 @@ def open_array(
     Returns:
         The array.
     """
-    return zarr.open_array(_mapper(fs, path), mode=mode)
+    return zarr.open_array(store=_store(fs, path), mode=mode)
 
 
 def open_group(
@@ -77,9 +91,7 @@ def open_group(
     Returns:
         The group.
     """
-    return zarr.open_consolidated(
-        _mapper(fs, path),  # type: ignore[arg-type]
-        mode=mode)
+    return zarr.open_consolidated(store=_store(fs, path), mode=mode)
 
 
 # The parameters are the ones Zarr names an array with.
@@ -90,10 +102,12 @@ def create_array(  # noqa: PLR0913
     shape: tuple[int, ...],
     dtype: DTypeLike,
     name: str | None = None,
-    chunks: tuple[int, ...] | list[int] | bool = True,
-    compressor: numcodecs.abc.Codec | str | None = DEFAULT_COMPRESSOR,
-    fill_value: object = 0,
-    filters: Sequence[numcodecs.abc.Codec] | None = None,
+    chunks: tuple[int, ...] | Sequence[int] | str = DEFAULT_CHUNKS,
+    compressor: numcodecs.abc.Codec | zarr.abc.codec.Codec | str
+    | None = DEFAULT_COMPRESSOR,
+    fill_value: Any = 0,
+    filters: Sequence[numcodecs.abc.Codec | zarr.abc.codec.Codec]
+    | None = None,
     overwrite: bool = False,
     write_empty_chunks: bool = True,
 ) -> zarr.Array:
@@ -106,8 +120,8 @@ def create_array(  # noqa: PLR0913
         dtype: The data type of the array.
         name: The key of the array inside the store. Defaults to ``None``,
             which holds the array at the root of the store.
-        chunks: The shape of a chunk. Defaults to ``True``, which lets Zarr
-            pick it.
+        chunks: The shape of a chunk. Defaults to :data:`DEFAULT_CHUNKS`,
+            which lets Zarr pick it.
         compressor: The compressor the chunks are held behind. Defaults to
             :data:`DEFAULT_COMPRESSOR`.
         fill_value: The value an uninitialized portion of the array reads
@@ -120,17 +134,17 @@ def create_array(  # noqa: PLR0913
     Returns:
         The array.
     """
-    return zarr.create(
+    return zarr.create_array(
+        store=_store(fs, path),
+        name=name,
         shape=shape,
-        chunks=chunks,  # type: ignore[arg-type]
         dtype=dtype,
-        compressor=compressor,
-        fill_value=fill_value,  # type: ignore[arg-type]
-        store=_mapper(fs, path),
-        path=name,
+        chunks=chunks,  # type: ignore[arg-type]
+        compressors=codecs.compressors(compressor),
+        filters=codecs.filters(filters),
+        fill_value=fill_value,
         overwrite=overwrite,
-        filters=filters,
-        write_empty_chunks=write_empty_chunks)
+        config={'write_empty_chunks': write_empty_chunks})
 
 
 def create_group(fs: fsspec.AbstractFileSystem, path: str) -> None:
@@ -140,7 +154,7 @@ def create_group(fs: fsspec.AbstractFileSystem, path: str) -> None:
         fs: The file system to hold the group on.
         path: The path of the group.
     """
-    zarr.storage.init_group(store=_mapper(fs, path))
+    zarr.create_group(store=_store(fs, path))
 
 
 def consolidate(fs: fsspec.AbstractFileSystem, path: str) -> None:
@@ -150,4 +164,4 @@ def consolidate(fs: fsspec.AbstractFileSystem, path: str) -> None:
         fs: The file system the group is held on.
         path: The path of the group.
     """
-    zarr.consolidate_metadata(_mapper(fs, path))  # type: ignore[arg-type]
+    zarr.consolidate_metadata(_store(fs, path))

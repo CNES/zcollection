@@ -51,9 +51,15 @@ def test_fill_value_is_the_one_given(local_fs) -> None:  # noqa: F811
     numpy.testing.assert_array_equal(array[...], numpy.full(4, -999.0))
 
 
-def test_no_fill_value_leaves_the_array_unmasked(
+def test_no_fill_value_becomes_the_default_of_the_type(
         local_fs) -> None:  # noqa: F811
-    """A fill value of ``None`` is kept as ``None``."""
+    """An array always carries a fill value.
+
+    A fill value of ``None`` becomes the default of the data type, with no
+    exception and no warning. A variable that carries none is marked by the
+    absence of :data:`zcollection.variable.abc.FILL_VALUE`, not by the fill
+    value of its array.
+    """
     path = join_path(str(local_fs.root), 'array')
     array = store.create_array(local_fs.fs,
                                path,
@@ -61,7 +67,7 @@ def test_no_fill_value_leaves_the_array_unmasked(
                                dtype=numpy.dtype('float64'),
                                fill_value=None)
 
-    assert array.fill_value is None
+    assert array.fill_value == 0.0
 
 
 def test_chunks_are_held_behind_the_default_compressor(
@@ -73,7 +79,7 @@ def test_chunks_are_held_behind_the_default_compressor(
                                shape=(4, ),
                                dtype=numpy.dtype('float64'))
 
-    assert array.compressor == zarr.storage.default_compressor
+    assert [codec.to_dict()['name'] for codec in array.compressors] == ['zstd']
 
 
 def test_filters_are_applied(local_fs) -> None:  # noqa: F811
@@ -90,7 +96,8 @@ def test_filters_are_applied(local_fs) -> None:  # noqa: F811
                                filters=(codec, ))
     array[...] = [0.001, 0.002, 0.003, 0.004]
 
-    assert array.filters == [codec]
+    assert [item.to_dict()['name']
+            for item in array.filters] == ['scale_offset', 'cast_value']
     numpy.testing.assert_allclose(array[...], [0.001, 0.002, 0.003, 0.004])
 
 
@@ -157,7 +164,7 @@ def test_a_group_opens_through_its_consolidated_metadata(
     path = join_path(str(local_fs.root), 'group')
     store.create_group(local_fs.fs, path)
 
-    with pytest.raises(KeyError):
+    with pytest.raises(ValueError, match='Consolidated metadata'):
         store.open_group(local_fs.fs, path)
 
     store.consolidate(local_fs.fs, path)
@@ -173,7 +180,7 @@ def test_a_read_only_array_refuses_a_write(local_fs) -> None:  # noqa: F811
                        dtype=numpy.dtype('int32'))
 
     array = store.open_array(local_fs.fs, path, mode='r')
-    with pytest.raises(zarr.errors.ReadOnlyError):
+    with pytest.raises(ValueError, match='read-only'):
         array[...] = 1
 
 
@@ -194,7 +201,7 @@ def test_a_group_opens_read_only(local_fs) -> None:  # noqa: F811
 
     group = store.open_group(local_fs.fs, path)
     assert group.read_only
-    with pytest.raises(zarr.errors.ReadOnlyError):
+    with pytest.raises(ValueError, match='read-only'):
         group['variable'][...] = 1
 
     assert not store.open_group(local_fs.fs, path, mode='r+').read_only

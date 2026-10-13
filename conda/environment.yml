@@ -15,4 +15,4 @@ dependencies:
   - sphinx-gallery
   - sphinx-inline-tabs
   - xarray
-  - zarr==2.18
+  - zarr>=3.4
