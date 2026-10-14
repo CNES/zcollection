@@ -13,6 +13,8 @@ are pinned here.
 """
 from __future__ import annotations
 
+import warnings
+
 import numcodecs
 import numpy
 import pytest
@@ -204,3 +206,29 @@ def test_a_group_opens_read_only(local_fs) -> None:  # noqa: F811
         group['variable'][...] = 1
 
     assert not store.open_group(local_fs.fs, path, mode='r+').read_only
+
+
+def test_consolidation_says_nothing(local_fs) -> None:  # noqa: F811
+    """Consolidating a group emits no warning.
+
+    The core specification names the field a group holds the consolidated
+    metadata in, and a reader that does not know it leaves it alone.
+    """
+    path = join_path(str(local_fs.root), 'group')
+    store.create_group(local_fs.fs, path)
+    store.create_array(local_fs.fs,
+                       path,
+                       name='variable',
+                       shape=(4, ),
+                       dtype=numpy.dtype('int32'))
+
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter('always')
+        store.consolidate(local_fs.fs, path)
+        quiet = list(seen)
+        warnings.warn('another matter',
+                      zarr.errors.ZarrUserWarning,
+                      stacklevel=1)
+
+    assert not quiet
+    assert [str(item.message) for item in seen] == ['another matter']

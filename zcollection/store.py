@@ -13,6 +13,7 @@ path, and knows nothing of the mapping between the two.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+import warnings
 
 import fsspec.implementations.local
 import zarr
@@ -37,6 +38,11 @@ __all__ = ('DEFAULT_COMPRESSOR', 'consolidate', 'contains_group',
 
 #: Marker letting Zarr pick the shape of a chunk.
 DEFAULT_CHUNKS = 'auto'
+
+#: Start of the warning Zarr emits when it consolidates the metadata of a
+#: group. The core specification names the field a group holds them in, and
+#: a reader that does not know it leaves it alone.
+_CONSOLIDATION_WARNING = 'Consolidated metadata is currently not part'
 
 
 def _store(
@@ -208,4 +214,8 @@ def consolidate(fs: fsspec.AbstractFileSystem, path: str) -> zarr.Group:
     Returns:
         The group, holding the arrays the store lists under it.
     """
-    return zarr.consolidate_metadata(_store(fs, path))
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore',
+                                message=_CONSOLIDATION_WARNING,
+                                category=zarr.errors.ZarrUserWarning)
+        return zarr.consolidate_metadata(_store(fs, path))
