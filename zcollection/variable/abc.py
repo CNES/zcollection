@@ -28,12 +28,8 @@ if TYPE_CHECKING:
     from ..type_hints import ArrayLike, NDArray, NDMaskedArray
 
 #: Name of the attribute holding the value that marks a missing measure.
-#:
-#: The fill value of a Zarr array says what an unwritten chunk reads as.
-#: That is a storage concern, and Zarr v3 requires one of every array. This
-#: attribute says which value stands for an absent measure, which is a
-#: concern of the data model, and only variables that have one carry it.
-FILL_VALUE = '_FillValue'
+#: Only variables that have one carry it.
+FILL_VALUE = '_zcollection_fill_value'
 
 #: Name of the attribute a Zarr 2 array holds the names of its dimensions
 #: in. A Zarr 3 array holds them in a field of its own.
