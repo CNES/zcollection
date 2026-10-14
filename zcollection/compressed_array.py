@@ -18,13 +18,12 @@ import dask.base
 import numpy
 import numpy.lib.mixins
 import zarr
+import zarr.abc.codec
 
 from .type_hints import DType, NDArray, NDMaskedArray
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
-
-    import numcodecs.abc
 
 #: Type of arrays returned when a compressed array is decompressed.
 Array = NDArray | NDMaskedArray
@@ -34,30 +33,28 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
     """Hold a compressed array and provide a numpy.ndarray interface to it.
 
     Each operation on the array uncompresses the data, performs the operation,
-    and returns a numpy array. For the rechunk operation, the array is
-    rechunked and the compressor is applied to the new chunks.
+    and returns a numpy array. A rechunk holds the new chunks behind the
+    codecs of the array it is built from.
 
-    Data is compressed using zarr and numcodecs.
+    Data is compressed using zarr.
 
     Args:
         array: A numpy.ndarray or a zarr.Array.
-        *args: Arguments to pass to zarr.array.
-        **kwargs: Keyword arguments to pass to zarr.array.
+        **kwargs: Keyword arguments to pass to zarr.create_array.
     """
 
     def __init__(
         self,
         array: CompressedArray | NDArray | zarr.Array,
-        *args,
         **kwargs,
     ):
         self._fill_value = kwargs.get('fill_value', None)
         if isinstance(array, numpy.ndarray):
-            self._array = zarr.array(array, *args, **kwargs)
+            self._array = zarr.create_array(store={}, data=array, **kwargs)
         elif isinstance(array, zarr.Array):
-            if args or kwargs:
-                raise ValueError('args or kwargs are not allowed when '
-                                 'array is a zarr.Array')
+            if kwargs:
+                raise ValueError('kwargs are not allowed when array is a '
+                                 'zarr.Array')
             self._array = array
         elif isinstance(array, CompressedArray):
             self._array = array._array
@@ -69,14 +66,6 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
 
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__} ({self.shape}) {self.dtype}>'
-
-    def _repr_html_(self) -> str:
-
-        # Useless to rewrite the html representation of the array. Use the
-        # zarr one.
-        html_code: str = self._array.info._repr_html_()
-        #: pylint: enable=protected-access
-        return html_code.replace('zarr.core.Array', str(type(self)))
 
     def __getitem__(
         self,
@@ -139,9 +128,9 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return self._array.nbytes
 
     @property
-    def compressor(self) -> numcodecs.abc.Codec | None:
-        """The compressor used to compress the array."""
-        return self._array.compressor
+    def compressors(self) -> tuple[zarr.abc.codec.Codec, ...]:
+        """The codecs the compressed chunks are held behind."""
+        return self._array.compressors
 
     @property
     def fill_value(self) -> Any:
@@ -149,8 +138,8 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return self._fill_value
 
     @property
-    def filters(self) -> list[numcodecs.abc.Codec] | None:
-        """One or more codecs used to transform data prior to compression."""
+    def filters(self) -> tuple[zarr.abc.codec.Codec, ...]:
+        """The codecs applied to the values before compression."""
         return self._array.filters
 
     def reshape(self, *shape: int) -> Array:
@@ -165,12 +154,11 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return self.__array__().reshape(*shape)
 
     @property
-    def chunks(self) -> Sequence[Sequence[int]]:
-        """A Tuple of integers describing the length of each dimension of a
-        chunk of the array."""
+    def chunks(self) -> tuple[int, ...]:
+        """The length of each dimension of a chunk of the array."""
         return self._array.chunks
 
-    def rechunk(self, chunks: Sequence[Sequence[int]]) -> CompressedArray:
+    def rechunk(self, chunks: tuple[int, ...]) -> CompressedArray:
         """Rechunk the array.
 
         Args:
@@ -180,11 +168,13 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
             The rechunked array.
         """
         return CompressedArray(
-            zarr.array(self._array,
-                       chunks=chunks,
-                       compressor=self.compressor,
-                       fill_value=self.fill_value,
-                       filters=self.filters))
+            zarr.create_array(store={},
+                              data=self._array[...],
+                              chunks=chunks,
+                              compressors=self._array.compressors,
+                              filters=self._array.filters,
+                              serializer=self._array.serializer,
+                              fill_value=self._array.fill_value))
 
     def __array__(self, dtype=None) -> Array:
         """Return a numpy.ndarray of the array.
@@ -297,7 +287,7 @@ def dask_array_from_compressed_array(
     Returns:
         The dask array.
     """
-    chunks: Sequence[Sequence[int]] = array.chunks
+    chunks: tuple[int, ...] = array.chunks
     if name is None:
         name = 'from-compressed-array-' + dask.base.tokenize(
             array, chunks, **kwargs)

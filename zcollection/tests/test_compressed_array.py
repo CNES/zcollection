@@ -14,6 +14,7 @@ import dask.array.ufunc
 import dask.array.utils
 import numpy
 import pytest
+import zarr.abc.codec
 
 from ..compressed_array import CompressedArray
 from .cluster import dask_client, dask_cluster  # noqa: F401
@@ -156,6 +157,36 @@ def test_map_blocks(
     assert isinstance(y._meta, numpy.ndarray)
 
     assert numpy.allclose(y.compute(), x.compute())
+
+
+def test_properties() -> None:
+    """The properties of the array are the ones Zarr holds for it."""
+    array = CompressedArray(numpy.arange(64.0).reshape(8, 8), chunks=(4, 4))
+
+    assert array.ndim == 2
+    assert array.shape == (8, 8)
+    assert array.size == 64
+    assert array.nbytes == 64 * 8
+    assert array.dtype == numpy.dtype('float64')
+    assert array.chunks == (4, 4)
+    assert array.nchunks == 4
+    assert all(
+        isinstance(item, zarr.abc.codec.Codec) for item in array.compressors)
+    assert array.filters == ()
+    assert array.fill_value is None
+
+
+def test_rechunk() -> None:
+    """A rechunk keeps the values and the codecs of the array."""
+    values = numpy.arange(64.0).reshape(8, 8)
+    array = CompressedArray(values, chunks=(4, 4))
+
+    rechunked = array.rechunk((2, 2))
+
+    assert rechunked.chunks == (2, 2)
+    assert rechunked.compressors == array.compressors
+    assert rechunked.filters == array.filters
+    assert numpy.array_equal(numpy.asarray(rechunked), values)
 
 
 def test_compressed_masked_array(
