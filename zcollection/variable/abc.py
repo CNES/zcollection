@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 #: Name of the attribute holding the value that marks a missing measure.
 #: Only variables that have one carry it.
-FILL_VALUE = '_zcollection_fill_value'
+FILL_VALUE = '_FillValue'
 
 #: Name of the attribute a Zarr 2 array holds the names of its dimensions
 #: in.

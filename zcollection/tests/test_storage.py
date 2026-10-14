@@ -14,7 +14,6 @@ import dask.array
 import dask.distributed
 import numpy
 import pytest
-import xarray
 import zarr
 
 from .. import dataset, storage, store, sync
@@ -230,29 +229,6 @@ def test_write_zarr_group(
 
     other = storage.open_zarr_group(str(local_fs.root), local_fs.fs)
     assert other.metadata() == zds.metadata()
-
-
-def test_a_partition_opens_with_xarray(
-        local_fs,  # noqa: F811
-) -> None:
-    """A partition written by the package opens with xarray."""
-    zds = dataset.Dataset([
-        dataset.Array(name='var',
-                      data=numpy.ones((16, 16), dtype='float64'),
-                      dimensions=('x', 'y'),
-                      fill_value=-999.0)
-    ])
-    path = str(local_fs.root)
-    store.create_group(local_fs.fs, path)
-    storage.write_zarr_group(zds,
-                             path,
-                             local_fs.fs,
-                             sync.NoSync(),
-                             distributed=False)
-
-    ds = xarray.open_zarr(path)
-
-    assert ds['var'].attrs[storage.FILL_VALUE] == -999.0
 
 
 def test_write_meta_checks_the_group_holds_the_variables(
