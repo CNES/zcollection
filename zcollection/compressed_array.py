@@ -167,14 +167,12 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         Returns:
             The rechunked array.
         """
-        return CompressedArray(
-            zarr.create_array(store={},
-                              data=self._array[...],
-                              chunks=chunks,
-                              compressors=self._array.compressors,
-                              filters=self._array.filters,
-                              serializer=self._array.serializer,
-                              fill_value=self._array.fill_value))
+        return CompressedArray(self._array[...],
+                               chunks=chunks,
+                               compressors=self._array.compressors,
+                               filters=self._array.filters,
+                               serializer=self._array.serializer,
+                               fill_value=self._fill_value)
 
     def __array__(self, dtype=None) -> Array:
         """Return a numpy.ndarray of the array.

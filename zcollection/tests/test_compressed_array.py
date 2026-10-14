@@ -189,6 +189,19 @@ def test_rechunk() -> None:
     assert numpy.array_equal(numpy.asarray(rechunked), values)
 
 
+def test_rechunk_keeps_the_value_marking_absence() -> None:
+    """The rechunked array masks the values the array it is built from
+    masks."""
+    array = CompressedArray(numpy.arange(8.0).reshape(2, 4), fill_value=0.0)
+
+    rechunked = array.rechunk((1, 2))
+
+    assert rechunked.fill_value == 0.0
+    mask = numpy.ma.getmaskarray(rechunked[:, :])
+    assert mask[0, 0]
+    assert mask.sum() == 1
+
+
 def test_compressed_masked_array(
         dask_client,  # noqa: F811
 ) -> None:
