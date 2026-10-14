@@ -55,10 +55,9 @@ def test_no_fill_value_becomes_the_default_of_the_type(
         local_fs) -> None:  # noqa: F811
     """An array always carries a fill value.
 
-    A fill value of ``None`` becomes the default of the data type, with no
-    exception and no warning. A variable that carries none is marked by the
-    absence of :data:`zcollection.variable.abc.FILL_VALUE`, not by the fill
-    value of its array.
+    A fill value of ``None`` becomes the default of the data type. A
+    variable that carries none is marked by the absence of
+    :data:`zcollection.variable.abc.FILL_VALUE`.
     """
     path = join_path(str(local_fs.root), 'array')
     array = store.create_array(local_fs.fs,
@@ -102,7 +101,7 @@ def test_filters_are_applied(local_fs) -> None:  # noqa: F811
 
 
 def test_name_holds_the_array_inside_the_store(local_fs) -> None:  # noqa: F811
-    """``name`` holds the array under that key instead of at the root."""
+    """``name`` is the key the array is held under."""
     path = join_path(str(local_fs.root), 'group')
     store.create_group(local_fs.fs, path)
     store.create_array(local_fs.fs,
@@ -187,8 +186,8 @@ def test_a_read_only_array_refuses_a_write(local_fs) -> None:  # noqa: F811
 def test_a_group_opens_read_only(local_fs) -> None:  # noqa: F811
     """A group opened with the default mode refuses a write.
 
-    Consolidated metadata is read-only whatever the mode, the chunks are
-    not: a group opened in ``r+`` hands back writable arrays.
+    Consolidated metadata is read-only whatever the mode; a group opened
+    in ``r+`` hands back writable arrays.
     """
     path = join_path(str(local_fs.root), 'group')
     store.create_group(local_fs.fs, path)

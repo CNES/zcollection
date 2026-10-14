@@ -50,8 +50,9 @@ def _store(
         path: The path of the store.
 
     Returns:
-        The store. A local file system is addressed by the store Zarr holds
-        for it, which creates the directories a chunk is written in.
+        The store. A local file system is addressed by
+        :class:`zarr.storage.LocalStore`, any other by
+        :class:`zarr.storage.FsspecStore`.
     """
     if isinstance(fs, fsspec.implementations.local.LocalFileSystem):
         return zarr.storage.LocalStore(path)
@@ -187,7 +188,7 @@ def write_group_attributes(
     path: str,
     attributes: dict[str, Any],
 ) -> None:
-    """Hold the attributes of a group, in place of the ones it carries.
+    """Replace the attributes a group carries.
 
     Args:
         fs: The file system the group is held on.

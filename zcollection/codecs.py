@@ -7,8 +7,8 @@ Translation of codecs
 =====================
 
 A variable names the codecs it is held behind with the classes numcodecs
-defines, or with the ones Zarr defines. Zarr 3 builds an array from its
-own, so the first are translated here.
+defines, or with the ones Zarr defines. This module translates the first
+into the second.
 
 A codec Zarr registers a name for is translated into that codec. The
 others are translated into the wrapper Zarr ships for them, which writes
@@ -63,8 +63,7 @@ def _fixed_scale_offset(
         config: dict[str, Any]) -> tuple[zarr.abc.codec.Codec, ...]:
     """Translate a FixedScaleOffset codec.
 
-    Zarr holds the scaling and the change of data type in two codecs where
-    numcodecs holds them in one.
+    Zarr holds the scaling and the change of data type in two codecs.
     """
     scale = zarr.codecs.ScaleOffset(offset=config['offset'],
                                     scale=config['scale'])

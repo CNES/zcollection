@@ -73,10 +73,7 @@ def _rename(
         dest: The destination directory.
     """
     if isinstance(fs, fsspec.implementations.local.LocalFileSystem):
-        # fspec implementation of the local file system, copy the source
-        # directory to the destination directory and remove the source
-        # directory. This is not efficient. So we use the shutil
-        # implementation to rename the directory.
+        # shutil moves the directory in place.
         shutil.rmtree(dest, ignore_errors=True)
         shutil.move(source, dest)
         return
@@ -133,8 +130,8 @@ def _update_fs(
                                  synchronizer or sync.NoSync(),
                                  distributed=distributed)
     except Exception:
-        # The "write_zarr_group" method throws the exception if all scheduled
-        # tasks are finished. So here we can delete the temporary directory.
+        # Every scheduled task is finished when the exception arrives, so
+        # the temporary directory is free.
         fs.rm(temp, recursive=True)
         raise
 

@@ -32,11 +32,11 @@ if TYPE_CHECKING:
 FILL_VALUE = '_zcollection_fill_value'
 
 #: Name of the attribute a Zarr 2 array holds the names of its dimensions
-#: in. A Zarr 3 array holds them in a field of its own.
+#: in.
 DIMENSIONS = '_ARRAY_DIMENSIONS'
 
-#: The version of Zarr that holds the dimensions and the fill value of an
-#: array the way the releases of the package wrote them.
+#: The version of Zarr that holds the dimensions of an array in an
+#: attribute and the value marking absence in its fill value.
 ZARR_FORMAT_2 = 2
 
 #: Generic type for a variable interface.
@@ -119,7 +119,7 @@ def concat(
 
 
 def read_attributes(array: Any) -> tuple[tuple[meta.Attribute, ...], Any]:
-    """Read the attributes of a Zarr array and the value they mark absence
+    """Read the attributes of a Zarr array and the value it marks absence
     with.
 
     Args:
@@ -127,15 +127,9 @@ def read_attributes(array: Any) -> tuple[tuple[meta.Attribute, ...], Any]:
 
     Returns:
         The attributes of the variable, and the value standing for an
-        absent measure, or None when the variable has none.
-
-    Notes:
-        A Zarr 3 array always carries a fill value: the one it is given, or
-        the default of its data type. The value marking an absence is read
-        from :data:`FILL_VALUE` alone, so that a variable carrying none
-        keeps its zeros. A Zarr 2 array carries None when it was given
-        none, and collections written before :data:`FILL_VALUE` existed
-        hold the value there.
+        absent measure, or None when the variable has none. A Zarr 2 array
+        carrying no :data:`FILL_VALUE` attribute holds that value in its
+        fill value.
     """
     attrs = tuple(
         meta.Attribute(name, value) for name, value in array.attrs.items()
@@ -167,9 +161,8 @@ def read_compressor(array: Any) -> Any:
         array: The Zarr array.
 
     Returns:
-        The compressor, or None when the chunks are held as they are. Zarr
-        holds a chain where a variable holds one codec, so the first of the
-        chain is read.
+        The first codec of the chain, or None when the chunks are held
+        as they are.
     """
     compressors = array.compressors
     return compressors[0] if compressors else None

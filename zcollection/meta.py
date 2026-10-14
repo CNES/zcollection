@@ -47,9 +47,9 @@ def format_version(config: dict[str, Any]) -> int:
     version: Any = config.get('version', DEPRECATED_FORMAT_VERSION)
     if isinstance(version, int):
         return version
-    # Before the layout carried a version of its own, this key held the
-    # version of the package that wrote the configuration. '0' marks the
-    # layout the releases write, any other string the one that follows it.
+    # A string in this key is the version of the package that wrote the
+    # configuration. '0' marks the layout the releases write, any other
+    # string the one that follows it.
     return (DEPRECATED_FORMAT_VERSION if version == '0' else FORMAT_VERSION)
 
 

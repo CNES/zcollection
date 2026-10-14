@@ -52,9 +52,9 @@ def test_an_unregistered_codec_keeps_its_own_name(codec, expected) -> None:
     """A codec Zarr registers no name for is written under its own.
 
     Zarr names such a codec by the identifier numcodecs gives it, prefixed
-    with ``numcodecs.``. The name is not in the registry of the Zarr v3
-    specification, so an implementation that does not hold the codec cannot
-    read the arrays it is applied to.
+    with ``numcodecs.``. The name lies outside the registry of the Zarr v3
+    specification: reading an array it is applied to takes an
+    implementation that holds the codec.
     """
     assert names(codec) == expected
 
@@ -78,7 +78,7 @@ def test_the_shuffle_blosc_picks_is_left_to_zarr() -> None:
 
 
 def test_a_cast_that_changes_nothing_is_left_out() -> None:
-    """A scaling that keeps the data type is one codec, not two."""
+    """A scaling that keeps the data type translates to one codec."""
     assert names(numcodecs.FixedScaleOffset(offset=0, scale=1000,
                                             dtype='f8')) == ['scale_offset']
 
@@ -120,8 +120,7 @@ def test_the_translation_holds_the_same_bytes(local_fs) -> None:  # noqa: F811
     """The translation of a scaling holds what numcodecs holds.
 
     ``scale_offset`` followed by ``cast_value`` encodes the values the way
-    ``FixedScaleOffset`` does, so a collection migrated to the registered
-    codecs takes the same room.
+    ``FixedScaleOffset`` does.
     """
     values = numpy.round(numpy.linspace(-1.5, 1.5, 1000), 3)
     sizes = []

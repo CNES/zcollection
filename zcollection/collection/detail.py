@@ -413,8 +413,6 @@ def _insert(
 
     # A partition that holds no group is empty.
     if store.contains_group(fs, dirname):
-        # The current partition already exists, so we need to merge
-        # the dataset.
         merging.perform(zds.isel(indexer),
                         dirname,
                         axis,
@@ -426,8 +424,6 @@ def _insert(
                         **kwargs)
         return
 
-    # The current partition does not exist, so we need to create
-    # it and insert the dataset.
     try:
         store.create_group(fs, dirname)
 

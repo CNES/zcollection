@@ -7,8 +7,7 @@ Serialization of data types and fill values
 ===========================================
 
 Collections store the data type and the fill value of their variables as
-JSON. These functions are the encoding they are stored with, owned here so
-that it stays the same whatever the storage layer underneath becomes.
+JSON. These functions are the encoding they are stored with.
 """
 from __future__ import annotations
 
@@ -101,8 +100,7 @@ def _decode_bytes(data: Any, dtype: numpy.dtype) -> Any:
     try:
         data = base64.standard_b64decode(data)
     except binascii.Error:
-        # Values written before the encoding was base64, such as a bare
-        # zero, stay usable.
+        # A value that is not base64 decodes as itself.
         pass
     return numpy.array(data, dtype=dtype)[()]
 

@@ -174,8 +174,6 @@ class DelayedArray(Variable):
         array: dask.array.core.Array
         array, fill_value = _as_dask_array(data, fill_value=fill_value)
 
-        # The code is not duplicated, we need to call the parent constructor,
-        # but pylint does not understand that.
         super().__init__(
             name,
             array,

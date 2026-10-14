@@ -649,33 +649,24 @@ def _sync(
     """
     partition_view = join_path(base_dir, partition)
     if not fs.exists(partition_view):
-        # The partition does not exist, so we create it.
         if not dry_run:
             _sync_partition(metadata, partition, base_dir, fs, view_ref)
         return partition
 
-    # The partition exists, so we check if it is synced.
     partition_ref = join_path(view_ref.partition_properties.dir, partition)
     array: zarr.Array = _load_checksum_array(partition_view, fs)
     axis_ref: AxisReference = _calculate_axis_reference(path=partition_ref,
                                                         view_ref=view_ref)
-    # If the checksums are different, the partition is not synced. So we
-    # remove it (information between the partition and the reference are
-    # not consistent)
     if axis_ref.checksum != array.attrs[CHECKSUM_ATTR]:
-        # If the checksums are different, the partition is not synced. we load
-        # the axis of partition's view to check if the partition is a subset of
-        # the reference partition.
+        # The axis of the view is a prefix of the reference one when the
+        # partition holds the same measures up to its end.
         axis_view: NDArray = array[:]
         if axis_ref.array.size > axis_view.size and numpy.all(
                 axis_view == axis_ref.array[:axis_view.size]):
-            # The view partition is a subset of the reference partition.
-            # So we extend the view partition to the reference partition.
-            # fs_invalid_cache is done by _extend_partition
+            # The cache is invalidated by _extend_partition.
             if not dry_run:
                 _extend_partition(partition_view, fs, axis_ref)
             return partition
-        # The partition is not synced, so we remove it.
         if not dry_run:
             fs.rm(partition_view, recursive=True)
             fs.invalidate_cache(partition_view)

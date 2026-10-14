@@ -195,7 +195,6 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         """Cast an object to a value compatible with numpy.ndarray."""
         if isinstance(obj, CompressedArray):
             #: pylint: disable=protected-access
-            # obj is a CompressedArray, we can access its _array attribute.
             return obj._array[...] if self._fill_value is None else \
                 numpy.ma.masked_equal(obj._array[...], self._fill_value)
             #: pylint: enable=protected-access
@@ -308,9 +307,6 @@ def _concatenate_compressed_array(arrays, **kwargs) -> NDArray:
 @dask.array.dispatch.numel_lookup.register(CompressedArray)
 def _numel_compressed_array(array, **kwargs) -> numpy.float64 | NDArray:
     #: pylint: disable=protected-access
-    # array is a CompressedArray, we can access its _array attribute.
-    # We reuse the implementation of dask array numel. Useless to
-    # reimplement it.
     arr: NDArray = array.__array__(dtype=kwargs.get('dtype', None))
     if array._fill_value is not None:
         return dask.array.backends._numel_masked(arr, **kwargs)

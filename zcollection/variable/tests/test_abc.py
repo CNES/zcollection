@@ -99,11 +99,8 @@ def test_from_zarr_reads_no_fill_value_when_none_is_declared(
 
 @pytest.mark.parametrize('cls', IMPLEMENTATIONS)
 def test_from_zarr_falls_back_to_the_fill_value_of_a_zarr_2_array(cls) -> None:
-    """Collections written before the attribute existed keep their meaning.
-
-    Their value marking absence sits in the fill value of the Zarr array,
-    which is where it is read from when the attribute is absent.
-    """
+    """A Zarr 2 array carrying no attribute holds the value marking absence
+    in its fill value."""
     array = make_zarr_array(-999.0, {'units': 'm'}, zarr_format=2)
 
     variable = cls.from_zarr(array, 'var')
@@ -113,11 +110,7 @@ def test_from_zarr_falls_back_to_the_fill_value_of_a_zarr_2_array(cls) -> None:
 
 @pytest.mark.parametrize('cls', IMPLEMENTATIONS)
 def test_from_zarr_ignores_the_fill_value_of_a_zarr_3_array(cls) -> None:
-    """A Zarr 3 array always carries a fill value, so it marks nothing.
-
-    Reading it would turn every value it equals into an absence, and a
-    Zarr 3 array that was given none carries the default of its data type.
-    """
+    """The fill value of a Zarr 3 array marks nothing."""
     array = make_zarr_array(-999.0, {'units': 'm'}, zarr_format=3)
 
     variable = cls.from_zarr(array, 'var')
@@ -129,7 +122,8 @@ def test_from_zarr_ignores_the_fill_value_of_a_zarr_3_array(cls) -> None:
 @pytest.mark.parametrize('zarr_format', FORMATS)
 def test_from_zarr_prefers_the_attribute_over_the_array(cls,
                                                         zarr_format) -> None:
-    """The attribute wins: the fill value of the array is storage only."""
+    """The attribute is read in preference to the fill value of the
+    array."""
     array = make_zarr_array(0.0, {FILL_VALUE: -999.0}, zarr_format)
 
     variable = cls.from_zarr(array, 'var')

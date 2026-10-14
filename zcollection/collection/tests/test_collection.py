@@ -830,7 +830,7 @@ def test_add_update(
     zcol.update(update_2, new2.name, delayed=delayed)  # type: ignore[arg-type]
 
     if not (delayed and distributed):
-        # If the dataset is not delayed, we need to reload it.
+        # The values loaded eagerly predate the updates.
         data = zcol.load(delayed=False, distributed=distributed)
         assert data is not None
 
