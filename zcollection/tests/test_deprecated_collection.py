@@ -23,6 +23,7 @@ import numpy
 import pytest
 
 import zcollection
+import zcollection.view
 
 from . import reference
 from .. import fs_utils
@@ -131,6 +132,34 @@ def written_today(path: pathlib.Path) -> dict:
                                                str(path / 'today'))
     collection.insert(zds, distributed=False)
     return read_config(str(path / 'today'))
+
+
+def test_a_view_opens_on_an_old_collection(deprecated, tmp_path) -> None:
+    """A view reads the dimensions of a partition whatever wrote it."""
+    with pytest.warns(UserWarning, match='needs to be updated'):
+        zview = zcollection.create_view(
+            str(tmp_path / 'view'),
+            zcollection.view.ViewReference(deprecated),
+            distributed=False)
+
+    data = zview.load(delayed=False, distributed=False)
+    assert data is not None
+    numpy.testing.assert_array_equal(data.variables['time'].values,
+                                     reference.axis())
+
+
+def test_a_view_opens_on_an_updated_collection(deprecated, tmp_path) -> None:
+    """Updating a collection leaves the partitions as they were written."""
+    zcollection.update_deprecated_collection(deprecated)
+
+    zview = zcollection.create_view(str(tmp_path / 'view'),
+                                    zcollection.view.ViewReference(deprecated),
+                                    distributed=False)
+
+    data = zview.load(delayed=False, distributed=False)
+    assert data is not None
+    numpy.testing.assert_array_equal(data.variables['time'].values,
+                                     reference.axis())
 
 
 def test_update_yields_the_configuration_written_today(deprecated,

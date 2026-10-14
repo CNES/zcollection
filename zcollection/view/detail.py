@@ -33,6 +33,7 @@ from ..storage import (
     variable_attributes,
     variable_shape,
 )
+from ..variable.abc import read_dimensions
 
 if TYPE_CHECKING:
     import dask.distributed
@@ -482,7 +483,7 @@ def _calculate_axis_reference(
     array: zarr.Array = group[view_ref.axis]  # type: ignore[arg-type]
     axis: NDArray = array[...]
     checksum: str = hashlib.sha256(axis.tobytes()).hexdigest()
-    return AxisReference(axis, array.metadata.dimension_names[0], checksum)
+    return AxisReference(axis, read_dimensions(array)[0], checksum)
 
 
 def _write_checksum_array(
@@ -610,7 +611,7 @@ def _extend_partition(
     try:
         for variable in fs.listdir(partition):
             array: zarr.Array = store.open_array(fs, variable['name'])
-            dimensions: Sequence[str] = array.metadata.dimension_names
+            dimensions: Sequence[str] = read_dimensions(array)
             if axis_name in dimensions:
                 axis: int = dimensions.index(axis_name)
                 shape = list(array.shape)
