@@ -4,7 +4,7 @@ Installation
 Required dependencies
 ---------------------
 
-- Python (3.8 or later)
+- Python (3.12 or later)
 - setuptools
 - `dask <https://dask.pydata.org/>`_
 - `distributed <https://distributed.dask.org/en/stable/>`_
@@ -13,7 +13,7 @@ Required dependencies
 - `numpy <https://numpy.org/>`_
 - `pyarrow <https://arrow.apache.org/docs/python/>`_
 - `xarray <http://xarray.pydata.org/en/stable/>`_
-- `zarr <https://zarr.readthedocs.io/en/stable/>`_
+- `zarr <https://zarr.readthedocs.io/en/stable/>`_ (3.4 or later)
 
 .. note::
 

@@ -17,28 +17,28 @@ the disk:
     ├── year=2022
     │    ├── month=01/
     │    │    ├── time/
-    │    │    │    ├── 0.0
-    │    │    │    ├── .zarray
-    │    │    │    └── .zattrs
+    │    │    │    ├── c/
+    │    │    │    │    └── 0
+    │    │    │    └── zarr.json
     │    │    ├── var1/
-    │    │    │    ├── 0.0
-    │    │    │    ├── .zarray
-    │    │    │    └── .zattrs
-    │    │    ├── .zattrs
-    │    │    ├── .zgroup
-    │    │    └── .zmetadata
+    │    │    │    ├── c/
+    │    │    │    │    └── 0/
+    │    │    │    │         └── 0
+    │    │    │    └── zarr.json
+    │    │    └── zarr.json
     │    └── month=02/
     │         ├── time/
-    │         │    ├── 0.0
-    │         │    ├── .zarray
-    │         │    └── .zattrs
+    │         │    ├── c/
+    │         │    │    └── 0
+    │         │    └── zarr.json
     │         ├── var1/
-    │         │    ├── 0.0
-    │         │    ├── .zarray
-    │         │    └── .zattrs
-    │         ├── .zattrs
-    │         ├── .zgroup
-    │         └── .zmetadata
+    │         │    ├── c/
+    │         │    │    └── 0/
+    │         │    │         └── 0
+    │         │    └── zarr.json
+    │         └── zarr.json
+    ├── .immutable/
+    │    └── zarr.json
     └── .zcollection
 
 Partition updates can be set to overwrite existing data with new ones or to
