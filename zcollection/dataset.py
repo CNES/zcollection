@@ -632,7 +632,9 @@ class Dataset:
             New dataset.
 
         Raises:
-            ValueError: If the provided sequence of datasets is empty.
+            ValueError: If the provided sequence of datasets is empty, if the
+                datasets do not all hold their data the same way, or if they
+                do not all hold the same variables.
         """
         if not isinstance(other, Iterable):
             other = [other]
@@ -641,6 +643,12 @@ class Dataset:
             raise ValueError('cannot concatenate an empty sequence')
         if not all(item.delayed == self.delayed for item in other):
             raise ValueError('cannot concatenate delayed and non-delayed data')
+        names: set[str] = set(self.variables)
+        differing: set[str] = set().union(*(names ^ set(item.variables)
+                                            for item in other))
+        if differing:
+            raise ValueError('cannot concatenate datasets holding different '
+                             f'variables: {", ".join(sorted(differing))}')
         variables: list[Variable] = [
             var.concat(tuple(item.variables[name] for item in other), dim)
             for name, var in self.variables.items()

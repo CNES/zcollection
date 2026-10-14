@@ -190,6 +190,23 @@ def test_dataset_concat(
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
+def test_dataset_concat_holding_different_variables(
+        factory,
+        dask_client,  # noqa: F811
+) -> None:
+    """Concatenating datasets that do not hold the same variables is an
+    error."""
+    zds1 = create_delayed_dataset(factory)
+    zds2 = create_delayed_dataset(factory)
+
+    with pytest.raises(ValueError, match='var2'):
+        zds1.select_vars(names=['var1']).concat(zds2, 'x')
+
+    with pytest.raises(ValueError, match='var2'):
+        zds1.concat(zds2.select_vars(names=['var1']), 'x')
+
+
+@pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset_pickle(
         factory,
         dask_client,  # noqa: F811
