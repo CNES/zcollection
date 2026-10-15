@@ -167,6 +167,31 @@ class Indexer(abc.ABC):
         self._type = {name: dtype[name] for name, _ in self.dtype()}
         self._type.update({item[0]: item[1] for item in partition_schema})
 
+    def _partition_column(self, name: str, value: Any,
+                          length: int) -> tuple[str, pyarrow.Array]:
+        """Return the column holding the value a partition has for a key.
+
+        Args:
+            name: Name of the partitioning variable.
+            value: Value the partition has for it.
+            length: Number of rows of the column.
+
+        Returns:
+            The name of the column and its values.
+
+        Raises:
+            ValueError: If the value does not fit the data type the
+                partitioning declares for the variable.
+        """
+        try:
+            return name, pyarrow.nulls(length,
+                                       type=self._type[name]).fill_null(value)
+        except (pyarrow.ArrowInvalid, OverflowError):
+            raise ValueError(
+                f'The value {value} of {name!r} does not fit the '
+                f'{self._type[name]} the partitioning declares for it.'
+            ) from None
+
     def _sort_keys(self) -> list[tuple[str, str]]:
         """Return the list of keys to sort the index by."""
         keys: tuple[str, ...] = (*self._partition_keys, self.START, self.STOP)
@@ -285,8 +310,7 @@ class Indexer(abc.ABC):
             }
             # Add the partition to the table.
             indexed_data.update(
-                (name,
-                 pyarrow.nulls(length, type=self._type[name]).fill_null(value))
+                self._partition_column(name, value, length)
                 for name, value in partition)
             # Memoize the updated partitions.
             partitions.append(tuple(
