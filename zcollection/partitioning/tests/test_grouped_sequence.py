@@ -143,6 +143,7 @@ def test_config(variables, dtype, part_size) -> None:
     """Test the configuration of the GroupedSequence class."""
     partitioning = GroupedSequence(variables=variables,
                                    size=part_size,
+                                   start=7,
                                    dtype=dtype)
 
     config = partitioning.get_config()
@@ -150,6 +151,9 @@ def test_config(variables, dtype, part_size) -> None:
 
     assert isinstance(other, GroupedSequence)
     assert other.dtype() == partitioning.dtype()
+    assert other.variables == partitioning.variables
+    assert other.size == part_size
+    assert other.start == 7
 
 
 @pytest.mark.parametrize(('variables', 'dtype'), VARIABLES_DTYPE_TEST_SET)
@@ -158,12 +162,16 @@ def test_pickle(variables, dtype, part_size) -> None:
     """Test the pickling of the GroupedSequence class."""
     partitioning = GroupedSequence(variables=variables,
                                    size=part_size,
+                                   start=7,
                                    dtype=dtype)
 
     other = pickle.loads(pickle.dumps(partitioning))
 
     assert isinstance(other, GroupedSequence)
     assert other.dtype() == partitioning.dtype()
+    assert other.variables == partitioning.variables
+    assert other.size == part_size
+    assert other.start == 7
 
 
 @pytest.mark.parametrize('start', [-10, 0, 10, 100])
@@ -187,7 +195,7 @@ def test_splits(start):
 
     split_data = partitioning._split(variables=vdata)
 
-    for split, res in zip(split_data, expected_groups):
+    for split, res in zip(split_data, expected_groups, strict=True):
         s = split[1]
         values = split[0]
 
