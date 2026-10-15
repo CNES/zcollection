@@ -358,7 +358,6 @@ def open_zarr_group(
     Returns:
         The Zarr group stored in the partition, with the specified variables
         and attributes.
-        If an error occurs, None will be returned.
     """
     _LOGGER.debug('Opening Zarr group %r', dirname)
     group = store.open_group(fs, dirname)
