@@ -386,9 +386,7 @@ class Dataset:
 
         Raises:
             TypeError: If the dimension is not a Dimension object.
-            ValueError: If the variable already exists in the dataset or if
-                the variable's dimensions do not match the dataset's
-                dimensions.
+            ValueError: If the dimension already exists in the dataset.
         """
         if not isinstance(dimension, Dimension):
             raise TypeError(
