@@ -706,6 +706,71 @@ def test_view_with_empty_collection(fs, request, caplog):
         zview.update(update, varname=var.name, distributed=False)
 
 
+def _view_on_one_partition(tested_fs) -> view.View:
+    """Create a view whose reference collection holds a single partition."""
+    zds = next(create_test_dataset())
+    zcol = collection.Collection('time',
+                                 zds.metadata(),
+                                 partitioning.Date(('time', ), 'M'),
+                                 str(tested_fs.collection),
+                                 filesystem=tested_fs.fs)
+    zcol.insert(zds, distributed=False)
+    zview = convenience.create_view(str(tested_fs.view),
+                                    view.ViewReference(
+                                        str(tested_fs.collection),
+                                        tested_fs.fs),
+                                    filesystem=tested_fs.fs,
+                                    distributed=False)
+    zview.add_variable(meta.Variable(name='var3',
+                                     dtype=numpy.float64,
+                                     dimensions=('num_lines', 'num_pixels')),
+                       distributed=False)
+    return zview
+
+
+def test_map_overlap_on_a_single_partition(local_fs) -> None:  # noqa: F811
+    """A partition with no neighbor is mapped over on its own."""
+    zview = _view_on_one_partition(local_fs)
+    assert len(tuple(zview.partitions())) == 1
+    loaded = zview.load(delayed=False, distributed=False)
+    assert loaded is not None
+
+    sizes = zview.map_overlap(lambda zds: zds.dimensions['num_lines'],
+                              depth=1).compute()
+
+    assert [size for _, size in sizes] == [loaded.dimensions['num_lines']]
+
+
+def test_update_on_a_single_partition(local_fs) -> None:  # noqa: F811
+    """A partition with no neighbor is updated on its own."""
+    zview = _view_on_one_partition(local_fs)
+
+    zview.update(lambda zds: {'var3': zds.variables['var1'].values * 2},
+                 depth=1,
+                 distributed=False)
+
+    loaded = zview.load(delayed=False, distributed=False)
+    assert loaded is not None
+    numpy.testing.assert_array_equal(loaded.variables['var3'].values,
+                                     loaded.variables['var1'].values * 2)
+
+
+def test_map_takes_the_scheduler_of_its_caller(
+        local_fs,  # noqa: F811
+        monkeypatch) -> None:
+    """Mapping over a view reaches for no Dask client."""
+
+    def refuse() -> None:
+        """Stand for the client the view must not ask for."""
+        raise AssertionError('a Dask client was requested')
+
+    zview = _view_on_one_partition(local_fs)
+    monkeypatch.setattr('zcollection.dask_utils.get_client', refuse)
+
+    assert len(zview.map(lambda zds: 1).compute()) == 1
+    assert len(zview.map_overlap(lambda zds: 1, depth=1).compute()) == 1
+
+
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_view_written_in_a_newer_layout(fs, request) -> None:
     """A view written in a layout this code does not know is refused."""

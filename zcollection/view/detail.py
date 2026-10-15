@@ -173,7 +173,7 @@ def _load_one_dataset(
     view_ref: collection.Collection,
     variables: Iterable[str],
     with_immutable: bool = False,
-) -> tuple[dataset.Dataset, str] | None:
+) -> tuple[dataset.Dataset, str]:
     """Load a dataset from a partition stored in the reference collection and
     merge it with the variables defined in this view.
 
@@ -201,10 +201,6 @@ def _load_one_dataset(
         view_ref.fs,
         delayed=delayed,
         selected_variables=selected_variables)
-
-    if zds is None:
-        # No data for this partition
-        return None
 
     # Filling missing dimensions
     mds = view_ref.metadata
@@ -289,7 +285,7 @@ def _load_datasets_list(
     arguments: tuple[tuple[tuple[tuple[str, int], ...], list], ...] = tuple(
         (view_ref.partitioning.parse(item), []) for item in partitions)
 
-    datasets: list[tuple[dataset.Dataset, str] | None]
+    datasets: list[tuple[dataset.Dataset, str]]
 
     if client is not None:
         futures: list[dask.distributed.Future] = client.map(
@@ -317,9 +313,7 @@ def _load_datasets_list(
                 variables=metadata.select_variables(selected_variables),
                 with_immutable=with_immutable) for arg in arguments
         ]
-    return filter(
-        lambda item: item is not None,  # type: ignore[arg-type]
-        datasets)
+    return iter(datasets)
 
 
 def _assert_have_variables(metadata: meta.Dataset) -> None:
@@ -330,6 +324,69 @@ def _assert_have_variables(metadata: meta.Dataset) -> None:
     """
     if not metadata.variables:
         raise ValueError('The view has no variables')
+
+
+def _load_dataset_with_overlap(
+    *,
+    base_dir: str,
+    delayed: bool,
+    depth: int,
+    fs: fsspec.AbstractFileSystem,
+    metadata: meta.Dataset,
+    partition: str,
+    partitions: tuple[str, ...],
+    selected_variables: Iterable[str] | None,
+    view_ref: collection.Collection,
+) -> tuple[dataset.Dataset, slice]:
+    """Load a partition of a view and the neighbors the depth selects.
+
+    Args:
+        base_dir: Base directory of the view.
+        delayed: If True, load the datasets lazily.
+        depth: The number of neighbors to load on either side.
+        fs: The file system used to access the variables in the view.
+        metadata: The metadata of the dataset.
+        partition: The partition to load.
+        partitions: The partitions of the view.
+        selected_variables: The list of variables to retain from the view.
+        view_ref: The view reference.
+
+    Returns:
+        The concatenated datasets and the slice holding the partition in
+        them.
+    """
+    where: int = partitions.index(partition)
+    selected: list[str] = [
+        partitions[ix] for ix in range(where - depth, where + depth + 1)
+        if 0 <= ix < len(partitions)
+    ]
+    loaded: list[tuple[dataset.Dataset, str]] = [
+        _load_one_dataset(
+            (view_ref.partitioning.parse(item), []),
+            base_dir=base_dir,
+            delayed=delayed,
+            fs=fs,
+            selected_variables=view_ref.metadata.select_variables(
+                selected_variables),
+            view_ref=view_ref,
+            variables=metadata.select_variables(selected_variables),
+            with_immutable=True) for item in selected
+    ]
+
+    start = 0
+    indices = slice(0, 0, None)
+    for zds, selected_partition in loaded:
+        size: int = zds.dimensions[view_ref.dimension]
+        indices = slice(start, start + size, None)
+        if selected_partition == partition:
+            break
+        start += size
+
+    groups: list[dataset.Dataset] = [item[0] for item in loaded]
+    result: dataset.Dataset = groups.pop(0)
+    if groups:
+        result = result.concat(groups, view_ref.dimension)
+    return result, indices
 
 
 def _select_overlap(
@@ -378,7 +435,8 @@ def _select_overlap(
     # Build the dataset for the selected partitions.
     groups: list[dataset.Dataset] = [ds for ds, _ in selected_datasets]
     zds: dataset.Dataset = groups.pop(0)
-    zds = zds.concat(groups, view_ref.dimension)
+    if groups:
+        zds = zds.concat(groups, view_ref.dimension)
 
     return zds, calculate_slice(selected_datasets)
 

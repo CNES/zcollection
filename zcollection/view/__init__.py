@@ -32,9 +32,9 @@ from .detail import (
     _create_zarr_array,
     _deserialize_filters,
     _drop_zarr_zarr,
+    _load_dataset_with_overlap,
     _load_datasets_list,
     _load_one_dataset,
-    _select_overlap,
     _serialize_filters,
     _sync,
     _wrap_update_func,
@@ -696,7 +696,7 @@ class View:
         """
 
         def _wrap(
-            arguments: tuple[dataset.Dataset, str],
+            _partition: str,
             _func: PartitionCallable,
             *_args,
             **_kwargs,
@@ -704,7 +704,7 @@ class View:
             """Wraps the function to apply on the partition.
 
             Args:
-                arguments: The partition scheme and the dataset.
+                _partition: The partition to apply the function on.
                 _func: The function to apply.
                 *_args: The positional arguments to pass to the function.
                 **_kwargs: The keyword arguments to pass to the function.
@@ -712,30 +712,24 @@ class View:
             Returns:
                 The result of the function.
             """
-            zds: dataset.Dataset
-            partition: str
-
-            zds, partition = arguments
+            zds, partition = _load_one_dataset(
+                (self.view_ref.partitioning.parse(_partition), []),
+                base_dir=self.base_dir,
+                delayed=delayed,
+                fs=self.fs,
+                selected_variables=self.view_ref.metadata.select_variables(
+                    selected_variables),
+                view_ref=self.view_ref,
+                variables=self.metadata.select_variables(selected_variables),
+                with_immutable=True)
             return self.view_ref.partitioning.parse(partition), _func(
                 zds, *_args, **_kwargs)
 
         _assert_have_variables(self.metadata)
 
-        client: dask.distributed.Client = dask_utils.get_client()
-        datasets_list = tuple(
-            _load_datasets_list(
-                client=client,
-                base_dir=self.base_dir,
-                delayed=delayed,
-                fs=self.fs,
-                view_ref=self.view_ref,
-                metadata=self.metadata,
-                partitions=self.partitions(filters=filters),
-                selected_variables=selected_variables,
-                with_immutable=True,
-            ))
         bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-            datasets_list, partition_size, npartitions)
+            tuple(self.partitions(filters=filters)), partition_size,
+            npartitions)
         return bag.map(_wrap, func, *args, **kwargs)
 
     def map_overlap(
@@ -794,9 +788,9 @@ class View:
             func, 'partition_info')
 
         def _wrap(
-            arguments: tuple[dataset.Dataset, str],
+            _partition: str,
             _func: PartitionCallable,
-            _datasets_list: tuple[tuple[dataset.Dataset, str]],
+            _partitions: tuple[str, ...],
             _depth: int,
             *_args,
             **_kwargs,
@@ -814,38 +808,31 @@ class View:
             Returns:
                 The result of the function.
             """
-            zds: dataset.Dataset
-            indices: slice
-
-            zds, indices = _select_overlap(arguments, _datasets_list, _depth,
-                                           self.view_ref)
+            zds, indices = _load_dataset_with_overlap(
+                base_dir=self.base_dir,
+                delayed=delayed,
+                depth=_depth,
+                fs=self.fs,
+                metadata=self.metadata,
+                partition=_partition,
+                partitions=_partitions,
+                selected_variables=selected_variables,
+                view_ref=self.view_ref)
 
             if add_partition_info:
                 _kwargs = _kwargs.copy()
                 _kwargs['partition_info'] = (self.view_ref.dimension, indices)
 
             # Finally, apply the function.
-            return (self.view_ref.partitioning.parse(arguments[1]),
+            return (self.view_ref.partitioning.parse(_partition),
                     _func(zds, *_args, **_kwargs))
 
         _assert_have_variables(self.metadata)
 
-        client: dask.distributed.Client = dask_utils.get_client()
-        datasets_list = tuple(
-            _load_datasets_list(
-                client=client,
-                base_dir=self.base_dir,
-                delayed=delayed,
-                fs=self.fs,
-                view_ref=self.view_ref,
-                metadata=self.metadata,
-                partitions=self.partitions(filters=filters),
-                selected_variables=selected_variables,
-                with_immutable=True,
-            ))
+        partitions = tuple(self.partitions(filters=filters))
         bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-            datasets_list, partition_size, npartitions)
-        return bag.map(_wrap, func, datasets_list, depth, *args, **kwargs)
+            partitions, partition_size, npartitions)
+        return bag.map(_wrap, func, partitions, depth, *args, **kwargs)
 
     def is_synced(self, distributed: bool = True) -> bool:
         """Check if the view is synchronized with the underlying collection.
