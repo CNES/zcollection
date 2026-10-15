@@ -178,13 +178,12 @@ class GroupedSequence(Sequence):
 
     A sequence is a combination of variables constituting unique monotonic keys.
 
-    Args
+    Args:
         variables: Sequence of variables on which to partition.
         size: Number of values of the last variable contained in each partition.
             The size must be at least 2 (1 sized sequence should use the
             Sequence partitioning scheme).
-        start: Starting value of the grouped variable.
-            Partitioning every(Default to 0).
+        start: The value the groups are aligned on. Defaults to 0.
         dtype: An optional sequence of strings representing the data type used
             to store variable values in a binary representation without data
             loss. Must be one of the following allowed data types: ``int8``,

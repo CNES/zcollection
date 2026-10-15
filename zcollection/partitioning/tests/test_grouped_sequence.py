@@ -174,6 +174,21 @@ def test_pickle(variables, dtype, part_size) -> None:
     assert other.start == 7
 
 
+@pytest.mark.parametrize(('start', 'expected'), [(0, [0, 5, 10, 15]),
+                                                 (3, [-2, 3, 8, 13])])
+def test_start_aligns_the_groups(start, expected) -> None:
+    """The groups are the multiples of the size offset by ``start``."""
+    partitioning = GroupedSequence(variables=('v1', 'v2'), size=5, start=start)
+    values = {
+        'v1': np.ones(4, dtype='int64'),
+        'v2': np.array([2, 7, 12, 17]),
+    }
+
+    groups = [int(fields[1][1]) for fields, _ in partitioning._split(values)]
+
+    assert groups == expected
+
+
 @pytest.mark.parametrize('start', [-10, 0, 10, 100])
 def test_splits(start):
     """Test the _split method with different sets of parameters."""
