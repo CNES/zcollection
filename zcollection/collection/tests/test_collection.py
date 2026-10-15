@@ -454,6 +454,37 @@ def test_list_partitions(
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
+def test_selected_partitions_on_load_and_update(
+    dask_client,  # noqa: F811
+    arg,
+    request,
+) -> None:
+    """``selected_partitions`` bounds what is read and what is written."""
+    tested_fs = request.getfixturevalue(arg)
+    zcol = create_test_collection(tested_fs, delayed=False, distributed=False)
+    one_day = ['year=2000/month=01/day=01']
+
+    part = zcol.load(selected_partitions=one_day, distributed=False)
+    whole = zcol.load(distributed=False)
+    assert part is not None
+    assert whole is not None
+    assert part.dimensions['num_lines'] < whole.dimensions['num_lines']
+
+    def mark(zds: dataset.Dataset):
+        """Mark every value of the partition."""
+        return {'var2': zds.variables['var2'].values * 0 - 1}
+
+    zcol.update(mark, selected_partitions=one_day, distributed=False)
+
+    part = zcol.load(selected_partitions=one_day, distributed=False)
+    whole = zcol.load(distributed=False)
+    assert part is not None
+    assert whole is not None
+    assert numpy.all(part.variables['var2'].values == -1)
+    assert not numpy.all(whole.variables['var2'].values == -1)
+
+
+@pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('distributed', [False, True])
 def test_drop_partitions(
     dask_client,  # noqa: F811
