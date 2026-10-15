@@ -41,6 +41,11 @@ Behaviour
 * ``update`` passes the parameters it is given through (PR #15, issue #12).
 * ``view.sync()`` honours ``filters`` (issue #24).
 
+Removed
+^^^^^^^
+* ``new_variable``. ``Variable.duplicate`` builds a variable from another
+  one, with the data and the properties it is given.
+
 Renamed
 ^^^^^^^
 * ``ReadOnlyCollection.immutable`` is named ``immutable_path``.

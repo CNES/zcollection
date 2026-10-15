@@ -758,10 +758,10 @@ def test_update_on_a_single_partition(local_fs) -> None:  # noqa: F811
 def test_map_takes_the_scheduler_of_its_caller(
         local_fs,  # noqa: F811
         monkeypatch) -> None:
-    """Mapping over a view reaches for no Dask client."""
+    """Mapping over a view asks for no Dask client."""
 
     def refuse() -> None:
-        """Stand for the client the view must not ask for."""
+        """Raise when a Dask client is requested."""
         raise AssertionError('a Dask client was requested')
 
     zview = _view_on_one_partition(local_fs)
