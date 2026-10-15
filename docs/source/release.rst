@@ -1,6 +1,63 @@
 Release notes
 =============
 
+2026.x.0
+--------
+
+Features
+^^^^^^^^
+* A collection is usable without a Dask cluster (PR #16).
+* ``load`` and ``update`` take a ``selected_partitions`` parameter.
+* ``View.update`` takes a ``variables`` parameter (PR #14, issue #13).
+* ``GroupedSequence`` partitioning, with the starting value of the group as a
+  parameter.
+* Immutable variables are insertable and updatable, and a collection holding
+  only immutable variables is readable.
+* A view holding no declared variable reads the collection it references.
+* The metadata of a collection and of a dataset carry the dimensions, and the
+  configuration of a partitioning carries the data types.
+* A variable added by the system is marked as a filler.
+
+Storage
+^^^^^^^
+* Collections are written in the Zarr 3 format. A group and an array each hold
+  their metadata in a ``zarr.json``, and a chunk is held under the ``c``
+  prefix.
+* ``.zcollection`` carries the version of the layout it is written in. A
+  collection written in a newer one is refused.
+* A collection written by an earlier release opens read only.
+  ``zcollection.update_deprecated_collection`` rewrites its configuration,
+  keeping the one it replaces, and makes it writable.
+* The value marking an absent measure is held in the ``_FillValue`` attribute
+  of an array.
+* The codecs a variable names with the classes of numcodecs are translated into
+  the ones Zarr 3 builds an array from.
+
+Behaviour
+^^^^^^^^^
+* Writing a partition stops with an error naming the variables the store does
+  not list under it.
+* Concatenating datasets that do not hold the same variables stops with an
+  error naming the variables in disagreement.
+* A view reads the dimensions of a partition whatever wrote it.
+* The reference collection of a view opens read only.
+* Moving a partition on an object store names the keys it holds.
+* ``update`` passes the parameters it is given through (PR #15, issue #12).
+* ``view.sync()`` honours ``filters`` (issue #24).
+
+Requirements
+^^^^^^^^^^^^
+* Python 3.12 or later.
+* Zarr 3.4 or later. The bounds on ``fsspec``, ``s3fs`` and ``numcodecs`` are
+  lifted.
+
+2026.6.0
+--------
+* A directory that does not match the partitioning scheme is skipped when the
+  partitions of a collection are listed.
+* Masked arrays are written with the versions of Dask that follow NumPy 2.
+* The package publishes from a checkout that carries its tags.
+
 2024.2.0
 --------
 * Refactor merging module and improve temporary directory handling.
