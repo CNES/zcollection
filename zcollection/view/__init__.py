@@ -305,25 +305,24 @@ class View:
             for path in self.partitions()
         }
 
-        if len(existing_partitions) == 0:
+        if existing_partitions:
+            args = filter(lambda item: item[0] in existing_partitions,
+                          ref_zcol.iterate_on_records())
+
+            # Attributes are not stored at the variable's level
+            variable = variable.set_for_insertion()
+
+            try:
+                if distributed:
+                    self._add_variable_distributed(variable, args)
+                else:
+                    self._add_variable(variable, args)
+
+            except Exception:
+                self.drop_variable(variable.name, distributed, True)
+                raise
+        else:
             _LOGGER.info('No partitions found, skipping variable creation')
-            return
-
-        args = filter(lambda item: item[0] in existing_partitions,
-                      ref_zcol.iterate_on_records())
-
-        # Attributes are not stored at the variable's level
-        variable = variable.set_for_insertion()
-
-        try:
-            if distributed:
-                self._add_variable_distributed(variable, args)
-            else:
-                self._add_variable(variable, args)
-
-        except Exception:
-            self.drop_variable(variable.name, distributed, True)
-            raise
 
         self._write_config()
 

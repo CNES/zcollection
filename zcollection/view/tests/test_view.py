@@ -694,6 +694,9 @@ def test_view_with_empty_collection(fs, request, caplog):
     assert 'skipping variable creation' in caplog.text
 
     assert var.name in zview.metadata.variables
+    reopened = convenience.open_view(str(tested_fs.view),
+                                     filesystem=tested_fs.fs)
+    assert var.name in reopened.metadata.variables
 
     def update(zds, varname):
         """Update function used for this test."""
