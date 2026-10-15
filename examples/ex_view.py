@@ -187,8 +187,8 @@ assert zds is not None
 # We create a new time variable, resize the dataset and insert the new time
 # values.
 time: numpy.ndarray = numpy.arange(
-    numpy.datetime64('2000-06-01T00:00:00'),
-    numpy.datetime64('2000-06-30T23:59:59'),
+    numpy.datetime64('2000-06-01T00:00:00', 'ns'),
+    numpy.datetime64('2000-06-30T23:59:59', 'ns'),
     numpy.timedelta64(1, 'h'),
 )
 zds = resize(zds, 'num_lines', len(time))
