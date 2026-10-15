@@ -23,7 +23,7 @@ from .convenience import (
 )
 from .dataset import Dataset, Expression
 from .meta import Attribute
-from .variable import Array, DelayedArray, Variable, new_variable
+from .variable import Array, DelayedArray, Variable
 from .version import __version__
 from .view import View, ViewReference, ViewUpdateCallable
 
@@ -48,7 +48,6 @@ __all__ = (
     'create_collection',
     'create_view',
     'merging',
-    'new_variable',
     'open_collection',
     'open_view',
     'partitioning',

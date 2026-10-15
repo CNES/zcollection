@@ -27,7 +27,7 @@ import xarray.conventions
 from . import meta, representation
 from .compressed_array import CompressedArray
 from .meta import BLOCK_SIZE_LIMIT, Attribute, Dimension, DimensionType
-from .variable import Array, DelayedArray, Variable, new_variable
+from .variable import Array, DelayedArray, Variable
 
 if TYPE_CHECKING:
     import types
@@ -99,14 +99,7 @@ def _duplicate_delayed_array(var: DelayedArray,
     Returns:
         The duplicated variable
     """
-    return new_variable(type(var),
-                        name=var.name,
-                        array=data,
-                        dimensions=var.dimensions,
-                        attrs=var.attrs,
-                        compressor=var.compressor,
-                        fill_value=var.fill_value,
-                        filters=var.filters)
+    return var.duplicate(data)
 
 
 def _duplicate_array(var: Array, data: NDArray) -> Array:
@@ -119,14 +112,7 @@ def _duplicate_array(var: Array, data: NDArray) -> Array:
     Returns:
         The duplicated variable
     """
-    return new_variable(type(var),
-                        name=var.name,
-                        array=data,
-                        dimensions=var.dimensions,
-                        attrs=var.attrs,
-                        compressor=var.compressor,
-                        fill_value=var.fill_value,
-                        filters=var.filters)
+    return var.duplicate(data)
 
 
 def _delete_delayed_vars(self: Dataset, indexer: slice | Sequence[int],

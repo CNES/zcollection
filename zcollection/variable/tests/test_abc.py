@@ -7,10 +7,12 @@ Testing interface for the variable module
 =========================================
 """
 import dask
+import numcodecs
 import numpy
 import pytest
 import zarr
 
+from ...meta import Attribute
 from ..abc import FILL_VALUE, not_equal
 from ..array import Array
 from ..delayed_array import DelayedArray
@@ -129,3 +131,101 @@ def test_from_zarr_prefers_the_attribute_over_the_array(cls,
     variable = cls.from_zarr(array, 'var')
 
     assert variable.fill_value == -999.0
+
+
+#: The properties a variable carries from one rebuild to the next.
+PROPERTIES = ('name', 'dimensions', 'attrs', 'compressor', 'fill_value',
+              'filler', 'filters')
+
+
+def make_variable(cls):
+    """Create a variable whose every property holds a distinctive value."""
+    return cls(name='var',
+               data=numpy.arange(8.0).reshape(2, 4),
+               dimensions=('num_lines', 'num_pixels'),
+               attrs=(Attribute('units', 'm'), ),
+               compressor=numcodecs.Blosc(),
+               fill_value=-999.0,
+               filler=True,
+               filters=(numcodecs.Delta('float64'), ))
+
+
+def properties(variable, **changed):
+    """Return the properties of a variable, with the given ones replaced."""
+    return {
+        name: changed.get(name, getattr(variable, name))
+        for name in PROPERTIES
+    }
+
+
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+def test_isel_keeps_the_properties(cls) -> None:
+    """Selecting along a dimension keeps every property."""
+    variable = make_variable(cls)
+
+    other = variable.isel((slice(0, 1), slice(None)))
+
+    assert properties(other) == properties(variable)
+    assert other.shape == (1, 4)
+
+
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+def test_rename_keeps_the_other_properties(cls) -> None:
+    """Renaming a variable keeps every other property."""
+    variable = make_variable(cls)
+
+    other = variable.rename('other')
+
+    assert properties(other) == properties(variable, name='other')
+
+
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+def test_concat_keeps_the_properties(cls) -> None:
+    """Concatenating a variable with itself keeps every property."""
+    variable = make_variable(cls)
+
+    other = variable.concat(variable, 'num_lines')
+
+    assert properties(other) == properties(variable)
+    assert other.shape == (4, 4)
+
+
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+def test_concat_outside_the_dimensions_keeps_the_properties(cls) -> None:
+    """A dimension the variable does not span leaves it as it is."""
+    variable = make_variable(cls)
+
+    other = variable.concat(variable, 'elsewhere')
+
+    assert properties(other) == properties(variable)
+    assert other.shape == variable.shape
+
+
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+def test_duplicate_keeps_the_properties(cls) -> None:
+    """A variable built from the data of another keeps every property."""
+    variable = make_variable(cls)
+
+    other = variable.duplicate(numpy.ones((2, 4)))
+
+    assert properties(other) == properties(variable)
+
+
+def test_rechunk_keeps_the_properties() -> None:
+    """Rechunking a delayed variable keeps every property."""
+    variable = make_variable(DelayedArray)
+
+    other = variable.rechunk(chunks=(1, 2))
+
+    assert properties(other) == properties(variable)
+
+
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+def test_concat_marks_what_holds_a_filled_variable(cls) -> None:
+    """A concatenation is filled when one of its variables is."""
+    filled = make_variable(cls)
+    measured = filled.duplicate(filler=False)
+
+    assert filled.concat(measured, 'num_lines').filler is True
+    assert measured.concat(filled, 'num_lines').filler is True
+    assert measured.concat(measured, 'num_lines').filler is False

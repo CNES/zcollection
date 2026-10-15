@@ -495,14 +495,7 @@ class Collection(ReadOnlyCollection):
                 f"('{variable.fill_value}' instead of '{var_meta.fill_value}')"
             )
 
-        return zvariable.new_variable(type(variable),
-                                      name=variable.name,
-                                      array=variable.array,
-                                      dimensions=variable.dimensions,
-                                      attrs=(),
-                                      compressor=variable.compressor,
-                                      fill_value=variable.fill_value,
-                                      filters=variable.filters)
+        return variable.duplicate(attrs=())
 
     def _insert_distributed(self, ds: xarray.Dataset | dataset.Dataset,
                             partitions: tuple[PartitionSlice,

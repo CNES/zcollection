@@ -22,7 +22,6 @@ import numpy
 from .abc import (
     Variable,
     concat,
-    new_variable,
     not_equal,
     read_attributes,
     read_compressor,
@@ -314,14 +313,13 @@ class DelayedArray(Variable):
 
         # This call is similar to the one in array.py, but it's not the same
         # behaviour.
-        return new_variable(cls,
-                            name=name,
-                            array=data,
-                            dimensions=read_dimensions(array),
-                            attrs=attrs,
-                            compressor=read_compressor(array),
-                            fill_value=fill_value,
-                            filters=tuple(array.filters or ()))
+        return cls(name,
+                   data,
+                   read_dimensions(array),
+                   attrs=attrs,
+                   compressor=read_compressor(array),
+                   fill_value=fill_value,
+                   filters=tuple(array.filters or ()))
 
     def concat(self, other: DelayedArray | Sequence[DelayedArray],
                dim: str) -> DelayedArray:
@@ -363,14 +361,7 @@ class DelayedArray(Variable):
         """
 
         # False positive with the method concat.
-        return new_variable(type(self),
-                            name=self.name,
-                            array=self.array.rechunk(**kwargs),
-                            dimensions=self.dimensions,
-                            attrs=self.attrs,
-                            compressor=self.compressor,
-                            fill_value=self.fill_value,
-                            filters=self.filters)
+        return self.duplicate(self.array.rechunk(**kwargs))
 
     def to_dask_array(self):
         """Return the underlying dask array.
@@ -423,14 +414,7 @@ class DelayedArray(Variable):
             array = dask.array.core.from_array(array)
 
         # False positive with the method metadata defined in the base class.
-        return new_variable(type(self),
-                            name=self.name,
-                            array=array,
-                            dimensions=self.dimensions,
-                            attrs=self.attrs,
-                            compressor=self.compressor,
-                            fill_value=self.fill_value,
-                            filters=self.filters)
+        return self.duplicate(array)
 
     def __dask_postcompute__(self) -> tuple:
         """Return the finalizer and extra arguments to convert the computed

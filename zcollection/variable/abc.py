@@ -46,22 +46,6 @@ I = TypeVar('I', bound='IVariable')
 T = TypeVar('T', bound='Variable')
 
 
-def new_variable(cls: type[I], **kwargs: Any) -> I:
-    """Create a new variable.
-
-    Args:
-        cls: Variable constructor.
-        kwargs: Keyword arguments passed to the constructor.
-    """
-    self: I = cls.__new__(cls)
-    # We use the set notation to evaluate the generator
-    _ = {
-        setattr(self, key, value)  # type: ignore[func-returns-value]
-        for key, value in kwargs.items()
-    }
-    return self
-
-
 def concat(
     self: T,
     other: T | Sequence[T],
@@ -91,31 +75,18 @@ def concat(
     if not all(isinstance(item, type(self)) for item in other):
         raise ValueError(f'other must be a sequence of {type(self)}')
 
+    # A concatenation is filled when one of its variables is.
+    filler: bool = any(item.filler for item in (self, *other))
     try:
         axis: int = self.dimensions.index(dim)
-        return new_variable(
-            type(self),
-            name=self.name,
-            array=concatenate((self.array, *(item.array for item in other)),
-                              axis=axis),
-            dimensions=self.dimensions,
-            attrs=self.attrs,
-            compressor=self.compressor,
-            fill_value=self.fill_value,
-            filters=self.filters,
-        )
+        return self.duplicate(concatenate(
+            (self.array, *(item.array for item in other)), axis=axis),
+                              filler=filler)
     except ValueError:
         # If the concatenation dimension is not within the dimensions of the
         # variable, then the original variable is returned (i.e.
         # concatenation is not necessary).
-        return new_variable(type(self),
-                            name=self.name,
-                            array=self.array,
-                            dimensions=self.dimensions,
-                            attrs=self.attrs,
-                            compressor=self.compressor,
-                            fill_value=self.fill_value,
-                            filters=self.filters)
+        return self.duplicate(filler=filler)
 
 
 def read_attributes(array: Any) -> tuple[tuple[meta.Attribute, ...], Any]:
@@ -436,28 +407,32 @@ class Variable(IVariable, abc.ABC):
         """Return the number of bytes used by the variable."""
         return self.size * self.dtype.itemsize
 
-    def duplicate(self, data: Any) -> Self:
-        """Create a new variable from the properties of this instance and the
-        data provided.
+    def duplicate(self, data: Any = None, **properties: Any) -> Self:
+        """Create a new variable from the properties of this instance.
 
         Args:
-            data: Variable data.
+            data: Variable data. Defaults to the data of this instance.
+            **properties: The properties the new variable holds.
 
         Returns:
             New variable.
 
         Raises:
-            ValueError: If the shape of the data does not match the shape of
-                the stored data.
+            TypeError: If a variable holds no property of that name.
+            ValueError: If the shape of the data does not match the
+                dimensions of the new variable.
         """
-        result: Self = type(self)(self.name,
-                                  data,
-                                  self.dimensions,
-                                  attrs=self.attrs,
-                                  compressor=self.compressor,
-                                  fill_value=self.fill_value,
-                                  filters=self.filters)
-        if len(result.shape) != len(self.dimensions):
+        kwargs: dict[str, Any] = {
+            name: properties.pop(name, getattr(self, name))
+            for name in self.__slots__ if name != 'array'
+        }
+        if properties:
+            raise TypeError('A variable holds no property named '
+                            f'{", ".join(sorted(properties))}')
+        result: Self = type(self)(kwargs.pop('name'),
+                                  self.array if data is None else data,
+                                  kwargs.pop('dimensions'), **kwargs)
+        if len(result.shape) != len(result.dimensions):
             raise ValueError('Data shape does not match variable dimensions')
         return result
 
@@ -471,14 +446,7 @@ class Variable(IVariable, abc.ABC):
         Returns:
             The new variable
         """
-        return new_variable(type(self),
-                            name=self.name,
-                            array=self.array[key],
-                            dimensions=self.dimensions,
-                            attrs=self.attrs,
-                            compressor=self.compressor,
-                            fill_value=self.fill_value,
-                            filters=self.filters)
+        return self.duplicate(self.array[key])
 
     def rename(self, name: str) -> Self:
         """Rename the variable.
@@ -489,14 +457,7 @@ class Variable(IVariable, abc.ABC):
         Returns:
             The variable.
         """
-        return new_variable(type(self),
-                            name=name,
-                            array=self.array,
-                            dimensions=self.dimensions,
-                            attrs=self.attrs,
-                            compressor=self.compressor,
-                            fill_value=self.fill_value,
-                            filters=self.filters)
+        return self.duplicate(name=name)
 
     def fill_attrs(self, var: meta.Variable) -> None:
         """Fill the variable attributes using the provided metadata.

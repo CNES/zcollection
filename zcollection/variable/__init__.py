@@ -7,8 +7,8 @@ Variables of a dataset.
 =======================
 """
 from ..meta import Attribute
-from .abc import Variable, new_variable
+from .abc import Variable
 from .array import Array
 from .delayed_array import DelayedArray
 
-__all__ = ('Array', 'Attribute', 'DelayedArray', 'Variable', 'new_variable')
+__all__ = ('Array', 'Attribute', 'DelayedArray', 'Variable')

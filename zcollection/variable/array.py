@@ -17,7 +17,6 @@ import numpy
 from .abc import (
     Variable,
     concat,
-    new_variable,
     not_equal,
     read_attributes,
     read_compressor,
@@ -194,14 +193,13 @@ class Array(Variable):
             The variable
         """
         attrs, fill_value = read_attributes(array)
-        return new_variable(cls,
-                            name=name,
-                            array=array[...],
-                            dimensions=read_dimensions(array),
-                            attrs=attrs,
-                            compressor=read_compressor(array),
-                            fill_value=fill_value,
-                            filters=tuple(array.filters or ()))
+        return cls(name,
+                   array[...],
+                   read_dimensions(array),
+                   attrs=attrs,
+                   compressor=read_compressor(array),
+                   fill_value=fill_value,
+                   filters=tuple(array.filters or ()))
 
     def concat(self, other: Array | Sequence[Array], dim: str) -> Array:
         """Concatenate this variable with another variable or a list of
