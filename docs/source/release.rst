@@ -16,7 +16,6 @@ Features
 * A view holding no declared variable reads the collection it references.
 * The metadata of a collection and of a dataset carry the dimensions, and the
   configuration of a partitioning carries the data types.
-* A variable added by the system is marked as a filler.
 
 Storage
 ^^^^^^^
@@ -39,9 +38,6 @@ Behaviour
   not list under it.
 * Concatenating datasets that do not hold the same variables stops with an
   error naming the variables in disagreement.
-* A view reads the dimensions of a partition whatever wrote it.
-* The reference collection of a view opens read only.
-* Moving a partition on an object store names the keys it holds.
 * ``update`` passes the parameters it is given through (PR #15, issue #12).
 * ``view.sync()`` honours ``filters`` (issue #24).
 
