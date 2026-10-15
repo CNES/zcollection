@@ -45,6 +45,13 @@ Behaviour
 * ``update`` passes the parameters it is given through (PR #15, issue #12).
 * ``view.sync()`` honours ``filters`` (issue #24).
 
+Renamed
+^^^^^^^
+* ``ReadOnlyCollection.immutable`` is named ``immutable_path``.
+* ``Dataset.dims_chunk`` is named ``dim_chunks``, and holds a mapping of a
+  dimension name to the size of its chunks. It was a property returning a
+  sequence of ``Dimension``.
+
 Requirements
 ^^^^^^^^^^^^
 * Python 3.12 or later.
