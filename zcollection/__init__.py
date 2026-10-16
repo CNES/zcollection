@@ -20,6 +20,7 @@ from .convenience import (
     open_collection,
     open_view,
     update_deprecated_collection,
+    update_deprecated_view,
 )
 from .dataset import Dataset, Expression
 from .meta import Attribute
@@ -52,5 +53,6 @@ __all__ = (
     'open_view',
     'partitioning',
     'update_deprecated_collection',
+    'update_deprecated_view',
     'version',
 )

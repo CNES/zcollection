@@ -27,6 +27,8 @@ Storage
 * A collection written by an earlier release opens read only.
   ``zcollection.update_deprecated_collection`` rewrites its configuration,
   keeping the one it replaces, and makes it writable.
+  ``zcollection.update_deprecated_view`` does the same for a view, and is
+  reachable from the package.
 * The value marking an absent measure is held in the ``_FillValue`` attribute
   of an array.
 * The codecs a variable names with the classes of numcodecs are translated into

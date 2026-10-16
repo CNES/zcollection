@@ -79,3 +79,5 @@ Convenience functions
   zcollection.create_view
   zcollection.open_collection
   zcollection.open_view
+  zcollection.update_deprecated_collection
+  zcollection.update_deprecated_view
