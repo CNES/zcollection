@@ -39,18 +39,27 @@ IMPLEMENTATIONS = [Array, DelayedArray]
 #: The versions of Zarr a collection is read from.
 FORMATS = [2, 3]
 
+#: Fill values whose encoded form differs from the value itself.
+ENCODED_FILL_VALUES = [
+    ('float64', 'NaN', numpy.float64('nan')),
+    ('float64', 'Infinity', numpy.float64('inf')),
+    ('float64', '-Infinity', numpy.float64('-inf')),
+    ('datetime64[s]', 0, numpy.datetime64('1970-01-01', 's')),
+    ('timedelta64[s]', 3, numpy.timedelta64(3, 's')),
+]
 
-def make_zarr_array(fill_value, attributes, zarr_format=3):
+
+def make_zarr_array(fill_value, attributes, zarr_format=3, dtype='float64'):
     """Create a Zarr array carrying the given attributes."""
     named = {'dimension_names': ('num_lines', )} if zarr_format == 3 else {}
     array = zarr.create_array(store={},
                               shape=(4, ),
-                              dtype='float64',
+                              dtype=dtype,
                               fill_value=fill_value,
                               zarr_format=zarr_format,
                               attributes=dict(attributes),
                               **named)
-    array[...] = numpy.arange(4, dtype='float64')
+    array[...] = numpy.arange(4).astype(dtype)
     if zarr_format == 2:
         array.attrs[DIMENSIONS] = ['num_lines']
     return array
@@ -229,3 +238,15 @@ def test_concat_marks_what_holds_a_filled_variable(cls) -> None:
     assert filled.concat(measured, 'num_lines').filler is True
     assert measured.concat(filled, 'num_lines').filler is True
     assert measured.concat(measured, 'num_lines').filler is False
+
+
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+@pytest.mark.parametrize(('dtype', 'encoded', 'expected'), ENCODED_FILL_VALUES)
+def test_from_zarr_decodes_the_declared_fill_value(cls, dtype, encoded,
+                                                   expected) -> None:
+    """The attribute holds the encoded form of the value marking absence."""
+    array = make_zarr_array(None, {FILL_VALUE: encoded}, dtype=dtype)
+
+    variable = cls.from_zarr(array, 'var')
+
+    assert not_equal(variable.fill_value, expected) is False

@@ -17,6 +17,7 @@ import pytest
 import zarr
 
 from .. import dataset, storage, store, sync
+from ..variable.abc import not_equal
 from .cluster import dask_client, dask_cluster  # noqa: F401
 from .fs import local_fs  # noqa: F401
 
@@ -408,3 +409,33 @@ def test_variable_attributes_fill_value(
         assert storage.FILL_VALUE not in attrs
     else:
         assert attrs[storage.FILL_VALUE] == expected
+
+
+@pytest.mark.parametrize(('dtype', 'fill_value'), [
+    ('float64', numpy.nan),
+    ('float64', numpy.inf),
+    ('float64', -999.0),
+    ('datetime64[s]', numpy.datetime64('1970-01-01', 's')),
+])
+def test_a_written_variable_reads_back_its_fill_value(
+    local_fs,  # noqa: F811
+    dtype,
+    fill_value,
+) -> None:
+    """A variable declares the value it was written with.
+
+    The attribute holding it is written encoded, and the encoding of a NaN,
+    of an infinity and of a date is not the value itself.
+    """
+    data = numpy.zeros((4, ), dtype=dtype)
+    data[0] = fill_value
+    var = dataset.DelayedArray(name='var',
+                               data=data,
+                               dimensions=('x', ),
+                               fill_value=fill_value)
+    storage.write_zarr_variable(('var', var), str(local_fs.root), local_fs.fs)
+
+    group = zarr.open_group(local_fs.get_mapper(str(local_fs.root)))
+    read = dataset.DelayedArray.from_zarr(group['var'], 'var')
+
+    assert not_equal(read.fill_value, fill_value) is False

@@ -152,7 +152,9 @@ class Variable:
         dimensions: Names of the dimensions of the variable. Defaults to None.
         attrs: Attributes of the variable. Defaults to None.
         compressor: Compression codec for the variable. Defaults to None.
-        fill_value: Fill value for the variable. Defaults to None.
+        fill_value: Value marking an absent measure. Defaults to None.
+            Reading a variable masks the elements equal to it; a NaN or
+            a NaT equals nothing and leaves the result unmasked.
         filters: Filters for the variable. Defaults to None.
 
     Warning:
