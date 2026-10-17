@@ -471,7 +471,11 @@ class Collection(ReadOnlyCollection):
     def _set_var_for_insertion(self,
                                variable: variable_abc.T) -> variable_abc.T:
         """Create a new variable ready to be inserted into a collection.
-        Variable's dtype and fill_value are checked for consistency.
+
+        The data type and the value marking absence are checked against the
+        metadata of the collection. The attributes, the compressor and the
+        filters are taken from it: a collection stores and names its
+        variables the same way in every partition.
 
         Args:
             variable: The variable to insert.
@@ -495,7 +499,9 @@ class Collection(ReadOnlyCollection):
                 f"('{variable.fill_value}' instead of '{var_meta.fill_value}')"
             )
 
-        return variable.duplicate(attrs=())
+        return variable.duplicate(attrs=(),
+                                  compressor=var_meta.compressor,
+                                  filters=var_meta.filters)
 
     def _insert_distributed(self, ds: xarray.Dataset | dataset.Dataset,
                             partitions: tuple[PartitionSlice,

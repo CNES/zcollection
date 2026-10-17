@@ -19,6 +19,7 @@ import multiprocessing
 import dask.array.core
 import dask.distributed
 import fsspec
+import numcodecs
 import numpy
 import pytest
 
@@ -1751,3 +1752,37 @@ def test_with_empty_collection(fs, request):
 
     with pytest.warns(Warning, match='update an empty collection'):
         zcol.update(update, varname=var.name, distributed=False)
+
+
+def test_insert_writes_the_declared_encoding(
+    dask_client,  # noqa: F811
+    request,
+) -> None:
+    """A partition is written with the codecs the collection declares.
+
+    The compressor and the filters belong to the collection, so a dataset
+    inserted without them is stored the same way as one carrying them.
+    """
+    tested_fs = request.getfixturevalue('local_fs')
+    zds = next(create_test_dataset(delayed=False))
+    declared = copy.deepcopy(zds)
+    declared['var1'].compressor = numcodecs.Blosc(cname='zstd', clevel=5)
+    declared['var1'].filters = (numcodecs.FixedScaleOffset(0, 10, 'i8',
+                                                           'i2'), )
+
+    zcol = collection.Collection(axis='time',
+                                 ds=declared.metadata(),
+                                 partition_handler=partitioning.Date(
+                                     ('time', ), 'D'),
+                                 partition_base_dir=str(tested_fs.collection),
+                                 filesystem=tested_fs.fs)
+    # The inserted variables carry neither the compressor nor the filters.
+    zcol.insert(zds)
+
+    partition = next(iter(zcol.partitions()))
+    path = tested_fs.fs.sep.join((partition, 'var1', 'zarr.json'))
+    with tested_fs.fs.open(path) as stream:
+        codecs = [item['name'] for item in json.load(stream)['codecs']]
+
+    assert 'blosc' in codecs
+    assert 'scale_offset' in codecs
