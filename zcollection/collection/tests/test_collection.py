@@ -1763,8 +1763,8 @@ def test_insert_writes_the_declared_encoding(
 ) -> None:
     """A partition is written with the codecs the collection declares.
 
-    The compressor and the filters belong to the collection, so a dataset
-    inserted without them is stored the same way as one carrying them.
+    The compressor and the filters belong to the collection, so every
+    partition is stored with them.
     """
     tested_fs = request.getfixturevalue('local_fs')
     zds = next(create_test_dataset(delayed=False))
@@ -1779,7 +1779,7 @@ def test_insert_writes_the_declared_encoding(
                                      ('time', ), 'D'),
                                  partition_base_dir=str(tested_fs.collection),
                                  filesystem=tested_fs.fs)
-    # The inserted variables carry neither the compressor nor the filters.
+    # zds carries values alone; declared holds the codecs.
     zcol.insert(zds)
 
     partition = next(iter(zcol.partitions()))
@@ -1822,7 +1822,7 @@ def test_load_a_selection_that_matches_no_partition(
 ) -> None:
     """Naming the partitions to read and matching none of them reads nothing.
 
-    The immutable variables of the collection are not that answer.
+    The collection holds an immutable variable.
     """
     tested_fs = request.getfixturevalue('local_fs')
     reference = next(create_test_dataset(delayed=False))

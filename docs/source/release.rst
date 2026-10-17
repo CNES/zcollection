@@ -36,6 +36,9 @@ Storage
 
 Behaviour
 ^^^^^^^^^
+* A partition is written with the compressor, the filters and the value
+  marking absence the collection declares for each of its variables.
+* The variables of a dataset read from a collection are ordered by name.
 * Writing a partition stops with an error naming the variables the store does
   not list under it.
 * Concatenating datasets that do not hold the same variables stops with an
