@@ -1178,6 +1178,9 @@ def test_insert_invalid_variable(
     # Fixing dtype
     zds['var1'].array = zds['var1'].array.astype('int8')
 
+    # A variable naming a value the collection does not declare is refused.
+    zds['var1'].fill_value = 20
+
     with pytest.raises(ValueError, match='has invalid fill_value'):
         zcol.insert(zds)
 
@@ -1786,3 +1789,28 @@ def test_insert_writes_the_declared_encoding(
 
     assert 'blosc' in codecs
     assert 'scale_offset' in codecs
+
+
+def test_insert_takes_the_declared_fill_value(
+    dask_client,  # noqa: F811
+    request,
+) -> None:
+    """A variable naming no value marking absence takes the declared one."""
+    tested_fs = request.getfixturevalue('local_fs')
+    zds = next(create_test_dataset(delayed=False))
+    declared = copy.deepcopy(zds)
+    declared['var1'].fill_value = 10
+
+    zcol = collection.Collection(axis='time',
+                                 ds=declared.metadata(),
+                                 partition_handler=partitioning.Date(
+                                     ('time', ), 'D'),
+                                 partition_base_dir=str(tested_fs.collection),
+                                 filesystem=tested_fs.fs)
+
+    assert zds['var1'].fill_value is None
+    zcol.insert(zds)
+
+    loaded = zcol.load()
+    assert loaded is not None
+    assert loaded['var1'].fill_value == 10

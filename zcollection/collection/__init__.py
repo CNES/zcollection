@@ -472,10 +472,11 @@ class Collection(ReadOnlyCollection):
                                variable: variable_abc.T) -> variable_abc.T:
         """Create a new variable ready to be inserted into a collection.
 
-        The data type and the value marking absence are checked against the
-        metadata of the collection. The attributes, the compressor and the
-        filters are taken from it: a collection stores and names its
-        variables the same way in every partition.
+        The data type is checked against the metadata of the collection, and
+        so is the value marking absence when the variable names one. The
+        attributes, the compressor, the filters and the value marking
+        absence are taken from the metadata: a collection stores and names
+        its variables the same way in every partition.
 
         Args:
             variable: The variable to insert.
@@ -493,7 +494,8 @@ class Collection(ReadOnlyCollection):
                 f"Variable '{variable.name}' has invalid dtype "
                 f"('{variable.dtype}' instead of '{var_meta.dtype}')")
 
-        if zvariable.abc.not_equal(variable.fill_value, var_meta.fill_value):
+        if variable.fill_value is not None and zvariable.abc.not_equal(
+                variable.fill_value, var_meta.fill_value):
             raise ValueError(
                 f"Variable '{variable.name}' has invalid fill_value "
                 f"('{variable.fill_value}' instead of '{var_meta.fill_value}')"
@@ -501,6 +503,7 @@ class Collection(ReadOnlyCollection):
 
         return variable.duplicate(attrs=(),
                                   compressor=var_meta.compressor,
+                                  fill_value=var_meta.fill_value,
                                   filters=var_meta.filters)
 
     def _insert_distributed(self, ds: xarray.Dataset | dataset.Dataset,
