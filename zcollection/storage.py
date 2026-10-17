@@ -357,7 +357,7 @@ def open_zarr_group(
 
     Returns:
         The Zarr group stored in the partition, with the specified variables
-        and attributes.
+        and attributes. Its variables are ordered by name.
     """
     _LOGGER.debug('Opening Zarr group %r', dirname)
     group = store.open_group(fs, dirname)
@@ -369,7 +369,7 @@ def open_zarr_group(
         open_zarr_array(
             group[name],  # type: ignore[arg-type]
             name,
-            delayed=delayed) for name in selected_variables
+            delayed=delayed) for name in sorted(selected_variables)
     ]
 
     return dataset.Dataset(

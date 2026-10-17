@@ -439,3 +439,28 @@ def test_a_written_variable_reads_back_its_fill_value(
     read = dataset.DelayedArray.from_zarr(group['var'], 'var')
 
     assert not_equal(read.fill_value, fill_value) is False
+
+
+def test_a_group_reads_its_variables_in_order(
+        local_fs,  # noqa: F811
+        dask_client,  # noqa: F811
+) -> None:
+    """The variables of a group are read in the order of their names.
+
+    They are selected through a set, whose iteration order changes from one
+    process to the next.
+    """
+    zds = dataset.Dataset([
+        dataset.DelayedArray(name=name,
+                             data=numpy.ones((4, ), dtype='uint8'),
+                             dimensions=('x', ))
+        for name in ('zeta', 'alpha', 'mu')
+    ])
+    future = dask_client.submit(storage.write_zarr_group,
+                                dask_client.scatter(zds), str(local_fs.root),
+                                local_fs.fs, sync.NoSync())
+    future.result()
+
+    zds = storage.open_zarr_group(str(local_fs.root), local_fs.fs)
+
+    assert tuple(zds.variables) == ('alpha', 'mu', 'zeta')
