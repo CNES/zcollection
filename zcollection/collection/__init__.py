@@ -472,11 +472,11 @@ class Collection(ReadOnlyCollection):
                                variable: variable_abc.T) -> variable_abc.T:
         """Create a new variable ready to be inserted into a collection.
 
-        The data type is checked against the metadata of the collection, and
-        so is the value marking absence when the variable names one. The
-        attributes, the compressor, the filters and the value marking
-        absence are taken from the metadata: a collection stores and names
-        its variables the same way in every partition.
+        The attributes, the compressor, the filters and the value marking
+        absence are taken from the metadata of the collection, which stores
+        and names its variables the same way in every partition. The data
+        type is checked against it, and so is the value marking absence when
+        the variable names one.
 
         Args:
             variable: The variable to insert.

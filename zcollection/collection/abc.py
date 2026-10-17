@@ -693,7 +693,6 @@ class ReadOnlyCollection:
 
         if array is None and (filters is not None or indexer is not None
                               or selected_partitions is not None):
-            # A named selection that retains no partition reads nothing.
             return None
 
         array = self.merge_immutable(array, selected_variables, delayed)

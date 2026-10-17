@@ -1779,7 +1779,6 @@ def test_insert_writes_the_declared_encoding(
                                      ('time', ), 'D'),
                                  partition_base_dir=str(tested_fs.collection),
                                  filesystem=tested_fs.fs)
-    # zds carries values alone; declared holds the codecs.
     zcol.insert(zds)
 
     partition = next(iter(zcol.partitions()))
