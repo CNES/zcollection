@@ -646,8 +646,11 @@ class ReadOnlyCollection:
             distributed: Whether to use dask or not. Default To True.
 
         Returns:
-            The dataset containing the selected partitions, or None if no
-            partitions were selected.
+            The dataset containing the selected partitions. None when
+            ``filters``, ``indexer`` or ``selected_partitions`` name the
+            partitions to read and none of them is retained. A collection
+            whose partitions are not written yet reads as its immutable
+            variables alone.
 
         Warning:
             If you select variables to load from the collection, do not insert
@@ -687,6 +690,12 @@ class ReadOnlyCollection:
             array = arrays.pop(0)
             if arrays:
                 array = array.concat(arrays, self.dimension)
+
+        if array is None and (filters is not None or indexer is not None
+                              or selected_partitions is not None):
+            # Naming the partitions to read and matching none of them is an
+            # empty answer; the immutable variables are not it.
+            return None
 
         array = self.merge_immutable(array, selected_variables, delayed)
 

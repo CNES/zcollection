@@ -1814,3 +1814,37 @@ def test_insert_takes_the_declared_fill_value(
     loaded = zcol.load()
     assert loaded is not None
     assert loaded['var1'].fill_value == 10
+
+
+def test_load_a_selection_that_matches_no_partition(
+    dask_client,  # noqa: F811
+    request,
+) -> None:
+    """Naming the partitions to read and matching none of them reads nothing.
+
+    The immutable variables of the collection are not that answer.
+    """
+    tested_fs = request.getfixturevalue('local_fs')
+    reference = next(create_test_dataset(delayed=False))
+    zds = dataset.Dataset(variables=[
+        *reference.variables.values(),
+        variable.Array(name='lon',
+                       data=numpy.arange(25, dtype='float32'),
+                       dimensions=('num_pixels', )),
+    ])
+
+    zcol = collection.Collection(axis='time',
+                                 ds=zds.metadata(),
+                                 partition_handler=partitioning.Date(
+                                     ('time', ), 'M'),
+                                 partition_base_dir=str(tested_fs.collection),
+                                 filesystem=tested_fs.fs)
+    zcol.insert(zds)
+    assert zcol.have_immutable
+
+    assert zcol.load(filters='year == 1800') is None
+    assert zcol.load(selected_partitions=['year=1800/month=01']) is None
+
+    loaded = zcol.load()
+    assert loaded is not None
+    assert 'lon' in loaded.variables
