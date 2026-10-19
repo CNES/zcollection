@@ -29,16 +29,19 @@ Storage
   keeping the one it replaces, and makes it writable.
   ``zcollection.update_deprecated_view`` does the same for a view, and is
   reachable from the package.
-* The value marking an absent measure is held in the ``_FillValue`` attribute
-  of an array.
+* The fill value of a variable is held in the ``_FillValue`` attribute of an
+  array, beside the fill value Zarr 3 requires of every array.
 * The codecs a variable names with the classes of numcodecs are translated into
   the ones Zarr 3 builds an array from.
 
 Behaviour
 ^^^^^^^^^
-* A partition is written with the compressor, the filters and the value
-  marking absence the collection declares for each of its variables.
+* A partition is written with the compressor, the filters and the fill value
+  the collection declares for each of its variables.
 * The variables of a dataset read from a collection are ordered by name.
+* ``insert`` returns the full path of each partition it wrote.
+* A variable added to a dataset with the data it holds keeps its values.
+* A write that fails carries a note naming the variable it was writing.
 * Writing a partition stops with an error naming the variables the store does
   not list under it.
 * Concatenating datasets that do not hold the same variables stops with an

@@ -144,7 +144,10 @@ class Collection(ReadOnlyCollection):
             data is partitioned.
         ds: The dataset containing the collection. This dataset is used to
             create the metadata of the collection, which is used to validate
-            datasets that are inserted in the collection.
+            datasets that are inserted in the collection. The dimension named
+            by ``axis`` grows with each insertion; the size of every other
+            dimension is the one this dataset has, and holds for the life of
+            the collection.
         partition_handler: The partitioning strategy for the collection. This
             is an instance of a subclass of
             :py:class:`zarr_partitioning.PartitionHandler`.
@@ -343,7 +346,7 @@ class Collection(ReadOnlyCollection):
         npartitions: int | None = None,
         distributed: bool = True,
         **kwargs,
-    ) -> Iterable[str]:
+    ) -> tuple[str, ...]:
         """Insert a dataset into the collection.
 
         Args:
@@ -369,7 +372,7 @@ class Collection(ReadOnlyCollection):
                     this parameter will have no effect.
 
         Returns:
-            A list of the inserted partitions.
+            The full path of each partition written.
 
         Raises:
             ValueError:
@@ -422,8 +425,9 @@ class Collection(ReadOnlyCollection):
         else:
             self._insert_sequential(ds, partitions, merge_callable, **kwargs)
 
-        return (fs_utils.join_path(*((self.partition_properties.dir, *item)))
-                for item, _ in partitions)
+        return tuple(
+            fs_utils.join_path(*((self.partition_properties.dir, *item)))
+            for item, _ in partitions)
 
     def _set_ds_for_insertion(self, ds: dataset.Dataset) -> dataset.Dataset:
         """Create a new dataset ready to be inserted into a collection.
@@ -472,11 +476,10 @@ class Collection(ReadOnlyCollection):
                                variable: variable_abc.T) -> variable_abc.T:
         """Create a new variable ready to be inserted into a collection.
 
-        The attributes, the compressor, the filters and the value marking
-        absence are taken from the metadata of the collection, which stores
-        and names its variables the same way in every partition. The data
-        type is checked against it, and so is the value marking absence when
-        the variable names one.
+        The attributes, the compressor, the filters and the fill value are
+        taken from the metadata of the collection, which stores and names its
+        variables the same way in every partition. The data type is checked
+        against it, and so is the fill value when the variable names one.
 
         Args:
             variable: The variable to insert.
@@ -841,10 +844,9 @@ class Collection(ReadOnlyCollection):
             ... )
             >>> collection.add_variable(new_variable)
         """
+        variable = dataset.get_variable_metadata(variable)
         _LOGGER.info('Adding of the %r variable in the collection',
                      variable.name)
-
-        variable = dataset.get_variable_metadata(variable)
         self.metadata.add_variable(variable)
         self._write_config()
 

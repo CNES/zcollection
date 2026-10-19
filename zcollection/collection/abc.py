@@ -381,7 +381,9 @@ class ReadOnlyCollection:
                 partitions while the collection is being modified.
 
         Returns:
-            The list of partitions.
+            The partitions, ordered by the values of their keys. The values
+            are the ones the partitioning parses, so ``cycle=2`` is listed
+            before ``cycle=10``.
 
         Example:
             >>> tuple(collection.partitions(

@@ -412,8 +412,11 @@ class Partitioning(metaclass=abc.ABCMeta):
         Args:
             fs: The filesystem to be used.
             path: The path to the directory containing the partitions.
+
         Yields:
-            The partitions.
+            The partitions, ordered by the values of their keys. The values
+            are the ones :meth:`parse` reads, so ``cycle=2`` comes before
+            ``cycle=10``.
         """
         parsed_partitions = []
 

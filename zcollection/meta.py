@@ -110,7 +110,7 @@ class Dimension:
 
     Args:
         name: name of the dimension.
-        value: size of the dimension.
+        value: size of the dimension, or -1 when it is not fixed.
         chunks: size of the dimension's chunks.
     """
     __slots__ = ('chunks', 'name', 'value')
@@ -152,9 +152,9 @@ class Variable:
         dimensions: Names of the dimensions of the variable. Defaults to None.
         attrs: Attributes of the variable. Defaults to None.
         compressor: Compression codec for the variable. Defaults to None.
-        fill_value: Value marking an absent measure. Defaults to None.
-            Reading a variable masks the elements equal to it; a NaN or
-            a NaT equals nothing and leaves the result unmasked.
+        fill_value: Fill value of the variable. Defaults to None. Reading
+            a variable masks the elements equal to it; a NaN or a NaT equals
+            nothing and leaves the result unmasked.
         filters: Filters for the variable. Defaults to None.
 
     Warning:

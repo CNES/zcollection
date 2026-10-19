@@ -81,7 +81,7 @@ def test_from_zarr_reads_the_dimensions(cls, zarr_format) -> None:
 @pytest.mark.parametrize('cls', IMPLEMENTATIONS)
 @pytest.mark.parametrize('zarr_format', FORMATS)
 def test_from_zarr_reads_the_declared_fill_value(cls, zarr_format) -> None:
-    """The value marking absence is read from its own attribute."""
+    """The fill value is read from its own attribute."""
     array = make_zarr_array(None, {
         FILL_VALUE: -999.0,
         'units': 'm'
@@ -110,8 +110,8 @@ def test_from_zarr_reads_no_fill_value_when_none_is_declared(
 
 @pytest.mark.parametrize('cls', IMPLEMENTATIONS)
 def test_from_zarr_falls_back_to_the_fill_value_of_a_zarr_2_array(cls) -> None:
-    """A Zarr 2 array carrying no attribute holds the value marking absence
-    in its fill value."""
+    """A Zarr 2 array carrying no attribute takes the fill value of the
+    array."""
     array = make_zarr_array(-999.0, {'units': 'm'}, zarr_format=2)
 
     variable = cls.from_zarr(array, 'var')
@@ -244,7 +244,7 @@ def test_concat_marks_what_holds_a_filled_variable(cls) -> None:
 @pytest.mark.parametrize(('dtype', 'encoded', 'expected'), ENCODED_FILL_VALUES)
 def test_from_zarr_decodes_the_declared_fill_value(cls, dtype, encoded,
                                                    expected) -> None:
-    """The attribute holds the encoded form of the value marking absence."""
+    """The attribute holds the encoded form of the fill value."""
     array = make_zarr_array(None, {FILL_VALUE: encoded}, dtype=dtype)
 
     variable = cls.from_zarr(array, 'var')

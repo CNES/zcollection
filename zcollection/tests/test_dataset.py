@@ -9,6 +9,7 @@ Testing datasets
 from typing import TYPE_CHECKING
 import pickle
 
+import dask.array.core
 import numcodecs
 import numpy
 import pytest
@@ -549,3 +550,19 @@ def test_dataset_expression(
 
     with pytest.raises(SyntaxError):
         dataset.Expression('vec1 +')(zds)
+
+
+@pytest.mark.parametrize('delayed', [False, True])
+def test_add_variable_holding_data(delayed) -> None:
+    """A variable holding data is added with its values."""
+    cls = dataset.DelayedArray if delayed else dataset.Array
+    seed = dask.array.core.from_array(numpy.arange(4)) if delayed \
+        else numpy.arange(4)
+    zds = dataset.Dataset(variables=[cls('time', seed, ('num_lines', ))],
+                          delayed=delayed)
+
+    zds.add_variable(
+        dataset.Array('measure', numpy.arange(4, dtype='float32'),
+                      ('num_lines', )))
+
+    assert numpy.array_equal(zds['measure'].values, numpy.arange(4))

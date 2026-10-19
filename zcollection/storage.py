@@ -119,8 +119,7 @@ def variable_attributes(
         variable: The variable to process.
 
     Returns:
-        Its attributes, and the value marking an absent measure when it has
-        one.
+        Its attributes, and its fill value when it has one.
     """
     attrs = collections.OrderedDict(item.get_config()
                                     for item in variable.attrs)
@@ -150,6 +149,10 @@ def write_zarr_variable(
             to :data:`zcollection.meta.BLOCK_SIZE_LIMIT`.
         chunks: Chunk size for each dimension. Defaults to ``None`` (i.e. the
             default chunk size is used).
+
+    Raises:
+        Exception: Whatever the write raises, carrying a note naming the
+            variable.
     """
     kwargs: dict[str, tuple[numcodecs.abc.Codec, ...]]
 
@@ -179,10 +182,11 @@ def write_zarr_variable(
                  dimensions=variable.dimensions,
                  attributes=variable_attributes(variable),
                  **kwargs)
-    except Exception:
+    except Exception as err:
         # If an exception is thrown, we delete the variable from the Zarr
         # dataset.
         del_zarr_array(dirname, name, fs)
+        err.add_note(f'while writing the variable {name!r}')
         raise
 
 

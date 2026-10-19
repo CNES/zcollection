@@ -1794,7 +1794,7 @@ def test_insert_takes_the_declared_fill_value(
     dask_client,  # noqa: F811
     request,
 ) -> None:
-    """A variable naming no value marking absence takes the declared one."""
+    """A variable naming no fill value takes the declared one."""
     tested_fs = request.getfixturevalue('local_fs')
     zds = next(create_test_dataset(delayed=False))
     declared = copy.deepcopy(zds)
@@ -1847,3 +1847,19 @@ def test_load_a_selection_that_matches_no_partition(
     loaded = zcol.load()
     assert loaded is not None
     assert 'lon' in loaded.variables
+
+
+def test_add_variable_rejects_another_type(
+    dask_client,  # noqa: F811
+    request,
+) -> None:
+    """add_variable names the type it expects."""
+    tested_fs = request.getfixturevalue('local_fs')
+    zcol = create_test_collection(tested_fs)
+
+    with pytest.raises(TypeError, match='Expected a meta.Variable'):
+        zcol.add_variable({
+            'name': 'anomaly',
+            'dtype': 'float32',
+            'dimensions': ('num_lines', ),
+        })  # type: ignore[arg-type]

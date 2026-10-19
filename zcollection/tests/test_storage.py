@@ -12,6 +12,7 @@ import time
 
 import dask.array
 import dask.distributed
+import numcodecs
 import numpy
 import pytest
 import zarr
@@ -397,7 +398,7 @@ def test_variable_attributes_fill_value(
     fill_value,
     expected,
 ) -> None:
-    """The value marking absence is held, encoded, when declared."""
+    """The fill value is held, encoded, when declared."""
     var = dataset.DelayedArray(name='var',
                                data=numpy.ones((4, ), dtype=dtype),
                                dimensions=('x', ),
@@ -464,3 +465,28 @@ def test_a_group_reads_its_variables_in_order(
     zds = storage.open_zarr_group(str(local_fs.root), local_fs.fs)
 
     assert tuple(zds.variables) == ('alpha', 'mu', 'zeta')
+
+
+def test_a_failed_write_names_the_variable(
+        local_fs,  # noqa: F811
+) -> None:
+    """A write that fails carries a note naming the variable it was writing.
+
+    The fill value is written in the unit of the variable, so a filter
+    scaling it beyond the type it encodes to stops the write.
+    """
+    var = dataset.DelayedArray(name='ssh',
+                               data=numpy.zeros((4, ), dtype='float32'),
+                               dimensions=('x', ),
+                               fill_value=numpy.float32(-999.0),
+                               filters=(numcodecs.FixedScaleOffset(
+                                   offset=0,
+                                   scale=1000,
+                                   dtype='f4',
+                                   astype='i2'), ))
+
+    with pytest.raises(Exception) as caught:  # noqa: PT011
+        storage.write_zarr_variable(('ssh', var), str(local_fs.root),
+                                    local_fs.fs)
+
+    assert "while writing the variable 'ssh'" in caught.value.__notes__
