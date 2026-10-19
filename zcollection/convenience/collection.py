@@ -130,7 +130,7 @@ def update_deprecated_collection(
         _LOGGER.error('Collection already updated.')
         return
 
-    ds = meta.Dataset.from_deprecated_config(data['dataset'])
+    ds = meta.DatasetSchema.from_deprecated_config(data['dataset'])
     axis = data['axis']
     main_dimension = ds.variables[axis].dimensions[0]
 
@@ -189,8 +189,8 @@ def update_deprecated_collection(
     zcol._write_config()
 
 
-def _dimensions_source(ds: meta.Dataset,
-                       main_dimension: str) -> dict[str, meta.Variable]:
+def _dimensions_source(ds: meta.DatasetSchema,
+                       main_dimension: str) -> dict[str, meta.VariableSchema]:
     """Associate dimension to a variable containing it.
 
     Args:
@@ -200,7 +200,7 @@ def _dimensions_source(ds: meta.Dataset,
     Returns:
         Dictionary of dimension associated to a variable containing it.
     """
-    dimensions_source: dict[str, meta.Variable] = {}
+    dimensions_source: dict[str, meta.VariableSchema] = {}
     dimensions = list(ds.dimensions)
 
     for dimension in dimensions:

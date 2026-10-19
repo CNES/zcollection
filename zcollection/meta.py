@@ -143,7 +143,7 @@ class Dimension:
         return self.get_config() == other.get_config()
 
 
-class Variable:
+class VariableSchema:
     """Handle the metadata of a dataset variable.
 
     Args:
@@ -197,7 +197,7 @@ class Variable:
         return f'{self.__class__.__name__}({self.name!r})'
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Variable):
+        if not isinstance(other, VariableSchema):
             return False
         return self.get_config() == other.get_config()
 
@@ -232,7 +232,7 @@ class Variable:
         }
 
     @staticmethod
-    def from_config(data: dict[str, Any]) -> Variable:
+    def from_config(data: dict[str, Any]) -> VariableSchema:
         """Create a new variable from the given variable configuration.
 
         Args:
@@ -251,7 +251,7 @@ class Variable:
             numcodecs.get_codec(item) for item in data['filters']
             if item is not None)
 
-        return Variable(
+        return VariableSchema(
             data['name'],
             dtype,
             dimensions=data['dimensions'],
@@ -262,27 +262,27 @@ class Variable:
             filters=filters,
         )
 
-    def set_for_insertion(self) -> Variable:
+    def set_for_insertion(self) -> VariableSchema:
         """Create a new variable without any attribute.
 
         Returns:
             The variable.
         """
-        return Variable(self.name,
-                        self.dtype,
-                        dimensions=self.dimensions,
-                        compressor=self.compressor,
-                        fill_value=self.fill_value,
-                        filters=self.filters)
+        return VariableSchema(self.name,
+                              self.dtype,
+                              dimensions=self.dimensions,
+                              compressor=self.compressor,
+                              fill_value=self.fill_value,
+                              filters=self.filters)
 
 
-class Dataset:
+class DatasetSchema:
     """Handle the metadata of a dataset.
 
     Args:
         dimensions: A sequence of :py:class:`Dimension` objects representing
             the dimensions of the dataset associated to their size.
-        variables: A sequence of :py:class:`Variable` objects representing the
+        variables: A sequence of :py:class:`VariableSchema` objects representing the
             variables of the dataset.
         attrs: An optional sequence of :py:class:`Attribute` objects
             representing the attributes of the dataset. Defaults to None.
@@ -293,7 +293,7 @@ class Dataset:
 
     def __init__(self,
                  dimensions: Sequence[Dimension],
-                 variables: Sequence[Variable],
+                 variables: Sequence[VariableSchema],
                  *,
                  attrs: Sequence[Attribute] | None = None,
                  block_size_limit: int | None = None) -> None:
@@ -304,7 +304,7 @@ class Dataset:
         }
 
         #: Variables of the dataset.
-        self.variables: dict[str, Variable] = {
+        self.variables: dict[str, VariableSchema] = {
             item.name: item
             for item in variables
         }
@@ -333,9 +333,9 @@ class Dataset:
         """Select variables to keep or drop from the dataset.
 
         Args:
-            keep_variables: A list of variables to retain from the Dataset.
+            keep_variables: A list of variables to retain from the schema.
                 If None, all variables are kept.
-            drop_variables: A list of variables to exclude from the Dataset.
+            drop_variables: A list of variables to exclude from the schema.
                 If None, no variables are dropped.
 
         Returns:
@@ -352,7 +352,7 @@ class Dataset:
         return result
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Dataset):
+        if not isinstance(other, DatasetSchema):
             return False
         return self.get_config() == other.get_config()
 
@@ -363,7 +363,7 @@ class Dataset:
         """Get the dataset metadata.
 
         Returns:
-            Dataset configuration.
+            Schema configuration.
         """
         attributes = sorted(attr.get_config() for attr in self.attrs)
         variables = tuple(self.variables[name].get_config()
@@ -401,7 +401,7 @@ class Dataset:
         self.dimensions[dimension.name] = dimension
 
     def add_variable(self,
-                     variable: Variable,
+                     variable: VariableSchema,
                      dimensions: set[str] | None = None) -> None:
         """Add a variable to the dataset.
 
@@ -410,14 +410,14 @@ class Dataset:
             dimensions: set of known dimensions.
 
         Raises:
-            TypeError: If the variable is not a Variable object.
+            TypeError: If the variable is of another type.
             ValueError: If the variable already exists in the dataset or if
                 the variable's dimensions do not match the dataset's
                 dimensions.
         """
-        if not isinstance(variable, Variable):
-            raise TypeError(
-                f'Variable must be a Variable, not {type(variable)}')
+        if not isinstance(variable, VariableSchema):
+            raise TypeError('Expected a VariableSchema, got '
+                            f'{type(variable).__name__}')
 
         if variable.name in self.variables:
             raise ValueError(
@@ -433,7 +433,7 @@ class Dataset:
         self.variables[variable.name] = variable
 
     @staticmethod
-    def from_config(data: dict[str, Any]) -> Dataset:
+    def from_config(data: dict[str, Any]) -> DatasetSchema:
         """Create a new dataset from the given dataset configuration.
 
         Args:
@@ -442,16 +442,18 @@ class Dataset:
         Returns:
             New dataset.
         """
-        return Dataset(
+        return DatasetSchema(
             tuple(
                 Dimension.from_config(item)
                 for item in data.get('dimensions', [])),
-            tuple(Variable.from_config(item) for item in data['variables']),
+            tuple(
+                VariableSchema.from_config(item)
+                for item in data['variables']),
             attrs=tuple(Attribute.from_config(item) for item in data['attrs']),
             block_size_limit=data.get('block_size_limit'))
 
     @staticmethod
-    def from_deprecated_config(data: dict[str, Any]) -> Dataset:
+    def from_deprecated_config(data: dict[str, Any]) -> DatasetSchema:
         """Create a new dataset from the given deprecated dataset
         configuration.
 
@@ -462,16 +464,18 @@ class Dataset:
             New dataset.
         """
         chunks = dict(data.get('chunks', []))
-        return Dataset(
+        return DatasetSchema(
             tuple(
                 Dimension.from_config((item, -1, chunks.get(item, -1)))
                 for item in data['dimensions']),
-            tuple(Variable.from_config(item) for item in data['variables']),
+            tuple(
+                VariableSchema.from_config(item)
+                for item in data['variables']),
             attrs=tuple(Attribute.from_config(item) for item in data['attrs']),
             block_size_limit=data.get('block_size_limit'),
         )
 
-    def missing_variables(self, other: Dataset) -> tuple[str, ...]:
+    def missing_variables(self, other: DatasetSchema) -> tuple[str, ...]:
         """Finds the variables in the provided dataset that are not in this
         instance.
 

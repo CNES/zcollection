@@ -138,7 +138,7 @@ class CollectionProperties:
     axis: str
 
     #: The metadata that describes the dataset handled by the collection.
-    metadata: meta.Dataset
+    metadata: meta.DatasetSchema
 
     #: The partitioning strategy used to split the data.
     partition_strategy: partitioning.Partitioning
@@ -182,7 +182,7 @@ class ReadOnlyCollection:
     def __init__(
         self,
         axis: str,
-        ds: meta.Dataset,
+        ds: meta.DatasetSchema,
         partition_handler: partitioning.Partitioning,
         partition_base_dir: str,
         *,
@@ -202,7 +202,7 @@ class ReadOnlyCollection:
 
         # Working on a copy to fix the main dimension size.
         main_dimension = ds.variables[axis].dimensions[0]
-        ds = meta.Dataset.from_config(data=ds.get_config())
+        ds = meta.DatasetSchema.from_config(data=ds.get_config())
         ds.dimensions[main_dimension].value = -1
 
         self._settings = CollectionSettings(mode or 'w',
@@ -234,7 +234,7 @@ class ReadOnlyCollection:
         return self._properties.dimension
 
     @property
-    def metadata(self) -> meta.Dataset:
+    def metadata(self) -> meta.DatasetSchema:
         """Return the metadata of the collection."""
         return self._properties.metadata
 

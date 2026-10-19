@@ -16,6 +16,8 @@ Features
 * A view holding no declared variable reads the collection it references.
 * The metadata of a collection and of a dataset carry the dimensions, and the
   configuration of a partitioning carries the data types.
+* ``VariableSchema``, ``DatasetSchema`` and ``Dimension`` are reachable from
+  the package.
 
 Storage
 ^^^^^^^
@@ -56,6 +58,8 @@ Removed
 
 Renamed
 ^^^^^^^
+* ``meta.Variable`` is named ``meta.VariableSchema``, and ``meta.Dataset`` is
+  named ``meta.DatasetSchema``.
 * ``ReadOnlyCollection.immutable`` is named ``immutable_path``.
 * ``Dataset.dims_chunk`` is named ``dim_chunks``, and holds a mapping of a
   dimension name to the size of its chunks. It was a property returning a

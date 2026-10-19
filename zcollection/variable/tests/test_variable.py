@@ -81,7 +81,7 @@ def test_constructor(
     assert numpy.all(var1.values == numpy.arange(10).reshape(5, 2))
     assert numpy.all(var1.values == var1.values)
     assert tuple(var1.dimension_index()) == (('x', 0), ('y', 1))
-    assert isinstance(var1.metadata(), meta.Variable)
+    assert isinstance(var1.metadata(), meta.VariableSchema)
     assert isinstance(str(var1), str)
     assert isinstance(repr(var1), str)
 
@@ -228,9 +228,9 @@ def test_dimension_less(
                              attrs=(meta.Attribute('comment', 'vertex'),
                                     meta.Attribute('units', '1')))
     assert var1.fill_value is None
-    metadata: meta.Variable = var1.metadata()
+    metadata: meta.VariableSchema = var1.metadata()
     assert metadata.fill_value is None
-    assert meta.Variable.from_config(metadata.get_config()) == metadata
+    assert meta.VariableSchema.from_config(metadata.get_config()) == metadata
 
     var2: Variable = factory('nv',
                              data, ('nv', ),

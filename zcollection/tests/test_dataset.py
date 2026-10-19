@@ -57,7 +57,7 @@ def test_dataset(
     assert numpy.all(zds.variables['var2'].values == var2.values)
     assert id(zds['var2']) == id(zds.variables['var2'])
     assert zds.variables['var2'].metadata() == var2.metadata()
-    assert isinstance(zds.metadata(), meta.Dataset)
+    assert isinstance(zds.metadata(), meta.DatasetSchema)
 
     other = zds.compute()
     assert isinstance(other, dataset.Dataset)
@@ -234,13 +234,13 @@ def test_dataset_add_variable(
 ) -> None:
     """Test for adding a variable."""
     zds = create_delayed_dataset(factory)
-    var = meta.Variable('var2',
-                        numpy.int64,
-                        dimensions=('x', 'y'),
-                        attrs=(dataset.Attribute('attr', 1), ),
-                        compressor=numcodecs.Blosc(),
-                        fill_value=255,
-                        filters=(numcodecs.Delta('int64', 'int64'), ))
+    var = meta.VariableSchema('var2',
+                              numpy.int64,
+                              dimensions=('x', 'y'),
+                              attrs=(dataset.Attribute('attr', 1), ),
+                              compressor=numcodecs.Blosc(),
+                              fill_value=255,
+                              filters=(numcodecs.Delta('int64', 'int64'), ))
     zds.add_variable(var)
 
     assert zds.variables['var2'].attrs == (dataset.Attribute(name='attr',
@@ -264,13 +264,13 @@ def test_dataset_add_variable(
     zds.drops_vars('var2')
     assert 'var2' not in zds.variables
 
-    var = meta.Variable('var2',
-                        numpy.int64,
-                        dimensions=('x', 'y'),
-                        attrs=(dataset.Attribute('attr', 1), ),
-                        compressor=numcodecs.Blosc(),
-                        fill_value=255,
-                        filters=(numcodecs.Delta('int64', 'int64'), ))
+    var = meta.VariableSchema('var2',
+                              numpy.int64,
+                              dimensions=('x', 'y'),
+                              attrs=(dataset.Attribute('attr', 1), ),
+                              compressor=numcodecs.Blosc(),
+                              fill_value=255,
+                              filters=(numcodecs.Delta('int64', 'int64'), ))
     zds.add_variable(var, data)
     assert numpy.ma.allequal(
         zds.variables['var2'].values,
@@ -280,13 +280,13 @@ def test_dataset_add_variable(
     with pytest.raises(ValueError, match='Conflicting sizes'):
         zds.add_variable(var, data)
 
-    var = meta.Variable('var2',
-                        numpy.int64,
-                        dimensions=('xx', 'y'),
-                        attrs=(dataset.Attribute('attr', 1), ),
-                        compressor=numcodecs.Blosc(),
-                        fill_value=255,
-                        filters=(numcodecs.Delta('int64', 'int64'), ))
+    var = meta.VariableSchema('var2',
+                              numpy.int64,
+                              dimensions=('xx', 'y'),
+                              attrs=(dataset.Attribute('attr', 1), ),
+                              compressor=numcodecs.Blosc(),
+                              fill_value=255,
+                              filters=(numcodecs.Delta('int64', 'int64'), ))
     with pytest.raises(ValueError, match='has dimension'):
         zds.add_variable(var)
 

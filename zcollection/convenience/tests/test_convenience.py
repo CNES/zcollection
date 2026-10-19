@@ -31,9 +31,9 @@ def test_update_deprecated_view(fs, request, caplog):
                                     filesystem=tested_fs.fs,
                                     distributed=False)
 
-    var = meta.Variable(name='var3',
-                        dtype=numpy.float64,
-                        dimensions=('num_lines', 'num_pixels'))
+    var = meta.VariableSchema(name='var3',
+                              dtype=numpy.float64,
+                              dimensions=('num_lines', 'num_pixels'))
 
     zview.add_variable(var, distributed=False)
 

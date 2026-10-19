@@ -112,7 +112,7 @@ def _to_zarr(array: dask.array.core.Array, dirname: str, name: str,
 
 
 def variable_attributes(
-        variable: meta.Variable | dataset.Variable) -> dict[str, Any]:
+        variable: meta.VariableSchema | dataset.Variable) -> dict[str, Any]:
     """Return the attributes an array holds for a variable.
 
     Args:
@@ -440,7 +440,7 @@ def del_zarr_array(
 
 def variable_shape(
     *,
-    variable: meta.Variable,
+    variable: meta.VariableSchema,
     dimensions: meta.DimensionType,
     axis: str | None,
     fs: fsspec.AbstractFileSystem,
@@ -472,7 +472,7 @@ def variable_shape(
 
 def add_zarr_array(
     dirname: str,
-    variable: meta.Variable,
+    variable: meta.VariableSchema,
     dimensions: meta.DimensionType,
     fs: fsspec.AbstractFileSystem,
     *,

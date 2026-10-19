@@ -589,20 +589,20 @@ def test_add_variable(
                                   distributed=distributed)
 
     # Variable already exists
-    new = meta.Variable(name='time',
-                        dtype=numpy.dtype('float64'),
-                        dimensions=('num_lines', ))
+    new = meta.VariableSchema(name='time',
+                              dtype=numpy.dtype('float64'),
+                              dimensions=('num_lines', ))
     with pytest.raises(ValueError, match='already exists'):
         zcol.add_variable(new, distributed=distributed)
 
     # Variable have unknown dimension.
-    new = meta.Variable(name='x',
-                        dtype=numpy.dtype('float64'),
-                        dimensions=('num_lines', 'x'))
+    new = meta.VariableSchema(name='x',
+                              dtype=numpy.dtype('float64'),
+                              dimensions=('num_lines', 'x'))
     with pytest.raises(ValueError, match='must use the dataset dimensions'):
         zcol.add_variable(new, distributed=distributed)
 
-    new = meta.Variable(
+    new = meta.VariableSchema(
         name='var3',
         dtype=numpy.dtype('int16'),
         dimensions=('num_lines', 'num_pixels'),
@@ -639,7 +639,7 @@ def test_variable_immutable(  # noqa: PLR0915
     known_dimensions, _ = zcol.dimensions_properties()
     dim = 'num_pixels'
 
-    new_arr = meta.Variable(
+    new_arr = meta.VariableSchema(
         name='var_immutable',
         dtype=numpy.dtype('int16'),
         dimensions=(dim, 'x'),
@@ -652,7 +652,7 @@ def test_variable_immutable(  # noqa: PLR0915
 
     assert new_arr.name not in zcol.metadata.variables
 
-    new = meta.Variable(
+    new = meta.VariableSchema(
         name='var_immutable',
         dtype=numpy.dtype('int16'),
         dimensions=(dim, ),
@@ -827,13 +827,14 @@ def test_add_update(
                                  filesystem=tested_fs.fs)
     zcol.insert(zds, distributed=distributed)
 
-    new1 = meta.Variable(name='var3',
-                         dtype=numpy.dtype('float64'),
-                         dimensions=('num_lines', 'num_pixels'),
-                         attrs=(dataset.Attribute(name='attr', value=1), ),
-                         fill_value=1000000.5)
+    new1 = meta.VariableSchema(name='var3',
+                               dtype=numpy.dtype('float64'),
+                               dimensions=('num_lines', 'num_pixels'),
+                               attrs=(dataset.Attribute(name='attr',
+                                                        value=1), ),
+                               fill_value=1000000.5)
 
-    new2 = meta.Variable(
+    new2 = meta.VariableSchema(
         name='var4',
         dtype=numpy.dtype('int16'),
         dimensions=('num_lines', 'num_pixels'),
@@ -892,14 +893,14 @@ def test_update_with_immutable(
                                  filesystem=tested_fs.fs)
     zcol.insert(zds, distributed=False)
 
-    new_var = meta.Variable(
+    new_var = meta.VariableSchema(
         name='var4',
         dtype=numpy.dtype('int16'),
         dimensions=('num_lines', 'num_pixels'),
         fill_value=32267,
         attrs=(dataset.Attribute(name='attr', value=4), ),
     )
-    new_im = meta.Variable(
+    new_im = meta.VariableSchema(
         name='var_immutable',
         dtype=numpy.dtype('int16'),
         dimensions=('num_pixels', ),
@@ -1065,10 +1066,10 @@ def test_insert_missing_dimensions(fs, request) -> None:
     # Adding a new dimension and a variable with this dimension so we
     # can test the insertion of a dataset not containing all dimensions
     new_dim = meta.Dimension(name='x', value=2, chunks=1)
-    new_var = meta.Variable(name='new_var',
-                            dtype=numpy.dtype('int8'),
-                            dimensions=(zcol.dimension, new_dim.name),
-                            fill_value=0)
+    new_var = meta.VariableSchema(name='new_var',
+                                  dtype=numpy.dtype('int8'),
+                                  dimensions=(zcol.dimension, new_dim.name),
+                                  fill_value=0)
 
     zcol.add_dimension(dimension=new_dim)
     zcol.add_variable(variable=new_var, distributed=False)
@@ -1377,7 +1378,7 @@ def test_insert_immutable(
     assert numpy.all(
         zds.variables['lat'].values == zds_reference.variables['lat'].values)
 
-    new_variable = meta.Variable(
+    new_variable = meta.VariableSchema(
         'new_var',
         numpy.float64,
         dimensions=('time', 'lon', 'lat'),
@@ -1393,7 +1394,7 @@ def test_insert_immutable(
     assert numpy.all(zds.variables['new_var'].values ==
                      zds_reference.variables['grid'].values)
 
-    new_variable = meta.Variable(
+    new_variable = meta.VariableSchema(
         'new_var2',
         numpy.float64,
         dimensions=('another_dim', ),
@@ -1741,9 +1742,9 @@ def test_with_empty_collection(fs, request):
                                  filesystem=tested_fs.fs,
                                  mode='w')
 
-    var = meta.Variable(name='var2',
-                        dtype=numpy.float64,
-                        dimensions=('time', 'lat'))
+    var = meta.VariableSchema(name='var2',
+                              dtype=numpy.float64,
+                              dimensions=('time', 'lat'))
 
     zcol.add_variable(variable=var, distributed=False)
 
@@ -1857,7 +1858,7 @@ def test_add_variable_rejects_another_type(
     tested_fs = request.getfixturevalue('local_fs')
     zcol = create_test_collection(tested_fs)
 
-    with pytest.raises(TypeError, match='Expected a meta.Variable'):
+    with pytest.raises(TypeError, match='Expected a meta.VariableSchema'):
         zcol.add_variable({
             'name': 'anomaly',
             'dtype': 'float32',

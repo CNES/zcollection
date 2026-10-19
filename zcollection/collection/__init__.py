@@ -179,7 +179,7 @@ class Collection(ReadOnlyCollection):
     def __init__(
         self,
         axis: str,
-        ds: meta.Dataset,
+        ds: meta.DatasetSchema,
         partition_handler: partitioning.Partitioning,
         partition_base_dir: str,
         *,
@@ -302,7 +302,7 @@ class Collection(ReadOnlyCollection):
             data: dict[str, Any] = json.load(stream)
 
         version = meta.format_version(data)
-        load_dataset = meta.Dataset.from_config
+        load_dataset = meta.DatasetSchema.from_config
 
         if version > meta.FORMAT_VERSION:
             raise ValueError(
@@ -323,7 +323,7 @@ class Collection(ReadOnlyCollection):
                     'Collection configuration needs to be updated. '
                     f'{msg_import}')
 
-            load_dataset = meta.Dataset.from_deprecated_config
+            load_dataset = meta.DatasetSchema.from_deprecated_config
 
         collection = Collection(
             data['axis'],
@@ -817,7 +817,7 @@ class Collection(ReadOnlyCollection):
 
     def add_variable(
         self,
-        variable: meta.Variable | dataset.Variable,
+        variable: meta.VariableSchema | dataset.Variable,
         distributed: bool = True,
     ) -> None:
         """Add a variable to the collection.
@@ -835,7 +835,7 @@ class Collection(ReadOnlyCollection):
             >>> import numpy
             >>> collection = zcollection.open_collection(
             ...     "my_collection", mode="w")
-            >>> new_variable = meta.Variable(
+            >>> new_variable = meta.VariableSchema(
             ...     name="my_variable",
             ...     dtype=numpy.dtype("int16"),
             ...     dimensions=("num_lines", "num_pixels"),
@@ -865,7 +865,7 @@ class Collection(ReadOnlyCollection):
             self.drop_variable(variable.name, distributed)
             raise
 
-    def _add_variable(self, variable: meta.Variable,
+    def _add_variable(self, variable: meta.VariableSchema,
                       partitions: Iterable[str]):
         """Add the provided variable to the collection."""
         dimensions, chunks = self.dimensions_properties()
@@ -878,7 +878,7 @@ class Collection(ReadOnlyCollection):
                                    axis=self.axis,
                                    chunks=chunks)
 
-    def _add_variable_distributed(self, variable: meta.Variable):
+    def _add_variable_distributed(self, variable: meta.VariableSchema):
         """Add the provided variable to the collection using dask."""
         dimensions, chunks = self.dimensions_properties()
 

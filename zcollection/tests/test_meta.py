@@ -58,20 +58,22 @@ def test_dimension() -> None:
 
 def test_variable() -> None:
     """Test variable creation."""
-    var = meta.Variable('a',
-                        numpy.dtype('int16'),
-                        dimensions=('a', ),
-                        attrs=(meta.Attribute('x', 12), ),
-                        compressor=numcodecs.Zlib(),
-                        filters=(numcodecs.Delta(numpy.float64, numpy.int16),
-                                 numcodecs.FixedScaleOffset(0, 1,
-                                                            numpy.int16)))
-    assert isinstance(var, meta.Variable)
-    assert str(var) == "Variable('a')"
+    var = meta.VariableSchema('a',
+                              numpy.dtype('int16'),
+                              dimensions=('a', ),
+                              attrs=(meta.Attribute('x', 12), ),
+                              compressor=numcodecs.Zlib(),
+                              filters=(numcodecs.Delta(numpy.float64,
+                                                       numpy.int16),
+                                       numcodecs.FixedScaleOffset(
+                                           0, 1, numpy.int16)))
+    assert isinstance(var, meta.VariableSchema)
+    assert str(var) == "VariableSchema('a')"
 
     assert var == var  # noqa: PLR0124
     assert (var == 2) is False
-    other: meta.Variable = meta.Variable.from_config(var.get_config())
+    other: meta.VariableSchema = meta.VariableSchema.from_config(
+        var.get_config())
     assert var == other
     other.name = 'x'
     assert var != other
@@ -87,8 +89,8 @@ def test_dataset() -> None:
     with root.joinpath('second_dataset.json').open(encoding='utf-8') as stream:
         second: dict[str, Any] = json.load(stream)
 
-    ds: meta.Dataset = meta.Dataset.from_config(first)
-    other: meta.Dataset = meta.Dataset.from_config(second)
+    ds: meta.DatasetSchema = meta.DatasetSchema.from_config(first)
+    other: meta.DatasetSchema = meta.DatasetSchema.from_config(second)
     assert ds == other
     assert (ds == 2) is False
     assert (ds != other) is False
@@ -121,7 +123,7 @@ def test_select_variables() -> None:
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
         config: dict[str, Any] = json.load(stream)
 
-    ds: meta.Dataset = meta.Dataset.from_config(config)
+    ds: meta.DatasetSchema = meta.DatasetSchema.from_config(config)
     variables: set[str] = ds.select_variables(('longitude', 'latitude'))
     assert variables == {'longitude', 'latitude'}
 
@@ -141,9 +143,9 @@ def test_deprecated_config() -> None:
             encoding='utf-8') as stream:
         config: dict[str, Any] = json.load(stream)
 
-    ds = meta.Dataset.from_deprecated_config(config)
+    ds = meta.DatasetSchema.from_deprecated_config(config)
 
-    assert isinstance(ds, meta.Dataset)
+    assert isinstance(ds, meta.DatasetSchema)
 
     dim_size = ds.dim_size
     dim_chunks = ds.dim_chunks
@@ -158,8 +160,8 @@ def test_pickle() -> None:
     root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
         data: dict[str, Any] = json.load(stream)
-    ds: meta.Dataset = meta.Dataset.from_config(data)
-    other: meta.Dataset = pickle.loads(pickle.dumps(ds))
+    ds: meta.DatasetSchema = meta.DatasetSchema.from_config(data)
+    other: meta.DatasetSchema = pickle.loads(pickle.dumps(ds))
     assert ds == other
 
 
@@ -168,8 +170,8 @@ def test_missing_variables() -> None:
     root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
         data: dict[str, Any] = json.load(stream)
-    ds: meta.Dataset = meta.Dataset.from_config(data)
-    other: meta.Dataset = pickle.loads(pickle.dumps(ds))
+    ds: meta.DatasetSchema = meta.DatasetSchema.from_config(data)
+    other: meta.DatasetSchema = pickle.loads(pickle.dumps(ds))
 
     assert len(ds.missing_variables(other)) == 0
 
@@ -191,17 +193,19 @@ def test_missing_variables() -> None:
 
 def test_add_variable() -> None:
     """Test adding a variable."""
-    ds = meta.Dataset(dimensions=(meta.Dimension('x',
-                                                 0), meta.Dimension('y', 10)),
-                      variables=[])
-    ds.add_variable(meta.Variable('a', numpy.float64, dimensions=('x', 'y')))
+    ds = meta.DatasetSchema(dimensions=(meta.Dimension('x', 0),
+                                        meta.Dimension('y', 10)),
+                            variables=[])
+    ds.add_variable(
+        meta.VariableSchema('a', numpy.float64, dimensions=('x', 'y')))
 
     with pytest.raises(ValueError, match='already exists'):
         ds.add_variable(
-            meta.Variable(name='a', dtype=numpy.float64,
-                          dimensions=('x', 'y')))
+            meta.VariableSchema(name='a',
+                                dtype=numpy.float64,
+                                dimensions=('x', 'y')))
 
-    with pytest.raises(TypeError, match='Variable must be a Variable'):
+    with pytest.raises(TypeError, match='Expected a VariableSchema'):
         ds.add_variable((  # type: ignore[arg-type]
             'a',
             numpy.float64,
@@ -209,35 +213,36 @@ def test_add_variable() -> None:
         ))
 
     ds.add_variable(
-        meta.Variable(name='b', dtype=numpy.float64, dimensions=('x', )))
+        meta.VariableSchema(name='b', dtype=numpy.float64, dimensions=('x', )))
     ds.add_variable(
-        meta.Variable(name='c', dtype=numpy.float64, dimensions=('y', )))
+        meta.VariableSchema(name='c', dtype=numpy.float64, dimensions=('y', )))
 
     with pytest.raises(
             ValueError,
             match='The new variable must use the dataset dimensions.'):
         ds.add_variable(
-            meta.Variable('d', numpy.float64, dimensions=('a', 'y')))
+            meta.VariableSchema('d', numpy.float64, dimensions=('a', 'y')))
 
     with pytest.raises(
             ValueError,
             match='The new variable must use the dataset dimensions.'):
         ds.add_variable(
-            meta.Variable('e', numpy.float64, dimensions=('a', 'b')))
+            meta.VariableSchema('e', numpy.float64, dimensions=('a', 'b')))
 
     with pytest.raises(
             ValueError,
             match='The new variable must use the dataset dimensions.'):
-        ds.add_variable(meta.Variable('f', numpy.float64, dimensions=('a', )))
+        ds.add_variable(
+            meta.VariableSchema('f', numpy.float64, dimensions=('a', )))
 
-    ds.add_variable(meta.Variable('g', numpy.float64))
+    ds.add_variable(meta.VariableSchema('g', numpy.float64))
 
 
 def test_set_for_insertion():
-    var_meta = meta.Variable(name='f',
-                             dtype=numpy.float64,
-                             dimensions=('a', ),
-                             attrs=(meta.Attribute('x', 12), ))
+    var_meta = meta.VariableSchema(name='f',
+                                   dtype=numpy.float64,
+                                   dimensions=('a', ),
+                                   attrs=(meta.Attribute('x', 12), ))
     var_insert = var_meta.set_for_insertion()
 
     assert not var_insert.attrs
@@ -248,18 +253,24 @@ def test_set_for_insertion():
 
 def test_select_variables_by_dims() -> None:
     """Test select_variable_by_dims."""
-    ds = meta.Dataset(dimensions=(meta.Dimension('a',
-                                                 0), meta.Dimension('b', 10),
-                                  meta.Dimension('x',
-                                                 10), meta.Dimension('y', 10)),
-                      variables=[])
-    ds.add_variable(meta.Variable('a', numpy.float64, dimensions=('x', 'y')))
-    ds.add_variable(meta.Variable('b', numpy.float64, dimensions=('x', )))
-    ds.add_variable(meta.Variable('c', numpy.float64, dimensions=('y', )))
-    ds.add_variable(meta.Variable('d', numpy.float64, dimensions=('a', 'y')))
-    ds.add_variable(meta.Variable('e', numpy.float64, dimensions=('a', 'b')))
-    ds.add_variable(meta.Variable('f', numpy.float64, dimensions=('a', )))
-    ds.add_variable(meta.Variable('g', numpy.float64))
+    ds = meta.DatasetSchema(dimensions=(meta.Dimension('a', 0),
+                                        meta.Dimension('b', 10),
+                                        meta.Dimension('x', 10),
+                                        meta.Dimension('y', 10)),
+                            variables=[])
+    ds.add_variable(
+        meta.VariableSchema('a', numpy.float64, dimensions=('x', 'y')))
+    ds.add_variable(meta.VariableSchema('b', numpy.float64,
+                                        dimensions=('x', )))
+    ds.add_variable(meta.VariableSchema('c', numpy.float64,
+                                        dimensions=('y', )))
+    ds.add_variable(
+        meta.VariableSchema('d', numpy.float64, dimensions=('a', 'y')))
+    ds.add_variable(
+        meta.VariableSchema('e', numpy.float64, dimensions=('a', 'b')))
+    ds.add_variable(meta.VariableSchema('f', numpy.float64,
+                                        dimensions=('a', )))
+    ds.add_variable(meta.VariableSchema('g', numpy.float64))
 
     assert ds.select_variables_by_dims(('x', 'y')) == {'a', 'b', 'c', 'd'}
     assert ds.select_variables_by_dims(('x', )) == {'a', 'b'}

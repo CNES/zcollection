@@ -89,7 +89,8 @@ except ValueError as err:
 # Such a state of the view is not very interesting. But it is possible to
 # :py:meth:`add<zcollection.view.View.add_variable>` and modify variables in
 # order to enhance the view.
-var3_template: zcollection.meta.Variable = zds.metadata().variables['var2']
+var3_template: zcollection.meta.VariableSchema = zds.metadata(
+).variables['var2']
 var3_template.name = 'var3'
 view.add_variable(var3_template)
 del var3_template

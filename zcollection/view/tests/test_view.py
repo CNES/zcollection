@@ -68,7 +68,7 @@ def test_view(  # noqa: PLR0915
     zds = zview.load(delayed=delayed, distributed=distributed)
     assert set(zds.variables) == {v.name for v in zview.view_ref.variables()}
 
-    var = meta.Variable(
+    var = meta.VariableSchema(
         name='var2',
         dtype=numpy.float64,
         dimensions=('num_lines', 'num_pixels'),
@@ -365,9 +365,9 @@ def test_view_update(
                                         tested_fs.fs),
                                     filesystem=tested_fs.fs)
 
-    var = meta.Variable(name='var3',
-                        dtype=numpy.float64,
-                        dimensions=('num_lines', 'num_pixels'))
+    var = meta.VariableSchema(name='var3',
+                              dtype=numpy.float64,
+                              dimensions=('num_lines', 'num_pixels'))
 
     zview.add_variable(var)
 
@@ -432,7 +432,7 @@ def test_view_update_with_immutable(fs, request) -> None:
                                   distributed=False)
     view_ref = view.ViewReference(str(tested_fs.collection), tested_fs.fs)
 
-    new_im = meta.Variable(
+    new_im = meta.VariableSchema(
         name='var_immutable',
         dtype=numpy.dtype('int16'),
         dimensions=('num_pixels', ),
@@ -446,7 +446,7 @@ def test_view_update_with_immutable(fs, request) -> None:
                                     filesystem=tested_fs.fs,
                                     distributed=False)
 
-    new_var = meta.Variable(
+    new_var = meta.VariableSchema(
         name='var4',
         dtype=numpy.dtype('int16'),
         dimensions=('num_lines', 'num_pixels'),
@@ -499,7 +499,7 @@ def test_view_overlap(
                                         tested_fs.fs),
                                     filesystem=tested_fs.fs)
 
-    var = meta.Variable(
+    var = meta.VariableSchema(
         name='var3',
         dtype=numpy.int8,
         dimensions=('num_lines', 'num_pixels'),
@@ -616,9 +616,9 @@ def test_view_sync(
                                         tested_fs.fs),
                                     filesystem=tested_fs.fs,
                                     distributed=distributed)
-    var = meta.Variable(name='var3',
-                        dtype=numpy.float64,
-                        dimensions=('num_lines', 'num_pixels'))
+    var = meta.VariableSchema(name='var3',
+                              dtype=numpy.float64,
+                              dimensions=('num_lines', 'num_pixels'))
     zview.add_variable(var, distributed=distributed)
     del zview
 
@@ -684,9 +684,9 @@ def test_view_with_empty_collection(fs, request, caplog):
         filesystem=tested_fs.fs,
         distributed=False,
     )
-    var = meta.Variable(name='var2',
-                        dtype=numpy.float64,
-                        dimensions=('time', 'lat'))
+    var = meta.VariableSchema(name='var2',
+                              dtype=numpy.float64,
+                              dimensions=('time', 'lat'))
 
     caplog.clear()
     zview.add_variable(variable=var, distributed=False)
@@ -721,9 +721,10 @@ def _view_on_one_partition(tested_fs) -> view.View:
                                         tested_fs.fs),
                                     filesystem=tested_fs.fs,
                                     distributed=False)
-    zview.add_variable(meta.Variable(name='var3',
-                                     dtype=numpy.float64,
-                                     dimensions=('num_lines', 'num_pixels')),
+    zview.add_variable(meta.VariableSchema(name='var3',
+                                           dtype=numpy.float64,
+                                           dimensions=('num_lines',
+                                                       'num_pixels')),
                        distributed=False)
     return zview
 

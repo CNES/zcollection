@@ -24,7 +24,7 @@ import numpy
 import xarray
 import xarray.conventions
 
-from . import meta, representation, variable
+from . import meta, representation
 from .compressed_array import CompressedArray
 from .meta import BLOCK_SIZE_LIMIT, Attribute, Dimension, DimensionType
 from .variable import Array, DelayedArray, Variable
@@ -279,7 +279,7 @@ class Dataset:
         return sum(item.nbytes for item in self.variables.values())
 
     def add_variable(self,
-                     var: meta.Variable | variable.Variable,
+                     var: meta.VariableSchema | Variable,
                      /,
                      data: ArrayLike[Any] | None = None,
                      filler: bool = False) -> None:
@@ -369,13 +369,13 @@ class Dataset:
         zds.copy_properties(ds=self)
         return zds
 
-    def metadata(self) -> meta.Dataset:
+    def metadata(self) -> meta.DatasetSchema:
         """Get the dataset metadata.
 
         Returns:
             Dataset metadata
         """
-        return meta.Dataset(
+        return meta.DatasetSchema(
             tuple(
                 Dimension(dim, size, self.dim_chunks.get(dim, -1))
                 for dim, size in self.dimensions.items()),
@@ -465,7 +465,7 @@ class Dataset:
             tuple((key, value.values) for key, value in self.variables.items()
                   if key in variables))
 
-    def copy_properties(self, ds: Dataset | meta.Dataset):
+    def copy_properties(self, ds: Dataset | meta.DatasetSchema):
         """Copy chunks and block properties from provided dataset.
 
         Args:
@@ -474,7 +474,7 @@ class Dataset:
         self.dim_chunks = ds.dim_chunks
         self.block_size_limit = ds.block_size_limit
 
-    def fill_attrs(self, mds: meta.Dataset) -> None:
+    def fill_attrs(self, mds: meta.DatasetSchema) -> None:
         """Fill the dataset and its variables attributes using the provided
         metadata.
 
@@ -751,7 +751,8 @@ class Dataset:
         return _dataset_repr(self)
 
 
-def get_variable_metadata(var: Variable | meta.Variable) -> meta.Variable:
+def get_variable_metadata(
+        var: Variable | meta.VariableSchema) -> meta.VariableSchema:
     """Get the variable metadata.
 
     Args:
@@ -765,14 +766,14 @@ def get_variable_metadata(var: Variable | meta.Variable) -> meta.Variable:
     """
     if isinstance(var, Variable):
         return var.metadata()
-    if not isinstance(var, meta.Variable):
-        raise TypeError('Expected a meta.Variable or a Variable, got '
+    if not isinstance(var, meta.VariableSchema):
+        raise TypeError('Expected a meta.VariableSchema or a Variable, got '
                         f'{type(var).__name__}')
     return var
 
 
 def get_dataset_variable_properties(
-        metadata: meta.Dataset,
+        metadata: meta.DatasetSchema,
         selected_variables: Iterable[str] | None = None) -> tuple[Array, ...]:
     """Return the variables' properties defined in the dataset.
 

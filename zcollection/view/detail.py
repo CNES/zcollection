@@ -92,7 +92,7 @@ class AxisReference:
 def _create_zarr_array(args: tuple[str, str],
                        *,
                        base_dir: str,
-                       variable: meta.Variable,
+                       variable: meta.VariableSchema,
                        dimensions: meta.DimensionType,
                        chunks: dict[str, int] | None,
                        axis: str | None,
@@ -238,8 +238,8 @@ def _load_one_dataset(
     return zds, partition
 
 
-def _assert_variable_handled(reference: meta.Dataset, view: meta.Dataset,
-                             variable: str) -> None:
+def _assert_variable_handled(reference: meta.DatasetSchema,
+                             view: meta.DatasetSchema, variable: str) -> None:
     """Assert that a variable belongs to a view.
 
     Args:
@@ -260,7 +260,7 @@ def _load_datasets_list(
     delayed: bool,
     fs: fsspec.AbstractFileSystem,
     view_ref: collection.Collection,
-    metadata: meta.Dataset,
+    metadata: meta.DatasetSchema,
     partitions: Iterable[str],
     selected_variables: Iterable[str] | None = None,
     with_immutable: bool = False,
@@ -316,7 +316,7 @@ def _load_datasets_list(
     return iter(datasets)
 
 
-def _assert_have_variables(metadata: meta.Dataset) -> None:
+def _assert_have_variables(metadata: meta.DatasetSchema) -> None:
     """Assert that the current view has variables.
 
     Args:
@@ -332,7 +332,7 @@ def _load_dataset_with_overlap(
     delayed: bool,
     depth: int,
     fs: fsspec.AbstractFileSystem,
-    metadata: meta.Dataset,
+    metadata: meta.DatasetSchema,
     partition: str,
     partitions: tuple[str, ...],
     selected_variables: Iterable[str] | None,
@@ -612,7 +612,7 @@ def _write_checksum(
 
 
 def _sync_partition(
-    metadata: meta.Dataset,
+    metadata: meta.DatasetSchema,
     partition: str,
     base_dir: str,
     fs: fsspec.AbstractFileSystem,
@@ -690,7 +690,7 @@ def _sync(
     base_dir: str,
     fs: fsspec.AbstractFileSystem,
     view_ref: collection.Collection,
-    metadata: meta.Dataset,
+    metadata: meta.DatasetSchema,
     dry_run: bool = False,
 ) -> str | None:
     """Sync the partitions of a view.

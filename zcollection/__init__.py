@@ -23,7 +23,7 @@ from .convenience import (
     update_deprecated_view,
 )
 from .dataset import Dataset, Expression
-from .meta import Attribute
+from .meta import Attribute, DatasetSchema, Dimension, VariableSchema
 from .variable import Array, DelayedArray, Variable
 from .version import __version__
 from .view import View, ViewReference, ViewUpdateCallable
@@ -33,7 +33,9 @@ __all__ = (
     'Attribute',
     'Collection',
     'Dataset',
+    'DatasetSchema',
     'DelayedArray',
+    'Dimension',
     'Expression',
     'Indexer',
     'MapCallable',
@@ -42,6 +44,7 @@ __all__ = (
     'PartitionFilterCallback',
     'UpdateCallable',
     'Variable',
+    'VariableSchema',
     'View',
     'ViewReference',
     'ViewUpdateCallable',

@@ -78,7 +78,7 @@ class View:
                  base_dir: str,
                  view_ref: ViewReference,
                  *,
-                 ds: meta.Dataset | None,
+                 ds: meta.DatasetSchema | None,
                  filesystem: fsspec.AbstractFileSystem | str | None = None,
                  filters: collection.PartitionFilter = None,
                  synchronizer: sync.Sync | None = None,
@@ -91,7 +91,7 @@ class View:
         self.view_ref: collection.Collection = convenience.open_collection(
             view_ref.path, mode='r', filesystem=view_ref.filesystem)
         #: The metadata of the variables handled by the view.
-        self.metadata = ds or meta.Dataset([], [], attrs=[])
+        self.metadata = ds or meta.DatasetSchema([], [], attrs=[])
         #: The synchronizer used to synchronize the view.
         self.synchronizer: sync.Sync = synchronizer or sync.NoSync()
         #: The filters used to select the partitions of the reference.
@@ -215,7 +215,7 @@ class View:
                         view_ref['path'],
                         fsspec.AbstractFileSystem.from_json(
                             json.dumps(view_ref['fs']))),
-                    ds=meta.Dataset.from_config(data['metadata']),
+                    ds=meta.DatasetSchema.from_config(data['metadata']),
                     filesystem=filesystem,
                     filters=_deserialize_filters(data['filters']),
                     synchronizer=synchronizer)
@@ -263,7 +263,7 @@ class View:
                                                        selected_variables)
 
     def add_variable(self,
-                     variable: meta.Variable | dataset.Variable,
+                     variable: meta.VariableSchema | dataset.Variable,
                      distributed: bool = True) -> None:
         """Add a variable to the view.
 
@@ -276,7 +276,7 @@ class View:
 
         Example:
             >>> view.add_variable(
-            ...    zcollection.meta.Variable(
+            ...    zcollection.meta.VariableSchema(
             ...        "temperature",
             ...        "float32", ("time", "lat", "lon"),
             ...        (zcollection.meta.Attribute("units", "degrees Celsius"),
@@ -326,7 +326,7 @@ class View:
 
         self._write_config()
 
-    def _add_variable(self, variable: meta.Variable,
+    def _add_variable(self, variable: meta.VariableSchema,
                       partitions: Iterator[tuple[str, str]]):
         """Add the provided variable to the collection."""
         dimensions, chunks = self.view_ref.dimensions_properties()
@@ -342,7 +342,7 @@ class View:
                 fs=self.fs,
             )
 
-    def _add_variable_distributed(self, variable: meta.Variable,
+    def _add_variable_distributed(self, variable: meta.VariableSchema,
                                   partitions: Iterator[tuple[str, str]]):
         """Add the provided variable to the collection using dask."""
         dimensions, chunks = self.view_ref.dimensions_properties()
@@ -504,7 +504,8 @@ class View:
                                               delayed)
 
         if array is not None:
-            metadata: meta.Dataset = copy.deepcopy(self.view_ref.metadata)
+            metadata: meta.DatasetSchema = copy.deepcopy(
+                self.view_ref.metadata)
             metadata.variables.update(self.metadata.variables.items())
             array.fill_attrs(metadata)
 

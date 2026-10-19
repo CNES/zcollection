@@ -198,7 +198,7 @@ def test_a_view_reads_the_collection_and_its_own_variable(
     numpy.testing.assert_array_equal(data.variables['time'].values,
                                      reference.axis())
 
-    own = zcollection.meta.Variable(
+    own = zcollection.meta.VariableSchema(
         name='derived',
         dtype=numpy.dtype('float64'),
         dimensions=(reference.DIMENSION, ),

@@ -464,7 +464,7 @@ class Variable(IVariable, abc.ABC):
         """
         return self.duplicate(name=name)
 
-    def fill_attrs(self, var: meta.Variable) -> None:
+    def fill_attrs(self, var: meta.VariableSchema) -> None:
         """Fill the variable attributes using the provided metadata.
 
         Args:
@@ -472,19 +472,19 @@ class Variable(IVariable, abc.ABC):
         """
         self.attrs = var.attrs
 
-    def metadata(self) -> meta.Variable:
+    def metadata(self) -> meta.VariableSchema:
         """Get the variable metadata.
 
         Returns:
             Variable metadata
         """
-        return meta.Variable(self.name,
-                             self.dtype,
-                             dimensions=self.dimensions,
-                             attrs=self.attrs,
-                             compressor=self.compressor,
-                             fill_value=self.fill_value,
-                             filters=self.filters)
+        return meta.VariableSchema(self.name,
+                                   self.dtype,
+                                   dimensions=self.dimensions,
+                                   attrs=self.attrs,
+                                   compressor=self.compressor,
+                                   fill_value=self.fill_value,
+                                   filters=self.filters)
 
     def have_same_properties(self, other: Variable) -> bool:
         """Return true if this instance and the other variable have the same
