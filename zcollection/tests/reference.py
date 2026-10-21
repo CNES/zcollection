@@ -24,10 +24,10 @@ from .. import dataset, partitioning
 #: First date of the reference dataset.
 START_DATE = numpy.datetime64('2000-01-01', 'ns')
 
-#: Delta between two measures.
+#: Delta between two measurements.
 DELTA = numpy.timedelta64(6, 'h')
 
-#: Number of measures. Four per day over three days.
+#: Number of measurements. Four per day over three days.
 SIZE = 12
 
 #: Fill value of the ``masked`` variable.
@@ -41,7 +41,7 @@ SCALE = 1000
 #: value sitting behind a filter.
 SCALED_FILL_VALUE = -10.0
 
-#: Fill value of the ``counts`` variable. No measure carries it.
+#: Fill value of the ``counts`` variable. No measurement carries it.
 COUNT_FILL_VALUE = -99
 
 #: Name of the partitioning dimension.
@@ -62,7 +62,7 @@ def axis() -> numpy.ndarray:
 def plain_values() -> numpy.ndarray:
     """Return values holding exact zeros and no fill value.
 
-    A zero here is a measure, not an absence. Reading it back as a masked
+    A zero here is a measurement, not an absence. Reading it back as a masked
     value is a corruption that raises nothing.
     """
     values = numpy.arange(SIZE, dtype='float64') - 4.0

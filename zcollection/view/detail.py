@@ -718,7 +718,7 @@ def _sync(
                                                         view_ref=view_ref)
     if axis_ref.checksum != array.attrs[CHECKSUM_ATTR]:
         # The axis of the view is a prefix of the reference one when the
-        # partition holds the same measures up to its end.
+        # partition holds the same measurements up to its end.
         axis_view: NDArray = array[:]
         if axis_ref.array.size > axis_view.size and numpy.all(
                 axis_view == axis_ref.array[:axis_view.size]):

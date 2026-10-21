@@ -59,7 +59,7 @@ def test_partitions(written) -> None:
 def test_plain_variable_keeps_its_zeros(written) -> None:
     """A variable without a fill value is read back unmasked.
 
-    Its zeros are measures. A backend that gives the variable a fill value
+    Its zeros are measurements. A backend that gives the variable a fill value
     of zero turns every one of them into an absence.
     """
     data = written.load(delayed=False, distributed=False)

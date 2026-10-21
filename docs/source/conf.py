@@ -38,6 +38,7 @@ version = '.'.join(release.split('.')[:2])
 # extensions coming with Sphinx (named "sphinx.ext.*") or your custom
 # ones.
 extensions = [
+    'jupyter_sphinx',
     'sphinx_inline_tabs',
     'sphinx_gallery.gen_gallery',
     'sphinx.ext.autodoc',
@@ -49,6 +50,9 @@ extensions = [
 ]
 
 autosummary_generate = True
+
+#: A cell that raises stops the build.
+jupyter_execute_kwargs = {'timeout': -1, 'allow_errors': False}
 
 autodoc_typehints = 'description'
 autodoc_type_aliases = dict(
@@ -81,11 +85,6 @@ exclude_patterns = []
 #
 html_theme = 'furo'
 html_title = 'ZCollection'
-
-# Add any paths that contain custom static files (such as style sheets) here,
-# relative to this directory. They are copied after the builtin static files,
-# so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
 
 intersphinx_mapping = {
     'dask': ('https://docs.dask.org/en/latest/', None),
