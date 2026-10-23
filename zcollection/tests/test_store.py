@@ -98,7 +98,7 @@ def test_filters_are_applied(local_fs) -> None:  # noqa: F811
     array[...] = [0.001, 0.002, 0.003, 0.004]
 
     assert [item.to_dict()['name']
-            for item in array.filters] == ['scale_offset', 'cast_value']
+            for item in array.filters] == ['numcodecs.fixedscaleoffset']
     numpy.testing.assert_allclose(array[...], [0.001, 0.002, 0.003, 0.004])
 
 

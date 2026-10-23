@@ -1787,7 +1787,7 @@ def test_insert_writes_the_declared_encoding(
         codecs = [item['name'] for item in json.load(stream)['codecs']]
 
     assert 'blosc' in codecs
-    assert 'scale_offset' in codecs
+    assert 'numcodecs.fixedscaleoffset' in codecs
 
 
 def test_insert_takes_the_declared_fill_value(

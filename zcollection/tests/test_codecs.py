@@ -6,12 +6,11 @@
 Testing the translation of codecs
 =================================
 
-What a codec becomes decides what lands in the metadata of an array, and
-what another implementation of Zarr can read. The table is pinned here.
+The translation of a codec sets what lands in the metadata of an array,
+and what another implementation of Zarr can read. These tests pin what
+each codec is translated into.
 """
 from __future__ import annotations
-
-import pathlib
 
 import numcodecs
 import numpy
@@ -34,11 +33,9 @@ def names(codec: numcodecs.abc.Codec) -> list[str]:
     (numcodecs.Blosc(), ['blosc']),
     (numcodecs.Zstd(level=3), ['zstd']),
     (numcodecs.GZip(level=4), ['gzip']),
-    (numcodecs.FixedScaleOffset(offset=0, scale=1000, dtype='f8',
-                                astype='i4'), ['scale_offset', 'cast_value']),
 ])
 def test_a_registered_codec_is_translated(codec, expected) -> None:
-    """A codec Zarr registers a name for is written under that name."""
+    """Each of these codecs is written under the name Zarr gives it."""
     assert names(codec) == expected
 
 
@@ -47,14 +44,15 @@ def test_a_registered_codec_is_translated(codec, expected) -> None:
     (numcodecs.Quantize(digits=3, dtype='f8'), ['numcodecs.quantize']),
     (numcodecs.PackBits(), ['numcodecs.packbits']),
     (numcodecs.BitRound(keepbits=5), ['numcodecs.bitround']),
+    (numcodecs.FixedScaleOffset(offset=0, scale=1000,
+                                dtype='f8'), ['numcodecs.fixedscaleoffset']),
 ])
 def test_an_unregistered_codec_keeps_its_own_name(codec, expected) -> None:
-    """A codec Zarr registers no name for is written under its own.
+    """A codec translated into the wrapper keeps its numcodecs identifier.
 
-    Zarr names such a codec by the identifier numcodecs gives it, prefixed
-    with ``numcodecs.``. The name lies outside the registry of the Zarr v3
-    specification: reading an array it is applied to takes an
-    implementation that holds the codec.
+    Zarr writes that identifier prefixed with ``numcodecs.``. The name lies
+    outside the registry of the Zarr v3 specification: reading an array it
+    is applied to takes an implementation that provides the codec.
     """
     assert names(codec) == expected
 
@@ -75,12 +73,6 @@ def test_the_shuffle_blosc_picks_is_left_to_zarr() -> None:
     codec, = codecs.translate(
         numcodecs.Blosc(shuffle=numcodecs.Blosc.AUTOSHUFFLE))
     assert codec.shuffle is not None
-
-
-def test_a_cast_that_changes_nothing_is_left_out() -> None:
-    """A scaling that keeps the data type translates to one codec."""
-    assert names(numcodecs.FixedScaleOffset(offset=0, scale=1000,
-                                            dtype='f8')) == ['scale_offset']
 
 
 def test_a_zarr_codec_is_carried_as_it_is() -> None:
@@ -116,35 +108,25 @@ def test_the_compressor_zarr_picks_is_left_to_it() -> None:
     assert codecs.filters(()) == ()
 
 
-def test_the_translation_holds_the_same_bytes(local_fs) -> None:  # noqa: F811
-    """The translation of a scaling holds what numcodecs holds.
+@pytest.mark.parametrize('astype', ['f8', 'i4'])
+def test_a_translated_scaling_holds_the_same_values(
+        local_fs,  # noqa: F811
+        astype) -> None:
+    """A translated scaling reads back what numcodecs reads back.
 
-    ``scale_offset`` followed by ``cast_value`` encodes the values the way
-    ``FixedScaleOffset`` does.
+    numcodecs rounds the scaled values before it writes them.
     """
-    values = numpy.round(numpy.linspace(-1.5, 1.5, 1000), 3)
-    sizes = []
-    for label, filters in (
-        ('numcodecs', (zarr.codecs.numcodecs.FixedScaleOffset(offset=0,
-                                                              scale=1000,
-                                                              dtype='f8',
-                                                              astype='i4'), )),
-        ('registered',
-         codecs.filters((numcodecs.FixedScaleOffset(offset=0,
-                                                    scale=1000,
-                                                    dtype='f8',
-                                                    astype='i4'), ))),
-    ):
-        path = f'{local_fs.root}/{label}'
-        array = zarr.create_array(store=path,
-                                  shape=values.shape,
-                                  dtype='float64',
-                                  filters=filters,
-                                  compressors=[zarr.codecs.BloscCodec()])
-        array[...] = values
-        numpy.testing.assert_allclose(array[...], values, atol=1e-9)
-        sizes.append(
-            sum(item.stat().st_size for item in pathlib.Path(path).rglob('*')
-                if item.is_file() and item.name != 'zarr.json'))
+    values = numpy.linspace(-1.5, 1.5, 1000)
+    codec = numcodecs.FixedScaleOffset(offset=0,
+                                       scale=1000,
+                                       dtype='f8',
+                                       astype=astype)
+    array = zarr.create_array(store=f'{local_fs.root}/scaled',
+                              shape=values.shape,
+                              dtype='float64',
+                              filters=codecs.filters((codec, )),
+                              compressors=[zarr.codecs.BloscCodec()])
+    array[...] = values
 
-    assert sizes[0] == sizes[1]
+    numpy.testing.assert_array_equal(array[...],
+                                     codec.decode(codec.encode(values)))

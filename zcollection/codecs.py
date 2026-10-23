@@ -6,13 +6,15 @@
 Translation of codecs
 =====================
 
-A variable names the codecs it is held behind with the classes numcodecs
-defines, or with the ones Zarr defines. This module translates the first
-into the second.
+A variable names the codecs it is held behind, using the classes
+numcodecs defines or the ones Zarr defines. This module translates the
+first into the second.
 
-A codec Zarr registers a name for is translated into that codec. The
-others are translated into the wrapper Zarr ships for them, which writes
-the name numcodecs gives them, prefixed with ``numcodecs.``.
+Blosc, Zstd and GZip are translated into the Zarr codec of the same
+name. Every other codec of numcodecs is translated into the wrapper Zarr
+ships for it, which writes the identifier numcodecs gives it, prefixed
+with ``numcodecs.``. A codec Zarr ships no wrapper for is refused. A
+codec already named by Zarr goes through untouched.
 """
 from __future__ import annotations
 
@@ -20,13 +22,15 @@ from typing import TYPE_CHECKING, Any
 
 import numcodecs
 import numcodecs.abc
-import numpy
 import zarr.abc.codec
 import zarr.codecs
 import zarr.codecs.numcodecs
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
+
+    #: Builds the Zarr codecs standing for a codec, from its configuration.
+    Build = Callable[[dict[str, Any]], tuple[zarr.abc.codec.Codec, ...]]
 
 #: Marker selecting the codecs Zarr applies when none is named.
 DEFAULT_COMPRESSOR = 'auto'
@@ -59,32 +63,17 @@ def _gzip(config: dict[str, Any]) -> tuple[zarr.abc.codec.Codec, ...]:
     return (zarr.codecs.GzipCodec(level=config['level']), )
 
 
-def _fixed_scale_offset(
-        config: dict[str, Any]) -> tuple[zarr.abc.codec.Codec, ...]:
-    """Translate a FixedScaleOffset codec.
-
-    Zarr holds the scaling and the change of data type in two codecs.
-    """
-    scale = zarr.codecs.ScaleOffset(offset=config['offset'],
-                                    scale=config['scale'])
-    astype = numpy.dtype(config['astype'])
-    if astype == numpy.dtype(config['dtype']):
-        return (scale, )
-    return (scale, zarr.codecs.CastValue(data_type=astype.name))
-
-
-#: Codecs Zarr registers a name for, by the identifier numcodecs gives them.
-_REGISTERED: dict[str, Callable[[dict[str, Any]],
-                                tuple[zarr.abc.codec.Codec, ...]]] = {
-                                    'blosc': _blosc,
-                                    'zstd': _zstd,
-                                    'gzip': _gzip,
-                                    'fixedscaleoffset': _fixed_scale_offset,
-                                }
+#: How Blosc, Zstd and GZip are translated, by the identifier numcodecs
+#: gives each.
+_TRANSLATIONS: dict[str, Build] = {
+    'blosc': _blosc,
+    'zstd': _zstd,
+    'gzip': _gzip,
+}
 
 
 def _wrapped(codec: numcodecs.abc.Codec) -> tuple[zarr.abc.codec.Codec, ...]:
-    """Translate a codec Zarr registers no name for.
+    """Translate a codec through the wrapper Zarr ships for it.
 
     Args:
         codec: The codec to translate.
@@ -115,11 +104,11 @@ def translate(
         codec: A codec of either vocabulary.
 
     Returns:
-        The Zarr codecs. One codec of numcodecs may stand for several.
+        The Zarr codecs standing for it.
     """
     if isinstance(codec, zarr.abc.codec.Codec):
         return (codec, )
-    build = _REGISTERED.get(codec.codec_id)
+    build = _TRANSLATIONS.get(codec.codec_id)
     if build is None:
         return _wrapped(codec)
     return build(codec.get_config())
@@ -132,7 +121,8 @@ def compressors(
 
     Args:
         compressor: The compressor of a variable, :data:`DEFAULT_COMPRESSOR`
-            to let Zarr pick one, or ``None`` to hold the chunks as they are.
+            to let Zarr pick one, or ``None`` to write the chunks as they
+            are.
 
     Returns:
         What :func:`zarr.create_array` takes as its ``compressors``.
@@ -145,7 +135,7 @@ def compressors(
 def filters(
     codecs: Iterable[numcodecs.abc.Codec | zarr.abc.codec.Codec] | None,
 ) -> Sequence[zarr.abc.codec.Codec]:
-    """Return the codecs applied to the values before they are held.
+    """Return the codecs applied to the values before compression.
 
     Args:
         codecs: The filters of a variable.

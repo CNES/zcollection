@@ -12,7 +12,6 @@ import time
 
 import dask.array
 import dask.distributed
-import numcodecs
 import numpy
 import pytest
 import zarr
@@ -470,20 +469,15 @@ def test_a_group_reads_its_variables_in_order(
 def test_a_failed_write_names_the_variable(
         local_fs,  # noqa: F811
 ) -> None:
-    """A write that fails carries a note naming the variable it was writing.
+    """A failed write raises with a note naming the variable.
 
-    The fill value is written in the unit of the variable, so a filter
-    scaling it beyond the type it encodes to stops the write.
+    A value marking an absence stops the write when the encoding cannot
+    convert it.
     """
     var = dataset.DelayedArray(name='ssh',
                                data=numpy.zeros((4, ), dtype='float32'),
                                dimensions=('x', ),
-                               fill_value=numpy.float32(-999.0),
-                               filters=(numcodecs.FixedScaleOffset(
-                                   offset=0,
-                                   scale=1000,
-                                   dtype='f4',
-                                   astype='i2'), ))
+                               fill_value='not a number')
 
     with pytest.raises(Exception) as caught:  # noqa: PT011
         storage.write_zarr_variable(('ssh', var), str(local_fs.root),
