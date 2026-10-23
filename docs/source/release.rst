@@ -55,7 +55,9 @@ Behaviour
   never took. Neither value equals itself, so the comparison by equality the
   read made left them unmasked.
 * The variables of a dataset read from a collection are ordered by name.
-* ``insert`` returns the full path of each partition it wrote.
+* ``insert`` returns the path of each partition it wrote, relative to the
+  collection. It returned the full path, which neither ``partitions`` reads
+  nor ``selected_partitions`` takes.
 * A variable added to a dataset with the data it holds keeps its values.
 * A write that fails carries a note naming the variable it was writing.
 * Writing a partition stops with an error naming the variables the store does

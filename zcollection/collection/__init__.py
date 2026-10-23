@@ -370,7 +370,9 @@ class Collection(ReadOnlyCollection):
                     this parameter will have no effect.
 
         Returns:
-            The full path of each partition written.
+            The path of each partition written, relative to the collection.
+            :py:meth:`partitions` reads the same paths, and
+            ``selected_partitions`` takes them.
 
         Raises:
             ValueError:
@@ -423,9 +425,7 @@ class Collection(ReadOnlyCollection):
         else:
             self._insert_sequential(ds, partitions, merge_callable, **kwargs)
 
-        return tuple(
-            fs_utils.join_path(*((self.partition_properties.dir, *item)))
-            for item, _ in partitions)
+        return tuple(fs_utils.join_path(*item) for item, _ in partitions)
 
     def _set_ds_for_insertion(self, ds: dataset.Dataset) -> dataset.Dataset:
         """Create a new dataset ready to be inserted into a collection.

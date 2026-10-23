@@ -1863,3 +1863,31 @@ def test_add_variable_rejects_another_type(
             'dtype': 'float32',
             'dimensions': ('num_lines', ),
         })  # type: ignore[arg-type]
+
+
+def test_insert_returns_the_paths_a_selection_takes(request) -> None:
+    """What an insertion wrote names the partitions it wrote.
+
+    A reader of the result feeds it back to ``selected_partitions``, which
+    reads paths relative to the collection.
+    """
+    tested_fs = request.getfixturevalue('local_fs')
+    zds = next(create_test_dataset(delayed=False))
+    zcol = collection.Collection(axis='time',
+                                 ds=zds.metadata(),
+                                 partition_handler=partitioning.Date(
+                                     ('time', ), 'D'),
+                                 partition_base_dir=str(tested_fs.collection),
+                                 filesystem=tested_fs.fs)
+
+    written = zcol.insert(zds, distributed=False)
+
+    assert written
+    assert set(written) == set(zcol.partitions(relative=True))
+
+    read = zcol.load(selected_partitions=written[:1],
+                     delayed=False,
+                     distributed=False)
+    assert read is not None
+    assert read.variables['time'].values.size < zds.variables[
+        'time'].values.size
