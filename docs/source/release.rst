@@ -32,17 +32,15 @@ Storage
   it is refused. Copying it into a new collection is what makes its data
   writable again, and a view written by an earlier release opens only once it
   has been copied.
-* ``zcollection.migrate`` copies a collection written by an earlier release
-  into a new one, partition by partition, with a filter selecting the
-  partitions to copy.
-  ``zcollection.status`` reports how far the copy has got,
-  ``zcollection.check`` compares the values the two collections hold,
-  ``zcollection.prune`` removes from the source the partitions the target
-  holds, and ``zcollection.migrate_view``, ``zcollection.check_view``,
-  ``zcollection.prune_view`` and ``zcollection.view_status`` do the same for
-  a view. A partition the target holds in full is not copied
-  again, so a migration that stopped partway is resumed by calling the
-  function again.
+* ``zcollection.migration`` holds the functions a migration takes.
+  ``migrate`` copies a collection written by an earlier release into a new
+  one, partition by partition, with a filter selecting the partitions to
+  copy. ``status`` reports how far the copy has got, ``check`` compares the
+  values the two collections hold, ``prune`` removes from the source the
+  partitions the target holds, and ``migrate_view``, ``check_view``,
+  ``prune_view`` and ``view_status`` do the same for a view. A partition the
+  target holds in full is not copied again, so a migration that stopped
+  partway is resumed by calling the function again.
 * The fill value of a variable is held in the ``_FillValue`` attribute of an
   array, beside the fill value Zarr 3 requires of every array.
 * The codecs a variable names with the classes of numcodecs are translated into

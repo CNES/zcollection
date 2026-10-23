@@ -310,8 +310,9 @@ class Collection(ReadOnlyCollection):
                 f'{meta.FORMAT_VERSION}.')
 
         if version == meta.DEPRECATED_FORMAT_VERSION:
-            msg_import = ("Use the 'zcollection.migrate' function to copy "
-                          'it into a collection this release writes.')
+            msg_import = (
+                "Use the 'zcollection.migration.migrate' function to copy "
+                'it into a collection this release writes.')
             warnings.warn(
                 message=('This collection was written by an earlier release '
                          f'and can only be read. {msg_import}'),

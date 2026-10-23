@@ -1,7 +1,3 @@
-# Copyright (c) 2023 CNES
-#
-# All rights reserved. Use of this source code is governed by a
-# BSD-style license that can be found in the LICENSE file.
 """
 Migration of a collection
 =========================
@@ -12,36 +8,50 @@ filters, the fill value, the dimensions and the attributes of each variable,
 and written with them in the layout this release writes.
 
 Each function here reads a collection and its copy. Only
-:func:`prune <zcollection.prune>` removes anything, and only from the source:
+:func:`prune <zcollection.migration.prune>` removes anything, and only from the source:
 it removes the partitions the copy holds, and the configuration and the
 immutable variables of the source stay.
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
-import dataclasses
+import json
 import logging
 import math
 import pathlib
 import traceback
+import warnings
 
 import dask.bag.core
+import fsspec
 import numpy
 
-from . import dask_utils, fs_utils, storage, store, sync
-from .collection import IMMUTABLE
-from .variable.abc import read_dimensions
-from .view.detail import CHECKSUM_FILE, _write_checksum
+from .. import (
+    collection,
+    dask_utils,
+    fs_utils,
+    meta,
+    partitioning,
+    storage,
+    store,
+    sync,
+    view,
+)
+from ..collection import IMMUTABLE
+from ..convenience import open_collection
+from ..fs_utils import join_path
+from ..variable.abc import read_dimensions
+from ..view.detail import CHECKSUM_FILE, _write_checksum
+from .abc import Outcome, Status
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
-    import fsspec
     import zarr
 
-    from . import collection, dataset, meta
-    from .collection import PartitionFilter
-    from .type_hints import NDArray
+    from .. import dataset
+    from ..collection import PartitionFilter
+    from ..type_hints import NDArray
 
 #: Module logger.
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -50,73 +60,6 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 #: other file an array holds is a chunk.
 _METADATA_FILES = frozenset(
     {'.zarray', '.zattrs', '.zgroup', '.zmetadata', 'zarr.json'})
-
-
-@dataclasses.dataclass(frozen=True)
-class Outcome:
-    """What one run did to the partitions it selected.
-
-    The partitions are named by their path relative to their collection, and
-    each field is sorted. The documentation of each function states what it
-    puts in each field.
-
-    Each field records what a task decided, not what the two collections
-    hold once the run returns. Dask runs a task again when the worker
-    holding its result dies, so a partition one run wrote can come back
-    under ``skipped``. :func:`status <zcollection.status>` and
-    :func:`check <zcollection.check>` are what read the storage.
-    """
-    #: The partitions the run reports as done.
-    done: tuple[str, ...]
-
-    #: The partitions it left as they were.
-    skipped: tuple[str, ...]
-
-    #: The partitions it reports as failed, each with the reason as text.
-    failed: tuple[tuple[str, str], ...]
-
-
-@dataclasses.dataclass(frozen=True)
-class Status:
-    """How far the copy of a collection has got."""
-    #: The partitions both collections hold, complete in the target.
-    migrated: tuple[str, ...]
-
-    #: The partitions of the source the target does not hold complete.
-    missing: tuple[str, ...]
-
-    #: The partitions the target holds complete and the source no longer
-    #: holds.
-    pruned: tuple[str, ...]
-
-    #: The partitions the source no longer holds and the target does not
-    #: hold complete. Nothing can rebuild them.
-    lost: tuple[str, ...]
-
-    def __str__(self) -> str:
-        """Return the counts grouped by the first partitioning key.
-
-        Returns:
-            One line per value of that key, in the order the values sort.
-            The pruned and the lost counts are left out of a group holding
-            none.
-        """
-        groups: dict[str, list[int]] = {}
-        for index, partitions in enumerate(
-            (self.migrated, self.missing, self.pruned, self.lost)):
-            for item in partitions:
-                groups.setdefault(item.split('/')[0], [0, 0, 0, 0])[index] += 1
-
-        lines = []
-        for key in sorted(groups):
-            migrated, missing, pruned, lost = groups[key]
-            line = f'{key} : {migrated} migrated, {missing} missing'
-            if pruned:
-                line += f', {pruned} pruned'
-            if lost:
-                line += f', {lost} lost'
-            lines.append(line)
-        return '\n'.join(lines)
 
 
 def _merge(outcomes: Iterable[Outcome]) -> Outcome:
@@ -1274,3 +1217,330 @@ def collection_status(
         tuple(sorted(source_partitions - complete)),
         tuple(sorted(complete - source_partitions)),
         tuple(sorted(target_partitions - complete - source_partitions)))
+
+
+#: Start of the warning emitted when a collection written by an earlier
+#: release is opened. The functions here open such a collection
+#: deliberately.
+_DEPRECATED_WARNING = 'This collection was written by an earlier release'
+
+
+def _open_source(
+    path: str,
+    fs: fsspec.AbstractFileSystem,
+) -> collection.Collection:
+    """Open the source collection, read only.
+
+    Args:
+        path: The path to the collection.
+        fs: The file system the collection is held on.
+
+    Returns:
+        The collection.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore',
+                                message=_DEPRECATED_WARNING,
+                                category=UserWarning)
+        return open_collection(path, mode='r', filesystem=fs)
+
+
+def read_collection_config(path: str,
+                           fs: fsspec.AbstractFileSystem) -> dict[str, Any]:
+    """Read the configuration of a collection.
+
+    Args:
+        path: The path to the collection.
+        fs: The file system the collection is held on.
+
+    Returns:
+        The configuration.
+
+    Raises:
+        ValueError: If the directory holds no collection configuration.
+    """
+    config: str = collection.Collection._config(path)
+
+    if not fs.exists(config):
+        raise ValueError(f'zarr collection not found at path {path!r}')
+
+    with fs.open(config) as stream:
+        return json.load(stream)
+
+
+def _configuration(
+    path: str,
+    fs: fsspec.AbstractFileSystem,
+    data: dict[str, Any],
+) -> tuple[str, meta.DatasetSchema, partitioning.Partitioning]:
+    """Read the properties a collection is built from.
+
+    Args:
+        path: The path to the collection.
+        fs: The file system the collection is held on.
+        data: The configuration of the collection.
+
+    Returns:
+        The axis, the metadata and the partitioning. A configuration
+        written by an earlier release names its dimensions without their
+        size: these sizes are read from the first partition.
+
+    Raises:
+        ValueError: If the collection holds no partition, or if the
+            metadata misses a dimension its variables span.
+    """
+    zcol_partitioning: partitioning.Partitioning = partitioning.get_codecs(
+        data['partitioning'])
+    axis: str = data['axis']
+
+    if meta.format_version(data) != meta.DEPRECATED_FORMAT_VERSION:
+        return axis, meta.DatasetSchema.from_config(
+            data['dataset']), zcol_partitioning
+
+    ds = meta.DatasetSchema.from_deprecated_config(data['dataset'])
+    main_dimension = ds.variables[axis].dimensions[0]
+
+    dimensions_source = _dimensions_source(ds, main_dimension)
+
+    partitions = list(zcol_partitioning.list_partitions(fs=fs, path=path))
+
+    if not partitions:
+        raise ValueError(
+            'The collection requires at least one partition to be updatable.')
+
+    # Using the first partition to extract dimensions information
+    partition = partitions[0]
+
+    for dimension, variable in dimensions_source.items():
+        dim_index = variable.dimensions.index(dimension)
+        if main_dimension in variable.dimensions:
+            _LOGGER.warning('Extracting %r size from %r variable.', dimension,
+                            variable.name)
+            var_path = join_path(partition, variable.name)
+        else:
+            # This is an immutable variable
+            _LOGGER.warning('Extracting %r size from %r constant.', dimension,
+                            variable.name)
+            var_path = join_path(path, collection.IMMUTABLE, variable.name)
+
+        var_shape = store.open_array(fs, var_path, mode='r').shape
+
+        dim_size = var_shape[dim_index]
+        _LOGGER.warning('Assigning size %r to dimension %r.', dim_size,
+                        dimension)
+
+        ds.dimensions[dimension].value = dim_size
+
+    missing_dimensions = set(dimensions_source) - set(ds.dimensions)
+    if missing_dimensions:
+        raise ValueError('Something is wrong, some dimensions are missing: '
+                         f'{missing_dimensions}')
+
+    return axis, ds, zcol_partitioning
+
+
+def _dimensions_source(ds: meta.DatasetSchema,
+                       main_dimension: str) -> dict[str, meta.VariableSchema]:
+    """Associate dimension to a variable containing it.
+
+    Args:
+        ds: Dataset from which to get variables information.
+        main_dimension: Name of the main dimension.
+
+    Returns:
+        Dictionary of dimension associated to a variable containing it.
+    """
+    dimensions_source: dict[str, meta.VariableSchema] = {}
+    dimensions = list(ds.dimensions)
+
+    for dimension in dimensions:
+        if dimension == main_dimension:
+            continue
+
+        for variable in ds.variables.values():
+            if dimension in variable.dimensions:
+                dimensions_source[dimension] = variable
+                break
+
+    return dimensions_source
+
+
+def _matching_target(
+    source: str,
+    target: str,
+    source_fs: fsspec.AbstractFileSystem,
+    target_fs: fsspec.AbstractFileSystem,
+) -> collection.Collection:
+    """Open the copy of a collection, read only.
+
+    The axis, the partitioning and the variables of the two are compared,
+    which is what tells one collection from another. The size of a
+    dimension is not: reading it costs an array of the source, and two
+    collections are not told apart by it.
+
+    Args:
+        source: The path to the collection that was copied.
+        target: The path to the copy.
+        source_fs: The file system the source is held on.
+        target_fs: The file system the target is held on.
+
+    Returns:
+        The copy.
+
+    Raises:
+        ValueError: If the target is not the copy of the source.
+    """
+    data = read_collection_config(source, source_fs)
+    zcol = open_collection(target, mode='r', filesystem=target_fs)
+    expected = (data['axis'],
+                partitioning.get_codecs(data['partitioning']).get_config(),
+                {item['name']
+                 for item in data['dataset']['variables']})
+    if (zcol.axis, zcol.partitioning.get_config(),
+            set(zcol.metadata.variables)) != expected:
+        raise ValueError(f'The collection {target!r} is not the copy of '
+                         f'{source!r}.')
+    return zcol
+
+
+def _open_target(
+    source: str,
+    target: str,
+    source_fs: fsspec.AbstractFileSystem,
+    target_fs: fsspec.AbstractFileSystem,
+) -> collection.Collection:
+    """Open the collection a migration writes into.
+
+    Args:
+        source: The path to the collection to copy.
+        target: The path to the collection to write.
+        source_fs: The file system the source is held on.
+        target_fs: The file system the target is held on.
+
+    Returns:
+        The target collection. A directory holding no configuration is
+        created with the one the source describes.
+
+    Raises:
+        ValueError: If the target holds a configuration that disagrees with
+            the one the source describes.
+    """
+    axis, ds, zcol_partitioning = _configuration(
+        source, source_fs, read_collection_config(source, source_fs))
+
+    if not target_fs.exists(collection.Collection._config(target)):
+        return collection.Collection(axis,
+                                     ds,
+                                     zcol_partitioning,
+                                     target,
+                                     mode='w',
+                                     filesystem=target_fs)
+
+    zcol = collection.Collection.from_config(target,
+                                             mode='w',
+                                             filesystem=target_fs)
+    derived = collection.ReadOnlyCollection(axis,
+                                            ds,
+                                            zcol_partitioning,
+                                            target,
+                                            mode='r',
+                                            filesystem=target_fs)
+    if (zcol.axis, zcol.metadata.get_config(),
+            zcol.partitioning.get_config()) != (
+                derived.axis, derived.metadata.get_config(),
+                derived.partitioning.get_config()):
+        raise ValueError(
+            f'The collection {target!r} is not configured as the one derived '
+            f'from {source!r}.')
+    return zcol
+
+
+def _reference(
+    path: str,
+    fs: fsspec.AbstractFileSystem,
+) -> tuple[meta.DatasetSchema, view.View]:
+    """Read a view and open the collection it references.
+
+    Args:
+        path: The path to the view.
+        fs: The file system the view is held on.
+
+    Returns:
+        The variables the view declares, and the view itself.
+    """
+    data = read_view_config(path, fs)
+    ds = _view_metadata(data)
+    view_ref: dict[str, Any] = data['view_ref']
+    zview = view.View(fs_utils.normalize_path(fs, path),
+                      view.ViewReference(
+                          view_ref['path'],
+                          fsspec.AbstractFileSystem.from_json(
+                              json.dumps(view_ref['fs']))),
+                      ds=ds,
+                      filesystem=fs,
+                      filters=view._deserialize_filters(data['filters']))
+    return ds, zview
+
+
+def _view_selection(
+    zview: view.View,
+    filters: collection.PartitionFilter,
+    selected_partitions: Iterable[str] | None,
+) -> tuple[str, ...]:
+    """List the partitions of a view a run acts on.
+
+    Args:
+        zview: The view to list.
+        filters: The predicate selecting the partitions.
+        selected_partitions: The partitions to act on, named by their path
+            relative to the view.
+
+    Returns:
+        The paths, relative to the view, in alphabetical order.
+    """
+    start = len(zview.base_dir) + 1
+    return tuple(
+        sorted(item[start:] for item in zview.partitions(
+            filters=filters, selected_partitions=selected_partitions)))
+
+
+def read_view_config(path: str,
+                     fs: fsspec.AbstractFileSystem) -> dict[str, Any]:
+    """Read the configuration of a view.
+
+    Args:
+        path: The path to the view.
+        fs: The file system the view is held on.
+
+    Returns:
+        The configuration.
+
+    Raises:
+        ValueError: If the directory holds no view configuration.
+    """
+    config: str = view.View._config(path)
+
+    if not fs.exists(config):
+        raise ValueError(f'View not found at path {path!r}')
+
+    with fs.open(config) as stream:
+        return json.load(stream)
+
+
+def _view_metadata(data: dict[str, Any]) -> meta.DatasetSchema:
+    """Read the metadata of the variables a view holds.
+
+    Args:
+        data: The configuration of the view.
+
+    Returns:
+        The metadata, without dimensions: a view takes them from the
+        collection it references.
+    """
+    if meta.format_version(data) != meta.DEPRECATED_FORMAT_VERSION:
+        return meta.DatasetSchema.from_config(data['metadata'])
+
+    ds: meta.DatasetSchema = meta.DatasetSchema.from_deprecated_config(
+        data['metadata'])
+    ds.dimensions = {}
+    return ds

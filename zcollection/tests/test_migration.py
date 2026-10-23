@@ -9,7 +9,7 @@ Migration of a collection
 A collection written by an earlier release is migrated by copying it into a
 new one, partition by partition. These tests pin what the copy holds —
 values, masks, chunking, immutable variables, the configuration of the
-target — what the convenience functions report, and that the source stays as
+target — what the migration functions report, and that the source stays as
 it was.
 
 A test that touches data starts from the frozen collection
@@ -40,8 +40,16 @@ import zcollection.view
 
 from . import reference
 from .. import collection, fs_utils, meta, migration, store
-from ..convenience.collection import check, migrate, prune, status
-from ..convenience.view import check_view, migrate_view, prune_view, view_status
+from ..migration import (
+    check,
+    check_view,
+    migrate,
+    migrate_view,
+    prune,
+    prune_view,
+    status,
+    view_status,
+)
 from ..variable.abc import FILL_VALUE
 from .cluster import dask_client, dask_cluster  # noqa: F401
 from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
@@ -383,16 +391,27 @@ def attributes_of(attrs) -> dict[str, Any]:
     return dict(item.get_config() for item in attrs)
 
 
-def test_the_package_exports_the_entry_points() -> None:
-    """The convenience functions, ``Outcome`` and ``Status`` are attributes
-    of the package."""
-    assert zcollection.migrate is migrate
-    assert zcollection.status is status
-    assert zcollection.check is check
-    assert zcollection.prune is prune
-    assert zcollection.migrate_view is migrate_view
-    assert zcollection.Outcome is migration.Outcome
-    assert zcollection.Status is migration.Status
+def test_the_migration_module_holds_the_entry_points() -> None:
+    """The eight functions and the two reports are named by one module.
+
+    The package names none of them: importing zcollection carries no
+    vocabulary of a migration into a program that only reads a collection.
+    """
+    assert set(migration.__all__) == {
+        'Outcome', 'Status', 'check', 'check_view', 'migrate', 'migrate_view',
+        'prune', 'prune_view', 'status', 'view_status'
+    }
+    assert all(
+        getattr(migration, name) is value
+        for name, value in (('migrate', migrate), ('status', status),
+                            ('check', check), ('prune', prune),
+                            ('migrate_view', migrate_view), ('check_view',
+                                                             check_view),
+                            ('view_status', view_status), ('prune_view',
+                                                           prune_view)))
+    assert not [
+        name for name in migration.__all__ if hasattr(zcollection, name)
+    ]
 
 
 def test_the_reports_hold_the_fields_of_the_contract() -> None:

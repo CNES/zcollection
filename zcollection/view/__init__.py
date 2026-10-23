@@ -206,7 +206,7 @@ class View:
         if version == meta.DEPRECATED_FORMAT_VERSION:
             raise ValueError(
                 'This view was written by an earlier release. Use the '
-                "'zcollection.migrate_view' function to copy it into a view "
+                "'zcollection.migration.migrate_view' function to copy it into a view "
                 'this release writes.')
 
         view_ref: dict[str, Any] = data['view_ref']

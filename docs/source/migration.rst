@@ -21,7 +21,7 @@ succeeds, with a warning:
 .. code-block:: text
 
     UserWarning: This collection was written by an earlier release and can
-    only be read. Use the 'zcollection.migrate' function to copy it into a
+    only be read. Use the 'zcollection.migration.migrate' function to copy it into a
     collection this release writes.
 
 Every read works: the partitions keep their values, their masks and their
@@ -36,13 +36,18 @@ with a ``ValueError``, whatever the mode asked for.
 Migrating it
 ------------
 
-:py:func:`zcollection.migrate` reads the source and writes a second
+:py:func:`zcollection.migration.migrate` reads the source and writes a second
 collection. The source is never written.
+
+The functions are named by ``zcollection.migration``, which a program that
+only reads a collection never imports:
 
 .. code-block:: python
 
-    outcome = zcollection.migrate("/data/mycollection",
-                                  "/data/mycollection.v3")
+    from zcollection import migration
+
+    outcome = migration.migrate("/data/mycollection",
+                                "/data/mycollection.v3")
 
 The first call creates the target and gives it the configuration the source
 describes. Each partition is read, decoded and written again, so the
@@ -55,7 +60,7 @@ The two collections may live on different file systems, which
 
 .. code-block:: python
 
-    outcome = zcollection.migrate("/data/mycollection",
+    outcome = migration.migrate("/data/mycollection",
                                   "bucket/mycollection",
                                   target_filesystem="s3")
 
@@ -73,12 +78,12 @@ difference; anything that reads the files themselves does.
 Knowing where the migration has got to
 --------------------------------------
 
-:py:func:`zcollection.status` compares the partitions of the two collections
+:py:func:`zcollection.migration.status` compares the partitions of the two collections
 and groups the counts by the first key of the partitioning:
 
 .. code-block:: python
 
-    print(zcollection.status("/data/mycollection", "/data/mycollection.v3"))
+    print(migration.status("/data/mycollection", "/data/mycollection.v3"))
 
 .. code-block:: text
 
@@ -95,14 +100,14 @@ hold complete. Nothing can rebuild those.
 Checking the migration
 ----------------------
 
-:py:func:`zcollection.check` reads every value of every variable on both
+:py:func:`zcollection.migration.check` reads every value of every variable on both
 sides and compares them, masks included, along with the attributes, the fill
 value, the dimensions and the chunking. It is never called for you, and you
 may call it as often as you like.
 
 .. code-block:: python
 
-    outcome = zcollection.check("/data/mycollection",
+    outcome = migration.check("/data/mycollection",
                                 "/data/mycollection.v3",
                                 filters="year == 2014")
 
@@ -125,14 +130,14 @@ comparing the values cannot see such a loss.
 Pruning the source
 ------------------
 
-:py:func:`zcollection.prune` removes from the source the partitions the
+:py:func:`zcollection.migration.prune` removes from the source the partitions the
 target holds complete. It is the only function that removes anything from
 the source, and it removes nothing else there: the configuration of the collection, its immutable
 variables and the files you keep beside them all stay.
 
 .. code-block:: python
 
-    outcome = zcollection.prune("/data/mycollection",
+    outcome = migration.prune("/data/mycollection",
                                 "/data/mycollection.v3",
                                 filters="year == 2014")
 
@@ -146,21 +151,21 @@ Selecting the partitions to migrate
 
 A collection of hundreds of terabytes does not have to be migrated in one
 call, and the source does not have to be frozen for the whole of it.
-:py:func:`zcollection.migrate`, :py:func:`zcollection.check` and
-:py:func:`zcollection.prune` take the same two ways of naming the partitions
+:py:func:`zcollection.migration.migrate`, :py:func:`zcollection.migration.check` and
+:py:func:`zcollection.migration.prune` take the same two ways of naming the partitions
 to act on, which bound each other:
 
 .. code-block:: python
 
-    zcollection.migrate(source, target, filters="year == 2014 and month == 5")
-    zcollection.migrate(source, target, filters=lambda keys: keys["year"] < 2016)
-    zcollection.migrate(source, target,
+    migration.migrate(source, target, filters="year == 2014 and month == 5")
+    migration.migrate(source, target, filters=lambda keys: keys["year"] < 2016)
+    migration.migrate(source, target,
                         selected_partitions=["year=2014/month=05/day=24"])
 
 Naming neither migrates every partition the target does not already hold.
 
 A partition the target holds complete is skipped, so calling
-:py:func:`zcollection.migrate` again costs a listing of the source and one
+:py:func:`zcollection.migration.migrate` again costs a listing of the source and one
 metadata read per partition. That
 is also what makes an interrupted migration safe to resume: a partition written
 only in part carries no consolidated metadata, counts as missing, and is written
@@ -181,17 +186,17 @@ the calling process instead:
 
 .. code-block:: python
 
-    outcome = zcollection.migrate(source, target, distributed=False)
+    outcome = migration.migrate(source, target, distributed=False)
 
 A partition the migration stops on does not stop the run: it is named in
 ``outcome.failed`` with its error as text, and the others are written. Call
-:py:func:`zcollection.migrate` again to take them up.
+:py:func:`zcollection.migration.migrate` again to take them up.
 
 The three fields of an outcome record what each task decided, not what the
 two collections hold once the call returns. Dask runs a task again when the
 worker holding its result dies, so a partition one call wrote can come back
-under ``skipped``. :py:func:`zcollection.status` and
-:py:func:`zcollection.check` are what read the storage.
+under ``skipped``. :py:func:`zcollection.migration.status` and
+:py:func:`zcollection.migration.check` are what read the storage.
 
 Views
 -----
@@ -201,20 +206,20 @@ the copy of the view at the copy of the collection:
 
 .. code-block:: python
 
-    outcome = zcollection.migrate_view("/data/myview",
+    outcome = migration.migrate_view("/data/myview",
                                        "/data/myview.v3",
                                        reference="/data/mycollection.v3")
 
 Leaving ``reference`` unset keeps the collection the source view references.
 A view is selected the way a collection is:
-:py:func:`zcollection.migrate_view` and :py:func:`zcollection.check_view`
+:py:func:`zcollection.migration.migrate_view` and :py:func:`zcollection.migration.check_view`
 take the same ``filters`` and ``selected_partitions``, read against the
 partitioning of the collection the view references.
 
-:py:func:`zcollection.view_status`, :py:func:`zcollection.check_view` and
-:py:func:`zcollection.prune_view` answer for a view what
-:py:func:`zcollection.status`, :py:func:`zcollection.check` and
-:py:func:`zcollection.prune` answer for a collection. A partition the copy
+:py:func:`zcollection.migration.view_status`, :py:func:`zcollection.migration.check_view` and
+:py:func:`zcollection.migration.prune_view` answer for a view what
+:py:func:`zcollection.migration.status`, :py:func:`zcollection.migration.check` and
+:py:func:`zcollection.migration.prune` answer for a collection. A partition the copy
 keeps and the source view no longer holds is counted under *pruned*.
 
 Switching over

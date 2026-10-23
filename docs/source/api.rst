@@ -76,15 +76,24 @@ Convenience functions
 .. autosummary::
   :toctree: _generated/
 
-  zcollection.check
-  zcollection.check_view
   zcollection.create_collection
   zcollection.create_view
-  zcollection.migrate
-  zcollection.migrate_view
   zcollection.open_collection
   zcollection.open_view
-  zcollection.prune
-  zcollection.prune_view
-  zcollection.status
-  zcollection.view_status
+
+Migration
+=========
+
+.. autosummary::
+  :toctree: _generated/
+
+  zcollection.migration.Outcome
+  zcollection.migration.Status
+  zcollection.migration.check
+  zcollection.migration.check_view
+  zcollection.migration.migrate
+  zcollection.migration.migrate_view
+  zcollection.migration.prune
+  zcollection.migration.prune_view
+  zcollection.migration.status
+  zcollection.migration.view_status

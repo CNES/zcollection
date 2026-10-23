@@ -6,34 +6,12 @@
 Convenience functions
 =====================
 """
-from .collection import (
-    check,
-    create_collection,
-    migrate,
-    open_collection,
-    prune,
-    status,
-)
-from .view import (
-    check_view,
-    create_view,
-    migrate_view,
-    open_view,
-    prune_view,
-    view_status,
-)
+from .collection import create_collection, open_collection
+from .view import create_view, open_view
 
 __all__ = (
-    'check',
-    'check_view',
     'create_collection',
     'create_view',
-    'migrate',
-    'migrate_view',
     'open_collection',
     'open_view',
-    'prune',
-    'prune_view',
-    'status',
-    'view_status',
 )
