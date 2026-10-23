@@ -24,6 +24,7 @@ from .convenience import (
     open_collection,
     open_view,
     prune,
+    prune_view,
     status,
     view_status,
 )
@@ -68,6 +69,7 @@ __all__ = (
     'open_view',
     'partitioning',
     'prune',
+    'prune_view',
     'status',
     'version',
     'view_status',

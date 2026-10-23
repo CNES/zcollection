@@ -14,7 +14,14 @@ from .collection import (
     prune,
     status,
 )
-from .view import check_view, create_view, migrate_view, open_view, view_status
+from .view import (
+    check_view,
+    create_view,
+    migrate_view,
+    open_view,
+    prune_view,
+    view_status,
+)
 
 __all__ = (
     'check',
@@ -26,6 +33,7 @@ __all__ = (
     'open_collection',
     'open_view',
     'prune',
+    'prune_view',
     'status',
     'view_status',
 )

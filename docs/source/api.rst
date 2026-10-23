@@ -85,5 +85,6 @@ Convenience functions
   zcollection.open_collection
   zcollection.open_view
   zcollection.prune
+  zcollection.prune_view
   zcollection.status
   zcollection.view_status

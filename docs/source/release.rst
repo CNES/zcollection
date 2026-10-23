@@ -38,8 +38,9 @@ Storage
   ``zcollection.status`` reports how far the copy has got,
   ``zcollection.check`` compares the values the two collections hold,
   ``zcollection.prune`` removes from the source the partitions the target
-  holds, and ``zcollection.migrate_view``, ``zcollection.check_view`` and
-  ``zcollection.view_status`` do the same for a view. A partition the target holds in full is not copied
+  holds, and ``zcollection.migrate_view``, ``zcollection.check_view``,
+  ``zcollection.prune_view`` and ``zcollection.view_status`` do the same for
+  a view. A partition the target holds in full is not copied
   again, so a migration that stopped partway is resumed by calling the
   function again.
 * The fill value of a variable is held in the ``_FillValue`` attribute of an

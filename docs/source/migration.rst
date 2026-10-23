@@ -211,12 +211,11 @@ A view is selected the way a collection is:
 take the same ``filters`` and ``selected_partitions``, read against the
 partitioning of the collection the view references.
 
-:py:func:`zcollection.view_status` and :py:func:`zcollection.check_view`
-answer for a view what :py:func:`zcollection.status` and
-:py:func:`zcollection.check` answer for a collection. A partition the copy
-keeps and the source view no longer holds is counted under *pruned*; nothing
-removes it, there being no counterpart of :py:func:`zcollection.prune` for a
-view.
+:py:func:`zcollection.view_status`, :py:func:`zcollection.check_view` and
+:py:func:`zcollection.prune_view` answer for a view what
+:py:func:`zcollection.status`, :py:func:`zcollection.check` and
+:py:func:`zcollection.prune` answer for a collection. A partition the copy
+keeps and the source view no longer holds is counted under *pruned*.
 
 Switching over
 --------------

@@ -41,7 +41,7 @@ import zcollection.view
 from . import reference
 from .. import collection, fs_utils, meta, migration, store
 from ..convenience.collection import check, migrate, prune, status
-from ..convenience.view import check_view, migrate_view, view_status
+from ..convenience.view import check_view, migrate_view, prune_view, view_status
 from ..variable.abc import FILL_VALUE
 from .cluster import dask_client, dask_cluster  # noqa: F401
 from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
@@ -1288,3 +1288,23 @@ def test_a_filter_migrates_only_the_view_partitions_it_selects(
                          filters='day == 2',
                          distributed=False)
     assert checked.done == (PARTITIONS[1], )
+
+
+def test_prune_view_removes_a_migrated_partition_and_refuses_the_others(
+        deprecated_view, tmp_path) -> None:
+    """The source view loses the partitions the copy holds in full."""
+    target = str(tmp_path / 'view-target')
+    migrate_view(deprecated_view,
+                 target,
+                 filters='day == 2',
+                 distributed=False)
+
+    outcome = prune_view(deprecated_view, target, distributed=False)
+
+    assert outcome.done == (PARTITIONS[1], )
+    assert [name
+            for name, _ in outcome.failed] == [PARTITIONS[0], PARTITIONS[2]]
+    assert not local.exists(fs_utils.join_path(deprecated_view, PARTITIONS[1]))
+    assert local.exists(fs_utils.join_path(deprecated_view, PARTITIONS[0]))
+    assert local.exists(
+        fs_utils.join_path(deprecated_view, zcollection.view.View.CONFIG))

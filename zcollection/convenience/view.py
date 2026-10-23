@@ -258,6 +258,61 @@ def view_status(
                                  view_ref=source_view.view_ref)
 
 
+def prune_view(
+    source: str,
+    target: str,
+    *,
+    source_filesystem: fsspec.AbstractFileSystem | str | None = None,
+    target_filesystem: fsspec.AbstractFileSystem | str | None = None,
+    filters: collection.PartitionFilter = None,
+    selected_partitions: Iterable[str] | None = None,
+    distributed: bool = True,
+) -> migration.Outcome:
+    """Remove from a view the partitions its copy holds.
+
+    A partition directory is removed; the configuration of the view stays.
+    Comparing the values of the two views is the job of
+    :py:func:`check_view <zcollection.check_view>`.
+
+    Args:
+        source: The path to the view that was copied.
+        target: The path to the copy.
+        source_filesystem: The file system the source is held on.
+        target_filesystem: The file system the target is held on.
+        filters: The predicate selecting the partitions to remove. Defaults
+            to ``None``, which removes every partition the copy holds.
+        selected_partitions: The partitions to remove, named by their path
+            relative to the view.
+        distributed: Whether to spread the partitions over a Dask cluster.
+            Defaults to ``True``.
+
+    Returns:
+        The partitions removed under ``done``, those the source no longer
+        held under ``skipped``, and those the copy does not hold in full
+        under ``failed``, each with the reason.
+
+    Raises:
+        ValueError: If the source holds no view configuration.
+
+    Example:
+        >>> import zcollection
+        >>> outcome = zcollection.prune_view(
+        ...     "/data/myview", "/data/myview.new")
+    """
+    source_fs = fs_utils.get_fs(source_filesystem)
+    target_fs = fs_utils.get_fs(target_filesystem)
+    ds, source_view = _reference(source, source_fs)
+
+    return migration.prune_view_partitions(
+        fs_utils.normalize_path(source_fs, source),
+        fs_utils.normalize_path(target_fs, target),
+        source_fs,
+        target_fs,
+        partitions=_selection(source_view, filters, selected_partitions),
+        names=tuple(ds.variables),
+        distributed=distributed)
+
+
 def check_view(
     source: str,
     target: str,

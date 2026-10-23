@@ -673,6 +673,48 @@ def _prune_one(
     return Outcome((partition, ), (), ())
 
 
+def _prune_view_one(
+    partition: str,
+    *,
+    source: str,
+    target: str,
+    source_fs: fsspec.AbstractFileSystem,
+    target_fs: fsspec.AbstractFileSystem,
+    names: Sequence[str],
+) -> Outcome:
+    """Remove one partition from a view.
+
+    Args:
+        partition: The path of the partition, relative to the view.
+        source: The directory the source view is stored in.
+        target: The directory the target view is stored in.
+        source_fs: The file system the source is held on.
+        target_fs: The file system the target is held on.
+        names: The variables the view declares.
+
+    Returns:
+        The partition under ``done`` when it was removed, under ``skipped``
+        when the source no longer held it, and under ``failed`` with the
+        reason when the target does not hold it in full.
+    """
+    source_dirname = fs_utils.join_path(source, partition)
+    if not source_fs.exists(source_dirname):
+        return Outcome((), (partition, ), ())
+
+    if not is_view_partition_complete(
+            target_fs, fs_utils.join_path(target, partition), names):
+        return Outcome((), (),
+                       ((partition, 'the target does not hold this partition '
+                         'in full'), ))
+
+    try:
+        source_fs.rm(source_dirname, recursive=True)
+        source_fs.invalidate_cache(source_dirname)
+    except Exception as err:
+        return _failure(partition, err)
+    return Outcome((partition, ), (), ())
+
+
 def _migrate_view_one(
     partition: str,
     *,
@@ -1103,6 +1145,43 @@ def check_view_partitions(
         variables differ under ``failed``.
     """
     return _run(_check_view_one,
+                partitions,
+                distributed=distributed,
+                source=source,
+                target=target,
+                source_fs=source_fs,
+                target_fs=target_fs,
+                names=names)
+
+
+def prune_view_partitions(
+    source: str,
+    target: str,
+    source_fs: fsspec.AbstractFileSystem,
+    target_fs: fsspec.AbstractFileSystem,
+    *,
+    partitions: Sequence[str],
+    names: Sequence[str],
+    distributed: bool = True,
+) -> Outcome:
+    """Remove from a view the partitions its copy holds.
+
+    Args:
+        source: The directory the source view is stored in.
+        target: The directory the target view is stored in.
+        source_fs: The file system the source is held on.
+        target_fs: The file system the target is held on.
+        partitions: The partitions to remove, named by their path relative
+            to the view.
+        names: The variables the view declares.
+        distributed: Whether to spread the partitions over a Dask cluster.
+
+    Returns:
+        The partitions removed under ``done``, those the source no longer
+        held under ``skipped``, and those the target does not hold in full
+        under ``failed``.
+    """
+    return _run(_prune_view_one,
                 partitions,
                 distributed=distributed,
                 source=source,
