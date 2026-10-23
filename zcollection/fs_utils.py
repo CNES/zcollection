@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 import os
+import uuid
 
 import fsspec
+import fsspec.implementations.local
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -109,6 +111,38 @@ def fs_walk(
 
     for item in dirs:
         yield from fs_walk(fs, item, sort=sort)
+
+
+def replace_file(
+    fs: fsspec.AbstractFileSystem,
+    path: str,
+    data: str,
+) -> None:
+    """Replace what a file holds, in one go.
+
+    A reader of the file sees what it held before or what is written here,
+    never a part of either, and a write that stops partway leaves what was
+    there. A local file system is written beside the file and renamed onto
+    it, which the system does in one operation; anywhere else the content
+    goes straight there, a key being written in one request.
+
+    Args:
+        fs: The file system holding the file.
+        path: The path of the file.
+        data: What the file is to hold.
+    """
+    if not isinstance(fs, fsspec.implementations.local.LocalFileSystem):
+        fs.pipe_file(path, data.encode())
+        return
+
+    beside: str = f'{path}.{uuid.uuid4().hex}'
+    try:
+        fs.pipe_file(beside, data.encode())
+        fs.mv(beside, path)
+    except Exception:
+        if fs.exists(beside):
+            fs.rm(beside)
+        raise
 
 
 def copy_file(

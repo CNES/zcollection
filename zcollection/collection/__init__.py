@@ -254,8 +254,7 @@ class Collection(ReadOnlyCollection):
             'version': meta.FORMAT_VERSION,
         }
 
-        with self.fs.open(config, mode='w') as stream:
-            json.dump(params, stream, indent=4)  # type: ignore[arg-type]
+        fs_utils.replace_file(self.fs, config, json.dumps(params, indent=4))
 
     def is_readonly(self) -> bool:
         """Return True if the collection is read-only."""

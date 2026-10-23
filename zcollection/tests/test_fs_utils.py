@@ -13,6 +13,7 @@ import platform
 
 import fsspec
 import fsspec.implementations.local
+import pytest
 
 from .. import fs_utils
 from .cluster import dask_client, dask_cluster  # noqa: F401
@@ -230,3 +231,52 @@ def test_copy_tree(tmp_path) -> None:
             if len(parts) > 3:
                 assert 'file_' in parts[3]
                 assert parts[3].endswith('.txt')
+
+
+def test_replace_file_leaves_no_half_of_itself(tmp_path) -> None:
+    """A write that stops partway leaves what the file held."""
+    fs = fsspec.filesystem('file')
+    path = str(tmp_path / 'config.json')
+    fs_utils.replace_file(fs, path, 'first')
+    assert fs.cat_file(path) == b'first'
+
+    def refuse(target, value, **kwargs):
+        """Write nothing, as a full disk would."""
+        raise OSError('no space left on device')
+
+    held = fs.pipe_file
+    fs.pipe_file = refuse
+    try:
+        with pytest.raises(OSError, match='no space'):
+            fs_utils.replace_file(fs, path, 'second')
+    finally:
+        fs.pipe_file = held
+
+    assert fs.cat_file(path) == b'first'
+    assert sorted(item.name for item in tmp_path.iterdir()) == ['config.json']
+
+
+def test_replace_file_writes_an_object_store_in_one_request(tmp_path) -> None:
+    """A file system that is not local is written where it stands.
+
+    Renaming a key of an object store copies it, so the content goes
+    straight to its path, the request writing it being one operation.
+    """
+    fs = fsspec.filesystem('memory')
+    path = '/config.json'
+    written: list[str] = []
+    held = fs.pipe_file
+
+    def record(target, value, **kwargs):
+        written.append(target)
+        return held(target, value, **kwargs)
+
+    fs.pipe_file = record
+    try:
+        fs_utils.replace_file(fs, path, 'first')
+    finally:
+        fs.pipe_file = held
+
+    assert written == [path]
+    assert fs.cat_file(path) == b'first'
+    fs.rm(path)

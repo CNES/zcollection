@@ -160,8 +160,7 @@ class View:
             'version': meta.FORMAT_VERSION,
         }
 
-        with self.fs.open(config, 'w') as stream:
-            json.dump(params, stream, indent=4)  # type: ignore[arg-type]
+        fs_utils.replace_file(self.fs, config, json.dumps(params, indent=4))
 
         self.fs.invalidate_cache(config)
 
