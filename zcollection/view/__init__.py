@@ -205,9 +205,10 @@ class View:
                 f'{meta.FORMAT_VERSION}.')
 
         if version == meta.DEPRECATED_FORMAT_VERSION:
-            raise ValueError('View configuration needs to be updated. '
-                             "Use the 'zcollection.update_deprecated_view' "
-                             'function to update it.')
+            raise ValueError(
+                'This view was written by an earlier release. Use the '
+                "'zcollection.migrate_view' function to copy it into a view "
+                'this release writes.')
 
         view_ref: dict[str, Any] = data['view_ref']
         return View(data['base_dir'],

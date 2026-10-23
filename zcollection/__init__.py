@@ -15,15 +15,21 @@ from .collection.callable_objects import (
     UpdateCallable,
 )
 from .convenience import (
+    check,
+    check_view,
     create_collection,
     create_view,
+    migrate,
+    migrate_view,
     open_collection,
     open_view,
-    update_deprecated_collection,
-    update_deprecated_view,
+    prune,
+    status,
+    view_status,
 )
 from .dataset import Dataset, Expression
 from .meta import Attribute, DatasetSchema, Dimension, VariableSchema
+from .migration import Outcome, Status
 from .variable import Array, DelayedArray, Variable
 from .version import __version__
 from .view import View, ViewReference, ViewUpdateCallable
@@ -39,9 +45,11 @@ __all__ = (
     'Expression',
     'Indexer',
     'MapCallable',
+    'Outcome',
     'PartitionCallable',
     'PartitionFilter',
     'PartitionFilterCallback',
+    'Status',
     'UpdateCallable',
     'Variable',
     'VariableSchema',
@@ -49,13 +57,18 @@ __all__ = (
     'ViewReference',
     'ViewUpdateCallable',
     '__version__',
+    'check',
+    'check_view',
     'create_collection',
     'create_view',
     'merging',
+    'migrate',
+    'migrate_view',
     'open_collection',
     'open_view',
     'partitioning',
-    'update_deprecated_collection',
-    'update_deprecated_view',
+    'prune',
+    'status',
     'version',
+    'view_status',
 )

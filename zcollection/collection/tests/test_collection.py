@@ -1636,12 +1636,11 @@ def test_invalid_partitions(
     # A chunk whose values all equal the fill value is not written, so only
     # the partitions holding one can be corrupted.
     partitions = tuple(item for item in zcol.partitions()
-                       if fs.exists(fs.sep.join((item, 'var2', 'c', '0',
-                                                 '0'))))
+                       if fs.exists(fs.sep.join((item, 'var2', 'c.0.0'))))
     rng = numpy.random.default_rng()
     choices = rng.choice(len(partitions), size=2, replace=False)
     for idx in choices:
-        var2 = fs.sep.join((partitions[idx], 'var2', 'c', '0', '0'))
+        var2 = fs.sep.join((partitions[idx], 'var2', 'c.0.0'))
         with fs.open(var2, 'wb') as file:
             file.write(b'invalid')
 

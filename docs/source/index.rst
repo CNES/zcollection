@@ -104,6 +104,7 @@ tests cover a local disk and S3.
    getting_started
    partitioning
    auto_examples/index.rst
+   migration
    api
    release
 

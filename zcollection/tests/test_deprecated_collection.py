@@ -73,7 +73,7 @@ def test_the_fixture_carries_no_immutable_variable(deprecated) -> None:
 
 def test_opening_warns_and_yields_a_read_only_collection(deprecated) -> None:
     """An old collection opens, and says it has to be updated."""
-    with pytest.warns(UserWarning, match='needs to be updated'):
+    with pytest.warns(UserWarning, match='written by an earlier release'):
         collection = zcollection.open_collection(deprecated)
 
     assert collection.mode == 'r'
@@ -81,14 +81,14 @@ def test_opening_warns_and_yields_a_read_only_collection(deprecated) -> None:
 
 def test_opening_for_writing_is_refused(deprecated) -> None:
     """Writing to an old collection is refused until it is updated."""
-    with pytest.warns(UserWarning, match='needs to be updated'), \
-            pytest.raises(ValueError, match='needs to be updated'):
+    with pytest.warns(UserWarning, match='written by an earlier release'), \
+            pytest.raises(ValueError, match='written by an earlier release'):
         zcollection.open_collection(deprecated, mode='w')
 
 
 def test_values_are_unchanged(deprecated) -> None:
     """The values read from the old format are the ones written."""
-    with pytest.warns(UserWarning, match='needs to be updated'):
+    with pytest.warns(UserWarning, match='written by an earlier release'):
         collection = zcollection.open_collection(deprecated)
 
     data = collection.load(delayed=False, distributed=False)
@@ -124,19 +124,9 @@ def test_values_are_unchanged(deprecated) -> None:
                                      reference.axis())
 
 
-def written_today(path: pathlib.Path) -> dict:
-    """Write the same dataset with the current code, and read its config."""
-    zds = reference.make_dataset(immutable=False)
-    collection = zcollection.create_collection('time', zds,
-                                               reference.make_partitioning(),
-                                               str(path / 'today'))
-    collection.insert(zds, distributed=False)
-    return read_config(str(path / 'today'))
-
-
 def test_a_view_opens_on_an_old_collection(deprecated, tmp_path) -> None:
     """A view reads the dimensions of a partition whatever wrote it."""
-    with pytest.warns(UserWarning, match='needs to be updated'):
+    with pytest.warns(UserWarning, match='written by an earlier release'):
         zview = zcollection.create_view(
             str(tmp_path / 'view'),
             zcollection.view.ViewReference(deprecated),
@@ -146,50 +136,3 @@ def test_a_view_opens_on_an_old_collection(deprecated, tmp_path) -> None:
     assert data is not None
     numpy.testing.assert_array_equal(data.variables['time'].values,
                                      reference.axis())
-
-
-def test_a_view_opens_on_an_updated_collection(deprecated, tmp_path) -> None:
-    """Updating a collection leaves the partitions as they were written."""
-    zcollection.update_deprecated_collection(deprecated)
-
-    zview = zcollection.create_view(str(tmp_path / 'view'),
-                                    zcollection.view.ViewReference(deprecated),
-                                    distributed=False)
-
-    data = zview.load(delayed=False, distributed=False)
-    assert data is not None
-    numpy.testing.assert_array_equal(data.variables['time'].values,
-                                     reference.axis())
-
-
-def test_update_yields_the_configuration_written_today(deprecated,
-                                                       tmp_path) -> None:
-    """Updating an old collection gives the configuration of a new one.
-
-    The size of the partitioning dimension stays unset: it is the one
-    dimension whose size varies from one partition to the next.
-    """
-    zcollection.update_deprecated_collection(deprecated)
-
-    config = read_config(deprecated)
-    assert config['version'] == zcollection.meta.FORMAT_VERSION
-    assert config == written_today(tmp_path)
-
-
-def test_update_makes_the_collection_writable(deprecated) -> None:
-    """An updated collection opens for writing, with no warning."""
-    zcollection.update_deprecated_collection(deprecated)
-
-    collection = zcollection.open_collection(deprecated, mode='w')
-    data = collection.load(delayed=False, distributed=False)
-    assert data is not None
-    numpy.testing.assert_array_equal(data.variables['time'].values,
-                                     reference.axis())
-
-
-def test_update_keeps_a_backup(deprecated) -> None:
-    """Updating an old collection keeps the configuration it replaces."""
-    zcollection.update_deprecated_collection(deprecated)
-
-    backup = pathlib.Path(fs_utils.join_path(deprecated, '.zcollection.bak'))
-    assert 'version' not in json.loads(backup.read_text())

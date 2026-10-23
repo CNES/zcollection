@@ -311,17 +311,16 @@ class Collection(ReadOnlyCollection):
                 f'{meta.FORMAT_VERSION}.')
 
         if version == meta.DEPRECATED_FORMAT_VERSION:
-            msg_import = ("Use the 'zcollection.update_deprecated_collection' "
-                          'function to update it.')
+            msg_import = ("Use the 'zcollection.migrate' function to copy "
+                          'it into a collection this release writes.')
             warnings.warn(
-                message=('This collection needs to be updated and '
-                         f'can only be used in read only mode. {msg_import}'),
+                message=('This collection was written by an earlier release '
+                         f'and can only be read. {msg_import}'),
                 category=UserWarning,
                 stacklevel=2)
             if mode == 'w':
-                raise ValueError(
-                    'Collection configuration needs to be updated. '
-                    f'{msg_import}')
+                raise ValueError('This collection was written by an earlier '
+                                 f'release. {msg_import}')
 
             load_dataset = meta.DatasetSchema.from_deprecated_config
 

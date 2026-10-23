@@ -56,6 +56,7 @@ Collection
   zcollection.expression
   zcollection.fs_utils
   zcollection.meta
+  zcollection.migration
   zcollection.sync
   zcollection.type_hints
   zcollection.view
@@ -75,9 +76,14 @@ Convenience functions
 .. autosummary::
   :toctree: _generated/
 
+  zcollection.check
+  zcollection.check_view
   zcollection.create_collection
   zcollection.create_view
+  zcollection.migrate
+  zcollection.migrate_view
   zcollection.open_collection
   zcollection.open_view
-  zcollection.update_deprecated_collection
-  zcollection.update_deprecated_view
+  zcollection.prune
+  zcollection.status
+  zcollection.view_status

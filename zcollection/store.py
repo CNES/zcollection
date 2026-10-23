@@ -39,6 +39,12 @@ __all__ = ('DEFAULT_COMPRESSOR', 'consolidate', 'contains_group',
 #: Marker letting Zarr pick the shape of a chunk.
 DEFAULT_CHUNKS = 'auto'
 
+#: How an array names the file holding a chunk: the ``c`` prefix and the
+#: indices of the chunk, joined with a dot. One file sits beside the
+#: metadata of the array, where a separator of ``/`` nests one directory
+#: per dimension.
+CHUNK_KEY_ENCODING = {'name': 'default', 'configuration': {'separator': '.'}}
+
 #: Start of the warning Zarr emits when it consolidates the metadata of a
 #: group. The core specification names the field a group holds them in, and
 #: a reader that does not know it leaves it alone.
@@ -159,6 +165,7 @@ def create_array(  # noqa: PLR0913
         dimension_names=dimensions,
         attributes=attributes,
         overwrite=overwrite,
+        chunk_key_encoding=CHUNK_KEY_ENCODING,
         config={'write_empty_chunks': write_empty_chunks})
 
 

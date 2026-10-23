@@ -7,17 +7,25 @@ Convenience functions
 =====================
 """
 from .collection import (
+    check,
     create_collection,
+    migrate,
     open_collection,
-    update_deprecated_collection,
+    prune,
+    status,
 )
-from .view import create_view, open_view, update_deprecated_view
+from .view import check_view, create_view, migrate_view, open_view, view_status
 
 __all__ = (
+    'check',
+    'check_view',
     'create_collection',
     'create_view',
+    'migrate',
+    'migrate_view',
     'open_collection',
     'open_view',
-    'update_deprecated_collection',
-    'update_deprecated_view',
+    'prune',
+    'status',
+    'view_status',
 )

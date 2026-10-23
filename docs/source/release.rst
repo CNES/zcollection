@@ -22,15 +22,26 @@ Features
 Storage
 ^^^^^^^
 * Collections are written in the Zarr 3 format. A group and an array each hold
-  their metadata in a ``zarr.json``, and a chunk is held under the ``c``
-  prefix.
+  their metadata in a ``zarr.json``, and an array names the file holding a
+  chunk with the ``c`` prefix and the indices of the chunk, joined with a dot.
+  A chunk whose values all equal the fill value of its array is not written,
+  and reads back as that value.
 * ``.zcollection`` carries the version of the layout it is written in. A
   collection written in a newer one is refused.
-* A collection written by an earlier release opens read only.
-  ``zcollection.update_deprecated_collection`` rewrites its configuration,
-  keeping the one it replaces, and makes it writable.
-  ``zcollection.update_deprecated_view`` does the same for a view, and is
-  reachable from the package.
+* A collection written by an earlier release opens read only, and writing to
+  it is refused. Copying it into a new collection is what makes its data
+  writable again, and a view written by an earlier release opens only once it
+  has been copied.
+* ``zcollection.migrate`` copies a collection written by an earlier release
+  into a new one, partition by partition, with a filter selecting the
+  partitions to copy.
+  ``zcollection.status`` reports how far the copy has got,
+  ``zcollection.check`` compares the values the two collections hold,
+  ``zcollection.prune`` removes from the source the partitions the target
+  holds, and ``zcollection.migrate_view``, ``zcollection.check_view`` and
+  ``zcollection.view_status`` do the same for a view. A partition the target holds in full is not copied
+  again, so a migration that stopped partway is resumed by calling the
+  function again.
 * The fill value of a variable is held in the ``_FillValue`` attribute of an
   array, beside the fill value Zarr 3 requires of every array.
 * The codecs a variable names with the classes of numcodecs are translated into
