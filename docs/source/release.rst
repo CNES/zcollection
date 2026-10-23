@@ -51,6 +51,11 @@ Behaviour
 ^^^^^^^^^
 * A partition is written with the compressor, the filters and the fill value
   the collection declares for each of its variables.
+* A collection declaring a dimension other than the one it is partitioned
+  along without a size is refused, where every insertion into it failed.
+* A collection declaring a value marking an absence that the filters of its
+  variable do not carry is refused, where the first insertion stopped on an
+  error naming neither.
 * A variable marking an absence with NaN or NaT masks the measurements it
   never took. Neither value equals itself, so the comparison by equality the
   read made left them unmasked.

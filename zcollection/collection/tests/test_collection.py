@@ -1891,3 +1891,42 @@ def test_insert_returns_the_paths_a_selection_takes(request) -> None:
     assert read is not None
     assert read.variables['time'].values.size < zds.variables[
         'time'].values.size
+
+
+def test_a_dimension_declared_without_a_size_is_refused(request) -> None:
+    """Only the dimension the collection is partitioned along grows."""
+    tested_fs = request.getfixturevalue('local_fs')
+    zds = next(create_test_dataset(delayed=False))
+    schema = zds.metadata()
+    schema.dimensions['num_pixels'].value = -1
+
+    with pytest.raises(ValueError, match='declared without a size'):
+        collection.Collection(axis='time',
+                              ds=schema,
+                              partition_handler=partitioning.Date(('time', ),
+                                                                  'D'),
+                              partition_base_dir=str(tested_fs.collection),
+                              filesystem=tested_fs.fs)
+
+
+def test_a_value_marking_an_absence_its_filters_lose_is_refused(
+        request) -> None:
+    """The value is the one the filters decode to.
+
+    numcodecs wraps a value its filters cannot hold rather than refusing
+    it, so the collection reads the value back to find out.
+    """
+    tested_fs = request.getfixturevalue('local_fs')
+    zds = next(create_test_dataset(delayed=False))
+    schema = zds.metadata()
+    schema.variables['var1'].fill_value = -999.0
+    schema.variables['var1'].filters = (numcodecs.FixedScaleOffset(
+        offset=0, scale=1000, dtype='f8', astype='i2'), )
+
+    with pytest.raises(ValueError, match='marks an absence with'):
+        collection.Collection(axis='time',
+                              ds=schema,
+                              partition_handler=partitioning.Date(('time', ),
+                                                                  'D'),
+                              partition_base_dir=str(tested_fs.collection),
+                              filesystem=tested_fs.fs)

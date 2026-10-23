@@ -17,6 +17,7 @@ import pathlib
 import dask.bag.core
 import dask.distributed
 import dask.utils
+import numpy
 
 from .. import (
     dask_utils,
@@ -28,6 +29,7 @@ from .. import (
     storage,
     sync,
 )
+from ..variable.abc import not_equal
 from .detail import (
     PartitioningProperties,
     _load_and_apply_indexer,
@@ -131,6 +133,57 @@ def _immutable_path(partition_properties: PartitioningProperties, ) -> str:
     return fs_utils.join_path(partition_properties.dir, IMMUTABLE)
 
 
+def _check_sizes(ds: meta.DatasetSchema, main_dimension: str) -> None:
+    """Refuse a dimension whose size no insertion can satisfy.
+
+    A collection opened to be read is not checked: one written by an
+    earlier release carries no size at all, its configuration holding none.
+
+    Args:
+        ds: The schema of the collection.
+        main_dimension: The dimension the collection is partitioned along.
+
+    Raises:
+        ValueError: If a dimension other than the main one is declared
+            without a size.
+    """
+    for dimension in ds.dimensions.values():
+        if dimension.name != main_dimension and dimension.value < 0:
+            raise ValueError(
+                f'The dimension {dimension.name!r} is declared without a '
+                f'size. Only {main_dimension!r}, the dimension the '
+                'collection is partitioned along, grows as measurements '
+                'arrive; every other size holds for the life of the '
+                'collection and an insertion is measured against it.')
+
+
+def _check_fill_values(ds: meta.DatasetSchema) -> None:
+    """Refuse a value marking an absence that its filters do not carry.
+
+    Args:
+        ds: The schema of the collection.
+
+    Raises:
+        ValueError: If the filters of a variable read back a value other
+            than the one the variable marks an absence with.
+    """
+    for item in ds.variables.values():
+        if item.fill_value is None or not item.filters:
+            continue
+        values = numpy.array([item.fill_value], dtype=item.dtype)
+        for codec in item.filters:
+            values = codec.encode(values)
+        for codec in reversed(item.filters):
+            values = codec.decode(values)
+        read: Any = numpy.asarray(values, dtype=item.dtype)[0]
+        if not_equal(read, item.fill_value):
+            raise ValueError(
+                f'The variable {item.name!r} marks an absence with '
+                f'{item.fill_value!s}, which its filters read back as '
+                f'{read!s}. The value a variable marks an absence with is '
+                'the one its filters decode to.')
+
+
 @dataclasses.dataclass(frozen=True)
 class CollectionProperties:
     """This class contains the properties of a collection."""
@@ -204,6 +257,10 @@ class ReadOnlyCollection:
         main_dimension = ds.variables[axis].dimensions[0]
         ds = meta.DatasetSchema.from_config(data=ds.get_config())
         ds.dimensions[main_dimension].value = -1
+
+        if (mode or 'w') == 'w':
+            _check_sizes(ds, main_dimension)
+            _check_fill_values(ds)
 
         self._settings = CollectionSettings(mode or 'w',
                                             fs_utils.get_fs(filesystem),
