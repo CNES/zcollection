@@ -17,6 +17,7 @@ import numpy
 from .abc import (
     Variable,
     concat,
+    masked,
     not_equal,
     read_attributes,
     read_compressor,
@@ -113,7 +114,7 @@ class Array(Variable):
         """
         if self.fill_value is None:
             return dask.array.core.from_array(self.array)
-        return dask.array.ma.masked_equal(self.array, self.fill_value)
+        return masked(dask.array.core.from_array(self.array), self.fill_value)
 
     @property
     def values(self) -> NDArray | NDMaskedArray:
@@ -127,8 +128,8 @@ class Array(Variable):
         Returns:
             The variable data
         """
-        return self.array if self.fill_value is None else numpy.ma.masked_equal(
-            self.array, self.fill_value)
+        return (self.array if self.fill_value is None else masked(
+            self.array, self.fill_value))
 
     @values.setter
     def values(self, data: Any) -> None:
@@ -227,8 +228,8 @@ class Array(Variable):
         Returns:
             The variable slice.
         """
-        return (self.array[key] if self.fill_value is None else
-                numpy.ma.masked_equal(self.array[key], self.fill_value))
+        return (self.array[key] if self.fill_value is None else masked(
+            self.array[key], self.fill_value))
 
     def rechunk(self, **_) -> Array:
         """Rechunk the variable.

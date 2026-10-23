@@ -22,6 +22,7 @@ import numpy
 from .abc import (
     Variable,
     concat,
+    masked,
     not_equal,
     read_attributes,
     read_compressor,
@@ -205,7 +206,7 @@ class DelayedArray(Variable):
                 or isinstance(self.array._meta, numpy.ma.MaskedArray)):
             return self.array
 
-        return dask.array.ma.masked_equal(self.array, self.fill_value)
+        return masked(self.array, self.fill_value)
 
     @property
     def values(self) -> NDArray | NDMaskedArray:
@@ -274,8 +275,8 @@ class DelayedArray(Variable):
             if 'cannot reshape' in msg or 'buffer too small' in msg:
                 raise ModifiedVariableError from exc
             raise
-        return values if self.fill_value is None else numpy.ma.masked_equal(
-            values, self.fill_value)
+        return (values if self.fill_value is None else masked(
+            values, self.fill_value))
 
     def fill(self) -> DelayedArray:
         """Fill the variable with the fill value. If the variable has no fill

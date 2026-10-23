@@ -14,14 +14,15 @@ import collections
 from collections.abc import Callable, Iterator, Sequence
 import numbers
 
+import dask.array.core
+import dask.array.ma
+import numpy
 import xarray
 
 from .. import mathematics, meta, representation, serialization
 
 if TYPE_CHECKING:
-    import dask.array.core
     import numcodecs.abc
-    import numpy
     import zarr
 
     from ..meta import Attribute
@@ -140,6 +141,49 @@ def read_compressor(array: Any) -> Any:
     """
     compressors = array.compressors
     return compressors[0] if compressors else None
+
+
+def _is_itself(value: Any) -> bool:
+    """Say whether a value equals itself.
+
+    Args:
+        value: The value to compare with itself.
+
+    Returns:
+        Whether it does. A NaN and a NaT do not.
+    """
+    return bool(value == value)  # noqa: PLR0124
+
+
+def _differs_from_itself(values: Any) -> Any:
+    """Say which elements of an array do not equal themselves.
+
+    Args:
+        values: The values to compare with themselves.
+
+    Returns:
+        A boolean array, true where an element is a NaN or a NaT.
+    """
+    return values != values  # noqa: PLR0124
+
+
+def masked(values: Any, fill_value: Any) -> Any:
+    """Mask the elements of an array that mark an absence.
+
+    Args:
+        values: The values a variable holds.
+        fill_value: The value the variable marks an absence with.
+
+    Returns:
+        The values, masked where they hold that value. A NaN and a NaT mark
+        an absence as any other value does, and neither equals itself, so
+        the two are found by the comparison an element makes with itself.
+    """
+    module = (dask.array
+              if isinstance(values, dask.array.core.Array) else numpy)
+    if _is_itself(fill_value):
+        return module.ma.masked_equal(values, fill_value)
+    return module.ma.masked_where(_differs_from_itself(values), values)
 
 
 def not_equal(first: Any, second: Any) -> bool:

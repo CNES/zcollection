@@ -250,3 +250,39 @@ def test_from_zarr_decodes_the_declared_fill_value(cls, dtype, encoded,
     variable = cls.from_zarr(array, 'var')
 
     assert not_equal(variable.fill_value, expected) is False
+
+
+#: A value marking an absence, and the values a variable holding it reads.
+ABSENCES = [
+    pytest.param(numpy.float64('nan'),
+                 'float64', [numpy.nan, 1.0, 2.0],
+                 id='nan'),
+    pytest.param(numpy.float64('inf'),
+                 'float64', [numpy.inf, 1.0, 2.0],
+                 id='inf'),
+    pytest.param(-999.0, 'float64', [-999.0, 1.0, 2.0], id='value'),
+    pytest.param(numpy.datetime64('NaT'),
+                 'datetime64[s]', ['NaT', '2000-01-01', '2000-01-02'],
+                 id='nat'),
+    pytest.param(numpy.timedelta64('NaT'),
+                 'timedelta64[s]', ['NaT', 1, 2],
+                 id='nat-delta'),
+]
+
+
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+@pytest.mark.parametrize(('fill_value', 'dtype', 'values'), ABSENCES)
+def test_values_mask_the_value_marking_an_absence(cls, fill_value, dtype,
+                                                  values) -> None:
+    """A NaN and a NaT mark an absence as any other value does.
+
+    Neither equals itself, so a comparison by equality leaves them
+    unmasked, and the measurements a variable never took read as numbers.
+    """
+    variable = cls('var',
+                   numpy.array(values, dtype=dtype), ('num_lines', ),
+                   fill_value=fill_value)
+
+    mask = numpy.ma.getmaskarray(variable.values)
+
+    assert mask.tolist() == [True, False, False]
