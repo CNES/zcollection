@@ -17,6 +17,7 @@ import pytest
 import zarr
 
 from .. import dataset, storage, store, sync
+from ..fs_utils import join_path
 from ..variable.abc import not_equal
 from .cluster import dask_client, dask_cluster  # noqa: F401
 from .fs import local_fs  # noqa: F401
@@ -484,3 +485,22 @@ def test_a_failed_write_names_the_variable(
                                     local_fs.fs)
 
     assert "while writing the variable 'ssh'" in caught.value.__notes__
+
+
+def test_an_absent_group_takes_no_variable(
+        local_fs,  # noqa: F811
+) -> None:
+    """A variable is not added to a group the file system does not hold."""
+    dirname = join_path(str(local_fs.root), 'absent')
+    var = create_variable((4, 4), fill_value=10)
+    var.name = 'var1'
+
+    storage.add_zarr_array(dirname=dirname,
+                           variable=var.metadata(),
+                           dimensions={
+                               'x': 4,
+                               'y': 4
+                           },
+                           fs=local_fs.fs)
+
+    assert not local_fs.fs.exists(dirname)

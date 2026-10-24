@@ -1613,6 +1613,31 @@ def test_partition_modified(
         _ = zds['time'].values
 
 
+def test_add_variable_leaves_a_vanished_partition(
+        local_fs,  # noqa: F811
+) -> None:
+    """A partition the store no longer holds is not written to.
+
+    The index names it, so add_variable reaches it. Writing there would
+    build a partition holding the one variable.
+    """
+    zcol = create_test_collection(local_fs, distributed=False)
+    partitions = tuple(zcol.partitions())
+    vanished = partitions[1]
+    local_fs.fs.rm(vanished, recursive=True)
+    local_fs.fs.invalidate_cache()
+
+    zcol.add_variable(meta.VariableSchema(name='var3',
+                                          dtype='float64',
+                                          dimensions=('num_lines', )),
+                      distributed=False)
+
+    assert not local_fs.fs.exists(vanished)
+    assert 'var3' in zcol.metadata.variables
+    assert local_fs.fs.exists(
+        local_fs.fs.sep.join((partitions[0], 'var3', 'zarr.json')))
+
+
 @pytest.mark.parametrize('distributed', [False, True])
 def test_invalid_partitions(
         dask_client,  # noqa: F811

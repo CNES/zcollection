@@ -465,7 +465,7 @@ def variable_shape(
         # We do not want to change to original dimensions
         dimensions = dimensions.copy()
         dim_main, = dims
-        dimensions[dim_main] = store.open_array(fs, axis).size
+        dimensions[dim_main] = store.open_array(fs, axis, mode='r').size
 
     return tuple(dimensions[x] for x in variable.dimensions)
 
@@ -494,10 +494,18 @@ def add_zarr_array(
         This function adds a new variable to an existing Zarr dataset. The new
         variable is created with the specified chunk size (if provided).
         The function also writes the variable's attributes to the dataset,
-        and consolidates the dataset's metadata.
+        and consolidates the dataset's metadata. A dataset the file system
+        does not hold is left alone.
     """
     _LOGGER.debug('Adding variable %r to Zarr dataset %r', variable.name,
                   dirname)
+    if not fs.exists(dirname):
+        _LOGGER.warning(
+            'The variable %r is not added to %r, which the file system does '
+            'not hold. Reindex the collection to compare its index with its '
+            'store.', variable.name, dirname)
+        return
+
     var_shape = variable_shape(
         variable=variable,
         dimensions=dimensions,
