@@ -487,6 +487,14 @@ def test_a_failed_write_names_the_variable(
     assert "while writing the variable 'ssh'" in caught.value.__notes__
 
 
+def test_an_absent_group_is_not_valid(
+        local_fs,  # noqa: F811
+) -> None:
+    """A directory the file system does not hold is no valid Zarr group."""
+    assert not storage.check_zarr_group(
+        join_path(str(local_fs.root), 'absent'), local_fs.fs)
+
+
 def test_an_absent_group_takes_no_variable(
         local_fs,  # noqa: F811
 ) -> None:

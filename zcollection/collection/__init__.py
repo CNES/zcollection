@@ -1108,6 +1108,11 @@ class Collection(ReadOnlyCollection):
         if fix and invalid_partitions:
             for item in invalid_partitions:
                 _LOGGER.info('Removing invalid partition: %s', item)
-                self.fs.rm(item, recursive=True)
+                try:
+                    self.fs.rm(item, recursive=True)
+                except FileNotFoundError:
+                    # The partition the index names is already gone; taking
+                    # it out of the index below is the whole repair.
+                    pass
             self._index.remove(invalid_partitions)
         return invalid_partitions

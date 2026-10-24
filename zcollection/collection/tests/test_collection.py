@@ -1638,6 +1638,24 @@ def test_add_variable_leaves_a_vanished_partition(
         local_fs.fs.sep.join((partitions[0], 'var3', 'zarr.json')))
 
 
+def test_validate_partitions_reports_a_vanished_partition(
+        local_fs,  # noqa: F811
+) -> None:
+    """A partition the store no longer holds is reported, and unindexed."""
+    zcol = create_test_collection(local_fs, distributed=False)
+    partitions = tuple(zcol.partitions())
+    vanished = partitions[1]
+    local_fs.fs.rm(vanished, recursive=True)
+    local_fs.fs.invalidate_cache()
+
+    with pytest.warns(RuntimeWarning, match='Invalid partition'):
+        invalid = zcol.validate_partitions(distributed=False, fix=True)
+
+    assert invalid == [vanished]
+    assert tuple(zcol.partitions()) == tuple(item for item in partitions
+                                             if item != vanished)
+
+
 @pytest.mark.parametrize('distributed', [False, True])
 def test_invalid_partitions(
         dask_client,  # noqa: F811

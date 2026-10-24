@@ -547,6 +547,6 @@ def check_zarr_group(
         for _, array in group.arrays():
             data: NDArray = array[...]
             del data
-    except (ValueError, TypeError, RuntimeError):
+    except (FileNotFoundError, ValueError, TypeError, RuntimeError):
         return False
     return True
