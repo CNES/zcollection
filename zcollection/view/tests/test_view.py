@@ -135,6 +135,11 @@ def test_view(  # noqa: PLR0915
         tested_fs.view.joinpath('year=2000', 'month=01', 'day=13')),
                     recursive=True)
 
+    # The index of the view still names the partition: nothing has opened
+    # it, and a listing trusts the index.
+    assert len(tuple(zview.partitions())) == 6
+    assert len(zview.reindex()) == 5
+
     assert len(tuple(zview.partitions())) == 5
     assert len(tuple(zview.view_ref.partitions())) == 6
 

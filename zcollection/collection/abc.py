@@ -29,6 +29,7 @@ from .. import (
     storage,
     sync,
 )
+from ..partitions import PartitionIndex
 from ..variable.abc import not_equal
 from .detail import (
     PartitioningProperties,
@@ -276,6 +277,12 @@ class ReadOnlyCollection:
         #: to the partitioning.
         self._immutable = _immutable_path(self._properties.partition)
 
+        #: The partitions the collection holds.
+        self._index = PartitionIndex(self._settings.filesystem,
+                                     self._properties.partition.dir,
+                                     partition_handler,
+                                     writable=self._settings.mode == 'w')
+
         #: Version of the layout the collection is written in.
         self.version: int = meta.FORMAT_VERSION
 
@@ -362,6 +369,17 @@ class ReadOnlyCollection:
         """
         return True if expr is None else expr(
             dict(self.partitioning.parse('/'.join(partition))))
+
+    def _indexed_partitions(self) -> tuple[str, ...]:
+        """Return the path of each partition the index names.
+
+        Returns:
+            The paths, ordered by the values of their keys.
+        """
+        base_dir: str = self.partition_properties.dir
+        return tuple(
+            fs_utils.join_path(base_dir, self._index.path_of(key))
+            for key in self._index.keys())
 
     def _relative_path(self, path: str) -> str:
         """Return the relative path to the collection.
@@ -463,10 +481,9 @@ class ReadOnlyCollection:
             partitions = self._normalize_partitions(selected_partitions)
         elif lock:
             with self.synchronizer:
-                partitions = tuple(
-                    self.partitioning.list_partitions(self.fs, base_dir))
+                partitions = self._indexed_partitions()
         else:
-            partitions = self.partitioning.list_partitions(self.fs, base_dir)
+            partitions = self._indexed_partitions()
 
         if indexer is not None:
             # List of partitions existing in the indexer and partitions list

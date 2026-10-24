@@ -34,6 +34,7 @@ from .. import (
     sync,
     variable as zvariable,
 )
+from ..partitions import FILENAME as INDEX_FILENAME, PartitionIndex
 from .abc import IMMUTABLE, Indexer, PartitionFilter, ReadOnlyCollection
 from .callable_objects import UpdateCallable, WrappedPartitionCallable
 from .detail import (
@@ -226,6 +227,7 @@ class Collection(ReadOnlyCollection):
                 'drop_variable',
                 'add_dimension',
                 'insert',
+                'reindex',
                 'update',
         ]:
             assert hasattr(self, item), f'{item} is not a known method.'
@@ -426,7 +428,10 @@ class Collection(ReadOnlyCollection):
         else:
             self._insert_sequential(ds, partitions, merge_callable, **kwargs)
 
-        return tuple(fs_utils.join_path(*item) for item, _ in partitions)
+        written: tuple[str, ...] = tuple(
+            fs_utils.join_path(*item) for item, _ in partitions)
+        self._index.add(written)
+        return written
 
     def _set_ds_for_insertion(self, ds: dataset.Dataset) -> dataset.Dataset:
         """Create a new dataset ready to be inserted into a collection.
@@ -617,6 +622,7 @@ class Collection(ReadOnlyCollection):
             self.fs.invalidate_cache(path)
 
         tuple(map(invalidate_cache, folders))
+        self._index.remove(folders)
         return folders
 
     def update(
@@ -974,7 +980,7 @@ class Collection(ReadOnlyCollection):
         _LOGGER.info('Copying of the collection to %r', target)
         filesystem = filesystem or fs_utils.get_fs(target)
 
-        partitions = self.partitions(filters=filters)
+        selected = self.partitions(filters=filters)
 
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()
@@ -988,7 +994,7 @@ class Collection(ReadOnlyCollection):
                      fs_utils.join_path(
                          target,
                          os.path.relpath(item, self.partition_properties.dir)))
-                    for item in partitions
+                    for item in selected
                 ], npartitions))
             # Copy the selected partitions
             partial = functools.partial(fs_utils.copy_tree,
@@ -1001,7 +1007,7 @@ class Collection(ReadOnlyCollection):
 
             client.gather(client.map(worker_task, args))
         else:
-            for source_path in partitions:
+            for source_path in selected:
                 target_path = fs_utils.join_path(
                     target,
                     os.path.relpath(source_path,
@@ -1012,17 +1018,42 @@ class Collection(ReadOnlyCollection):
                                    fs_target=filesystem)
 
         # Then the remaining files in the root directory (config, metadata,
-        # etc.)
+        # etc.). The index of the partitions is left out: the copy holds the
+        # partitions selected here, not the ones this collection holds.
         fs_utils.copy_files([
             item['name']
             for item in self.fs.listdir(self.partition_properties.dir,
                                         detail=True) if item['type'] == 'file'
+            and os.path.basename(item['name']) != INDEX_FILENAME
         ], target, self.fs, filesystem)
+
+        index = PartitionIndex(filesystem,
+                               fs_utils.normalize_path(filesystem, target),
+                               self.partitioning,
+                               writable=True)
+        index.write(index.walk())
 
         return Collection.from_config(target,
                                       mode=mode,
                                       filesystem=filesystem,
                                       synchronizer=synchronizer)
+
+    def reindex(self) -> tuple[str, ...]:
+        """Build the index of the partitions from the store.
+
+        A partition the index does not name becomes visible to a listing,
+        and an entry naming a partition the store does not hold is
+        dropped.
+
+        Returns:
+            The path of each partition, relative to the collection.
+        """
+        _LOGGER.info('Indexing the partitions of %r',
+                     self.partition_properties.dir)
+        with self.synchronizer:
+            keys = self._index.walk()
+            self._index.write(keys)
+        return tuple(self._index.path_of(key) for key in keys)
 
     def validate_partitions(self,
                             filters: PartitionFilter | None = None,
@@ -1078,4 +1109,5 @@ class Collection(ReadOnlyCollection):
             for item in invalid_partitions:
                 _LOGGER.info('Removing invalid partition: %s', item)
                 self.fs.rm(item, recursive=True)
+            self._index.remove(invalid_partitions)
         return invalid_partitions

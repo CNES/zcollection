@@ -41,6 +41,11 @@ Storage
   ``prune_view`` and ``view_status`` do the same for a view. A partition the
   target holds in full is not copied again, so a migration that stopped
   partway is resumed by calling the function again.
+* Listing the partitions of a collection or of a view reads ``.partitions``,
+  an index at its root. ``Collection.reindex`` and ``View.reindex`` build it
+  from the store.
+* A partition that reached a collection or a view without the library is
+  listed once ``reindex`` has run.
 * The fill value of a variable is held in the ``_FillValue`` attribute of an
   array, beside the fill value Zarr 3 requires of every array.
 * The codecs a variable names with the classes of numcodecs are translated into

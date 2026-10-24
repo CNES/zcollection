@@ -57,6 +57,7 @@ Collection
   zcollection.fs_utils
   zcollection.meta
   zcollection.migration
+  zcollection.partitions
   zcollection.sync
   zcollection.type_hints
   zcollection.view

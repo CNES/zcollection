@@ -116,7 +116,7 @@ def fs_walk(
 def replace_file(
     fs: fsspec.AbstractFileSystem,
     path: str,
-    data: str,
+    data: str | bytes,
 ) -> None:
     """Replace what a file holds, in one go.
 
@@ -131,13 +131,14 @@ def replace_file(
         path: The path of the file.
         data: What the file is to hold.
     """
+    content: bytes = data.encode() if isinstance(data, str) else data
     if not isinstance(fs, fsspec.implementations.local.LocalFileSystem):
-        fs.pipe_file(path, data.encode())
+        fs.pipe_file(path, content)
         return
 
     beside: str = f'{path}.{uuid.uuid4().hex}'
     try:
-        fs.pipe_file(beside, data.encode())
+        fs.pipe_file(beside, content)
         fs.mv(beside, path)
     except Exception:
         if fs.exists(beside):

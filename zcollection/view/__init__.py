@@ -24,6 +24,7 @@ import fsspec
 from .. import collection, dask_utils, dataset, fs_utils, meta, storage, sync
 from ..collection.detail import _try_infer_callable
 from ..convenience import collection as convenience
+from ..partitions import PartitionIndex
 from .detail import (
     ViewReference,
     ViewUpdateCallable,
@@ -96,6 +97,11 @@ class View:
         self.synchronizer: sync.Sync = synchronizer or sync.NoSync()
         #: The filters used to select the partitions of the reference.
         self.filters = filters
+        #: The partitions of the reference the view holds.
+        self._index = PartitionIndex(self.fs,
+                                     self.base_dir,
+                                     self.view_ref.partitioning,
+                                     writable=True)
 
         if not self.fs.exists(self.base_dir):
             _LOGGER.info('Creating view %s', self)
@@ -110,14 +116,13 @@ class View:
                          distributed: bool = True) -> None:
         """Initialize the partitions of the view."""
         _LOGGER.info('Populating view %s', self)
-        args = tuple(
-            fs_utils.join_path(self.base_dir, item)
-            for item in self.view_ref.partitions(filters=filters,
-                                                 relative=True))
-        # When opening an existing view, if the user asks to use new partitions
-        # from the reference collection, in this case only the missing
-        # partitions are created.
-        args = tuple(filter(lambda item: not self.fs.exists(item), args))
+        # Only the partitions the index does not already name are created.
+        held: frozenset[str] = self._held_partitions()
+        added = tuple(item
+                      for item in self.view_ref.partitions(filters=filters,
+                                                           relative=True)
+                      if item not in held)
+        args = tuple(fs_utils.join_path(self.base_dir, item) for item in added)
         _LOGGER.info('%d partitions selected from %s', len(args),
                      self.view_ref)
 
@@ -133,6 +138,17 @@ class View:
         else:
             for arg in args:
                 _write_checksum(arg, self.base_dir, self.view_ref, self.fs)
+
+        self._index.add(added)
+
+    def _held_partitions(self) -> frozenset[str]:
+        """Return the path of each partition the index names.
+
+        Returns:
+            The paths, relative to the view.
+        """
+        return frozenset(
+            self._index.path_of(key) for key in self._index.keys())
 
     def __str__(self) -> str:
         return (f'{self.__class__.__name__}'
@@ -238,13 +254,13 @@ class View:
         Returns:
             The list of partitions.
         """
-        return filter(self.fs.exists,
-                      (fs_utils.join_path(self.base_dir, item)
-                       for item in self.view_ref.partitions(
-                           filters=filters,
-                           indexer=indexer,
-                           selected_partitions=selected_partitions,
-                           relative=True)))
+        held: frozenset[str] = self._held_partitions()
+        return (fs_utils.join_path(self.base_dir, item)
+                for item in self.view_ref.partitions(
+                    filters=filters,
+                    indexer=indexer,
+                    selected_partitions=selected_partitions,
+                    relative=True) if item in held)
 
     def variables(
         self,
@@ -835,6 +851,22 @@ class View:
             partitions, partition_size, npartitions)
         return bag.map(_wrap, func, partitions, depth, *args, **kwargs)
 
+    def reindex(self) -> tuple[str, ...]:
+        """Build the index of the partitions from the store.
+
+        A partition the index does not name becomes visible to a listing,
+        and an entry naming a partition the store does not hold is
+        dropped.
+
+        Returns:
+            The path of each partition, relative to the view.
+        """
+        _LOGGER.info('Indexing the partitions of %s', self)
+        with self.synchronizer:
+            keys = self._index.walk()
+            self._index.write(keys)
+        return tuple(self._index.path_of(key) for key in keys)
+
     def is_synced(self, distributed: bool = True) -> bool:
         """Check if the view is synchronized with the underlying collection.
 
@@ -933,9 +965,10 @@ class View:
                       metadata=self.metadata) for partition in partitions
             ]
 
+        synced: tuple[str, ...] = tuple(item for item in synchronized_partition
+                                        if item is not None)
+        self._index.add(synced)
+
         partition_ids = tuple(
-            dict(self.view_ref.partitioning.parse(
-                item))  # type: ignore[arg-type] # item is filtered
-            for item in filter(lambda item: item is not None,
-                               synchronized_partition))
+            dict(self.view_ref.partitioning.parse(item)) for item in synced)
         return lambda item: item in partition_ids
