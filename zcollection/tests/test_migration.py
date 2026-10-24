@@ -751,8 +751,10 @@ def test_check_names_the_variables_the_target_changed(deprecated,
 
     local = fs_utils.get_fs('file')
     for name in ('masked', 'grid'):
-        array = store.open_array(
-            local, fs_utils.join_path(target, PARTITIONS[2], name))
+        array = store.open_array(local,
+                                 fs_utils.join_path(target, PARTITIONS[2],
+                                                    name),
+                                 mode='a')
         array[...] = numpy.ones(array.shape, dtype=array.dtype)
 
     outcome = check(deprecated, target, distributed=False)
@@ -957,8 +959,10 @@ def test_check_compares_the_immutable_variables(deprecated, tmp_path) -> None:
     assert outcome.done == (collection.IMMUTABLE, *PARTITIONS)
     assert not outcome.failed
 
-    array = store.open_array(
-        local, fs_utils.join_path(target, collection.IMMUTABLE, 'pixel'))
+    array = store.open_array(local,
+                             fs_utils.join_path(target, collection.IMMUTABLE,
+                                                'pixel'),
+                             mode='a')
     array[...] = reference.pixel_values() + 1
 
     outcome = check(deprecated, target, distributed=False)
@@ -1015,7 +1019,9 @@ def fill_the_masked_variable(partition: str) -> None:
     Args:
         partition: The directory of the partition.
     """
-    array = store.open_array(local, fs_utils.join_path(partition, 'masked'))
+    array = store.open_array(local,
+                             fs_utils.join_path(partition, 'masked'),
+                             mode='a')
     array[...] = reference.FILL_VALUE
 
 
@@ -1135,8 +1141,10 @@ def test_check_names_a_variable_whose_attributes_changed(deprecated,
     target = str(tmp_path / 'target')
     migrate(deprecated, target, distributed=False)
 
-    array = store.open_array(
-        local, fs_utils.join_path(target, PARTITIONS[0], 'counts'))
+    array = store.open_array(local,
+                             fs_utils.join_path(target, PARTITIONS[0],
+                                                'counts'),
+                             mode='a')
     array.attrs['units'] = 'furlongs'
     store.consolidate(local, fs_utils.join_path(target, PARTITIONS[0]))
 
@@ -1198,8 +1206,10 @@ def test_check_view_names_the_variables_the_target_changed(
     target = str(tmp_path / 'view-target')
     migrate_view(deprecated_view, target, distributed=False)
 
-    array = store.open_array(
-        local, fs_utils.join_path(target, PARTITIONS[0], VIEW_VARIABLE.name))
+    array = store.open_array(local,
+                             fs_utils.join_path(target, PARTITIONS[0],
+                                                VIEW_VARIABLE.name),
+                             mode='a')
     array[...] = array[...] + 1
 
     outcome = check_view(deprecated_view, target, distributed=False)
@@ -1235,7 +1245,9 @@ def test_check_names_a_variable_whose_fill_value_changed(deprecated,
 
     partition = fs_utils.join_path(target, PARTITIONS[0])
     for name, value in (('plain', -1234.0), ('counts', -98)):
-        array = store.open_array(local, fs_utils.join_path(partition, name))
+        array = store.open_array(local,
+                                 fs_utils.join_path(partition, name),
+                                 mode='a')
         array.attrs[FILL_VALUE] = value
     store.consolidate(local, partition)
 
@@ -1276,8 +1288,10 @@ def test_check_names_a_variable_the_target_masks_otherwise(
     target = str(tmp_path / 'target')
     migrate(deprecated, target, distributed=False)
 
-    array = store.open_array(
-        local, fs_utils.join_path(target, PARTITIONS[0], 'masked'))
+    array = store.open_array(local,
+                             fs_utils.join_path(target, PARTITIONS[0],
+                                                'masked'),
+                             mode='a')
     assert numpy.ma.getmaskarray(
         read_collection(deprecated, local).variables['masked'].values).any()
     array[...] = numpy.ones(array.shape, dtype=array.dtype)

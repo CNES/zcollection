@@ -559,7 +559,7 @@ def _write_checksum_array(
     array: zarr.Array
     checksum_path = join_path(partition, CHECKSUM_FILE)
     if fs.exists(checksum_path):
-        array = store.open_array(fs, checksum_path)
+        array = store.open_array(fs, checksum_path, mode='a')
     else:
         array = store.create_array(fs,
                                    checksum_path,
@@ -668,7 +668,9 @@ def _extend_partition(
     new_size: int = axis_ref.array.shape[0]
     try:
         for variable in fs.listdir(partition):
-            array: zarr.Array = store.open_array(fs, variable['name'])
+            array: zarr.Array = store.open_array(fs,
+                                                 variable['name'],
+                                                 mode='a')
             dimensions: Sequence[str] = read_dimensions(array)
             if axis_name in dimensions:
                 axis: int = dimensions.index(axis_name)

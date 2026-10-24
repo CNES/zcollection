@@ -232,3 +232,13 @@ def test_consolidation_says_nothing(local_fs) -> None:  # noqa: F811
 
     assert not quiet
     assert [str(item.message) for item in seen] == ['another matter']
+
+
+def test_opening_an_absent_array_raises(local_fs) -> None:  # noqa: F811
+    """Opening an array the store does not hold builds none of it."""
+    path = join_path(str(local_fs.root), 'absent')
+
+    with pytest.raises(FileNotFoundError):
+        store.open_array(local_fs.fs, path)
+
+    assert not local_fs.fs.exists(path)

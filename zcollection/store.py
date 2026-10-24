@@ -75,14 +75,16 @@ def open_array(
     fs: fsspec.AbstractFileSystem,
     path: str,
     *,
-    mode: str = 'a',
+    mode: str = 'r',
 ) -> zarr.Array:
     """Open an array.
 
     Args:
         fs: The file system the array is held on.
         path: The path of the array.
-        mode: The mode to open the array with.
+        mode: The mode to open the array with. The default reads the
+            array, and raises when the store holds none at that path. A
+            mode that writes builds the array the store does not hold.
 
     Returns:
         The array.
