@@ -77,6 +77,49 @@ def collection_files(zcol) -> dict[str, bytes]:
     }
 
 
+@pytest.mark.usefixtures('dask_client')
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('delayed', [False, True])
+@pytest.mark.parametrize('distributed', [False, True])
+def test_partial_insert_preserves_filler_flags_for_merging(
+        fs, request, delayed, distributed) -> None:
+    """A merge identifies missing variables and retains their stored values."""
+    tested_fs = request.getfixturevalue(fs)
+    original = reference.make_dataset().select_vars(
+        ['time', 'plain', 'counts'])
+    zcol = convenience.create_collection('time',
+                                         original,
+                                         reference.make_partitioning(),
+                                         str(tested_fs.collection),
+                                         filesystem=tested_fs.fs)
+    zcol.insert(original, distributed=False)
+    incoming = reference.make_dataset(delayed=delayed).select_vars(
+        ['time', 'plain'])
+    incoming['plain'].array = incoming['plain'].array + 100
+
+    def merge(existing_ds: dataset.Dataset, inserted_ds: dataset.Dataset,
+              axis: str, partitioning_dim: str, **kwargs) -> dataset.Dataset:
+        assert {
+            name: var.filler
+            for name, var in inserted_ds.variables.items()
+        } == {
+            'time': False,
+            'plain': False,
+            'counts': True,
+        }
+        return dataset.Dataset(existing_ds[name] if var.filler else var
+                               for name, var in inserted_ds.variables.items())
+
+    zcol.insert(incoming, merge_callable=merge, distributed=distributed)
+
+    loaded = zcol.load(delayed=False, distributed=False)
+    assert loaded is not None
+    numpy.testing.assert_array_equal(loaded['plain'].array,
+                                     reference.plain_values() + 100)
+    numpy.testing.assert_array_equal(loaded['counts'].array,
+                                     reference.count_values())
+
+
 @pytest.mark.parametrize('method', ['update_immutable', 'drop_dimension'])
 def test_readonly_refuses_schema_and_immutable_updates(mutation_collection,
                                                        method) -> None:

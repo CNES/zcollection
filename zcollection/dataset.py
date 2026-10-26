@@ -552,7 +552,8 @@ class Dataset:
                   attrs=item.attrs,
                   compressor=item.compressor,
                   fill_value=item.fill_value,
-                  filters=item.filters)
+                  filters=item.filters,
+                  filler=item.filler)
             for item, array in zip(self.variables.values(), arrays)
         ]
         zds = Dataset(variables, attrs=self.attrs, delayed=False)

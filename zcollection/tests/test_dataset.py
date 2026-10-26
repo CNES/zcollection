@@ -31,6 +31,34 @@ def create_delayed_dataset(factory) -> dataset.Dataset:
                            variables=(factory(), factory('var2')))
 
 
+def test_compute_preserves_filler_flags() -> None:
+    """Computing preserves each variable's filler flag."""
+    zds = dataset.Dataset([
+        dataset.DelayedArray('provided', numpy.arange(3), ('row', )),
+    ])
+    zds.add_variable(meta.VariableSchema('missing',
+                                         'int64',
+                                         dimensions=('row', ),
+                                         fill_value=-1),
+                     filler=True)
+
+    computed = zds.compute(scheduler='synchronous')
+
+    assert {
+        name: var.filler
+        for name, var in computed.variables.items()
+    } == {
+        'provided': False,
+        'missing': True,
+    }
+    assert all(
+        isinstance(var, dataset.Array) for var in computed.variables.values())
+    numpy.testing.assert_array_equal(computed['provided'].array,
+                                     numpy.arange(3))
+    numpy.testing.assert_array_equal(computed['missing'].array,
+                                     numpy.full(3, -1))
+
+
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset(
         factory,
