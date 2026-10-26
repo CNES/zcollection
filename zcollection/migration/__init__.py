@@ -19,6 +19,7 @@ import fsspec
 
 from . import detail
 from .. import collection, fs_utils, view
+from ..partitions import PartitionIndex
 from .abc import Outcome, Status
 
 if TYPE_CHECKING:
@@ -91,12 +92,17 @@ def migrate(
     src = detail._open_source(source, source_fs)
     zcol = detail._open_target(source, target, source_fs, target_fs)
 
-    return detail.migrate_collection(src,
-                                     zcol.partition_properties.dir,
-                                     target_fs,
-                                     filters=filters,
-                                     selected_partitions=selected_partitions,
-                                     distributed=distributed)
+    with zcol._index.updating():
+        outcome = detail.migrate_collection(
+            src,
+            zcol.partition_properties.dir,
+            target_fs,
+            filters=filters,
+            selected_partitions=selected_partitions,
+            distributed=distributed)
+        zcol._index.add(item for item in (*outcome.done, *outcome.skipped)
+                        if item != collection.IMMUTABLE)
+    return outcome
 
 
 def status(
@@ -234,12 +240,20 @@ def prune(
     src = detail._open_source(source, source_fs)
     zcol = detail._matching_target(source, target, source_fs, target_fs)
 
-    return detail.prune_partitions(src,
-                                   zcol.partition_properties.dir,
-                                   target_fs,
-                                   filters=filters,
-                                   selected_partitions=selected_partitions,
-                                   distributed=distributed)
+    index = PartitionIndex(source_fs,
+                           src.partition_properties.dir,
+                           src.partitioning,
+                           writable=True)
+    with index.updating():
+        outcome = detail.prune_partitions(
+            src,
+            zcol.partition_properties.dir,
+            target_fs,
+            filters=filters,
+            selected_partitions=selected_partitions,
+            distributed=distributed)
+        index.remove((*outcome.done, *outcome.skipped))
+    return outcome
 
 
 def migrate_view(
@@ -309,20 +323,24 @@ def migrate_view(
                                          reference_fs),
                       ds=ds,
                       filesystem=target_fs,
-                      filters=view._deserialize_filters(data['filters']))
+                      filters=view._deserialize_filters(data['filters']),
+                      _initialize=False)
     zview._write_config()
 
     _, source_view = detail._reference(source, source_fs)
-    return detail.migrate_view_partitions(source_dir,
-                                          base_dir,
-                                          source_fs,
-                                          target_fs,
-                                          partitions=detail._view_selection(
-                                              source_view, filters,
+    with zview._index.updating():
+        outcome = detail.migrate_view_partitions(
+            source_dir,
+            base_dir,
+            source_fs,
+            target_fs,
+            partitions=detail._view_selection(source_view, filters,
                                               selected_partitions),
-                                          names=tuple(ds.variables),
-                                          view_ref=zview.view_ref,
-                                          distributed=distributed)
+            names=tuple(ds.variables),
+            view_ref=zview.view_ref,
+            distributed=distributed)
+        zview._index.add((*outcome.done, *outcome.skipped))
+    return outcome
 
 
 def view_status(
@@ -408,15 +426,18 @@ def prune_view(
     target_fs = fs_utils.get_fs(target_filesystem)
     ds, source_view = detail._reference(source, source_fs)
 
-    return detail.prune_view_partitions(
-        fs_utils.normalize_path(source_fs, source),
-        fs_utils.normalize_path(target_fs, target),
-        source_fs,
-        target_fs,
-        partitions=detail._view_selection(source_view, filters,
-                                          selected_partitions),
-        names=tuple(ds.variables),
-        distributed=distributed)
+    with source_view._index.updating():
+        outcome = detail.prune_view_partitions(
+            fs_utils.normalize_path(source_fs, source),
+            fs_utils.normalize_path(target_fs, target),
+            source_fs,
+            target_fs,
+            partitions=detail._view_selection(source_view, filters,
+                                              selected_partitions),
+            names=tuple(ds.variables),
+            distributed=distributed)
+        source_view._index.remove((*outcome.done, *outcome.skipped))
+    return outcome
 
 
 def check_view(

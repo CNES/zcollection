@@ -8,8 +8,9 @@ I/O operations
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 import collections
+import functools
 import logging
 
 import dask.array.core
@@ -25,7 +26,7 @@ from .fs_utils import join_path
 from .variable.abc import FILL_VALUE
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
     from dask.delayed import Delayed as dask_Delayed
     import fsspec
@@ -341,6 +342,94 @@ def init_zarr_group(dirname, fs: fsspec.AbstractFileSystem) -> None:
     _LOGGER.debug('Initializing zarr group: %s', dirname)
     store.create_group(fs, dirname)
     store.consolidate(fs, dirname)
+
+
+#: What the function :func:`skip_absent_partition` wraps returns.
+_T = TypeVar('_T')
+
+
+class AbsentPartition(FileNotFoundError):
+    """A store holds no partition at a path its index names.
+
+    It is raised where a partition is read and nowhere else, so catching
+    it catches that one fault and no other file the caller may be
+    missing. Its message is the path of the partition. A view reads two
+    stores, its reference and its own, and raises this for either.
+    """
+
+
+def read_partition(
+    dirname: str,
+    fs: fsspec.AbstractFileSystem,
+    *,
+    delayed: bool = True,
+    selected_variables: Iterable[str] | None = None,
+) -> dataset.Dataset:
+    """Read the partition a path names.
+
+    Args:
+        dirname: The path of the partition.
+        fs: The file system the partition is held on.
+        delayed: Whether to load the data lazily.
+        selected_variables: The variables to retain. Defaults to ``None``,
+            which retains all of them.
+
+    Returns:
+        The dataset the partition holds.
+
+    Raises:
+        AbsentPartition: If the store holds no partition at that path.
+    """
+    try:
+        return open_zarr_group(dirname,
+                               fs,
+                               delayed=delayed,
+                               selected_variables=selected_variables)
+    except FileNotFoundError as err:
+        # A missing file in an existing partition indicates an incomplete
+        # partition. Propagate that error to the caller.
+        if fs.exists(dirname):
+            raise
+        raise AbsentPartition(dirname) from err
+
+
+def skip_absent_partition(func: Callable[..., _T]) -> Callable[..., _T | None]:
+    """Return a function that gives nothing for an absent partition.
+
+    The wrapped function takes the path of a partition as its first
+    argument. A call raising :class:`AbsentPartition` is warned about and
+    returns ``None``; every other error is raised.
+
+    Args:
+        func: The function to wrap.
+
+    Returns:
+        The wrapped function.
+    """
+
+    @functools.wraps(func)
+    def wrapper(partition: str, *args, **kwargs) -> _T | None:
+        try:
+            return func(partition, *args, **kwargs)
+        except AbsentPartition:
+            warn_absent_partition(partition)
+            return None
+
+    return wrapper
+
+
+def warn_absent_partition(dirname: str) -> None:
+    """Warn that the store holds no partition at a path the index names.
+
+    The caller skips that partition. Its index entry remains until
+    ``reindex`` or ``validate_partitions(fix=True)`` removes it.
+
+    Args:
+        dirname: The path of the absent partition.
+    """
+    _LOGGER.warning(
+        'The store holds no partition at %r, which the index names. Call '
+        'reindex to compare the index with the store.', dirname)
 
 
 def open_zarr_group(

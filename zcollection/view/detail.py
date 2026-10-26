@@ -27,11 +27,14 @@ from .. import collection, dataset, meta, store
 from ..collection.detail import _update_with_overlap
 from ..fs_utils import get_fs, join_path
 from ..storage import (
+    AbsentPartition,
     open_zarr_array,
     open_zarr_group,
+    read_partition,
     update_zarr_array,
     variable_attributes,
     variable_shape,
+    warn_absent_partition,
 )
 from ..variable.abc import read_dimensions
 
@@ -163,6 +166,31 @@ def _drop_zarr_zarr(partition: str,
             raise
 
 
+def _held_one_dataset(
+    args: tuple[tuple[tuple[str, int], ...], list[slice]],
+    **kwargs,
+) -> tuple[dataset.Dataset, str] | None:
+    """Return what :func:`_load_one_dataset` reads, or nothing.
+
+    The partition is named by its keys here, while
+    :func:`zcollection.storage.skip_absent_partition` takes a path, so
+    the two do not share a wrapper.
+
+    Args:
+        args: Tuple containing the partition's keys and its indexer.
+        **kwargs: The arguments of :func:`_load_one_dataset`.
+
+    Returns:
+        The dataset and the partition's path, or ``None`` if a required
+        partition is absent. A warning identifies the absent partition.
+    """
+    try:
+        return _load_one_dataset(args, **kwargs)
+    except AbsentPartition as err:
+        warn_absent_partition(str(err))
+        return None
+
+
 def _load_one_dataset(
     args: tuple[tuple[tuple[str, int], ...], list[slice]],
     *,
@@ -196,7 +224,11 @@ def _load_one_dataset(
 
     partition_scheme, slices = args
     partition: str = view_ref.partitioning.join(partition_scheme, fs.sep)
-    zds: dataset.Dataset = open_zarr_group(
+    held = join_path(base_dir, partition)
+    variables = tuple(variables)
+    if not variables and not fs.exists(held):
+        raise AbsentPartition(held)
+    zds: dataset.Dataset = read_partition(
         join_path(view_ref.partition_properties.dir, partition),
         view_ref.fs,
         delayed=delayed,
@@ -209,12 +241,19 @@ def _load_one_dataset(
     for name in missing_dimensions:
         zds.dimensions[name] = mds.dimensions[name].value
 
-    data = list(zds.variables.values()) + [
-        open_zarr_array(store.open_array(
-            fs, join_path(base_dir, partition, variable), mode='r'),
-                        variable,
-                        delayed=delayed) for variable in variables
-    ]
+    try:
+        data = list(zds.variables.values()) + [
+            open_zarr_array(store.open_array(
+                fs, join_path(held, variable), mode='r'),
+                            variable,
+                            delayed=delayed) for variable in variables
+        ]
+    except FileNotFoundError as err:
+        # A missing variable array in an existing view partition indicates
+        # an incomplete partition. The caller skips only absent partitions.
+        if fs.exists(held):
+            raise
+        raise AbsentPartition(held) from err
 
     zds = dataset.Dataset(data, attrs=zds.attrs, delayed=zds.delayed)
 
@@ -289,7 +328,7 @@ def _load_datasets_list(
 
     if client is not None:
         futures: list[dask.distributed.Future] = client.map(
-            _load_one_dataset,
+            _held_one_dataset,
             arguments,
             base_dir=base_dir,
             delayed=delayed,
@@ -299,10 +338,12 @@ def _load_datasets_list(
             view_ref=client.scatter(view_ref),
             variables=metadata.select_variables(selected_variables),
             with_immutable=with_immutable)
-        datasets = client.gather(futures)
+        datasets = [
+            item for item in client.gather(futures) if item is not None
+        ]
     else:
         datasets = [
-            _load_one_dataset(
+            item for item in (_held_one_dataset(
                 arg,
                 base_dir=base_dir,
                 delayed=False,
@@ -311,7 +352,8 @@ def _load_datasets_list(
                     selected_variables),
                 view_ref=view_ref,
                 variables=metadata.select_variables(selected_variables),
-                with_immutable=with_immutable) for arg in arguments
+                with_immutable=with_immutable)
+                              for arg in arguments) if item is not None
         ]
     return iter(datasets)
 
@@ -360,8 +402,12 @@ def _load_dataset_with_overlap(
         partitions[ix] for ix in range(where - depth, where + depth + 1)
         if 0 <= ix < len(partitions)
     ]
-    loaded: list[tuple[dataset.Dataset, str]] = [
-        _load_one_dataset(
+    # A neighbour the reference does not hold is left out. The partition
+    # itself is the one being mapped over, so its absence raises
+    # AbsentPartition.
+    loaded: list[tuple[dataset.Dataset, str]] = []
+    for item in selected:
+        held = _held_one_dataset(
             (view_ref.partitioning.parse(item), []),
             base_dir=base_dir,
             delayed=delayed,
@@ -370,8 +416,12 @@ def _load_dataset_with_overlap(
                 selected_variables),
             view_ref=view_ref,
             variables=metadata.select_variables(selected_variables),
-            with_immutable=True) for item in selected
-    ]
+            with_immutable=True)
+        if held is None:
+            if item == partition:
+                raise AbsentPartition(partition)
+            continue
+        loaded.append(held)
 
     start = 0
     indices = slice(0, 0, None)
@@ -601,14 +651,10 @@ def _write_checksum(
         view_ref: The view reference.
         fs: The file system used to access the variables in the view.
     """
-    partition_ref = join_path(
-        view_ref.partition_properties.dir,
-        str(pathlib.Path(partition).relative_to(base_dir).as_posix()))
-    _write_checksum_array(
-        partition,
-        fs,
-        _calculate_axis_reference(partition_ref, view_ref),
-    )
+    relative = str(pathlib.Path(partition).relative_to(base_dir).as_posix())
+    partition_ref = join_path(view_ref.partition_properties.dir, relative)
+    _write_checksum_array(partition, fs,
+                          _calculate_axis_reference(partition_ref, view_ref))
 
 
 def _sync_partition(

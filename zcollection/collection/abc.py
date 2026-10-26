@@ -120,6 +120,32 @@ def build_indexer_args(
     return ((item, indexers_map[item]) for item in sorted(selected_partitions))
 
 
+@storage.skip_absent_partition
+def _open_held_group(
+    partition: str,
+    fs: fsspec.AbstractFileSystem,
+    *,
+    delayed: bool,
+    selected_variables: Iterable[str] | None,
+) -> dataset.Dataset:
+    """Read a partition.
+
+    Args:
+        partition: The path of the partition.
+        fs: The file system the partition is held on.
+        delayed: Whether to load the data lazily.
+        selected_variables: The variables to retain.
+
+    Returns:
+        The dataset the partition holds, or ``None`` when the store holds
+        no partition at that path.
+    """
+    return storage.read_partition(partition,
+                                  fs,
+                                  delayed=delayed,
+                                  selected_variables=selected_variables)
+
+
 def _immutable_path(partition_properties: PartitioningProperties, ) -> str:
     """Return the immutable path of the dataset.
 
@@ -345,7 +371,7 @@ class ReadOnlyCollection:
                                                       False)
 
     def is_locked(self) -> bool:
-        """Return True if the collection is locked."""
+        """Return whether this instance holds the collection lock."""
         return self.synchronizer.is_locked()
 
     @classmethod
@@ -528,18 +554,23 @@ class ReadOnlyCollection:
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
-            A bag containing the tuple of the partition scheme and the result
-            of the function.
+            A bag holding, for each partition, the tuple of its scheme and
+            the result of the function. A partition the store no longer
+            holds is left out.
 
         Example:
-            >>> futures = collection.map(
-            ...     lambda x: (x["var1"] + x["var2"]).values)
-            >>> for item in futures:
-            ...     print(item)
-            [1.0, 2.0, 3.0, 4.0]
-            [5.0, 6.0, 7.0, 8.0]
+            For a collection with ``var1`` and ``var2`` on the same dimensions,
+            including the partitioned dimension:
+
+            .. code-block:: python
+
+                bag = collection.map(
+                    lambda ds: ds['var1'].values + ds['var2'].values)
+                for partition, values in bag.compute(scheduler='synchronous'):
+                    print(partition, values.tolist())
         """
 
+        @storage.skip_absent_partition
         def _wrap(
             _partition: str,
             _func: PartitionCallable,
@@ -579,7 +610,7 @@ class ReadOnlyCollection:
                        _func=func,
                        _selected_variables=selected_variables,
                        _delayed=delayed,
-                       **kwargs)
+                       **kwargs).filter(lambda item: item is not None)
 
     def map_overlap(
         self,
@@ -617,17 +648,24 @@ class ReadOnlyCollection:
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
-            A bag containing the tuple of the partition scheme and the result
-            of the function.
+            A bag holding, for each partition, the tuple of its scheme and
+            the result of the function. A partition the store no longer
+            holds is left out.
 
         Example:
-            >>> futures = collection.map_overlap(
-            ...     lambda x: (x["var1"] + x["var2"]).values,
-            ...     depth=1)
-            >>> for item in futures:
-            ...     print(item)
-            [1.0, 2.0, 3.0, 4.0]
-            [5.0, 6.0, 7.0, 8.0]
+            For a collection with ``var1`` and ``var2`` on the same dimensions,
+            including the partitioned dimension:
+
+            Each printed array includes results for the partition and its
+            available neighbours.
+
+            .. code-block:: python
+
+                bag = collection.map_overlap(
+                    lambda ds: ds['var1'].values + ds['var2'].values,
+                    depth=1)
+                for partition, values in bag.compute(scheduler='synchronous'):
+                    print(partition, values.tolist())
         """
         if not callable(func):
             raise TypeError('func must be a callable')
@@ -635,6 +673,7 @@ class ReadOnlyCollection:
         add_partition_info: bool = dask.utils.has_keyword(
             func, 'partition_info')
 
+        @storage.skip_absent_partition
         def _wrap(
             _partition: str,
             _delayed: bool,
@@ -693,7 +732,7 @@ class ReadOnlyCollection:
                        _partitions=partitions,
                        _selected_variables=selected_variables,
                        _wrapped_func=func,
-                       **kwargs)
+                       **kwargs).filter(lambda item: item is not None)
 
     def load(
         self,
@@ -835,8 +874,9 @@ class ReadOnlyCollection:
             distributed: Whether to use dask or not. Default To True.
 
         Returns:
-            The list of dataset for each partition, or None if no
-            partitions were selected.
+            The list of dataset for each partition, or None when the
+            selection retains none, or when the store holds none of the
+            ones it retains.
         """
         # No indexer, so the dataset is loaded directly for each
         # selected partition.
@@ -852,20 +892,22 @@ class ReadOnlyCollection:
             bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
                 selected_partitions,
                 npartitions=dask_utils.dask_workers(client, True))
-            arrays = bag.map(storage.open_zarr_group,
+            arrays = bag.map(_open_held_group,
                              self.fs,
                              delayed=delayed,
-                             selected_variables=selected_variables).compute()
+                             selected_variables=selected_variables).filter(
+                                 lambda item: item is not None).compute()
         else:
             arrays = [
-                storage.open_zarr_group(partition,
-                                        self.fs,
-                                        delayed=delayed,
-                                        selected_variables=selected_variables)
-                for partition in selected_partitions
+                zds for zds in (
+                    _open_held_group(partition,
+                                     self.fs,
+                                     delayed=delayed,
+                                     selected_variables=selected_variables)
+                    for partition in selected_partitions) if zds is not None
             ]
 
-        return arrays
+        return arrays or None
 
     def _load_partitions_indexer(
         self,
@@ -893,8 +935,9 @@ class ReadOnlyCollection:
             distributed: Whether to use dask or not. Default To True.
 
         Returns:
-            The list of dataset for each partition, or None if no
-            partitions were selected.
+            The list of dataset for each partition, or None when the
+            selection retains none, or when the store holds none of the
+            ones it retains.
         """
         # We're going to reuse the indexer variable, so ensure it is
         # an iterable not a generator.
@@ -937,7 +980,7 @@ class ReadOnlyCollection:
                         selected_variables=selected_variables) for a in args
                 ]))
 
-        return arrays
+        return arrays or None
 
     def _bag_from_partitions(
         self,

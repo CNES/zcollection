@@ -15,3 +15,14 @@ def test_no_sync():
     with sync.NoSync() as _:
         touch = True
     assert touch
+
+
+def test_process_sync_reports_acquisition_and_release(tmp_path) -> None:
+    """A released lock is reported as released even if its file remains."""
+    synchronizer = sync.ProcessSync(str(tmp_path / 'lock'))
+
+    assert synchronizer.is_locked() is False
+    with synchronizer:
+        assert synchronizer.is_locked() is True
+    assert synchronizer.lock.exists()
+    assert synchronizer.is_locked() is False

@@ -18,7 +18,14 @@ import dask.utils
 
 from .. import dataset, merging, partitioning, store, sync
 from ..fs_utils import join_path
-from ..storage import open_zarr_group, update_zarr_array, write_zarr_group
+from ..storage import (
+    AbsentPartition,
+    open_zarr_group,
+    read_partition,
+    update_zarr_array,
+    warn_absent_partition,
+    write_zarr_group,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -168,10 +175,10 @@ def _load_dataset(
     Returns:
         The loaded dataset.
     """
-    zds = open_zarr_group(partition,
-                          fs,
-                          delayed=delayed,
-                          selected_variables=selected_variables)
+    zds = read_partition(partition,
+                         fs,
+                         delayed=delayed,
+                         selected_variables=selected_variables)
 
     if immutable:
         zds.merge(
@@ -231,14 +238,26 @@ def _load_dataset_with_overlap(
         if 0 <= ix < len(partitions)
     ]
 
-    # Load the datasets for each selected partition.
-    groups: list[dataset.Dataset] = [
-        open_zarr_group(partition,
-                        fs,
-                        delayed=delayed,
-                        selected_variables=selected_variables)
-        for partition in selected_partitions
-    ]
+    # Load the datasets for each selected partition. A neighbour the store
+    # does not hold is left out of both lists, which calculate_slice reads
+    # in step. The partition itself is the one being mapped over, so its
+    # absence is raised.
+    groups: list[dataset.Dataset] = []
+    held: list[str] = []
+    for item in selected_partitions:
+        try:
+            groups.append(
+                read_partition(item,
+                               fs,
+                               delayed=delayed,
+                               selected_variables=selected_variables))
+        except AbsentPartition:
+            if item == partition:
+                raise
+            warn_absent_partition(item)
+            continue
+        held.append(item)
+    selected_partitions = held
 
     # Compute the slice of the given partition.
     indices: slice = calculate_slice(groups, selected_partitions)
@@ -285,8 +304,13 @@ def _wrap_update_func(
                       func_kwargs: dict[str, Any]) -> None:
         # Applying function for each partition's data
         for partition in partitions:
-            zds: dataset.Dataset = _load_dataset(delayed, fs, immutable,
-                                                 partition, selected_variables)
+            try:
+                zds: dataset.Dataset = _load_dataset(delayed, fs, immutable,
+                                                     partition,
+                                                     selected_variables)
+            except AbsentPartition:
+                warn_absent_partition(partition)
+                continue
             dictionary: dict[str, ArrayLike] = func(zds, *func_args,
                                                     **func_kwargs)
             tuple(
@@ -339,15 +363,19 @@ def _wrap_update_func_with_overlap(
             # False positive with the method Collection.map_overlap
             zds: dataset.Dataset
             indices: slice
-            zds, indices = _load_dataset_with_overlap(
-                delayed=delayed,
-                depth=depth,
-                dim=dim,
-                fs=fs,
-                immutable=immutable,
-                partition=partition,
-                partitions=selected_partitions,
-                selected_variables=selected_variables)
+            try:
+                zds, indices = _load_dataset_with_overlap(
+                    delayed=delayed,
+                    depth=depth,
+                    dim=dim,
+                    fs=fs,
+                    immutable=immutable,
+                    partition=partition,
+                    partitions=selected_partitions,
+                    selected_variables=selected_variables)
+            except AbsentPartition:
+                warn_absent_partition(partition)
+                continue
 
             _update_with_overlap(*func_args,
                                  func=func,
@@ -460,7 +488,8 @@ def _load_and_apply_indexer(
         selected_variables: The selected variables to load.
 
     Returns:
-        The list of loaded datasets.
+        The list of loaded datasets, empty when the store holds no
+        partition at that path.
     """
     items: list[slice]
     partition_scheme: tuple[tuple[str, int], ...]
@@ -468,8 +497,12 @@ def _load_and_apply_indexer(
     partition_scheme, items = args
     partition = join_path(partition_properties.dir,
                           partition_handler.join(partition_scheme, fs.sep))
-    zds = open_zarr_group(partition,
-                          fs,
-                          delayed=delayed,
-                          selected_variables=selected_variables)
+    try:
+        zds = read_partition(partition,
+                             fs,
+                             delayed=delayed,
+                             selected_variables=selected_variables)
+    except AbsentPartition:
+        warn_absent_partition(partition)
+        return []
     return [zds.isel({partition_properties.dim: indexer}) for indexer in items]

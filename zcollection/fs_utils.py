@@ -73,6 +73,8 @@ def fs_walk(
     fs: fsspec.AbstractFileSystem,
     path: str,
     sort: bool = False,
+    *,
+    strict: bool = False,
 ) -> Iterator[tuple[str, list[str], list[str]]]:
     """Return the list of files and directories in a directory.
 
@@ -81,6 +83,7 @@ def fs_walk(
         path: path to the directory
         sort: if True, the list of files and directories is sorted
             alphabetically
+        strict: Whether file system errors are raised.
 
     Returns:
         Iterator of (path, directories, files).
@@ -91,7 +94,9 @@ def fs_walk(
     dirs, files = [], []
     try:
         listing: list[dict[str, Any]] = fs.ls(path, detail=True)
-    except (FileNotFoundError, OSError):
+    except OSError:
+        if strict:
+            raise
         yield '', [], []
         return
 
@@ -110,7 +115,24 @@ def fs_walk(
     yield path.rstrip(SEPARATOR), dirs, sort_sequence(files)
 
     for item in dirs:
-        yield from fs_walk(fs, item, sort=sort)
+        yield from fs_walk(fs, item, sort=sort, strict=strict)
+
+
+def remove_tree(fs: fsspec.AbstractFileSystem, path: str) -> None:
+    """Remove a directory and what it holds.
+
+    If the directory is absent, the function returns without raising an
+    exception.
+
+    Args:
+        fs: The file system holding the directory.
+        path: The path of the directory.
+    """
+    try:
+        fs.rm(path, recursive=True)
+    except FileNotFoundError:
+        if fs.exists(path):
+            raise
 
 
 def replace_file(
@@ -207,13 +229,19 @@ def copy_tree(
     """
     if fs_target.exists(target):
         raise ValueError(f'Target {target} already exists')
+    listing = tuple(fs_walk(fs_source, source, strict=True))
     fs_target.mkdir(target)
-    for root, dirs, files in tuple(fs_walk(fs_source, source)):
-        for name in files:
-            source_path = join_path(root, name)
-            copy_file(source_path,
-                      join_path(target, os.path.relpath(source_path, source)),
-                      fs_source, fs_target)
-        for source_path in dirs:
-            fs_target.mkdir(
-                join_path(target, os.path.relpath(source_path, source)))
+    try:
+        for root, dirs, files in listing:
+            for name in files:
+                source_path = join_path(root, name)
+                copy_file(
+                    source_path,
+                    join_path(target, os.path.relpath(source_path, source)),
+                    fs_source, fs_target)
+            for source_path in dirs:
+                fs_target.mkdir(
+                    join_path(target, os.path.relpath(source_path, source)))
+    except Exception:
+        remove_tree(fs_target, target)
+        raise

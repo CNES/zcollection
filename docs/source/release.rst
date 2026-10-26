@@ -21,31 +21,19 @@ Features
 
 Storage
 ^^^^^^^
-* Collections are written in the Zarr 3 format. A group and an array each hold
-  their metadata in a ``zarr.json``, and an array names the file holding a
-  chunk with the ``c`` prefix and the indices of the chunk, joined with a dot.
-  A chunk whose values all equal the fill value of its array is not written,
-  and reads back as that value.
+* Collections use Zarr 3. Existing Zarr 2 collections remain readable;
+  migrate them to create writable copies. Views in the previous storage
+  format must be migrated before they can be opened. See :doc:`migration`.
 * ``.zcollection`` carries the version of the layout it is written in. A
   collection written in a newer one is refused.
-* A collection written by an earlier release opens read only, and writing to
-  it is refused. Copying it into a new collection is what makes its data
-  writable again, and a view written by an earlier release opens only once it
-  has been copied.
-* ``zcollection.migration`` holds the functions a migration takes.
-  ``migrate`` copies a collection written by an earlier release into a new
-  one, partition by partition, with a filter selecting the partitions to
-  copy. ``status`` reports how far the copy has got, ``check`` compares the
-  values the two collections hold, ``prune`` removes from the source the
-  partitions the target holds, and ``migrate_view``, ``check_view``,
-  ``prune_view`` and ``view_status`` do the same for a view. A partition the
-  target holds in full is not copied again, so a migration that stopped
-  partway is resumed by calling the function again.
-* Listing the partitions of a collection or of a view reads ``.partitions``,
-  an index at its root. ``Collection.reindex`` and ``View.reindex`` build it
-  from the store.
-* A partition that reached a collection or a view without the library is
-  listed once ``reindex`` has run.
+* ``zcollection.migration`` supports selective migration of collections
+  and views, progress reporting, data comparison and pruning.
+  Interrupted migrations can be resumed.
+* Collections and views maintain a partition index. If the index lists
+  missing partitions, ``load``, ``map``, ``map_overlap`` and ``update`` skip
+  them with a warning. ``Collection.copy`` also skips such missing source
+  partitions. ``Collection.reindex`` and ``View.reindex`` rebuild the index
+  from the store when it needs to be repaired. See :doc:`partition_index`.
 * The fill value of a variable is held in the ``_FillValue`` attribute of an
   array, beside the fill value Zarr 3 requires of every array.
 * The codecs a variable names with the classes of numcodecs are translated into
@@ -55,29 +43,29 @@ Behaviour
 ^^^^^^^^^
 * A partition is written with the compressor, the filters and the fill value
   the collection declares for each of its variables.
-* A collection declaring a dimension other than the one it is partitioned
-  along without a size is refused, where every insertion into it failed.
-* A collection declaring a value marking an absence that the filters of its
-  variable do not carry is refused, where the first insertion stopped on an
-  error naming neither.
-* A variable marking an absence with NaN or NaT masks the measurements it
-  never took. Neither value equals itself, so the comparison by equality the
-  read made left them unmasked.
-* The variables of a dataset read from a collection are ordered by name.
-* ``insert`` returns the path of each partition it wrote, relative to the
-  collection. It returned the full path, which neither ``partitions`` reads
-  nor ``selected_partitions`` takes.
-* A variable added to a dataset with the data it holds keeps its values.
-* A write that fails carries a note naming the variable it was writing.
+* Dimensions other than the partitioned dimension must declare a size.
+* A variable's fill value must be compatible with its data type and encoding.
+* Missing values are masked correctly when a variable's fill value is
+  NaN or NaT.
+* Variables loaded from a collection have a deterministic order.
+* ``insert`` returns partition paths relative to the collection.
+* When ``data`` is omitted, ``Dataset.add_variable`` uses the variable's
+  existing data, if available.
 * Writing a partition stops with an error naming the variables the store does
   not list under it.
 * Concatenating datasets that do not hold the same variables stops with an
   error naming the variables in disagreement.
-* ``update`` passes the parameters it is given through (PR #15, issue #12).
+* ``update`` forwards positional and keyword arguments to the user callback
+  (PR #15, issue #12).
 * ``view.sync()`` honours ``filters`` (issue #24).
 
 Removed
 ^^^^^^^
+* The ``Dataset`` constructor no longer accepts ``chunks`` or
+  ``block_size_limit``. Configure chunk sizes in ``Dimension`` and the
+  block-size limit in ``DatasetSchema``.
+* The ``validate`` parameter has been removed from ``Collection.insert``.
+  Compatibility checks for partitioned data can no longer be disabled.
 * ``new_variable``. ``Variable.duplicate`` builds a variable from another
   one, with the data and the properties it is given.
 
@@ -85,7 +73,6 @@ Renamed
 ^^^^^^^
 * ``meta.Variable`` is named ``meta.VariableSchema``, and ``meta.Dataset`` is
   named ``meta.DatasetSchema``.
-* ``ReadOnlyCollection.immutable`` is named ``immutable_path``.
 * ``Dataset.dims_chunk`` is named ``dim_chunks``, and holds a mapping of a
   dimension name to the size of its chunks. It was a property returning a
   sequence of ``Dimension``.

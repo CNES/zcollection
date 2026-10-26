@@ -2,9 +2,8 @@
 Working without a Dask cluster.
 ===============================
 
-A collection is read and written on a Dask cluster, or in the process that
-calls it. This section shows the second, and the ways of naming the
-partitions an operation reaches.
+A collection can be read and written without a Dask cluster. This example
+selects partitions, updates their data and computes mapping results.
 """
 from __future__ import annotations
 
@@ -25,10 +24,6 @@ if TYPE_CHECKING:
 # %%
 # Initialization of the environment
 # ---------------------------------
-#
-# The partitions are held in a directory of their own. The examples of the
-# other sections hold them in memory; a bag computed without a cluster runs
-# in processes of its own, and those reach a directory.
 base_dir = str(pathlib.Path(tempfile.mkdtemp()) / 'my_collection')
 
 
@@ -40,8 +35,8 @@ first: zcollection.Dataset = next(datasets)
 # Creating a collection
 # ---------------------
 #
-# Every operation that reaches the partitions takes a ``distributed``
-# parameter. Set to ``False``, the work runs in the calling process.
+# Pass ``distributed=False`` to ``insert`` to run these insertions in the
+# calling process.
 collection: zcollection.Collection = zcollection.create_collection(
     'time', first, zcollection.partitioning.Date(('time', ), resolution='M'),
     base_dir)
@@ -104,9 +99,8 @@ for month in ('01', '02'):
 # Mapping over the partitions
 # ---------------------------
 #
-# ``map`` holds no ``distributed`` parameter. It returns a
-# :py:class:`dask.bag.Bag`, and the scheduler is the one the caller computes
-# it with: the Dask cluster it is connected to, or the one named here.
+# ``map`` returns a :py:class:`dask.bag.Bag`. Choose the scheduler when
+# computing the results, as in the following two calls.
 bag = collection.map(
     lambda partition: float(partition.variables['var1'].values.sum()))
 pprint.pprint(bag.compute(scheduler='threads'))

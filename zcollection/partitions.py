@@ -18,14 +18,16 @@ by their values, and the names. A path is built from a key by
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+import contextlib
 import gzip
 import json
 import logging
+import zlib
 
 from . import fs_utils
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     import fsspec
 
@@ -36,7 +38,7 @@ if TYPE_CHECKING:
 FILENAME = '.partitions'
 
 #: Version of the layout the index is written in.
-VERSION = 1
+VERSION = 2
 
 #: The key of a partition: the value each of its names takes.
 Key = tuple[int, ...]
@@ -51,12 +53,16 @@ class PartitionIndex:
         fs: The file system holding the store.
         base_dir: The path of the collection or of the view.
         partition_handler: The partitioning the store is written with.
-        writable: Whether the index may be written. One that may neither
-            be read nor written is built in memory and held for the
-            lifetime of this instance.
+        writable: Whether the index may be written.
     """
-    __slots__ = ('_base_dir', '_fs', '_held', '_names', '_partitioning',
-                 '_writable')
+    __slots__ = (
+        '_base_dir',
+        '_fs',
+        '_names',
+        '_partitioning',
+        '_pending',
+        '_writable',
+    )
 
     def __init__(
         self,
@@ -72,7 +78,7 @@ class PartitionIndex:
         self._writable = writable
         self._names: tuple[str, ...] = tuple(
             name for name, _ in partition_handler.dtype())
-        self._held: tuple[Key, ...] | None = None
+        self._pending: set[Key] | None = None
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -99,10 +105,10 @@ class PartitionIndex:
     def keys(self) -> tuple[Key, ...]:
         """Return the key of each partition, ordered by their values.
 
-        The index is read. One that is absent, unreadable, written in
-        another layout or for another partitioning is replaced by a walk
-        of the directory tree, written back when this index may be
-        written.
+        If the index is absent, unreadable, written in another layout or
+        for another partitioning, the keys are obtained by walking the
+        directory tree. An unfinished update also requires a walk.
+        Reading leaves the stored index unchanged.
 
         Returns:
             The key of each partition.
@@ -111,43 +117,28 @@ class PartitionIndex:
         if keys is not None:
             return keys
 
-        # An index written since the walk below is read above, so a reader
-        # that could not write one follows a writer that could.
-        if self._held is not None:
-            return self._held
-
         keys = self.walk()
-        if self._writable and self._publish(keys):
-            return keys
-
-        self._held = keys
         _LOGGER.warning(
             'The partitions of %r were read by walking its directory tree, '
-            'and the result is held for this session alone. Opening it for '
-            'writing, or calling reindex on it, writes the index.',
-            self._base_dir)
+            'because its index is unavailable or its update is unfinished. '
+            'Call reindex to write the index.', self._base_dir)
         return keys
 
-    def _publish(self, keys: Iterable[Key]) -> bool:
-        """Write the index, and return whether it was written.
+    @contextlib.contextmanager
+    def updating(self) -> Iterator[None]:
+        """Mark a partition update before writing data, then publish its keys.
 
-        Args:
-            keys: The key of each partition, ordered by their values.
-
-        Returns:
-            Whether the index was written.
+        An interrupted update remains marked until a writer publishes an
+        index. The caller serializes writers with its synchronizer.
         """
+        keys = set(self.keys())
+        self._write(sorted(keys), state='updating')
+        self._pending = keys
         try:
-            self.write(keys)
-        except Exception as err:
-            # A read-only credential, a read-only mount or a quota stops
-            # the write. The index is state this instance can rebuild, so a
-            # listing goes on without it.
-            _LOGGER.warning(
-                'The index of the partitions of %r could not be '
-                'written: %s', self._base_dir, err)
-            return False
-        return True
+            yield
+            self.write(sorted(keys))
+        finally:
+            self._pending = None
 
     def walk(self) -> tuple[Key, ...]:
         """Return the key of each partition the store holds.
@@ -155,11 +146,16 @@ class PartitionIndex:
         Returns:
             The key of each partition, ordered by their values.
         """
+        self._fs.invalidate_cache()
         handler: partitioning.Partitioning = self._partitioning
-        return tuple(
-            sorted(
+        try:
+            return tuple(
                 tuple(value for _, value in handler.parse(path))
-                for path in handler.list_partitions(self._fs, self._base_dir)))
+                for path in handler.list_partitions(self._fs, self._base_dir))
+        except FileNotFoundError:
+            if self._fs.exists(self._base_dir):
+                raise
+            return ()
 
     def write(self, keys: Iterable[Key]) -> None:
         """Write the index.
@@ -167,15 +163,21 @@ class PartitionIndex:
         Args:
             keys: The key of each partition, ordered by their values.
         """
+        self._write(keys, state='ready')
+
+    def _write(self, keys: Iterable[Key], *, state: str) -> None:
+        """Write partition keys with the state of their update."""
+        if not self._writable:
+            raise PermissionError('The partition index is read only')
         data: dict[str, Any] = {
             'version': VERSION,
+            'state': state,
             'names': list(self._names),
             'partitions': [list(key) for key in keys],
         }
         fs_utils.replace_file(
             self._fs, self.path,
             gzip.compress(json.dumps(data, separators=(',', ':')).encode()))
-        self._held = None
 
     def add(self, paths: Iterable[str]) -> None:
         """Add partitions to the index.
@@ -202,10 +204,12 @@ class PartitionIndex:
             added: The key of each partition to add.
             removed: The key of each partition to remove.
         """
-        keys: set[Key] = set(self.keys())
+        keys: set[Key] = (set(self.keys())
+                          if self._pending is None else self._pending)
         keys |= set(added)
         keys -= set(removed)
-        self.write(sorted(keys))
+        if self._pending is None:
+            self.write(sorted(keys))
 
     def keys_of(self, paths: Iterable[str]) -> tuple[Key, ...]:
         """Return the key each path names.
@@ -227,19 +231,31 @@ class PartitionIndex:
         Returns:
             The key of each partition, or ``None`` when the index is
             absent, unreadable, written in another layout or for another
-            partitioning.
+            partitioning, or marked as being updated.
         """
         try:
             data: Any = json.loads(
                 gzip.decompress(self._fs.cat_file(self.path)))
-            if data['version'] != VERSION:
+            if type(data['version']) is not int or data['version'] != VERSION:
                 return None
-            if tuple(data['names']) != self._names:
+            if data['names'] != list(self._names):
                 return None
-            return tuple(tuple(key) for key in data['partitions'])
+            if data['state'] != 'ready':
+                return None
+            rows = data['partitions']
+            if not isinstance(rows, list) or any(
+                    not isinstance(row, list) or len(row) != len(self._names)
+                    or any(type(value) is not int for value in row)
+                    for row in rows):
+                raise ValueError('Invalid partition keys')
+            keys = tuple(tuple(row) for row in rows)
+            if any(left >= right for left, right in zip(keys, keys[1:])):
+                raise ValueError('Partition keys must be unique and ordered')
+            return keys
         except FileNotFoundError:
             return None
-        except (OSError, ValueError, KeyError, TypeError):
+        except (OSError, ValueError, KeyError, TypeError, EOFError,
+                zlib.error):
             _LOGGER.warning(
                 'The index of the partitions of %r is unreadable and is '
                 'replaced by a walk of its directory tree.', self._base_dir)

@@ -72,5 +72,5 @@ class ProcessSync(Sync):
         return (ProcessSync, (str(self.lock.path), ))
 
     def is_locked(self) -> bool:
-        """Returns True if the lock is acquired, False otherwise."""
-        return self.lock.exists()
+        """Return whether this synchronizer holds its lock."""
+        return self.lock.acquired

@@ -80,6 +80,19 @@ if TYPE_CHECKING:
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
+@storage.skip_absent_partition
+def _copy_partition(source: str, target: str,
+                    fs_source: fsspec.AbstractFileSystem,
+                    fs_target: fsspec.AbstractFileSystem) -> None:
+    """Copy a partition, skipping an absent source."""
+    try:
+        fs_utils.copy_tree(source, target, fs_source, fs_target)
+    except FileNotFoundError as err:
+        if fs_source.exists(source):
+            raise
+        raise storage.AbsentPartition(source) from err
+
+
 def _infer_callable(
     collection: Collection,
     func: UpdateCallable,
@@ -89,16 +102,23 @@ def _infer_callable(
     *args,
     **kwargs,
 ) -> tuple[str, ...]:
-    try:
-        one_partition: str = next(collection.partitions(filters=filters))
-    except StopIteration:
-        return ()
-
     immutable = collection.immutable_path if collection.have_immutable else None
 
+    # The variables the function writes are read from one partition. The
+    # store may hold none at the first path the index names, so the walk
+    # goes on to the next.
+    zds: dataset.Dataset | None = None
     with collection.synchronizer:
-        zds = _load_dataset(delayed, collection.fs, immutable, one_partition,
-                            selected_variables)
+        for one_partition in collection.partitions(filters=filters):
+            try:
+                zds = _load_dataset(delayed, collection.fs, immutable,
+                                    one_partition, selected_variables)
+                break
+            except storage.AbsentPartition:
+                storage.warn_absent_partition(one_partition)
+    if zds is None:
+        return ()
+
     func_result: dict[str, Any]
     func_result = _try_infer_callable(func, zds, collection.dimension, *args,
                                       **kwargs)
@@ -203,8 +223,13 @@ class Collection(ReadOnlyCollection):
             self._read_only_mode()
 
         else:
-            storage.init_zarr_group(self._immutable, self.fs)
-            self._write_config(skip_if_exists=True)
+            with self.synchronizer:
+                new_collection = not self.fs.exists(
+                    self._config(self.partition_properties.dir))
+                storage.init_zarr_group(self._immutable, self.fs)
+                self._write_config(skip_if_exists=True)
+                if new_collection:
+                    self._index.write(self._index.walk())
 
     def __str__(self) -> str:
         return (f'<{self.__class__.__name__} '
@@ -422,15 +447,16 @@ class Collection(ReadOnlyCollection):
         partitions = tuple(
             self.partitioning.split_dataset(zds=ds, axis=self.dimension))
 
-        if distributed:
-            self._insert_distributed(ds, partitions, npartitions,
-                                     merge_callable, **kwargs)
-        else:
-            self._insert_sequential(ds, partitions, merge_callable, **kwargs)
-
         written: tuple[str, ...] = tuple(
             fs_utils.join_path(*item) for item, _ in partitions)
-        self._index.add(written)
+        with self.synchronizer, self._index.updating():
+            if distributed:
+                self._insert_distributed(ds, partitions, npartitions,
+                                         merge_callable, **kwargs)
+            else:
+                self._insert_sequential(ds, partitions, merge_callable,
+                                        **kwargs)
+            self._index.add(written)
         return written
 
     def _set_ds_for_insertion(self, ds: dataset.Dataset) -> dataset.Dataset:
@@ -538,7 +564,7 @@ class Collection(ReadOnlyCollection):
                     **kwargs,
                 ) for partition in sequence
             ]
-            storage.execute_transaction(client, self.synchronizer, futures)
+            storage.execute_transaction(client, sync.NoSync(), futures)
 
     def _insert_sequential(self, ds: xarray.Dataset | dataset.Dataset,
                            partitions: tuple[PartitionSlice, ...],
@@ -607,22 +633,25 @@ class Collection(ReadOnlyCollection):
                         _path=_folder, _now=now, _timedelta=timedelta),
                     folders))
 
-        if distributed:
-            client: dask.distributed.Client = dask_utils.get_client()
-            storage.execute_transaction(
-                client, self.synchronizer,
-                client.map(self.fs.rm, folders, recursive=True))
-        else:
-            for folder in folders:
-                self.fs.rm(folder, recursive=True)
-
         def invalidate_cache(path) -> None:
             """Invalidate the cache."""
             _LOGGER.info('Dropped partition: %s', path)
             self.fs.invalidate_cache(path)
 
-        tuple(map(invalidate_cache, folders))
-        self._index.remove(folders)
+        with self.synchronizer, self._index.updating():
+            if distributed:
+                client: dask.distributed.Client = dask_utils.get_client()
+                storage.execute_transaction(
+                    client, sync.NoSync(),
+                    client.map(
+                        functools.partial(fs_utils.remove_tree, self.fs),
+                        folders))
+            else:
+                for folder in folders:
+                    fs_utils.remove_tree(self.fs, folder)
+
+            tuple(map(invalidate_cache, folders))
+            self._index.remove(folders)
         return folders
 
     def update(
@@ -979,59 +1008,62 @@ class Collection(ReadOnlyCollection):
         """
         _LOGGER.info('Copying of the collection to %r', target)
         filesystem = filesystem or fs_utils.get_fs(target)
-
-        selected = self.partitions(filters=filters)
-
-        if distributed:
-            client: dask.distributed.Client = dask_utils.get_client()
-            npartitions = npartitions or dask_utils.dask_workers(
-                client, cores_only=True)
-
-            # Sequence of (source, target) to copy split in npartitions
-            args = tuple(
-                dask_utils.split_sequence([
-                    (item,
-                     fs_utils.join_path(
-                         target,
-                         os.path.relpath(item, self.partition_properties.dir)))
-                    for item in selected
-                ], npartitions))
-            # Copy the selected partitions
-            partial = functools.partial(fs_utils.copy_tree,
-                                        fs_source=self.fs,
-                                        fs_target=filesystem)
-
-            def worker_task(args: Sequence[tuple[str, str]]) -> None:
-                """Function call on each worker to copy the partitions."""
-                tuple(partial(*arg) for arg in args)
-
-            client.gather(client.map(worker_task, args))
-        else:
-            for source_path in selected:
-                target_path = fs_utils.join_path(
-                    target,
-                    os.path.relpath(source_path,
-                                    self.partition_properties.dir))
-                fs_utils.copy_tree(source_path,
-                                   target_path,
-                                   fs_source=self.fs,
-                                   fs_target=filesystem)
-
-        # Then the remaining files in the root directory (config, metadata,
-        # etc.). The index of the partitions is left out: the copy holds the
-        # partitions selected here, not the ones this collection holds.
-        fs_utils.copy_files([
-            item['name']
-            for item in self.fs.listdir(self.partition_properties.dir,
-                                        detail=True) if item['type'] == 'file'
-            and os.path.basename(item['name']) != INDEX_FILENAME
-        ], target, self.fs, filesystem)
+        filesystem.makedirs(target, exist_ok=True)
 
         index = PartitionIndex(filesystem,
                                fs_utils.normalize_path(filesystem, target),
                                self.partitioning,
                                writable=True)
-        index.write(index.walk())
+        with synchronizer or sync.NoSync(), index.updating():
+            selected = self.partitions(filters=filters)
+
+            if distributed:
+                client: dask.distributed.Client = dask_utils.get_client()
+                npartitions = npartitions or dask_utils.dask_workers(
+                    client, cores_only=True)
+
+                # Sequence of (source, target) to copy split in npartitions
+                args = tuple(
+                    dask_utils.split_sequence(
+                        [(item,
+                          fs_utils.join_path(
+                              target,
+                              os.path.relpath(item,
+                                              self.partition_properties.dir)))
+                         for item in selected], npartitions))
+                # Copy the selected partitions
+                partial = functools.partial(_copy_partition,
+                                            fs_source=self.fs,
+                                            fs_target=filesystem)
+
+                def worker_task(args: Sequence[tuple[str, str]]) -> None:
+                    """Function call on each worker to copy the partitions."""
+                    tuple(partial(*arg) for arg in args)
+
+                client.gather(client.map(worker_task, args))
+            else:
+                for source_path in selected:
+                    target_path = fs_utils.join_path(
+                        target,
+                        os.path.relpath(source_path,
+                                        self.partition_properties.dir))
+                    _copy_partition(source_path,
+                                    target_path,
+                                    fs_source=self.fs,
+                                    fs_target=filesystem)
+
+            # Then the remaining files in the root directory (config, metadata,
+            # etc.). The index of the partitions is left out: the copy holds the
+            # partitions selected here, not the ones this collection holds.
+            fs_utils.copy_files([
+                item['name']
+                for item in self.fs.listdir(self.partition_properties.dir,
+                                            detail=True)
+                if item['type'] == 'file'
+                and os.path.basename(item['name']) != INDEX_FILENAME
+            ], target, self.fs, filesystem)
+
+            index.add(index.path_of(key) for key in index.walk())
 
         return Collection.from_config(target,
                                       mode=mode,
@@ -1106,13 +1138,9 @@ class Collection(ReadOnlyCollection):
                 _validity_check(partition, valid)
 
         if fix and invalid_partitions:
-            for item in invalid_partitions:
-                _LOGGER.info('Removing invalid partition: %s', item)
-                try:
-                    self.fs.rm(item, recursive=True)
-                except FileNotFoundError:
-                    # The partition the index names is already gone; taking
-                    # it out of the index below is the whole repair.
-                    pass
-            self._index.remove(invalid_partitions)
+            with self.synchronizer, self._index.updating():
+                for item in invalid_partitions:
+                    _LOGGER.info('Removing invalid partition: %s', item)
+                    fs_utils.remove_tree(self.fs, item)
+                self._index.remove(invalid_partitions)
         return invalid_partitions

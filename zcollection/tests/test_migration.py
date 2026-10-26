@@ -1341,3 +1341,69 @@ def test_prune_view_removes_a_migrated_partition_and_refuses_the_others(
     assert local.exists(fs_utils.join_path(deprecated_view, PARTITIONS[0]))
     assert local.exists(
         fs_utils.join_path(deprecated_view, zcollection.view.View.CONFIG))
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_migration_updates_an_existing_partition_index(deprecated, fs,
+                                                       request) -> None:
+    """Later migration batches become visible through an existing index."""
+    tested_fs = request.getfixturevalue(fs)
+    target = str(tested_fs.collection)
+    migrate(deprecated,
+            target,
+            filters='day == 1',
+            target_filesystem=tested_fs.fs,
+            distributed=False)
+    zcol = zcollection.open_collection(target,
+                                       mode='w',
+                                       filesystem=tested_fs.fs)
+    assert len(zcol.reindex()) == 1
+
+    outcome = migrate(deprecated,
+                      target,
+                      filters='day > 1',
+                      target_filesystem=tested_fs.fs,
+                      distributed=False)
+
+    assert not outcome.failed
+    assert tuple(zcol.partitions(relative=True)) == PARTITIONS
+
+
+def test_view_migration_updates_an_existing_partition_index(
+        deprecated_view, tmp_path) -> None:
+    """Later view migration batches become visible through an existing index."""
+    target = str(tmp_path / 'view-target')
+    migrate_view(deprecated_view,
+                 target,
+                 filters='day == 1',
+                 distributed=False)
+    zview = zcollection.open_view(target)
+    assert len(zview.reindex()) == 1
+
+    outcome = migrate_view(deprecated_view,
+                           target,
+                           filters='day > 1',
+                           distributed=False)
+
+    assert not outcome.failed
+    assert len(tuple(zview.partitions())) == len(PARTITIONS)
+
+
+def test_prune_updates_the_source_partition_index(deprecated,
+                                                  tmp_path) -> None:
+    """Pruning removes the source entries of migrated partitions."""
+    target = str(tmp_path / 'target')
+    migrate(deprecated, target, distributed=False)
+    source = migration.detail._open_source(deprecated, local)
+    from ..partitions import PartitionIndex
+
+    index = PartitionIndex(local,
+                           deprecated,
+                           source.partitioning,
+                           writable=True)
+    index.write(index.walk())
+
+    outcome = prune(deprecated, target, filters='day == 1', distributed=False)
+
+    assert outcome.done == (PARTITIONS[0], )
+    assert tuple(source.partitions(relative=True)) == PARTITIONS[1:]

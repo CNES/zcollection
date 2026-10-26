@@ -7,8 +7,8 @@ tree of partitions, each holding a slice of the dataset in the
 read and written as a single
 :py:class:`dataset <zcollection.dataset.Dataset>`.
 
-A month of new measurements inserted into a ten-year collection is written to one
-or two of its 120 partitions.
+With monthly date partitioning, a month of new measurements inserted into a
+ten-year collection is written to one or two of its 120 partitions.
 
 Concepts
 --------
@@ -21,6 +21,11 @@ Partition
     ``year=2022/month=01``;
     :py:class:`by sequence <zcollection.partitioning.sequence.Sequence>` of
     variables, ``cycle=2/pass=42``.
+
+Partition index
+    The list of partitions known to a collection or a view.
+    :doc:`partition_index` explains its role and how to recover from
+    index problems.
 
 Immutable variable
     A variable that does not span the dimension the collection is partitioned
@@ -49,22 +54,19 @@ every partition: ::
 
    collection/
    ├── .zcollection
+   ├── .partitions
    ├── .immutable/
    │    ├── lon/
-   │    │    ├── c/
-   │    │    │    └── 0
+   │    │    ├── c.0
    │    │    └── zarr.json
    │    └── zarr.json
    └── year=2022/
         ├── month=01/
         │    ├── time/
-        │    │    ├── c/
-        │    │    │    └── 0
+        │    │    ├── c.0
         │    │    └── zarr.json
         │    ├── var1/
-        │    │    ├── c/
-        │    │    │    └── 0/
-        │    │    │         └── 0
+        │    │    ├── c.0.0
         │    │    └── zarr.json
         │    └── zarr.json
         └── month=02/
@@ -72,15 +74,27 @@ every partition: ::
 
 ``.zcollection`` declares the variables, their data types and the
 partitioning. Each ``zarr.json`` holds the metadata of the group or of the
-array it sits in, and ``c`` holds the chunks of an array.
+array it sits in. Chunk filenames consist of the ``c`` prefix and the
+indices, joined with dots.
 
 Scaling
 -------
 
-Every method that acts on the partitions takes a ``distributed`` parameter.
-It defaults to ``True``, which spreads the work over a `Dask
-<https://dask.org/>`_ cluster. With ``distributed=False`` the work stays in
-the calling process, which suits a collection small enough for one machine.
+``insert``, ``load``, ``update`` and ``copy`` can be used without a `Dask
+<https://dask.org/>`_ cluster by passing ``distributed=False``. The default,
+``True``, uses a cluster.
+
+``map`` and ``map_overlap`` return a :py:class:`dask.bag.Bag`. You choose
+how to compute the results when you call ``compute()``. For an existing
+collection, compute a mapping in the calling process with:
+
+.. code-block:: python
+
+    bag = collection.map(lambda ds: ds.dimensions[collection.dimension])
+    results = bag.compute(scheduler='synchronous')
+
+See :doc:`auto_examples/ex_without_dask` for reading, updating and mapping
+without a cluster.
 
 What a read gives back is a separate choice. With ``delayed=True`` the
 variables are filled with `Dask arrays
@@ -103,6 +117,7 @@ tests cover a local disk and S3.
    install
    getting_started
    partitioning
+   partition_index
    auto_examples/index.rst
    migration
    api

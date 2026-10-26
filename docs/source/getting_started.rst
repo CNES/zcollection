@@ -134,6 +134,9 @@ dataset on the partitioning variable and writes one partition per month. Pass
 ``distributed=False`` to keep the work in the calling process, as every
 example here does.
 
+If partition listings are inconsistent, see :doc:`partition_index` for
+instructions on rebuilding the index.
+
 A second insertion adds the partition its dates fall in.
 
 .. jupyter-execute::

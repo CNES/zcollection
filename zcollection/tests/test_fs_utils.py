@@ -233,6 +233,53 @@ def test_copy_tree(tmp_path) -> None:
                 assert parts[3].endswith('.txt')
 
 
+def test_copy_tree_does_not_create_a_target_for_an_absent_source(
+        tmp_path) -> None:
+    """An absent source raises before the target is created."""
+    fs = fsspec.filesystem('file')
+    target = str(tmp_path / 'target')
+
+    with pytest.raises(FileNotFoundError):
+        fs_utils.copy_tree(str(tmp_path / 'missing'), target, fs, fs)
+
+    assert not fs.exists(target)
+
+
+def test_copy_tree_raises_a_listing_error(tmp_path, monkeypatch) -> None:
+    """An unreadable child directory prevents a partial copy."""
+    source = tmp_path / 'source'
+    source.joinpath('child').mkdir(parents=True)
+    fs = fsspec.filesystem('file')
+    listing = fs.ls
+
+    def deny_child(path, *args, **kwargs):
+        if str(path).endswith('/child'):
+            raise PermissionError('injected listing failure')
+        return listing(path, *args, **kwargs)
+
+    monkeypatch.setattr(fs, 'ls', deny_child)
+    target = str(tmp_path / 'target')
+
+    with pytest.raises(PermissionError, match='injected listing failure'):
+        fs_utils.copy_tree(str(source), target, fs, fs)
+
+    assert not fs.exists(target)
+
+
+def test_remove_tree_raises_if_the_directory_still_exists(
+        tmp_path, monkeypatch) -> None:
+    """A missing child does not make a failed directory removal succeed."""
+    fs = fsspec.filesystem('file')
+
+    def fail_removal(*args, **kwargs):
+        raise FileNotFoundError('injected missing child')
+
+    monkeypatch.setattr(fs, 'rm', fail_removal)
+
+    with pytest.raises(FileNotFoundError, match='injected missing child'):
+        fs_utils.remove_tree(fs, str(tmp_path))
+
+
 def test_replace_file_leaves_no_half_of_itself(tmp_path) -> None:
     """A write that stops partway leaves what the file held."""
     fs = fsspec.filesystem('file')

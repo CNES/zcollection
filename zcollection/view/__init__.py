@@ -33,14 +33,13 @@ from .detail import (
     _create_zarr_array,
     _deserialize_filters,
     _drop_zarr_zarr,
+    _held_one_dataset,
     _load_dataset_with_overlap,
     _load_datasets_list,
-    _load_one_dataset,
     _serialize_filters,
     _sync,
     _wrap_update_func,
     _wrap_update_func_overlap,
-    _write_checksum,
 )
 
 if TYPE_CHECKING:
@@ -59,13 +58,14 @@ class View:
 
     Args:
         base_dir: Path to the directory where the view is stored.
-        view_ref: Access properties for the reference view.
-        ds: The dataset handled by this view.
+        view_ref: Access properties for the reference collection.
+        ds: The dataset schema for this view, or None for an empty schema.
         filesystem: The file system used to access the view.
         filters: The filters used to select the partitions of the reference. If
             not provided, all partitions are selected.
         synchronizer: The synchronizer used to synchronize the view.
         distributed: Whether to use dask or not. Default To True.
+        _initialize: Whether to populate the partitions of a new view.
 
     Note:
         Normally, you should not call this constructor directly. Instead, use
@@ -83,7 +83,8 @@ class View:
                  filesystem: fsspec.AbstractFileSystem | str | None = None,
                  filters: collection.PartitionFilter = None,
                  synchronizer: sync.Sync | None = None,
-                 distributed: bool = True) -> None:
+                 distributed: bool = True,
+                 _initialize: bool = True) -> None:
         #: The file system used to access the view (default local file system).
         self.fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
         #: Path to the directory where the view is stored.
@@ -107,7 +108,8 @@ class View:
             _LOGGER.info('Creating view %s', self)
             self.fs.makedirs(self.base_dir)
             self._write_config()
-            self._init_partitions(filters, distributed)
+            if _initialize:
+                self._init_partitions(filters, distributed)
         else:
             _LOGGER.info('Opening view %s', self)
 
@@ -116,30 +118,30 @@ class View:
                          distributed: bool = True) -> None:
         """Initialize the partitions of the view."""
         _LOGGER.info('Populating view %s', self)
-        # Only the partitions the index does not already name are created.
-        held: frozenset[str] = self._held_partitions()
-        added = tuple(item
-                      for item in self.view_ref.partitions(filters=filters,
-                                                           relative=True)
-                      if item not in held)
-        args = tuple(fs_utils.join_path(self.base_dir, item) for item in added)
-        _LOGGER.info('%d partitions selected from %s', len(args),
+        added = tuple(self.view_ref.partitions(filters=filters, relative=True))
+        _LOGGER.info('%d partitions selected from %s', len(added),
                      self.view_ref)
 
-        if distributed:
-            client: dask.distributed.Client = dask_utils.get_client()
-            storage.execute_transaction(
-                client, self.synchronizer,
-                client.map(_write_checksum,
-                           tuple(args),
-                           base_dir=self.base_dir,
-                           view_ref=self.view_ref,
-                           fs=self.fs))
-        else:
-            for arg in args:
-                _write_checksum(arg, self.base_dir, self.view_ref, self.fs)
+        with self.synchronizer, self._index.updating():
+            if distributed:
+                client: dask.distributed.Client = dask_utils.get_client()
+                storage.execute_transaction(
+                    client, sync.NoSync(),
+                    client.map(_sync,
+                               added,
+                               base_dir=self.base_dir,
+                               view_ref=self.view_ref,
+                               fs=self.fs,
+                               metadata=self.metadata))
+            else:
+                for partition in added:
+                    _sync(partition,
+                          base_dir=self.base_dir,
+                          view_ref=self.view_ref,
+                          fs=self.fs,
+                          metadata=self.metadata)
 
-        self._index.add(added)
+            self._index.add(added)
 
     def _held_partitions(self) -> frozenset[str]:
         """Return the path of each partition the index names.
@@ -459,7 +461,7 @@ class View:
             delayed = distributed
 
         array: dataset.Dataset | None = None
-        datasets: list[tuple[dataset.Dataset, str] | None]
+        datasets: list[tuple[dataset.Dataset, str]]
         partitions = self.partitions(filters=filters,
                                      indexer=indexer,
                                      selected_partitions=selected_partitions)
@@ -479,7 +481,7 @@ class View:
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()
             futures: list[dask.distributed.Future] = client.map(
-                _load_one_dataset,
+                _held_one_dataset,
                 arguments,
                 base_dir=self.base_dir,
                 delayed=delayed,
@@ -488,28 +490,27 @@ class View:
                     selected_variables),
                 view_ref=client.scatter(self.view_ref),
                 variables=self.metadata.select_variables(selected_variables))
-            datasets = client.gather(futures)
+            datasets = [
+                item for item in client.gather(futures) if item is not None
+            ]
         else:
             datasets = [
-                _load_one_dataset(
-                    arg,
-                    base_dir=self.base_dir,
-                    delayed=delayed,
-                    fs=self.fs,
-                    selected_variables=self.view_ref.metadata.select_variables(
-                        selected_variables),
-                    view_ref=self.view_ref,
-                    variables=self.metadata.select_variables(
-                        selected_variables)) for arg in arguments
+                item for item in (
+                    _held_one_dataset(arg,
+                                      base_dir=self.base_dir,
+                                      delayed=delayed,
+                                      fs=self.fs,
+                                      selected_variables=self.view_ref.metadata
+                                      .select_variables(selected_variables),
+                                      view_ref=self.view_ref,
+                                      variables=self.metadata.select_variables(
+                                          selected_variables))
+                    for arg in arguments) if item is not None
             ]
 
-        # The load function returns the path to the partitions and the loaded
-        # datasets. Only the loaded datasets are retrieved here and filter None
-        # values corresponding to empty partitions.
-        arrays: list[dataset.Dataset] = [
-            item[0]  # type: ignore[index]
-            for item in filter(lambda item: item is not None, datasets)
-        ]
+        # The load function returns the path of each partition beside its
+        # dataset. Only the datasets are kept here.
+        arrays: list[dataset.Dataset] = [item[0] for item in datasets]
 
         if arrays:
             array = arrays.pop(0)
@@ -545,7 +546,7 @@ class View:
         distributed: bool = True,
         **kwargs,
     ) -> None:
-        """Update a variable stored int the view.
+        """Update a variable stored in the view.
 
         Args:
             func: The function to apply to calculate the new values for the
@@ -554,24 +555,24 @@ class View:
             depth: The depth of the overlap between the partitions. Default is
                 0 (no overlap). If depth is greater than 0, the function is
                 applied on the partition and its neighbors selected by the
-                depth. If ``func`` accepts a partition_info as a keyword
-                argument, it will be passed a tuple with the name of the
-                partitioned dimension and the slice allowing getting in the
-                dataset the selected partition without the overlap.
+                depth. If ``func`` accepts ``partition_info`` as a keyword
+                argument, it receives a tuple containing the partitioned
+                dimension name and a slice selecting the current partition
+                within the dataset, excluding its neighbors.
             variables: The list of variables updated by the function. If None,
                 the variables are inferred by calling the function on the first
                 partition. In this case, it is important to ensure that the
                 function can be called twice on the same partition without
                 side effects. Default is None.
             selected_variables: A list of variables to retain from the view.
-                If None, all variables are loaded. Useful to load only a
-                subset of the view.
+                If None, all variables are loaded.
             selected_partitions: A list of partitions to load (using the
                 partition relative path).
             filters: The expression used to filter the partitions to update.
-            trim: Whether to trim ``depth`` items from each partition after
-                calling ``func``. Set it to ``False`` if your function does
-                this for you.
+            trim: Whether to keep only the current partition's values from
+                the results returned by ``func`` when using overlap. Set it
+                to ``False`` if your function already returns only those
+                values.
             npartitions: The number of partitions to update in parallel. By
                 default, it is equal to the number of Dask workers available
                 when calling this method.
@@ -582,9 +583,9 @@ class View:
         Raises:
             ValueError: If the variable does not exist or if the variable
                 belongs to the reference collection.
-            ValueError: If the depth is greater than 0 and the selected
-                variables does not contain the variables updated by the
-                function.
+            ValueError: If depth is greater than 0 and ``selected_variables``
+                is provided but contains none of the variables updated by
+                the function.
 
         Example:
             >>> def temp_celsius_to_kelvin(
@@ -695,21 +696,24 @@ class View:
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
             selected_variables: A list of variables to retain from the view.
-                If None, all variables are loaded. Useful to load only a
-                subset of the view.
+                If None, all variables are loaded.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
-            A bag containing the tuple of the partition scheme and the result
-            of the function.
+            A bag holding, for each partition, the tuple of its scheme and
+            the result of the function. A partition the store no longer
+            holds is left out.
 
         Example:
-            >>> futures = view.map(
-            ...     lambda x: (x["var1"] + x["var2"]).values)
-            >>> for item in futures:
-            ...     print(item)
-            [1.0, 2.0, 3.0, 4.0]
-            [5.0, 6.0, 7.0, 8.0]
+            For a view defining ``var3`` with the same dimensions as ``var1``
+            in its reference collection:
+
+            .. code-block:: python
+
+                bag = view.map(
+                    lambda ds: ds['var1'].values + ds['var3'].values)
+                for partition, values in bag.compute(scheduler='synchronous'):
+                    print(partition, values.tolist())
         """
 
         def _wrap(
@@ -717,7 +721,7 @@ class View:
             _func: PartitionCallable,
             *_args,
             **_kwargs,
-        ) -> tuple[tuple[tuple[str, int], ...], Any]:
+        ) -> tuple[tuple[tuple[str, int], ...], Any] | None:
             """Wraps the function to apply on the partition.
 
             Args:
@@ -729,7 +733,7 @@ class View:
             Returns:
                 The result of the function.
             """
-            zds, partition = _load_one_dataset(
+            held = _held_one_dataset(
                 (self.view_ref.partitioning.parse(_partition), []),
                 base_dir=self.base_dir,
                 delayed=delayed,
@@ -739,6 +743,9 @@ class View:
                 view_ref=self.view_ref,
                 variables=self.metadata.select_variables(selected_variables),
                 with_immutable=True)
+            if held is None:
+                return None
+            zds, partition = held
             return self.view_ref.partitioning.parse(partition), _func(
                 zds, *_args, **_kwargs)
 
@@ -747,7 +754,8 @@ class View:
         bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
             tuple(self.partitions(filters=filters)), partition_size,
             npartitions)
-        return bag.map(_wrap, func, *args, **kwargs)
+        return bag.map(_wrap, func, *args,
+                       **kwargs).filter(lambda item: item is not None)
 
     def map_overlap(
         self,
@@ -766,13 +774,13 @@ class View:
 
         Args:
             func: The function to apply to every partition of the view.
-            depth: The depth of the overlap between the partitions. Default is
-                0 (no overlap). If depth is greater than 0, the function is
+            depth: The depth of the overlap between the partitions. Defaults
+                to 1. If depth is greater than 0, the function is
                 applied on the partition and its neighbors selected by the
-                depth. If ``func`` accepts a partition_info as a keyword
-                argument, it will be passed a tuple with the name of the
-                partitioned dimension and the slice allowing getting in the
-                dataset the selected partition without the overlap.
+                depth. If ``func`` accepts ``partition_info`` as a keyword
+                argument, it receives a tuple containing the partitioned
+                dimension name and a slice selecting the current partition
+                within the dataset, excluding its neighbors.
             *args: The positional arguments to pass to the function.
             delayed: Whether to load data in a dask array or in memory.
             filters: The predicate used to filter the partitions to process.
@@ -782,21 +790,28 @@ class View:
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
             selected_variables: A list of variables to retain from the view.
-                If None, all variables are loaded. Useful to load only a
-                subset of the view.
+                If None, all variables are loaded.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
-            A bag containing the tuple of the partition scheme and the result
-            of the function.
+            A bag holding, for each partition, the tuple of its scheme and
+            the result of the function. A partition the store no longer
+            holds is left out.
 
         Example:
-            >>> futures = view.map_overlap(
-            ...     lambda x: (x["var1"] + x["var2"]).values,
-            ...     depth=1)
-            >>> for item in futures:
-            ...     print(item)
-            [1.0, 2.0, 3.0, 4.0]
+            For a view defining ``var3`` with the same dimensions as ``var1``
+            in its reference collection:
+
+            Each printed array includes results for the partition and its
+            available neighbours.
+
+            .. code-block:: python
+
+                bag = view.map_overlap(
+                    lambda ds: ds['var1'].values + ds['var3'].values,
+                    depth=1)
+                for partition, values in bag.compute(scheduler='synchronous'):
+                    print(partition, values.tolist())
         """
         if depth < 0:
             raise ValueError('Depth must be greater than or equal to 0')
@@ -811,7 +826,7 @@ class View:
             _depth: int,
             *_args,
             **_kwargs,
-        ) -> tuple[tuple[tuple[str, int], ...], Any]:
+        ) -> tuple[tuple[tuple[str, int], ...], Any] | None:
             """Wraps the function to apply on the partition.
 
             Args:
@@ -825,16 +840,21 @@ class View:
             Returns:
                 The result of the function.
             """
-            zds, indices = _load_dataset_with_overlap(
-                base_dir=self.base_dir,
-                delayed=delayed,
-                depth=_depth,
-                fs=self.fs,
-                metadata=self.metadata,
-                partition=_partition,
-                partitions=_partitions,
-                selected_variables=selected_variables,
-                view_ref=self.view_ref)
+            # _load_dataset_with_overlap warns about an absent partition
+            # before raising AbsentPartition.
+            try:
+                zds, indices = _load_dataset_with_overlap(
+                    base_dir=self.base_dir,
+                    delayed=delayed,
+                    depth=_depth,
+                    fs=self.fs,
+                    metadata=self.metadata,
+                    partition=_partition,
+                    partitions=_partitions,
+                    selected_variables=selected_variables,
+                    view_ref=self.view_ref)
+            except storage.AbsentPartition:
+                return None
 
             if add_partition_info:
                 _kwargs = _kwargs.copy()
@@ -849,7 +869,8 @@ class View:
         partitions = tuple(self.partitions(filters=filters))
         bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
             partitions, partition_size, npartitions)
-        return bag.map(_wrap, func, partitions, depth, *args, **kwargs)
+        return bag.map(_wrap, func, partitions, depth, *args,
+                       **kwargs).filter(lambda item: item is not None)
 
     def reindex(self) -> tuple[str, ...]:
         """Build the index of the partitions from the store.
@@ -911,18 +932,12 @@ class View:
     ) -> collection.abc.PartitionFilterCallback:
         """Synchronize the view with the underlying collection.
 
-        This method is useful to update the view after a change in the
-        underlying collection.
-
         Args:
             filters: The predicate used to select the partitions to
                 synchronize. To get more information on the predicate, see the
                 documentation of the :meth:`zcollection.Collection.partitions`
                 method.
-                If None, the view is synchronized with all the partitions
-                already present in the view. If you want to extend the view
-                with new partitions, you must provide a predicate that
-                selects the new partitions.
+                If None, all partitions of the reference are synchronized.
                 Existing partitions are not removed, even if they are not
                 selected by the predicate.
             distributed: Whether to use dask or not. Default To True.
@@ -937,37 +952,36 @@ class View:
         if filters is not None:
             self.filters = filters
             self._write_config()
-            self._init_partitions(filters, distributed)
 
         partitions = tuple(
             self.view_ref.partitions(filters=filters, relative=True))
 
         _LOGGER.info('%d partitions to synchronize', len(partitions))
 
-        if distributed:
-            client: dask.distributed.Client = dask_utils.get_client()
-            synchronized_partition: list[str
-                                         | None] = storage.execute_transaction(
-                                             client, self.synchronizer,
-                                             client.map(
-                                                 _sync,
-                                                 partitions,
-                                                 base_dir=self.base_dir,
-                                                 fs=self.fs,
-                                                 view_ref=self.view_ref,
-                                                 metadata=self.metadata))
-        else:
-            synchronized_partition = [
-                _sync(partition,
-                      base_dir=self.base_dir,
-                      fs=self.fs,
-                      view_ref=self.view_ref,
-                      metadata=self.metadata) for partition in partitions
-            ]
+        with self.synchronizer, self._index.updating():
+            if distributed:
+                client: dask.distributed.Client = dask_utils.get_client()
+                synchronized_partition: list[
+                    str | None] = storage.execute_transaction(
+                        client, sync.NoSync(),
+                        client.map(_sync,
+                                   partitions,
+                                   base_dir=self.base_dir,
+                                   fs=self.fs,
+                                   view_ref=self.view_ref,
+                                   metadata=self.metadata)) or []
+            else:
+                synchronized_partition = [
+                    _sync(partition,
+                          base_dir=self.base_dir,
+                          fs=self.fs,
+                          view_ref=self.view_ref,
+                          metadata=self.metadata) for partition in partitions
+                ]
+            self._index.add(partitions)
 
         synced: tuple[str, ...] = tuple(item for item in synchronized_partition
                                         if item is not None)
-        self._index.add(synced)
 
         partition_ids = tuple(
             dict(self.view_ref.partitioning.parse(item)) for item in synced)
