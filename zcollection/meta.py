@@ -10,10 +10,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import numcodecs.abc
 import numpy
 
-from . import serialization
+from . import codecs, serialization
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -173,15 +172,15 @@ class VariableSchema:
                  *,
                  dimensions: Sequence[str] | None = None,
                  attrs: Sequence[Attribute] | None = None,
-                 compressor: numcodecs.abc.Codec | None = None,
+                 compressor: codecs.Codec | None = None,
                  fill_value: Any | None = None,
-                 filters: Sequence[numcodecs.abc.Codec] | None = None) -> None:
+                 filters: Sequence[codecs.Codec] | None = None) -> None:
         attrs = attrs or ()
 
         #: Attributes of the variable.
         self.attrs = tuple(attrs)
         #: Compression codec for the variable.
-        self.compressor: numcodecs.abc.Codec | None = compressor
+        self.compressor: codecs.Codec | None = compressor
         #: Dimensions of the variable.
         self.dimensions = tuple(dimensions or ())
         #: Data type of the variable.
@@ -207,12 +206,8 @@ class VariableSchema:
         Returns:
             variable configuration.
         """
-        compressor: numcodecs.abc.Codec | None
-        compressor_config: dict[str, None] | None
-
-        compressor = self.compressor
-        compressor_config = compressor.get_config(
-        ) if compressor is not None else None
+        compressor_config = codecs.get_config(
+            self.compressor) if self.compressor is not None else None
 
         return {
             'attrs':
@@ -226,7 +221,7 @@ class VariableSchema:
             'fill_value':
             serialization.encode_fill_value(self.fill_value, self.dtype),
             'filters':
-            tuple(item.get_config() for item in self.filters),
+            tuple(codecs.get_config(item) for item in self.filters),
             'name':
             self.name,
         }
@@ -242,13 +237,9 @@ class VariableSchema:
             new variable.
         """
 
-        def get_codec(codec) -> numcodecs.abc.Codec | None:
-            """Get the codec from its configuration."""
-            return numcodecs.get_codec(codec) if codec is not None else None
-
         dtype: numpy.dtype = serialization.decode_dtype(data['dtype'])
-        filters: Sequence[numcodecs.abc.Codec] = tuple(
-            numcodecs.get_codec(item) for item in data['filters']
+        filters = tuple(
+            codecs.from_config(item) for item in data['filters']
             if item is not None)
 
         return VariableSchema(
@@ -256,7 +247,8 @@ class VariableSchema:
             dtype,
             dimensions=data['dimensions'],
             attrs=tuple(Attribute.from_config(item) for item in data['attrs']),
-            compressor=get_codec(data['compressor']),
+            compressor=(codecs.from_config(data['compressor'])
+                        if data['compressor'] is not None else None),
             fill_value=serialization.decode_fill_value(data['fill_value'],
                                                        dtype),
             filters=filters,

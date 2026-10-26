@@ -10,20 +10,26 @@ source:
 
 build:
   number: 0
-  script: {{ PYTHON }} -m pip install . -vv --use-feature=in-tree-build
-  skip: true  # [linux32 or win32 or py<36]
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  skip: true  # [linux32 or win32 or py<312]
 
 requirements:
-  build:
+  host:
     - python
+    - pip
+    - setuptools >=45
+    - setuptools-scm >=6.2
+    - wheel
   run:
-    - dask
+    - dask >=2022.8.0
+    - distributed
+    - fasteners
     - fsspec
     - numcodecs
     - numpy >=1.20
-    - python
+    - python >=3.12
     - xarray
-    - zarr < 3
+    - zarr >=3.4
 test:
   requires:
     - pytest

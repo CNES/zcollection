@@ -16,8 +16,73 @@ import pickle
 import numcodecs
 import numpy
 import pytest
+import zarr.codecs
+import zarr.codecs.numcodecs
+import zarr.registry
 
 from .. import meta
+
+
+@pytest.mark.parametrize(('compressor', 'filters'), [
+    (zarr.codecs.ZstdCodec(level=5, checksum=True),
+     (zarr.codecs.TransposeCodec(order=(1, 0)),
+      zarr.codecs.numcodecs.Delta(dtype='i8'))),
+    (zarr.codecs.BloscCodec(cname='zstd', clevel=7, shuffle='bitshuffle'),
+     (zarr.codecs.numcodecs.Delta(dtype='i8'), )),
+    (zarr.codecs.GzipCodec(level=3),
+     (numcodecs.FixedScaleOffset(0, 2, 'i8'), )),
+    (numcodecs.Zlib(level=4), (numcodecs.Delta(dtype='i8'), )),
+    (None, ()),
+])
+def test_schema_codecs_survive_json(compressor, filters) -> None:
+    """JSON preserves each codec class, its parameters and filter order."""
+    schema = meta.VariableSchema('values',
+                                 'int64',
+                                 dimensions=('row', 'pixel'),
+                                 compressor=compressor,
+                                 filters=filters)
+
+    config = json.loads(json.dumps(schema.get_config()))
+    restored = meta.VariableSchema.from_config(config)
+
+    assert restored == schema
+    assert type(restored.compressor) is type(compressor)
+    for original, result in zip((compressor, *filters),
+                                (restored.compressor, *restored.filters),
+                                strict=True):
+        assert type(result) is type(original)
+        if original is not None:
+            describe = ('to_dict' if isinstance(original, zarr.abc.codec.Codec)
+                        else 'get_config')
+            assert getattr(result, describe)() == getattr(original, describe)()
+
+
+def test_schema_uses_the_zarr_registry_for_an_additional_codec() -> None:
+    """A registered codec round-trips without a zcollection translation."""
+    name = 'zcollection.tests.zstd'
+
+    class AdditionalCodec(zarr.codecs.ZstdCodec):
+        """Zstd registered under a name supplied by another package."""
+
+        def to_dict(self):
+            return {
+                'name': name,
+                'configuration': super().to_dict()['configuration']
+            }
+
+        @classmethod
+        def from_dict(cls, data):
+            return cls(**data['configuration'])
+
+    zarr.registry.register_codec(name, AdditionalCodec)
+    compressor = AdditionalCodec(level=8, checksum=True)
+    schema = meta.VariableSchema('values', 'int64', compressor=compressor)
+
+    restored = meta.VariableSchema.from_config(
+        json.loads(json.dumps(schema.get_config())))
+
+    assert isinstance(restored.compressor, AdditionalCodec)
+    assert restored.compressor.to_dict() == compressor.to_dict()
 
 
 def test_attribute() -> None:

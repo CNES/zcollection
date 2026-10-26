@@ -22,9 +22,9 @@ import xarray
 from .. import mathematics, meta, representation, serialization
 
 if TYPE_CHECKING:
-    import numcodecs.abc
     import zarr
 
+    from ..codecs import Codec
     from ..meta import Attribute
     from ..type_hints import ArrayLike, NDArray, NDMaskedArray
 
@@ -410,9 +410,9 @@ class Variable(IVariable, abc.ABC):
                  dimensions: Sequence[str],
                  *,
                  attrs: Sequence[Attribute] | None = None,
-                 compressor: numcodecs.abc.Codec | None = None,
+                 compressor: Codec | None = None,
                  fill_value: Any | None = None,
-                 filters: Sequence[numcodecs.abc.Codec] | None = None,
+                 filters: Sequence[Codec] | None = None,
                  filler: bool = False) -> None:
         #: Variable name
         self.name: str = name
@@ -423,7 +423,7 @@ class Variable(IVariable, abc.ABC):
         #: Variable attributes
         self.attrs = tuple(attrs or ())
         #: Compressor used to compress the data during writing data to disk
-        self.compressor: numcodecs.abc.Codec | None = compressor
+        self.compressor: Codec | None = compressor
         #: Value to use for uninitialized values
         self.fill_value: Any | None = fill_value
         #: Filters to apply before writing data to disk

@@ -27,6 +27,7 @@ from .. import (
     meta,
     partitioning,
     storage,
+    store,
     sync,
 )
 from ..partitions import PartitionIndex
@@ -197,12 +198,11 @@ def _check_fill_values(ds: meta.DatasetSchema) -> None:
     for item in ds.variables.values():
         if item.fill_value is None or not item.filters:
             continue
-        values = numpy.array([item.fill_value], dtype=item.dtype)
-        for codec in item.filters:
-            values = codec.encode(values)
-        for codec in reversed(item.filters):
-            values = codec.decode(values)
-        read: Any = numpy.asarray(values, dtype=item.dtype)[0]
+        values = numpy.full((1, ) * len(item.dimensions),
+                            item.fill_value,
+                            dtype=item.dtype)
+        values = store.roundtrip_filters(values, item.filters)
+        read: Any = numpy.asarray(values, dtype=item.dtype).reshape(-1)[0]
         if not_equal(read, item.fill_value):
             raise ValueError(
                 f'The variable {item.name!r} marks an absence with '

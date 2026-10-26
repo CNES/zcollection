@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Translation of codecs
-=====================
+Translation and configuration of codecs
+========================================
 
 A variable names the codecs it is held behind, using the classes
 numcodecs defines or the ones Zarr defines. This module translates the
@@ -18,13 +18,16 @@ codec already named by Zarr goes through untouched.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import numcodecs
 import numcodecs.abc
 import zarr.abc.codec
 import zarr.codecs
 import zarr.codecs.numcodecs
+import zarr.registry
+
+Codec: TypeAlias = numcodecs.abc.Codec | zarr.abc.codec.Codec
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -70,6 +73,20 @@ _TRANSLATIONS: dict[str, Build] = {
     'zstd': _zstd,
     'gzip': _gzip,
 }
+
+
+def get_config(codec: Codec) -> dict[str, Any]:
+    """Return the configuration supplied by a numcodecs or Zarr codec."""
+    if isinstance(codec, zarr.abc.codec.Codec):
+        return codec.to_dict()
+    return codec.get_config()
+
+
+def from_config(config: dict[str, Any]) -> Codec:
+    """Reconstruct a codec through its numcodecs or Zarr registry."""
+    if 'id' in config:
+        return numcodecs.get_codec(config)
+    return zarr.registry.get_codec_class(config['name']).from_dict(config)
 
 
 def _wrapped(codec: numcodecs.abc.Codec) -> tuple[zarr.abc.codec.Codec, ...]:

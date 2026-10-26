@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
     import numcodecs.abc
 
-    from .type_hints import DTypeLike
+    from .type_hints import DTypeLike, NDArray
 
 __all__ = ('DEFAULT_COMPRESSOR', 'consolidate', 'contains_group',
            'create_array', 'create_group', 'open_array', 'open_group',
@@ -179,6 +179,25 @@ def create_group(fs: fsspec.AbstractFileSystem, path: str) -> None:
         path: The path of the group.
     """
     zarr.create_group(store=_store(fs, path))
+
+
+def roundtrip_filters(values: NDArray,
+                      filters: Sequence[codecs.Codec]) -> NDArray:
+    """Encode and decode values through filters in a temporary memory store.
+
+    Args:
+        values: The values to encode.
+        filters: The filters applied before serialization.
+
+    Returns:
+        The decoded values.
+    """
+    array = zarr.create_array(store=zarr.storage.MemoryStore(),
+                              data=values,
+                              filters=codecs.filters(filters),
+                              compressors=None,
+                              config={'write_empty_chunks': True})
+    return array[...]
 
 
 def contains_group(fs: fsspec.AbstractFileSystem, path: str) -> bool:

@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     import fsspec
     import zarr
 
+    from .codecs import Codec
     from .type_hints import ArrayLike, NDArray
 
 #: Module logger.
@@ -155,7 +156,7 @@ def write_zarr_variable(
         Exception: Whatever the write raises, carrying a note naming the
             variable.
     """
-    kwargs: dict[str, tuple[numcodecs.abc.Codec, ...]]
+    kwargs: dict[str, tuple[Codec, ...]]
 
     name, variable = args
     kwargs = {'filters': variable.filters}

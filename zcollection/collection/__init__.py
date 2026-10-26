@@ -428,6 +428,8 @@ class Collection(ReadOnlyCollection):
         _LOGGER.info('Inserting of a %s dataset in the collection',
                      dask.utils.format_bytes(ds.nbytes))
 
+        ds = self._set_ds_for_insertion(ds=ds)
+
         storage.write_zarr_group_missing(ds.select_variables_by_dims(
             (self.dimension, ), False),
                                          self._immutable,
@@ -441,8 +443,6 @@ class Collection(ReadOnlyCollection):
         if not ds.variables:
             # No variable to insert
             return ()
-
-        ds = self._set_ds_for_insertion(ds=ds)
 
         # Process the partitions to insert or update by batches to avoid
         # memory issues.
@@ -477,28 +477,27 @@ class Collection(ReadOnlyCollection):
         """
         mds = self.metadata
 
-        ds = dataset.Dataset([
-            self._set_var_for_insertion(var) for var in ds.variables.values()
-        ])
-
-        missing_variables = set(mds.missing_variables(
-            ds.metadata())) - self.immutable_variables
-
         for name, dim in mds.dimensions.items():
             if name == self.dimension:
                 continue
-
-            if name not in ds.dimensions:
-                # Adding missing dimensions properties
-                ds.dimensions[name] = dim.value
-            elif dim.value != ds.dimensions[name]:
+            if name in ds.dimensions and dim.value != ds.dimensions[name]:
                 raise ValueError(
                     f'Inserted dimension {dim.name} has invalid size '
                     f'({ds.dimensions[name]} instead of {dim.value})')
 
-        for item in missing_variables:
-            variable = mds.variables[item]
-            ds.add_variable(variable, filler=True)
+        ds = dataset.Dataset([
+            self._set_var_for_insertion(var) for var in ds.variables.values()
+        ])
+
+        for name, dim in mds.dimensions.items():
+            if name != self.dimension:
+                ds.dimensions.setdefault(name, dim.value)
+
+        if self.dimension in ds.dimensions:
+            missing_variables = set(mds.missing_variables(
+                ds.metadata())) - self.immutable_variables
+            for item in missing_variables:
+                ds.add_variable(mds.variables[item], filler=True)
 
         ds.copy_properties(ds=mds)
 
@@ -510,8 +509,9 @@ class Collection(ReadOnlyCollection):
 
         The attributes, the compressor, the filters and the fill value are
         taken from the metadata of the collection, which stores and names its
-        variables the same way in every partition. The data type is checked
-        against it, and so is the fill value when the variable names one.
+        variables the same way in every partition. The data type and dimensions
+        are checked against it, and so is the fill value when the variable
+        names one.
 
         Args:
             variable: The variable to insert.
@@ -528,6 +528,12 @@ class Collection(ReadOnlyCollection):
             raise ValueError(
                 f"Variable '{variable.name}' has invalid dtype "
                 f"('{variable.dtype}' instead of '{var_meta.dtype}')")
+
+        if variable.dimensions != var_meta.dimensions:
+            raise ValueError(
+                f"Variable '{variable.name}' has invalid dimensions "
+                f'({variable.dimensions!r} instead of {var_meta.dimensions!r})'
+            )
 
         if variable.fill_value is not None and zvariable.abc.not_equal(
                 variable.fill_value, var_meta.fill_value):

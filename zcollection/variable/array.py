@@ -27,9 +27,9 @@ from .abc import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    import numcodecs.abc
     import zarr
 
+    from ..codecs import Codec
     from ..meta import Attribute
     from ..type_hints import ArrayLike, NDArray, NDMaskedArray
 
@@ -84,9 +84,9 @@ class Array(Variable):
                  dimensions: Sequence[str],
                  *,
                  attrs: Sequence[Attribute] | None = None,
-                 compressor: numcodecs.abc.Codec | None = None,
+                 compressor: Codec | None = None,
                  fill_value: Any | None = None,
-                 filters: Sequence[numcodecs.abc.Codec] | None = None,
+                 filters: Sequence[Codec] | None = None,
                  filler: bool = False) -> None:
         array: NDArray
         array, fill_value = _as_numpy_array(data, fill_value=fill_value)

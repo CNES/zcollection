@@ -22,6 +22,8 @@ import fsspec
 import numcodecs
 import numpy
 import pytest
+import zarr.codecs
+import zarr.codecs.numcodecs
 
 from ... import (
     collection,
@@ -31,6 +33,7 @@ from ... import (
     meta,
     partitioning,
     storage,
+    store,
     sync,
     variable,
 )
@@ -127,6 +130,227 @@ def test_drop_dimension_accepts_a_dimension_after_its_variable_is_removed(
                                            filesystem=zcol.fs)
     assert reference.IMMUTABLE_DIMENSION not in reopened.metadata.dimensions
     assert reopened.load(delayed=False, distributed=False) is not None
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('invalid', [
+    'unknown',
+    'immutable_dtype',
+    'immutable_size',
+    'immutable_dimensions',
+    'immutable_fill',
+    'partition_dtype',
+    'partition_dimensions',
+])
+def test_insert_validates_all_variables_before_writing(fs, request,
+                                                       invalid) -> None:
+    """An invalid variable leaves the immutable store and index intact."""
+    tested_fs = request.getfixturevalue(fs)
+    declared = reference.make_dataset().select_vars(['time', 'grid', 'pixel'])
+    zcol = convenience.create_collection('time',
+                                         declared,
+                                         reference.make_partitioning(),
+                                         str(tested_fs.collection),
+                                         filesystem=tested_fs.fs)
+    incoming = copy.deepcopy(declared)
+    if invalid == 'unknown':
+        incoming.add_variable(dataset.Array('unknown', numpy.array(42), ()))
+    elif invalid == 'immutable_dtype':
+        incoming['pixel'].array = incoming['pixel'].array.astype('float64')
+    elif invalid == 'immutable_size':
+        incoming = dataset.Dataset([
+            incoming['time'],
+            dataset.Array('pixel', numpy.arange(4, dtype='int16'),
+                          (reference.IMMUTABLE_DIMENSION, )),
+        ])
+    elif invalid == 'immutable_dimensions':
+        incoming['pixel'].dimensions = ('other_pixels', )
+        incoming = dataset.Dataset(incoming.variables.values())
+    elif invalid == 'immutable_fill':
+        incoming['pixel'].fill_value = -1
+    elif invalid == 'partition_dtype':
+        incoming['grid'].array = incoming['grid'].array.astype('int16')
+    else:
+        incoming.variables['grid'] = incoming['grid'].duplicate(
+            incoming['grid'].array.T,
+            dimensions=(reference.IMMUTABLE_DIMENSION, reference.DIMENSION))
+    before = collection_files(zcol)
+
+    with pytest.raises(ValueError, match='unknown|invalid'):
+        zcol.insert(incoming, distributed=False)
+
+    assert collection_files(zcol) == before
+    assert tuple(zcol.partitions()) == ()
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('invalid', ['unknown', 'dtype'])
+def test_insert_validates_immutable_only_data(fs, request, invalid) -> None:
+    """An immutable-only insertion follows the collection schema."""
+    tested_fs = request.getfixturevalue(fs)
+    declared = reference.make_dataset()
+    zcol = convenience.create_collection('time',
+                                         declared,
+                                         reference.make_partitioning(),
+                                         str(tested_fs.collection),
+                                         filesystem=tested_fs.fs)
+    incoming = (dataset.Dataset([
+        dataset.Array('unknown', numpy.array(42), ())
+    ]) if invalid == 'unknown' else dataset.Dataset([
+        declared['pixel'].duplicate(declared['pixel'].array.astype('float64'))
+    ]))
+    before = collection_files(zcol)
+
+    with pytest.raises(ValueError, match='unknown|invalid'):
+        zcol.insert(incoming, distributed=False)
+
+    assert collection_files(zcol) == before
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_insert_refuses_reassigning_a_variables_dimension(fs, request) -> None:
+    """Equal dimension sizes do not allow changing a variable's dimension."""
+    tested_fs = request.getfixturevalue(fs)
+    declared = reference.make_dataset().select_vars(
+        ['time', 'plain', 'pixel']).isel({reference.DIMENSION: slice(0, 3)})
+    zcol = convenience.create_collection('time',
+                                         declared,
+                                         reference.make_partitioning(),
+                                         str(tested_fs.collection),
+                                         filesystem=tested_fs.fs)
+    incoming = dataset.Dataset([
+        declared['time'],
+        declared['plain'].duplicate(
+            dimensions=(reference.IMMUTABLE_DIMENSION, )),
+        declared['pixel'],
+    ])
+    before = collection_files(zcol)
+
+    with pytest.raises(ValueError, match='invalid dimensions'):
+        zcol.insert(incoming, distributed=False)
+
+    assert collection_files(zcol) == before
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('immutable_only', [False, True])
+def test_insert_immutables_uses_the_declared_encoding(fs, request,
+                                                      immutable_only) -> None:
+    """An immutable takes its encoding once and keeps its stored values."""
+    tested_fs = request.getfixturevalue(fs)
+    incoming = reference.make_dataset().select_vars(['time', 'grid', 'pixel'])
+    declared = copy.deepcopy(incoming)
+    declared['pixel'].compressor = zarr.codecs.GzipCodec(level=3)
+    declared['pixel'].filters = (zarr.codecs.numcodecs.Delta(dtype='i2'), )
+    declared['pixel'].fill_value = -99
+    schema = declared.metadata()
+    schema.dimensions[reference.IMMUTABLE_DIMENSION].chunks = 1
+    zcol = collection.Collection('time',
+                                 schema,
+                                 reference.make_partitioning(),
+                                 str(tested_fs.collection),
+                                 filesystem=tested_fs.fs,
+                                 mode='w')
+    if immutable_only:
+        incoming = incoming.select_vars('pixel')
+
+    written = zcol.insert(incoming, distributed=False)
+
+    assert bool(written) is not immutable_only
+    array = store.open_array(zcol.fs, f'{zcol.immutable_path}/pixel')
+    assert array.chunks == (1, )
+    assert array.compressors[0].to_dict(
+    ) == declared['pixel'].compressor.to_dict()
+    assert array.filters[0].to_dict() == declared['pixel'].filters[0].to_dict()
+    loaded = zcol.load(delayed=False, distributed=False)
+    assert loaded is not None
+    assert loaded['pixel'].fill_value == -99
+    numpy.testing.assert_array_equal(loaded['pixel'].values,
+                                     reference.pixel_values())
+    assert incoming['pixel'].fill_value is None
+    incoming['pixel'].array = incoming['pixel'].array + 10
+    zcol.insert(incoming, distributed=False)
+    loaded = zcol.load(delayed=False, distributed=False)
+    assert loaded is not None
+    numpy.testing.assert_array_equal(loaded['pixel'].values,
+                                     reference.pixel_values())
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('delayed', [False, True])
+@pytest.mark.parametrize('vocabulary', ['native', 'numcodecs'])
+def test_codec_schema_survives_loading_and_copying_a_collection(
+        fs, request, delayed, vocabulary) -> None:
+    """Loaded codecs retain their parameters and values in a new collection."""
+    tested_fs = request.getfixturevalue(fs)
+    zds = reference.make_dataset(delayed=delayed).select_vars(
+        ['time', 'grid', 'pixel'])
+    zds['grid'].fill_value = reference.FILL_VALUE
+    if vocabulary == 'native':
+        zds['grid'].compressor = zarr.codecs.ZstdCodec(level=5, checksum=True)
+        zds['grid'].filters = (zarr.codecs.numcodecs.FixedScaleOffset(
+            offset=0, scale=4, dtype='f8', astype='i8'), )
+    else:
+        zds['grid'].compressor = numcodecs.Zstd(level=5)
+        zds['grid'].filters = (numcodecs.FixedScaleOffset(offset=0,
+                                                          scale=4,
+                                                          dtype='f8',
+                                                          astype='i8'), )
+    zds['pixel'].compressor = zds['grid'].compressor
+    source = convenience.create_collection('time',
+                                           zds,
+                                           reference.make_partitioning(),
+                                           str(tested_fs.collection),
+                                           filesystem=tested_fs.fs)
+    source.insert(zds, distributed=False)
+    loaded = source.load(delayed=delayed, distributed=False)
+    assert loaded is not None
+    schema = loaded.metadata()
+    restored = meta.DatasetSchema.from_config(
+        json.loads(json.dumps(schema.get_config())))
+    assert restored == schema
+
+    target = convenience.create_collection('time',
+                                           loaded,
+                                           reference.make_partitioning(),
+                                           f'{tested_fs.collection}-copy',
+                                           filesystem=tested_fs.fs)
+    target.insert(loaded, distributed=False)
+    reopened = convenience.open_collection(target.partition_properties.dir,
+                                           filesystem=tested_fs.fs)
+    copied = reopened.load(delayed=delayed, distributed=False)
+    assert copied is not None
+    for name in loaded.variables:
+        original_compressor = loaded[name].compressor
+        copied_compressor = copied[name].compressor
+        if original_compressor is None:
+            assert copied_compressor is None
+        else:
+            assert copied_compressor is not None
+            assert copied_compressor.to_dict() == original_compressor.to_dict()
+        assert [item.to_dict() for item in copied[name].filters
+                ] == [item.to_dict() for item in loaded[name].filters]
+        numpy.testing.assert_array_equal(copied[name].values,
+                                         loaded[name].values)
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_native_filter_rejects_a_fill_value_it_changes(fs, request) -> None:
+    """Native filters must preserve the declared fill value."""
+    tested_fs = request.getfixturevalue(fs)
+    zds = reference.make_dataset().select_vars(['time', 'grid'])
+    zds['grid'].fill_value = 1.1
+    zds['grid'].filters = (zarr.codecs.numcodecs.FixedScaleOffset(
+        offset=0, scale=1, dtype='f8', astype='i8'), )
+
+    with pytest.raises(ValueError, match='filters read back'):
+        convenience.create_collection('time',
+                                      zds,
+                                      reference.make_partitioning(),
+                                      str(tested_fs.collection),
+                                      filesystem=tested_fs.fs)
+
+    assert not tested_fs.fs.exists(str(tested_fs.collection))
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
