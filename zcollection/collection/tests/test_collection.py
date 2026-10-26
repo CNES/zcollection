@@ -34,6 +34,7 @@ from ... import (
     sync,
     variable,
 )
+from ...tests import reference
 from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 from ...tests.data import (
     DELTA,
@@ -46,6 +47,86 @@ from ...tests.data import (
 )
 from ...tests.fixture import dask_arrays, numpy_arrays  # noqa: F401
 from ...tests.fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
+
+
+@pytest.fixture(params=['local_fs', 's3_fs'])
+def mutation_collection(request):
+    """Write a collection with partitioned and immutable variables."""
+    tested_fs = request.getfixturevalue(request.param)
+    zds = reference.make_dataset().select_vars(['time', 'plain', 'pixel'])
+    zcol = collection.Collection(
+        axis='time',
+        ds=zds.metadata(),
+        partition_handler=reference.make_partitioning(),
+        partition_base_dir=str(tested_fs.collection),
+        filesystem=tested_fs.fs,
+        mode='w',
+    )
+    zcol.insert(zds, distributed=False)
+    return zcol
+
+
+def collection_files(zcol) -> dict[str, bytes]:
+    """Read every file of a collection, including its partition index."""
+    return {
+        name: zcol.fs.cat_file(name)
+        for name in zcol.fs.find(zcol.partition_properties.dir)
+    }
+
+
+@pytest.mark.parametrize('method', ['update_immutable', 'drop_dimension'])
+def test_readonly_refuses_schema_and_immutable_updates(mutation_collection,
+                                                       method) -> None:
+    """A refused write preserves the schema, arrays and partition index."""
+    zcol = mutation_collection
+    readonly = convenience.open_collection(zcol.partition_properties.dir,
+                                           filesystem=zcol.fs,
+                                           mode='r')
+    schema = copy.deepcopy(readonly.metadata)
+    before = collection_files(zcol)
+    args = (('pixel',
+             reference.pixel_values() + 1) if method == 'update_immutable' else
+            (reference.IMMUTABLE_DIMENSION, ))
+
+    with pytest.raises(io.UnsupportedOperation):
+        getattr(readonly, method)(*args)
+
+    assert readonly.metadata == schema
+    assert collection_files(zcol) == before
+
+
+@pytest.mark.parametrize(('dimension', 'variable_name'), [
+    (reference.DIMENSION, 'time'),
+    (reference.IMMUTABLE_DIMENSION, 'pixel'),
+])
+def test_drop_dimension_refuses_used_dimensions(mutation_collection, dimension,
+                                                variable_name) -> None:
+    """A dimension used by any variable remains in memory and on disk."""
+    zcol = mutation_collection
+    schema = copy.deepcopy(zcol.metadata)
+    before = collection_files(zcol)
+
+    with pytest.raises(ValueError, match=variable_name):
+        zcol.drop_dimension(dimension)
+
+    assert zcol.metadata == schema
+    assert collection_files(zcol) == before
+    reopened = convenience.open_collection(zcol.partition_properties.dir,
+                                           filesystem=zcol.fs)
+    assert reopened.metadata == schema
+
+
+def test_drop_dimension_accepts_a_dimension_after_its_variable_is_removed(
+        mutation_collection) -> None:
+    """A dimension becomes removable after its last variable is dropped."""
+    zcol = mutation_collection
+    zcol.drop_variable('pixel')
+    zcol.drop_dimension(reference.IMMUTABLE_DIMENSION)
+
+    reopened = convenience.open_collection(zcol.partition_properties.dir,
+                                           filesystem=zcol.fs)
+    assert reference.IMMUTABLE_DIMENSION not in reopened.metadata.dimensions
+    assert reopened.load(delayed=False, distributed=False) is not None
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])

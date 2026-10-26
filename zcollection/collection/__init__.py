@@ -251,9 +251,11 @@ class Collection(ReadOnlyCollection):
                 'add_variable',
                 'drop_variable',
                 'add_dimension',
+                'drop_dimension',
                 'insert',
                 'reindex',
                 'update',
+                'update_immutable',
         ]:
             assert hasattr(self, item), f'{item} is not a known method.'
             setattr(self, item,
@@ -841,8 +843,16 @@ class Collection(ReadOnlyCollection):
             dimension: The dimension to drop.
 
         Raises:
-            ValueError: if the dimension is already part of the collection.
+            ValueError: If a variable uses the dimension.
+            KeyError: If the dimension does not exist.
         """
+        used_by = sorted(variable.name
+                         for variable in self.metadata.variables.values()
+                         if dimension in variable.dimensions)
+        if used_by:
+            raise ValueError(f'The dimension {dimension!r} is used by '
+                             f'the variables {used_by!r}.')
+
         _LOGGER.info('Dropping of the %r dimension from the collection',
                      dimension)
 

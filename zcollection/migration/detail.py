@@ -18,12 +18,14 @@ from typing import TYPE_CHECKING, Any
 import json
 import logging
 import math
+import os
 import pathlib
 import traceback
 import warnings
 
 import dask.bag.core
 import fsspec
+import fsspec.implementations.local
 import numpy
 
 from .. import (
@@ -60,6 +62,25 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 #: other file an array holds is a chunk.
 _METADATA_FILES = frozenset(
     {'.zarray', '.zattrs', '.zgroup', '.zmetadata', 'zarr.json'})
+
+
+def _require_distinct_paths(
+    source: str,
+    target: str,
+    source_fs: fsspec.AbstractFileSystem,
+    target_fs: fsspec.AbstractFileSystem,
+) -> None:
+    """Refuse pruning when both paths identify the same location."""
+    if source_fs != target_fs:
+        return
+
+    source = fs_utils.normalize_path(source_fs, source)
+    target = fs_utils.normalize_path(target_fs, target)
+    if isinstance(source_fs, fsspec.implementations.local.LocalFileSystem):
+        source, target = os.path.normpath(source), os.path.normpath(target)
+
+    if source.rstrip('/') == target.rstrip('/'):
+        raise ValueError('The source and target identify the same location.')
 
 
 def _merge(outcomes: Iterable[Outcome]) -> Outcome:

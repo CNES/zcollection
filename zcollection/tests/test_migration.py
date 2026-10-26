@@ -20,6 +20,7 @@ than its shape, a collection carrying an immutable variable, a view.
 from __future__ import annotations
 
 from typing import Any
+import copy
 import dataclasses
 import hashlib
 import json
@@ -1407,3 +1408,157 @@ def test_prune_updates_the_source_partition_index(deprecated,
 
     assert outcome.done == (PARTITIONS[0], )
     assert tuple(source.partitions(relative=True)) == PARTITIONS[1:]
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('is_view', [False, True])
+@pytest.mark.parametrize('path_form', ['same', 'trailing', 'protocol'])
+def test_prune_refuses_its_own_source(fs, request, deprecated, deprecated_view,
+                                      is_view, path_form) -> None:
+    """Pruning an identical location preserves every source file."""
+    tested_fs = request.getfixturevalue(fs)
+    source = str(tested_fs.view if is_view else tested_fs.collection)
+    (migrate_view if is_view else migrate)(
+        deprecated_view if is_view else deprecated,
+        source,
+        target_filesystem=tested_fs.fs,
+        distributed=False)
+    target = source
+    if path_form == 'trailing':
+        target += '/'
+    elif path_form == 'protocol':
+        target = tested_fs.fs.unstrip_protocol(source)
+    before = digest(tested_fs.fs, source)
+
+    with pytest.raises(ValueError, match='same'):
+        (prune_view if is_view else prune)(source,
+                                           target,
+                                           source_filesystem=tested_fs.fs,
+                                           target_filesystem=tested_fs.fs,
+                                           distributed=False)
+
+    assert digest(tested_fs.fs, source) == before
+
+
+@pytest.mark.parametrize('is_view', [False, True])
+def test_prune_refuses_a_local_alias(deprecated, deprecated_view,
+                                     is_view) -> None:
+    """Local dot and parent components denote the same source."""
+    source = deprecated_view if is_view else deprecated
+    target = f'{source}/../{pathlib.Path(source).name}/.'
+    before = digest(local, source)
+
+    with pytest.raises(ValueError, match='same'):
+        (prune_view if is_view else prune)(source, target, distributed=False)
+
+    assert digest(local, source) == before
+
+
+@pytest.mark.parametrize('is_view', [False, True])
+def test_prune_accepts_the_same_path_on_distinct_filesystems(
+        deprecated, deprecated_view, is_view) -> None:
+    """Equal paths on local and memory filesystems identify two copies."""
+    source = deprecated_view if is_view else deprecated
+    memory = fsspec.filesystem('memory')
+    try:
+        (migrate_view if is_view else migrate)(source,
+                                               source,
+                                               target_filesystem=memory,
+                                               distributed=False)
+        before = digest(memory, source)
+
+        outcome = (prune_view if is_view else prune)(source,
+                                                     source,
+                                                     target_filesystem=memory,
+                                                     distributed=False)
+
+        assert outcome.done == PARTITIONS
+        assert digest(memory, source) == before
+        assert all(not local.exists(fs_utils.join_path(source, item))
+                   for item in PARTITIONS)
+    finally:
+        memory.rm(source, recursive=True)
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('mismatch', ['dtype', 'attributes', 'reference'])
+def test_view_migration_refuses_an_incompatible_target(fs, request, deprecated,
+                                                       deprecated_view,
+                                                       tmp_path,
+                                                       mismatch) -> None:
+    """A conflicting schema or reference leaves the target untouched."""
+    tested_fs = request.getfixturevalue(fs)
+    target = str(tested_fs.view)
+    reference_path = None
+    variable = copy.deepcopy(VIEW_VARIABLE)
+    if mismatch == 'reference':
+        reference_path = str(tested_fs.collection)
+        migrate(deprecated,
+                reference_path,
+                target_filesystem=tested_fs.fs,
+                distributed=False)
+    elif mismatch == 'dtype':
+        variable.dtype = numpy.dtype('int16')
+    else:
+        variable.attrs = (meta.Attribute('units', 'm'), )
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', UserWarning)
+        staging = str(tmp_path / 'incompatible-view')
+        zview = zcollection.create_view(staging,
+                                        zcollection.ViewReference(deprecated),
+                                        distributed=False)
+        zview.add_variable(variable, distributed=False)
+    migrate_view(staging,
+                 target,
+                 reference=reference_path,
+                 target_filesystem=tested_fs.fs,
+                 distributed=False)
+    before = digest(tested_fs.fs, target)
+    source_before = digest(local, deprecated_view)
+
+    with pytest.raises(ValueError, match='configured'):
+        migrate_view(deprecated_view,
+                     target,
+                     target_filesystem=tested_fs.fs,
+                     distributed=False)
+
+    assert digest(tested_fs.fs, target) == before
+    assert digest(local, deprecated_view) == source_before
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('use_reference', [False, True])
+def test_view_migration_resumes_with_a_compatible_target(
+        fs, request, deprecated, deprecated_view, use_reference) -> None:
+    """A compatible target resumes with the requested reference."""
+    tested_fs = request.getfixturevalue(fs)
+    target = str(tested_fs.view)
+    reference_path = None
+    if use_reference:
+        reference_path = str(tested_fs.collection)
+        migrate(deprecated,
+                reference_path,
+                target_filesystem=tested_fs.fs,
+                distributed=False)
+    migrate_view(deprecated_view,
+                 target,
+                 reference=reference_path,
+                 target_filesystem=tested_fs.fs,
+                 filters='day == 1',
+                 distributed=False)
+
+    outcome = migrate_view(deprecated_view,
+                           target,
+                           reference=reference_path,
+                           target_filesystem=tested_fs.fs,
+                           distributed=False)
+
+    assert outcome.done == PARTITIONS[1:]
+    assert outcome.skipped == PARTITIONS[:1]
+    assert not outcome.failed
+    zview = zcollection.open_view(target, filesystem=tested_fs.fs)
+    assert len(tuple(zview.partitions())) == len(PARTITIONS)
+    zds = zview.load(delayed=False, distributed=False)
+    assert zds is not None
+    numpy.testing.assert_array_equal(zds.variables[VIEW_VARIABLE.name].values,
+                                     reference.plain_values() * 2.0)

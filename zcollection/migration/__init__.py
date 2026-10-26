@@ -232,10 +232,12 @@ def prune(
         under ``failed``, each with the reason.
 
     Raises:
-        ValueError: If one of the two directories holds no collection.
+        ValueError: If one of the two directories holds no collection, or
+            source and target identify the same location.
     """
     source_fs = fs_utils.get_fs(source_filesystem)
     target_fs = fs_utils.get_fs(target_filesystem)
+    detail._require_distinct_paths(source, target, source_fs, target_fs)
 
     src = detail._open_source(source, source_fs)
     zcol = detail._matching_target(source, target, source_fs, target_fs)
@@ -295,7 +297,8 @@ def migrate_view(
         on under ``failed``, each with the error as text.
 
     Raises:
-        ValueError: If the source holds no view configuration.
+        ValueError: If the source holds no view configuration, or the target
+            holds an incompatible schema or reference collection.
 
     Example:
         >>> import zcollection
@@ -316,11 +319,24 @@ def migrate_view(
 
     source_dir: str = fs_utils.normalize_path(source_fs, source)
     base_dir: str = fs_utils.normalize_path(target_fs, target)
+    reference_path = fs_utils.normalize_path(reference_fs, reference
+                                             or view_ref['path'])
+    if target_fs.exists(view.View._config(base_dir)):
+        target_data = detail.read_view_config(base_dir, target_fs)
+        target_ref = target_data['view_ref']
+        target_reference_fs = fsspec.AbstractFileSystem.from_json(
+            json.dumps(target_ref['fs']))
+        if (detail._view_metadata(target_data) != ds
+                or target_reference_fs != reference_fs or
+                fs_utils.normalize_path(target_reference_fs,
+                                        target_ref['path']) != reference_path):
+            raise ValueError(
+                f'The view {target!r} is not configured as the one derived '
+                f'from {source!r}.')
     target_fs.makedirs(base_dir, exist_ok=True)
 
     zview = view.View(base_dir,
-                      view.ViewReference(reference or view_ref['path'],
-                                         reference_fs),
+                      view.ViewReference(reference_path, reference_fs),
                       ds=ds,
                       filesystem=target_fs,
                       filters=view._deserialize_filters(data['filters']),
@@ -415,7 +431,8 @@ def prune_view(
         under ``failed``, each with the reason.
 
     Raises:
-        ValueError: If the source holds no view configuration.
+        ValueError: If the source holds no view configuration, or source
+            and target identify the same location.
 
     Example:
         >>> import zcollection
@@ -424,6 +441,7 @@ def prune_view(
     """
     source_fs = fs_utils.get_fs(source_filesystem)
     target_fs = fs_utils.get_fs(target_filesystem)
+    detail._require_distinct_paths(source, target, source_fs, target_fs)
     ds, source_view = detail._reference(source, source_fs)
 
     with source_view._index.updating():
