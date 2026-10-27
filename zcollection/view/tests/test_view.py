@@ -531,7 +531,8 @@ def test_view_overlap(
         trim_result=False)
     zds = zview.load()
     assert zds is not None
-    numpy.all(zds.variables['var3'].values == 5)
+    numpy.testing.assert_array_equal(zds['var3'].values,
+                                     zds['var1'].values + 5)
 
     zview.update(
         update,  # type: ignore[arg-type]
@@ -541,18 +542,19 @@ def test_view_overlap(
         trim_result=True)
     zds = zview.load()
     assert zds is not None
-    numpy.all(zds.variables['var3'].values == 5)
+    numpy.testing.assert_array_equal(zds['var3'].values,
+                                     zds['var1'].values + 5)
 
-    with pytest.raises(
-            ValueError,
-            match='If the depth is greater than 0, the selected variables '
-            'must contain the variables updated by the function.'):
-        zview.update(
-            update,  #  type: ignore[arg-type]
-            'var3',
-            depth=1,
-            trim_result=False,
-            selected_variables=('var1', ))
+    zview.update(
+        update,  # type: ignore[arg-type]
+        'var3',
+        depth=1,
+        trim_result=False,
+        selected_variables=('var1', ))
+    zds = zview.load()
+    assert zds is not None
+    numpy.testing.assert_array_equal(zds['var3'].values,
+                                     zds['var1'].values + 5)
 
     def map_func(_, partition_info: tuple[str, slice]):
         """Map function used for this test."""

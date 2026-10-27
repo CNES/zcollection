@@ -1,0 +1,407 @@
+# Copyright (c) 2026 CNES
+#
+# All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
+"""Update contracts shared by collections and views."""
+from __future__ import annotations
+
+import importlib
+import weakref
+
+import dask.array
+import dask.distributed
+import numpy
+import pytest
+
+from .. import (
+    convenience,
+    dask_utils,
+    dataset,
+    meta,
+    partitioning,
+    storage,
+    sync,
+    variable,
+    view,
+)
+from ..collection.detail import infer_variables
+from .cluster import dask_client, dask_cluster  # noqa: F401
+from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
+
+
+@pytest.fixture
+def update_target(request):
+    """Build four partitions with two rows and a writable output."""
+    kind, fs_name = request.param
+    fs = request.getfixturevalue(fs_name)
+    keys = numpy.repeat(numpy.arange(1, 5), 2)
+    matrix = numpy.ma.array(numpy.stack([keys, keys + 10]),
+                            mask=numpy.stack([keys == 2, keys == 4]),
+                            fill_value=-99)
+    zds = dataset.Dataset([
+        variable.Array('key', keys, ('row', )),
+        variable.Array('source', keys + 10, ('row', )),
+        variable.Array('target', numpy.zeros_like(keys), ('row', )),
+        variable.Array('matrix', matrix, ('column', 'row'), fill_value=-99),
+        variable.Array('matrix_target',
+                       numpy.zeros((2, keys.size), dtype='int64'),
+                       ('column', 'row'),
+                       fill_value=-99),
+    ],
+                          delayed=False)
+    zcol = convenience.create_collection('key',
+                                         zds,
+                                         partitioning.Sequence(('key', )),
+                                         str(fs.collection),
+                                         filesystem=fs.fs)
+    zcol.insert(zds, distributed=False)
+    if kind == 'collection':
+        return zcol
+    zview = convenience.create_view(str(fs.view),
+                                    view.ViewReference(str(fs.collection),
+                                                       fs.fs),
+                                    filesystem=fs.fs,
+                                    distributed=False)
+    zview.add_variable(meta.VariableSchema('output',
+                                           'int64',
+                                           dimensions=('row', ),
+                                           fill_value=-1),
+                       distributed=False)
+    return zview
+
+
+TARGETS = [(kind, fs) for kind in ('collection', 'view')
+           for fs in ('local_fs', 's3_fs')]
+
+
+def output_name(target):
+    """Return the writable variable of the target."""
+    return 'output' if isinstance(target, view.View) else 'target'
+
+
+@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('distributed', [False, True])
+@pytest.mark.parametrize('delayed', [None, False, True])
+@pytest.mark.parametrize('infer', [False, True])
+@pytest.mark.usefixtures('dask_client')
+def test_update_modes_and_selection(update_target, distributed, delayed,
+                                    infer):
+    """Inference and updates use the selected partition and loading mode."""
+    target = update_target
+    output = output_name(target)
+    expected_delayed = distributed if delayed is None else delayed
+
+    def callback(zds, increment, *, expected_key):
+        assert set(zds.variables) == {'key', 'source'}
+        assert isinstance(
+            zds['source'].array,
+            dask.array.Array if expected_delayed else numpy.ndarray)
+        numpy.testing.assert_array_equal(zds['key'].values, [expected_key] * 2)
+        if distributed:
+            assert dask.distributed.get_worker() is not None
+        return {output: zds['source'].values + increment}
+
+    # A one-shot selection must survive inference. The first stored partition
+    # is deliberately excluded.
+    target.update(callback,
+                  5,
+                  expected_key=3,
+                  delayed=delayed,
+                  distributed=distributed,
+                  variables=None if infer else [output],
+                  selected_variables=iter(['key', 'source']),
+                  selected_partitions=iter(['key=3']))
+    result = target.load(delayed=False, distributed=False)
+    assert result is not None
+    values = result[output].values
+    numpy.testing.assert_array_equal(values[4:6], [18, 18])
+    numpy.testing.assert_array_equal(values[:4],
+                                     0 if output == 'target' else -1)
+    numpy.testing.assert_array_equal(values[6:],
+                                     0 if output == 'target' else -1)
+
+
+@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('infer', [False, True])
+def test_update_empty_selection(update_target, infer, monkeypatch):
+    """An empty selection needs neither a client nor a callback."""
+
+    def unexpected(*args, **kwargs):
+        pytest.fail('An empty selection must not execute work')
+
+    monkeypatch.setattr(dask_utils, 'get_client', unexpected)
+    with pytest.warns((RuntimeWarning, UserWarning)):
+        update_target.update(
+            unexpected,
+            selected_partitions=iter(()),
+            variables=None if infer else [output_name(update_target)])
+
+
+@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('depth', [0, 1])
+def test_update_loads_bounded_window(update_target, depth, monkeypatch):
+    """Callbacks run before all partitions are loaded and release their inputs."""
+    target = update_target
+    output = output_name(target)
+    kind = 'view' if isinstance(target, view.View) else 'collection'
+    detail = importlib.import_module(f'zcollection.{kind}.detail')
+    name = '_load_one_dataset' if kind == 'view' else 'read_partition'
+    load = getattr(detail, name)
+    alive = weakref.WeakValueDictionary()
+    loads = []
+    calls = []
+
+    def observe(*args, **kwargs):
+        # Inputs from the preceding callback must be released before reading
+        # the next partition or overlap window.
+        if calls:
+            assert not alive
+        result = load(*args, **kwargs)
+        loads.append(None)
+        return result
+
+    def callback(zds):
+        if not calls:
+            assert len(loads) == depth + 1
+        for item in zds.variables.values():
+            alive[id(item.array)] = item.array
+        calls.append(None)
+        return {output: zds['source'].values.copy()}
+
+    monkeypatch.setattr(detail, name, observe)
+    target.update(callback,
+                  variables=[output],
+                  selected_variables=['source'],
+                  delayed=False,
+                  distributed=False,
+                  depth=depth)
+    assert len(calls) == 4
+
+
+@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('distributed', [False, True])
+@pytest.mark.parametrize('trim', [False, True])
+@pytest.mark.usefixtures('dask_client')
+def test_update_overlap_without_reading_output(update_target, distributed,
+                                               trim):
+    """Trimming uses output metadata while loading only callback inputs."""
+    target = update_target
+    output = output_name(target)
+    selected = ['source']
+
+    def callback(zds, partition_info):
+        assert set(zds.variables) == {'source'}
+        dim, indices = partition_info
+        assert dim == 'row'
+        values = zds['source'].values + 1
+        return {output: values if trim else values[indices]}
+
+    target.update(callback,
+                  variables=[output],
+                  selected_variables=selected,
+                  delayed=False,
+                  distributed=distributed,
+                  depth=1,
+                  trim=trim)
+    assert selected == ['source']
+    result = target.load(delayed=False, distributed=False)
+    assert result is not None
+    numpy.testing.assert_array_equal(result[output].values,
+                                     numpy.repeat(numpy.arange(12, 16), 2))
+
+
+@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('delayed', [False, True])
+@pytest.mark.parametrize('distributed', [False, True])
+@pytest.mark.usefixtures('dask_client')
+def test_update_overlap_masked_second_axis(update_target, delayed,
+                                           distributed):
+    """Trim masked results along the schema's partitioned axis."""
+    target = update_target
+    output = 'matrix_target'
+    if isinstance(target, view.View):
+        output = 'matrix_output'
+        target.add_variable(meta.VariableSchema(output,
+                                                'int64',
+                                                dimensions=('column', 'row'),
+                                                fill_value=-99),
+                            distributed=False)
+
+    def callback(zds, *, metadata):
+        assert metadata == 'callback argument'
+        assert set(zds.variables) == {'matrix'}
+        values = zds['matrix'].values
+        assert isinstance(values, numpy.ma.MaskedArray)
+        return {output: values + 5}
+
+    target.update(callback,
+                  variables=[output],
+                  selected_variables=['matrix'],
+                  delayed=delayed,
+                  distributed=distributed,
+                  depth=1,
+                  metadata='callback argument')
+    result = target.load(delayed=False, distributed=False)
+    assert result is not None
+    expected = result['matrix'].values + 5
+    actual = result[output].values
+    numpy.testing.assert_array_equal(actual.mask, expected.mask)
+    numpy.testing.assert_array_equal(actual.compressed(),
+                                     expected.compressed())
+
+
+@pytest.mark.parametrize('update_target', [(kind, 'local_fs')
+                                           for kind in ('collection', 'view')],
+                         indirect=True)
+@pytest.mark.parametrize('depth', [0, 1])
+@pytest.mark.parametrize('infer', [False, True])
+@pytest.mark.usefixtures('dask_client')
+def test_update_distributes_paths(update_target, depth, infer, monkeypatch,
+                                  tmp_path):
+    """The coordinator sends paths and receives completion markers."""
+    client = dask.distributed.get_client()
+    map_partitions = client.map
+    gather = client.gather
+    batches = []
+    output = output_name(update_target)
+    synchronizer = sync.ProcessSync(str(tmp_path / 'update.lock'))
+    if isinstance(update_target, view.View):
+        update_target.synchronizer = synchronizer
+    else:
+        update_target = type(update_target).from_config(
+            update_target.partition_properties.dir,
+            mode='w',
+            filesystem=update_target.fs,
+            synchronizer=synchronizer)
+
+    def observe_map(func, parameters, **kwargs):
+        for batch in parameters:
+            assert all(isinstance(path, str) for path in batch)
+        batches.extend(parameters)
+        return map_partitions(func, parameters, **kwargs)
+
+    def observe_gather(futures, **kwargs):
+        result = gather(futures, **kwargs)
+        assert all(item is None for item in result)
+        return result
+
+    def callback(zds):
+        return {output: zds['source'].values + 2}
+
+    monkeypatch.setattr(dask_utils, 'get_client', lambda: client)
+    monkeypatch.setattr(client, 'map', observe_map)
+    monkeypatch.setattr(client, 'gather', observe_gather)
+    update_target.update(callback,
+                         variables=None if infer else [output],
+                         selected_variables=['source'],
+                         delayed=False,
+                         distributed=True,
+                         depth=depth)
+    assert sum(map(len, batches)) == 4
+
+
+@pytest.mark.parametrize('missing_all', [False, True])
+def test_inference_skips_absent_partitions(tmp_path, missing_all):
+    """Inference locks reads, skips absent paths and returns only output names."""
+    synchronizer = sync.ProcessSync(str(tmp_path / 'inference.lock'))
+    loaded = []
+    calls = []
+
+    def load(path):
+        assert synchronizer.is_locked()
+        loaded.append(path)
+        if path == 'missing' or missing_all:
+            raise storage.AbsentPartition(path)
+        return dataset.Dataset([
+            variable.Array('source', numpy.arange(2), ('row', )),
+        ],
+                               delayed=False)
+
+    def callback(zds):
+        assert not synchronizer.is_locked()
+        calls.append(None)
+        return {'target': zds['source'].values + 1}
+
+    result = infer_variables(('missing', 'present'), load, callback, 'row', (),
+                             {}, synchronizer)
+    assert result == (() if missing_all else ('target', ))
+    assert len(calls) == (0 if missing_all else 1)
+    assert loaded == ['missing', 'present']
+
+
+@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('infer', [False, True])
+def test_update_rejects_unknown_outputs(update_target, infer):
+    """Declared and inferred unknown outputs fail before writing."""
+    calls = []
+
+    def callback(zds):
+        calls.append(None)
+        return {'missing': zds['source'].values}
+
+    with pytest.raises(ValueError, match='missing'):
+        update_target.update(callback,
+                             variables=None if infer else ['missing'],
+                             selected_variables=['source'],
+                             distributed=False)
+    assert len(calls) == int(infer)
+
+
+@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+def test_update_invalidates_selected_paths(update_target, monkeypatch):
+    """Both update methods invalidate the selected partition paths at the end."""
+    partitions = tuple(update_target.partitions())
+    invalidate = update_target.fs.invalidate_cache
+    invalidated = []
+    output = output_name(update_target)
+
+    def observe(path=None):
+        invalidated.append(path)
+        invalidate(path)
+
+    def callback(zds):
+        return {output: zds['source'].values.copy()}
+
+    monkeypatch.setattr(update_target.fs, 'invalidate_cache', observe)
+    update_target.update(callback,
+                         variables=[output],
+                         selected_variables=['source'],
+                         distributed=False)
+    assert tuple(invalidated[-len(partitions):]) == partitions
+
+
+@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+def test_update_rejects_negative_depth_before_callback(update_target):
+    """Invalid overlap depths fail before inference or execution."""
+
+    def unexpected(zds):
+        pytest.fail('The callback must not run with a negative depth')
+
+    with pytest.raises(ValueError, match='Depth must be non-negative'):
+        update_target.update(unexpected, depth=-1, distributed=False)
+
+
+@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('depth', [0, 1])
+def test_update_keeps_callback_keywords(update_target, depth):
+    """Callback keywords stay separate from the partition writer's settings."""
+    output = output_name(update_target)
+    payload = dict.fromkeys(('indices', 'dim', 'fs', 'path', 'metadata',
+                             'func', 'zds', 'func_args', 'func_kwargs'),
+                            'argument')
+
+    def callback(ds, partition_info=None, **kwargs):
+        assert kwargs == payload
+        assert (partition_info is None) == (depth == 0)
+        return {output: ds['source'].values.copy()}
+
+    update_target.update(callback,
+                         variables=[output],
+                         selected_variables=['source'],
+                         distributed=False,
+                         depth=depth,
+                         **payload)
+    result = update_target.load(delayed=False, distributed=False)
+    assert result is not None
+    numpy.testing.assert_array_equal(result[output].values,
+                                     result['source'].values)

@@ -2144,7 +2144,7 @@ def test_with_empty_collection(fs, request):
         """Update function used for this test."""
         return {varname: zds.variables['var1'].values * 0 + 5}
 
-    with pytest.warns(Warning, match='update an empty collection'):
+    with pytest.warns(Warning, match='function is not applied'):
         zcol.update(update, varname=var.name, distributed=False)
 
 

@@ -41,9 +41,12 @@ from .detail import (
     PartitionSlice,
     _insert,
     _load_dataset,
+    _load_dataset_with_overlap,
     _try_infer_callable,
-    _wrap_update_func,
-    _wrap_update_func_with_overlap,
+    execute_update,
+    infer_variables,
+    warn_empty_update,
+    wrap_update,
 )
 
 __all__ = (
@@ -56,8 +59,6 @@ __all__ = (
     'WrappedPartitionCallable',
     '_insert',
     '_try_infer_callable',
-    '_wrap_update_func',
-    '_wrap_update_func_with_overlap',
     'dask_utils',
     'dataset',
     'fs_utils',
@@ -69,7 +70,7 @@ __all__ = (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Sequence
+    from collections.abc import Iterable, Sequence
 
     import fsspec
 
@@ -91,44 +92,6 @@ def _copy_partition(source: str, target: str,
         if fs_source.exists(source):
             raise
         raise storage.AbsentPartition(source) from err
-
-
-def _infer_callable(
-    collection: Collection,
-    func: UpdateCallable,
-    filters: PartitionFilter | None,
-    delayed,
-    selected_variables: Iterable[str] | None,
-    *args,
-    **kwargs,
-) -> tuple[str, ...]:
-    immutable = collection.immutable_path if collection.have_immutable else None
-
-    # The variables the function writes are read from one partition. The
-    # store may hold none at the first path the index names, so the walk
-    # goes on to the next.
-    zds: dataset.Dataset | None = None
-    with collection.synchronizer:
-        for one_partition in collection.partitions(filters=filters):
-            try:
-                zds = _load_dataset(delayed, collection.fs, immutable,
-                                    one_partition, selected_variables)
-                break
-            except storage.AbsentPartition:
-                storage.warn_absent_partition(one_partition)
-    if zds is None:
-        return ()
-
-    func_result: dict[str, Any]
-    func_result = _try_infer_callable(func, zds, collection.dimension, *args,
-                                      **kwargs)
-    unknown_variables: set[str] = set(func_result) - set(
-        collection.metadata.variables.keys())
-
-    if len(unknown_variables):
-        raise ValueError(f'Unknown variables: {unknown_variables}')
-
-    return tuple(func_result)
 
 
 def _check_partition(
@@ -662,16 +625,84 @@ class Collection(ReadOnlyCollection):
             self._index.remove(folders)
         return folders
 
+    def _select_update_partitions(
+        self,
+        filters: PartitionFilter,
+        selected_partitions: Iterable[str] | None,
+    ) -> tuple[str, ...]:
+        """Select the collection partitions for an update."""
+        return tuple(
+            self.partitions(filters=filters,
+                            selected_partitions=selected_partitions,
+                            lock=True))
+
+    def _prepare_update(
+        self,
+        func: UpdateCallable,
+        partitions: tuple[str, ...],
+        *,
+        variables: Sequence[str] | None,
+        selected_variables: Iterable[str] | None,
+        delayed: bool,
+        depth: int,
+        trim: bool,
+        client: dask.distributed.Client | None,
+        func_args: tuple[Any, ...],
+        func_kwargs: dict[str, Any],
+    ) -> WrappedPartitionCallable | None:
+        """Validate output names and build the function for partition updates."""
+        dim = self.dimension
+        immutable = self.immutable_path if self.have_immutable else None
+        load = functools.partial(_load_dataset,
+                                 delayed,
+                                 self.fs,
+                                 immutable,
+                                 selected_variables=selected_variables)
+        if not variables:
+            infer = functools.partial(infer_variables, partitions, load, func,
+                                      dim, func_args, func_kwargs,
+                                      self.synchronizer)
+            variables = client.submit(
+                infer, pure=False).result() if client else infer()
+        if not variables:
+            return None
+        unknown_variables = set(variables) - set(self.metadata.variables)
+        if unknown_variables:
+            raise ValueError(f'Unknown variables: {unknown_variables}')
+        immutable_update = self.immutable_variables.intersection(variables)
+        if immutable_update:
+            raise ValueError(f'Immutable variables ({immutable_update}) '
+                             'have to be updated using the '
+                             "'Collection.update_immutable' method.")
+        _LOGGER.info('Updating variable %s',
+                     ', '.join(repr(item) for item in variables))
+        load_overlap = functools.partial(
+            _load_dataset_with_overlap,
+            delayed=delayed,
+            depth=depth,
+            dim=dim,
+            fs=self.fs,
+            immutable=immutable,
+            partitions=partitions,
+            selected_variables=selected_variables) if depth else None
+        return wrap_update(func,
+                           load,
+                           load_overlap=load_overlap,
+                           dim=dim,
+                           fs=self.fs,
+                           metadata=self.metadata,
+                           trim=trim)
+
     def update(
         self,
         func: UpdateCallable,
         /,
         *args,
         depth: int = 0,
-        selected_variables: list[str] | None = None,
+        filters: PartitionFilter = None,
         variables: Sequence[str] | None = None,
+        selected_variables: Iterable[str] | None = None,
         selected_partitions: Iterable[str] | None = None,
-        filters: PartitionFilter | None = None,
         trim: bool = True,
         npartitions: int | None = None,
         delayed: bool | None = None,
@@ -692,27 +723,36 @@ class Collection(ReadOnlyCollection):
                 dataset the selected partition.
             variables: The list of variables updated by the function. If None,
                 the variables are inferred by calling the function on the first
-                partition. In this case, it is important to ensure that the
-                function can be called twice on the same partition without
-                side effects. Default is None.
+                available selected partition, using the requested loading and
+                execution modes. This additional call uses that partition alone,
+                including when ``depth`` is greater than 0. Default is None.
             selected_variables: A list of variables to load from the collection.
                 If None, all variables are loaded.
             selected_partitions: A list of partitions to load (using the
                 partition relative path).
             filters: The expression used to filter the partitions to update.
-            trim: Whether to trim ``depth`` items from each partition after
-                calling ``func``. Set it to ``False`` if your function does
-                this for you.
+            trim: Whether to keep only the current partition's values from
+                the results returned by ``func`` when using overlap. Set it
+                to ``False`` if your function already returns only those values.
             npartitions: The number of partitions to update in parallel. By
                 default, it is equal to the number of Dask workers available
                 when calling this method.
-            delayed: Whether to load data in a dask array or not.
-                Default value is True if distributed is True, False otherwise.
+            delayed: If True, load variables as Dask arrays. If False, load
+                variables directly into NumPy arrays. If None, use the value of
+                ``distributed``. Default is None.
             distributed: Whether to use dask or not. Default To True.
             **kwargs: The keyword arguments to pass to the function.
 
         Raises:
             ValueError: If the variables to update are not in the collection.
+
+        Notes:
+            Each task loads and writes one partition or overlap window at a
+            time. With overlap, neighboring partitions may already contain
+            values written by another call. Callbacks that read and rewrite
+            the same variables must be idempotent and account for these updates.
+            Distributed tasks can run in any order. Inference adds a callback
+            invocation whose returned values are discarded.
 
         Example:
             >>> import dask.array
@@ -724,72 +764,44 @@ class Collection(ReadOnlyCollection):
         """
         if not callable(func):
             raise TypeError('func must be a callable')
-
+        if depth < 0:
+            raise ValueError('Depth must be non-negative.')
         if delayed is None:
             delayed = distributed
+        if selected_variables is not None:
+            selected_variables = tuple(selected_variables)
 
-        variables = variables or _infer_callable(
-            self, func, filters, delayed, selected_variables, *args, **kwargs)
-
-        if not variables:
-            warnings.warn('You are trying to update an empty collection.',
-                          category=RuntimeWarning,
-                          stacklevel=2)
+        partitions = self._select_update_partitions(filters,
+                                                    selected_partitions)
+        if not partitions:
+            warn_empty_update()
             return
 
-        immutable_update = self.immutable_variables.intersection(variables)
+        client = dask_utils.get_client() if distributed else None
+        wrap_function = self._prepare_update(
+            func,
+            partitions,
+            variables=variables,
+            selected_variables=selected_variables,
+            delayed=delayed,
+            depth=depth,
+            trim=trim,
+            client=client,
+            func_args=args,
+            func_kwargs=kwargs)
+        if wrap_function is None:
+            warn_empty_update()
+            return
 
-        if immutable_update:
-            raise ValueError(f'Immutable variables ({immutable_update}) '
-                             'have to be updated using the '
-                             "'Collection.update_immutable' method.")
-
-        # If depth is not 0, the variables updated must be in the selected
-        # variables.
-        if depth != 0 and selected_variables is not None:
-            selected_variables += list(
-                set(variables) - set(selected_variables))
-
-        _LOGGER.info('Updating of the (%s) variable in the collection',
-                     ', '.join(repr(item) for item in variables))
-
-        selected_partitions = tuple(
-            self.partitions(filters=filters,
-                            selected_partitions=selected_partitions,
-                            lock=True))
-
-        immutable = self._immutable if self.have_immutable else None
-
-        if depth == 0:
-            local_func = _wrap_update_func(delayed, func, self.fs, immutable,
-                                           selected_variables)
-        else:
-            local_func = _wrap_update_func_with_overlap(
-                delayed, depth, self.dimension, func, self.fs, immutable,
-                selected_partitions, selected_variables, trim)
-
-        if distributed:
-            client: dask.distributed.Client = dask_utils.get_client()
-
-            batches: Iterator[Sequence[str]] = dask_utils.split_sequence(
-                selected_partitions, npartitions
-                or dask_utils.dask_workers(client=client, cores_only=True))
-
-            storage.execute_transaction(
-                client,
-                self.synchronizer,
-                client.map(
-                    local_func,
-                    tuple(batches),
-                    key=func.__name__,
-                    func_args=args,
-                    func_kwargs=kwargs,
-                ),
-            )
-        else:
-            local_func(selected_partitions, args, kwargs)
-
-        tuple(map(self.fs.invalidate_cache, selected_partitions))
+        execute_update(wrap_function,
+                       partitions,
+                       client=client,
+                       synchronizer=self.synchronizer,
+                       name=func.__name__,
+                       npartitions=npartitions,
+                       func_args=args,
+                       func_kwargs=kwargs)
+        tuple(map(self.fs.invalidate_cache, partitions))
 
     def update_immutable(self, name: str, data: ArrayLike) -> None:
         """Update an immutable variable with provided data..

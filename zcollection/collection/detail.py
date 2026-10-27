@@ -13,13 +13,16 @@ import dataclasses
 import sys
 import time
 import traceback
+import warnings
 
+import dask.distributed
 import dask.utils
 
-from .. import dataset, merging, partitioning, store, sync
+from .. import dask_utils, dataset, merging, meta, partitioning, store, sync
 from ..fs_utils import join_path
 from ..storage import (
     AbsentPartition,
+    execute_transaction,
     open_zarr_group,
     read_partition,
     update_zarr_array,
@@ -33,7 +36,6 @@ if TYPE_CHECKING:
 
     import fsspec
 
-    from ..type_hints import ArrayLike
     from .callable_objects import UpdateCallable, WrappedPartitionCallable
 
 #: Partition's type.
@@ -52,7 +54,7 @@ class PartitioningProperties:
     dim: str
 
 
-def _get_slices(variable: dataset.Variable, dim: str,
+def _get_slices(variable: meta.VariableSchema, dim: str,
                 indices: slice) -> tuple[slice, ...]:
     """Return a tuple of slices that can be used to select the given dimension
     indices.
@@ -107,53 +109,91 @@ def _try_infer_callable(
             f'is: {execution_tb}') from exc
 
 
-def _update_with_overlap(
-    *args,
+def _update_partition(
     func: UpdateCallable,
     zds: dataset.Dataset,
-    indices: slice,
+    func_args: tuple[Any, ...],
+    func_kwargs: dict[str, Any],
+    *,
+    indices: slice | None,
     dim: str,
     fs: fsspec.AbstractFileSystem,
     path: str,
     trim: bool,
-    **kwargs,
+    metadata: meta.DatasetSchema,
 ) -> None:
-    """Update a partition with overlap.
+    """Call the update function and write its results to the target partition.
 
-    Args:
-        func: Function to apply to update each partition.
-        zds: Dataset to update.
-        indices: Indices of the partition to update.
-        dim: Name of the partitioning dimension.
-        fs: File system on which the Zarr dataset is stored.
-        path: Path to the Zarr group.
-        trim: Whether to trim the overlap.
-        *args: Positional arguments to pass to the function.
-        **kwargs: Keyword arguments to pass to the function.
-
-    Returns:
-        The updated variables.
+    With overlap, indices selects the current partition within the dataset.
+    Without overlap, indices is None.
     """
-    dictionary: dict[str, ArrayLike] = (func(
-        zds, *args, partition_info=(dim, indices), **
-        kwargs) if dask.utils.has_keyword(func, 'partition_info') else func(
-            zds, *args, **kwargs))
-
-    if trim:
-        for varname, array in dictionary.items():
-            slices: tuple[slice, ...] = _get_slices(zds[varname], dim, indices)
-            update_zarr_array(
-                join_path(path, varname),
-                array[slices],  # type: ignore[index]
-                fs,
-            )
+    if indices is not None and dask.utils.has_keyword(func, 'partition_info'):
+        dictionary = func(zds,
+                          *func_args,
+                          partition_info=(dim, indices),
+                          **func_kwargs)
     else:
-        tuple(
-            update_zarr_array(  # type: ignore[func-returns-value]
-                join_path(path, items[0]),
-                items[1],
-                fs,
-            ) for items in dictionary.items())
+        dictionary = func(zds, *func_args, **func_kwargs)
+    for name, array in dictionary.items():
+        if trim and indices is not None:
+            slices = _get_slices(metadata.variables[name], dim, indices)
+            values = array[slices]  # type: ignore[index]
+        else:
+            values = array
+        update_zarr_array(join_path(path, name), values, fs)
+
+
+def infer_variables(
+    partitions: Sequence[str],
+    load: Callable[[str], dataset.Dataset],
+    func: UpdateCallable,
+    dim: str,
+    func_args: tuple[Any, ...],
+    func_kwargs: dict[str, Any],
+    synchronizer: sync.Sync,
+) -> tuple[str, ...]:
+    """Infer output names from the first available selected partition.
+
+    The callback result stays in the task that loads the partition.
+    """
+    for partition in partitions:
+        try:
+            with synchronizer:
+                zds = load(partition)
+        except AbsentPartition:
+            warn_absent_partition(partition)
+            continue
+        return tuple(
+            _try_infer_callable(func, zds, dim, *func_args, **func_kwargs))
+    return ()
+
+
+def execute_update(
+    func: WrappedPartitionCallable,
+    partitions: Sequence[str],
+    *,
+    client: dask.distributed.Client | None,
+    synchronizer: sync.Sync,
+    name: str,
+    npartitions: int | None,
+    func_args: tuple[Any, ...],
+    func_kwargs: dict[str, Any],
+) -> None:
+    """Execute partition updates locally or in batches on Dask workers."""
+    if client is None:
+        func(partitions, func_args, func_kwargs)
+        return
+
+    batches = tuple(
+        dask_utils.split_sequence(
+            partitions, npartitions
+            or dask_utils.dask_workers(client, cores_only=True)))
+    futures = client.map(func,
+                         batches,
+                         key=name,
+                         func_args=func_args,
+                         func_kwargs=func_kwargs)
+    execute_transaction(client, synchronizer, futures)
 
 
 def _load_dataset(
@@ -190,13 +230,13 @@ def _load_dataset(
 
 
 def _load_dataset_with_overlap(
+    partition: str,
     *,
     delayed: bool,
     depth: int,
     dim: str,
     fs: fsspec.AbstractFileSystem,
     immutable: str | None,
-    partition: str,
     partitions: Sequence[str],
     selected_variables: Iterable[str] | None,
 ) -> tuple[dataset.Dataset, slice]:
@@ -276,116 +316,50 @@ def _load_dataset_with_overlap(
     return zds, indices
 
 
-def _wrap_update_func(
-    delayed: bool,
+def warn_empty_update() -> None:
+    """Warn that the update has no selected partitions or output variables."""
+    warnings.warn(
+        'The update function is not applied because no partitions or output '
+        'variables are selected.',
+        category=RuntimeWarning,
+        stacklevel=3)
+
+
+def wrap_update(
     func: UpdateCallable,
-    fs: fsspec.AbstractFileSystem,
-    immutable: str | None,
-    selected_variables: Iterable[str] | None,
-) -> WrappedPartitionCallable:
-    """Wrap an update function taking a partition's dataset as input and
-    returning variable's values as a numpy array.
-
-    Args:
-        delayed: Whether to load the dataset lazily.
-        func: Function to apply to update each partition.
-        fs: File system on which the Zarr dataset is stored.
-        immutable: Name of the immutable directory.
-        selected_variables: Name of the variables to load from the dataset.
-            If None, all variables are loaded.
-
-    Returns:
-        The wrapped function that takes a set of dataset partitions and the
-        variable name as input and returns the variable's values as a numpy
-        array.
-    """
-
-    def wrap_function(partitions: Iterable[str], func_args: tuple[Any, ...],
-                      func_kwargs: dict[str, Any]) -> None:
-        # Applying function for each partition's data
-        for partition in partitions:
-            try:
-                zds: dataset.Dataset = _load_dataset(delayed, fs, immutable,
-                                                     partition,
-                                                     selected_variables)
-            except AbsentPartition:
-                warn_absent_partition(partition)
-                continue
-            dictionary: dict[str, ArrayLike] = func(zds, *func_args,
-                                                    **func_kwargs)
-            tuple(
-                update_zarr_array(  # type: ignore[func-returns-value]
-                    join_path(partition, varname), array, fs)
-                for varname, array in dictionary.items())
-
-    return wrap_function
-
-
-def _wrap_update_func_with_overlap(
-    delayed: bool,
-    depth: int,
+    load: Callable[[str], dataset.Dataset],
+    *,
+    load_overlap: Callable[[str], tuple[dataset.Dataset, slice]] | None,
     dim: str,
-    func: UpdateCallable,
     fs: fsspec.AbstractFileSystem,
-    immutable: str | None,
-    selected_partitions: Sequence[str],
-    selected_variables: Iterable[str] | None,
+    metadata: meta.DatasetSchema,
     trim: bool,
 ) -> WrappedPartitionCallable:
-    """Wrap an update function taking a partition's dataset as input and
-    returning variable's values as a numpy array.
-
-    Args:
-        delayed: Whether to load the dataset lazily.
-        depth: Depth of the overlap.
-        dim: Name of the partitioning dimension.
-        func: Function to apply to update each partition.
-        fs: File system on which the Zarr dataset is stored.
-        immutable: Name of the immutable directory.
-        selected_partitions: List of all partitions selected for the update.
-        selected_variables: Name of the variables to load from the dataset.
-            If None, all variables are loaded.
-        trim: Whether to trim the overlap.
-
-    Returns:
-        The wrapped function that takes a set of dataset partitions and the
-        variable name as input and returns the variable's values as a numpy
-        array.
-    """
-    if depth < 0:
-        raise ValueError('Depth must be non-negative.')
+    """Load, update and write one partition or overlap window per iteration."""
 
     def wrap_function(partitions: Sequence[str], func_args: tuple[Any, ...],
                       func_kwargs: dict[str, Any]) -> None:
-        # Applying function for each partition's data
         for partition in partitions:
-
-            # False positive with the method Collection.map_overlap
-            zds: dataset.Dataset
-            indices: slice
             try:
-                zds, indices = _load_dataset_with_overlap(
-                    delayed=delayed,
-                    depth=depth,
-                    dim=dim,
-                    fs=fs,
-                    immutable=immutable,
-                    partition=partition,
-                    partitions=selected_partitions,
-                    selected_variables=selected_variables)
+                if load_overlap is None:
+                    zds = load(partition)
+                    indices = None
+                else:
+                    zds, indices = load_overlap(partition)
             except AbsentPartition:
                 warn_absent_partition(partition)
                 continue
-
-            _update_with_overlap(*func_args,
-                                 func=func,
-                                 zds=zds,
-                                 indices=indices,
-                                 dim=dim,
-                                 fs=fs,
-                                 path=partition,
-                                 trim=trim,
-                                 **func_kwargs)
+            _update_partition(func,
+                              zds,
+                              func_args,
+                              func_kwargs,
+                              indices=indices,
+                              dim=dim,
+                              fs=fs,
+                              path=partition,
+                              trim=trim,
+                              metadata=metadata)
+            del zds
 
     return wrap_function
 

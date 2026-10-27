@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 import abc
+import os
 import threading
 
 import fasteners
@@ -69,7 +70,7 @@ class ProcessSync(Sync):
             pass
 
     def __reduce__(self) -> tuple[Callable, tuple[str]]:
-        return (ProcessSync, (str(self.lock.path), ))
+        return (ProcessSync, (os.fsdecode(self.lock.path), ))
 
     def is_locked(self) -> bool:
         """Return whether this synchronizer holds its lock."""

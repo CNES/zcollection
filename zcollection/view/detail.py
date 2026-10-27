@@ -8,9 +8,8 @@ Implementation details.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 import base64
-from collections.abc import Callable, Iterable, Iterator, Sequence
 import dataclasses
 import hashlib
 import io
@@ -19,19 +18,16 @@ import pathlib
 import pickle
 import warnings
 
-import dask.array.core
-import dask.bag.core
 import numpy
 
 from .. import collection, dataset, meta, store
-from ..collection.detail import _update_with_overlap
+from ..collection.callable_objects import WrappedPartitionCallable
 from ..fs_utils import get_fs, join_path
 from ..storage import (
     AbsentPartition,
     open_zarr_array,
     open_zarr_group,
     read_partition,
-    update_zarr_array,
     variable_attributes,
     variable_shape,
     warn_absent_partition,
@@ -39,19 +35,18 @@ from ..storage import (
 from ..variable.abc import read_dimensions
 
 if TYPE_CHECKING:
-    import dask.distributed
+    from collections.abc import Iterable, Sequence
+
     import fsspec
     import zarr
 
-    from ..type_hints import ArrayLike, NDArray
+    from ..type_hints import NDArray
 
 #: Module logger.
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 #: Type of the function used to update a view.
-ViewUpdateCallable = Callable[[
-    Iterable[tuple[dataset.Dataset, str]], str, tuple[Any, ...], dict[str, Any]
-], None]
+ViewUpdateCallable = WrappedPartitionCallable
 
 #: Name of the file that contains the checksum of the view.
 CHECKSUM_FILE = '.checksum'
@@ -292,70 +287,27 @@ def _assert_variable_handled(reference: meta.DatasetSchema,
         raise ValueError(f'Variable {variable} does not exist')
 
 
-def _load_datasets_list(
+def _load_dataset(
+    partition: str,
     *,
-    client: dask.distributed.Client | None,
     base_dir: str,
     delayed: bool,
     fs: fsspec.AbstractFileSystem,
     view_ref: collection.Collection,
     metadata: meta.DatasetSchema,
-    partitions: Iterable[str],
-    selected_variables: Iterable[str] | None = None,
-    with_immutable: bool = False,
-) -> Iterator[tuple[dataset.Dataset, str]]:
-    """Load datasets from a list of partitions.
-
-    Args:
-        client: The client used to load the datasets (or None to
-            avoid dask usage).
-        base_dir: Base directory of the view.
-        delayed: If True, load the dataset lazily.
-        fs: The file system used to access the variables in the view.
-        view_ref: The view reference.
-        metadata: The metadata of the dataset.
-        partitions: The list of partitions to load.
-        selected_variables: The list of variable to retain from the view
-        with_immutable: Whether to include immutable variables or not.
-
-    Returns:
-        The datasets and their paths.
-    """
-    arguments: tuple[tuple[tuple[tuple[str, int], ...], list], ...] = tuple(
-        (view_ref.partitioning.parse(item), []) for item in partitions)
-
-    datasets: list[tuple[dataset.Dataset, str]]
-
-    if client is not None:
-        futures: list[dask.distributed.Future] = client.map(
-            _held_one_dataset,
-            arguments,
-            base_dir=base_dir,
-            delayed=delayed,
-            fs=fs,
-            selected_variables=view_ref.metadata.select_variables(
-                selected_variables),
-            view_ref=client.scatter(view_ref),
-            variables=metadata.select_variables(selected_variables),
-            with_immutable=with_immutable)
-        datasets = [
-            item for item in client.gather(futures) if item is not None
-        ]
-    else:
-        datasets = [
-            item for item in (_held_one_dataset(
-                arg,
-                base_dir=base_dir,
-                delayed=False,
-                fs=fs,
-                selected_variables=view_ref.metadata.select_variables(
-                    selected_variables),
-                view_ref=view_ref,
-                variables=metadata.select_variables(selected_variables),
-                with_immutable=with_immutable)
-                              for arg in arguments) if item is not None
-        ]
-    return iter(datasets)
+    selected_variables: Iterable[str] | None,
+) -> dataset.Dataset:
+    """Load the selected inputs of one view partition for an update."""
+    return _load_one_dataset(
+        (view_ref.partitioning.parse(partition), []),
+        base_dir=base_dir,
+        delayed=delayed,
+        fs=fs,
+        selected_variables=view_ref.metadata.select_variables(
+            selected_variables),
+        view_ref=view_ref,
+        variables=metadata.select_variables(selected_variables),
+        with_immutable=True)[0]
 
 
 def _assert_have_variables(metadata: meta.DatasetSchema) -> None:
@@ -369,13 +321,13 @@ def _assert_have_variables(metadata: meta.DatasetSchema) -> None:
 
 
 def _load_dataset_with_overlap(
+    partition: str,
     *,
     base_dir: str,
     delayed: bool,
     depth: int,
     fs: fsspec.AbstractFileSystem,
     metadata: meta.DatasetSchema,
-    partition: str,
     partitions: tuple[str, ...],
     selected_variables: Iterable[str] | None,
     view_ref: collection.Collection,
@@ -421,7 +373,7 @@ def _load_dataset_with_overlap(
             if item == partition:
                 raise AbsentPartition(partition)
             continue
-        loaded.append(held)
+        loaded.append((held[0], item))
 
     start = 0
     indices = slice(0, 0, None)
@@ -437,142 +389,6 @@ def _load_dataset_with_overlap(
     if groups:
         result = result.concat(groups, view_ref.dimension)
     return result, indices
-
-
-def _select_overlap(
-    arguments: tuple[dataset.Dataset, str],
-    datasets_list: tuple[tuple[dataset.Dataset, str], ...],
-    depth: int,
-    view_ref: collection.Collection,
-) -> tuple[dataset.Dataset, slice]:
-    """Select the neighboring partitions of a given partition.
-
-    Args:
-        arguments: The partition to select the neighbors of.
-        datasets_list: The list of partitions.
-        depth: The depth of the overlap.
-        view_ref: The view reference.
-
-    Returns:
-        The neighboring partitions.
-    """
-
-    def calculate_slice(
-            selected_datasets: list[tuple[dataset.Dataset, str]]) -> slice:
-        """Compute the slice of the selected dataset (without overlap)."""
-        start = 0
-        indices = slice(0, 0, None)
-        for zds, selected_partition in selected_datasets:
-            size = zds.dimensions[view_ref.dimension]
-            indices = slice(start, start + size, None)
-            if partition == selected_partition:
-                break
-            start += size
-        return indices
-
-    # The local function is not taken into account for counting
-    # locals.
-    partition: str = arguments[1]
-    where: int = next(ix for ix, item in enumerate(datasets_list)
-                      if item[1] == partition)
-
-    # Search for the overlapping partitions
-    selected_datasets: list[tuple[dataset.Dataset, str]] = [
-        datasets_list[ix] for ix in range(where - depth, where + depth + 1)
-        if 0 <= ix < len(datasets_list)
-    ]
-
-    # Build the dataset for the selected partitions.
-    groups: list[dataset.Dataset] = [ds for ds, _ in selected_datasets]
-    zds: dataset.Dataset = groups.pop(0)
-    if groups:
-        zds = zds.concat(groups, view_ref.dimension)
-
-    return zds, calculate_slice(selected_datasets)
-
-
-def _wrap_update_func(
-    func: collection.UpdateCallable,
-    fs: fsspec.AbstractFileSystem,
-) -> ViewUpdateCallable:
-    """Wrap an update function taking a list of partition's dataset and
-    partition's path as input and returning None.
-
-    Args:
-        func: The update function.
-        fs: The file system used to access the variables in the view.
-
-    Returns:
-        The wrapped function.
-    """
-
-    def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
-                      base_dir: str, func_args: tuple[Any, ...],
-                      func_kwargs: dict[str, Any]) -> None:
-        """Wrap the function to be applied to the dataset."""
-        for zds, partition in parameters:
-            # Applying function on partition's data
-            dictionary: dict[str, ArrayLike] = func(zds, *func_args,
-                                                    **func_kwargs)
-            tuple(
-                update_zarr_array(  # type: ignore[func-returns-value]
-                    join_path(base_dir, partition, varname), array, fs)
-                for varname, array in dictionary.items())
-
-    return wrap_function
-
-
-def _wrap_update_func_overlap(
-    datasets_list: tuple[tuple[dataset.Dataset, str], ...],
-    depth: int,
-    func: collection.UpdateCallable,
-    fs: fsspec.AbstractFileSystem,
-    view_ref: collection.Collection,
-    trim: bool,
-) -> ViewUpdateCallable:
-    """Wrap an update function taking a list of partition's dataset and
-    partition's path as input and returning None.
-
-    Args:
-        datasets_list: The list of datasets and their paths.
-        depth: The depth of the overlap.
-        func: The update function.
-        fs: The file system used to access the variables in the view.
-        view_ref: The view reference.
-        trim: If True, trim the dataset to the overlap.
-
-    Returns:
-        The wrapped function.
-    """
-    dim = view_ref.dimension
-
-    if depth < 0:
-        raise ValueError('The depth must be positive')
-
-    def wrap_function(parameters: Iterable[tuple[dataset.Dataset, str]],
-                      base_dir: str, func_args: tuple[Any, ...],
-                      func_kwargs: dict[str, Any]) -> None:
-        """Wrap the function to be applied to the dataset."""
-        zds: dataset.Dataset
-        indices: slice
-
-        for zds, partition in parameters:
-            selected_zds, indices = _select_overlap(
-                (zds, partition), datasets_list, depth, view_ref)
-
-            # False positive with the function _wrap_update_func_with_overlap
-            # defined in the module zcollection.collection.detail
-            _update_with_overlap(*func_args,
-                                 func=func,
-                                 zds=selected_zds,
-                                 indices=indices,
-                                 dim=dim,
-                                 fs=fs,
-                                 path=join_path(base_dir, partition),
-                                 trim=trim,
-                                 **func_kwargs)
-
-    return wrap_function
 
 
 def _calculate_axis_reference(
