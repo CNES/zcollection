@@ -8,7 +8,6 @@ Testing variables
 """
 from typing import Any
 
-import dask.array.core
 import dask.array.ma
 import numpy
 import pytest

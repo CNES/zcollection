@@ -241,6 +241,9 @@ Where to go next
 :doc:`partitioning`
     Date against sequence, the resolution and what it costs.
 
+:doc:`callbacks`
+    Mapping and updating partitions, using neighbors and external Dask arrays.
+
 :doc:`auto_examples/ex_collection`
     Dropping partitions and variables, mapping a function over a collection.
 

@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any
 import pickle
 
 import dask.array.core
-import dask.array.ma
 import numcodecs
 import numpy
 import pytest

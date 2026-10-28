@@ -11,7 +11,6 @@ import dask.array.random
 import dask.array.reductions
 import dask.array.routines
 import dask.array.ufunc
-import dask.array.utils
 import numpy
 import pytest
 import zarr.abc.codec

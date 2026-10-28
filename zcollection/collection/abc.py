@@ -9,14 +9,16 @@ Base classes for collections.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional
+import abc
 from collections.abc import Callable, Iterable, Iterator, Sequence
 import dataclasses
+import functools
 import itertools
+import logging
 import pathlib
 
 import dask.bag.core
 import dask.distributed
-import dask.utils
 import numpy
 
 from .. import (
@@ -37,12 +39,20 @@ from .detail import (
     _load_and_apply_indexer,
     _load_dataset,
     _load_dataset_with_overlap,
+    execute_update,
+    map_partitions,
+    prepare_partition_operation,
+    warn_empty_update,
 )
 
 if TYPE_CHECKING:
     import fsspec
 
-    from .callable_objects import MapCallable, PartitionCallable
+    from .callable_objects import (
+        MapCallable,
+        UpdateCallable,
+        WrappedPartitionCallable,
+    )
 
 #: Type of functions filtering the partitions.
 PartitionFilterCallback = Callable[[dict[str, int]], bool]
@@ -58,6 +68,9 @@ IndexerArgs = tuple[tuple[tuple[str, int], ...], list[slice]]
 
 #: Name of the directory storing the immutable dataset.
 IMMUTABLE = '.immutable'
+
+#: Module logger.
+_LOGGER = logging.getLogger(__name__)
 
 
 def list_partitions_from_indexer(
@@ -249,7 +262,357 @@ class CollectionSettings:
             raise ValueError(f'The mode {self.mode!r} is not supported.')
 
 
-class ReadOnlyCollection:
+class BaseCollection(abc.ABC):
+    """Share partition mappings and access to collection resources."""
+
+    @property
+    @abc.abstractmethod
+    def fs(self) -> fsspec.AbstractFileSystem:
+        """The filesystem holding the partitions."""
+        ...
+
+    @property
+    @abc.abstractmethod
+    def synchronizer(self) -> sync.Sync:
+        """The synchronizer used by collection operations."""
+        ...
+
+    @property
+    @abc.abstractmethod
+    def metadata(self) -> meta.DatasetSchema:
+        """The schema of the variables owned by this collection."""
+        ...
+
+    @property
+    @abc.abstractmethod
+    def dimension(self) -> str:
+        """The partitioned dimension."""
+        ...
+
+    @property
+    @abc.abstractmethod
+    def partitioning(self) -> partitioning.Partitioning:
+        """The partitioning strategy."""
+        ...
+
+    @abc.abstractmethod
+    def partitions(
+        self,
+        *,
+        filters: PartitionFilter = None,
+        indexer: Indexer | None = None,
+        selected_partitions: Iterable[str] | None = None,
+    ) -> Iterator[str]:
+        """List the partition paths selected for this collection."""
+        ...
+
+    @abc.abstractmethod
+    def _prepare_map(
+        self,
+        partitions: tuple[str, ...],
+        *,
+        delayed: bool,
+        depth: int,
+        selected_variables: Iterable[str] | None,
+    ) -> tuple[Callable[[str], dataset.Dataset],
+               Callable[[str], tuple[dataset.Dataset, slice]] | None]:
+        """Prepare the loaders for partition mappings."""
+        ...
+
+    def is_locked(self) -> bool:
+        """Return whether this instance holds the collection lock."""
+        return self.synchronizer.is_locked()
+
+    def variables(
+        self,
+        selected_variables: Iterable[str] | None = None
+    ) -> tuple[dataset.Variable, ...]:
+        """Return the variables of the collection.
+
+        Args:
+            selected_variables: The variables to return. If None, all the
+                variables are returned.
+
+        Returns:
+            The variables of the collection.
+        """
+        return dataset.get_dataset_variable_properties(self.metadata,
+                                                       selected_variables)
+
+    def _map(
+        self,
+        func: MapCallable,
+        func_args: tuple[Any, ...],
+        func_kwargs: dict[str, Any],
+        *,
+        delayed: bool,
+        depth: int,
+        filters: PartitionFilter,
+        partition_size: int | None,
+        npartitions: int | None,
+        selected_variables: Iterable[str] | None,
+    ) -> dask.bag.core.Bag:
+        """Prepare the partition loaders and build the mapping bag."""
+        selected_variables = prepare_partition_operation(
+            func, depth, selected_variables)
+        partitions = tuple(self.partitions(filters=filters))
+        load, load_overlap = self._prepare_map(
+            partitions,
+            delayed=delayed,
+            depth=depth,
+            selected_variables=selected_variables)
+        return map_partitions(partitions,
+                              func,
+                              load,
+                              load_overlap=load_overlap,
+                              partitioning=self.partitioning,
+                              dim=self.dimension,
+                              partition_size=partition_size,
+                              npartitions=npartitions,
+                              func_args=func_args,
+                              func_kwargs=func_kwargs)
+
+    def map(
+        self,
+        func: MapCallable,
+        /,
+        *args,
+        delayed: bool = True,
+        filters: PartitionFilter = None,
+        partition_size: int | None = None,
+        npartitions: int | None = None,
+        selected_variables: Iterable[str] | None = None,
+        **kwargs,
+    ) -> dask.bag.core.Bag:
+        """Map a function over the partitions of the collection.
+
+        Args:
+            func: The function to apply to every partition of the collection.
+            *args: The positional arguments to pass to the function.
+            delayed: Whether to load the data lazily or not.
+            filters: The predicate used to filter the partitions to process.
+                To get more information on the predicate, see the
+                documentation of the :meth:`partitions` method.
+            partition_size: The length of each bag partition.
+            npartitions: The number of desired bag partitions.
+            selected_variables: A list of variables to retain from the
+                collection. If None, all variables are kept.
+            **kwargs: The keyword arguments to pass to the function.
+
+        Returns:
+            A bag holding, for each partition, the tuple of its scheme and
+            the result of the function. A partition the store no longer
+            holds is left out.
+
+        Raises:
+            TypeError: If func is not callable.
+
+        Notes:
+            Exceptions raised by the callback are propagated. A callback
+            declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
+            identifying the current partition and its slice within the overlap window.
+            See :doc:`/callbacks` for input selection, callback arguments and
+            execution choices.
+
+        Example:
+            For a collection with ``var1`` and ``var2`` on the same dimensions,
+            including the partitioned dimension:
+
+            .. code-block:: python
+
+                bag = collection.map(
+                    lambda ds: ds['var1'].values + ds['var2'].values)
+                for partition, values in bag.compute(scheduler='synchronous'):
+                    print(partition, values.tolist())
+        """
+
+        return self._map(func,
+                         args,
+                         kwargs,
+                         delayed=delayed,
+                         depth=0,
+                         filters=filters,
+                         partition_size=partition_size,
+                         npartitions=npartitions,
+                         selected_variables=selected_variables)
+
+    def map_overlap(
+        self,
+        func: MapCallable,
+        /,
+        *args,
+        delayed: bool = True,
+        depth: int = 1,
+        filters: PartitionFilter = None,
+        partition_size: int | None = None,
+        npartitions: int | None = None,
+        selected_variables: Iterable[str] | None = None,
+        **kwargs,
+    ) -> dask.bag.core.Bag:
+        """Map a function over the partitions of the collection with some
+        overlap.
+
+        Args:
+            func: The function to apply to every partition of the collection.
+            *args: The positional arguments to pass to the function.
+            delayed: Whether to load the data lazily or not.
+            depth: The depth of the overlap between the partitions. Defaults
+                to 1.
+            filters: The predicate used to filter the partitions to process.
+                To get more information on the predicate, see the
+                documentation of the :meth:`partitions` method.
+            partition_size: The length of each bag partition.
+            npartitions: The number of desired bag partitions.
+            selected_variables: A list of variables to retain from the
+                collection. If None, all variables are kept.
+            **kwargs: The keyword arguments to pass to the function.
+
+        Returns:
+            A bag holding, for each partition, the tuple of its scheme and
+            the result of the function. A partition the store no longer
+            holds is left out.
+
+        Raises:
+            TypeError: If func is not callable.
+            ValueError: If depth is negative.
+
+        Notes:
+            Exceptions raised by the callback are propagated. A callback
+            declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
+            identifying the current partition and its slice within the overlap window.
+            See :doc:`/callbacks` for input selection, callback arguments and
+            execution choices.
+
+        Example:
+            For a collection with ``var1`` and ``var2`` on the same dimensions,
+            including the partitioned dimension:
+
+            Each printed array includes results for the partition and its
+            available neighbours.
+
+            .. code-block:: python
+
+                bag = collection.map_overlap(
+                    lambda ds: ds['var1'].values + ds['var2'].values,
+                    depth=1)
+                for partition, values in bag.compute(scheduler='synchronous'):
+                    print(partition, values.tolist())
+        """
+        return self._map(func,
+                         args,
+                         kwargs,
+                         delayed=delayed,
+                         depth=depth,
+                         filters=filters,
+                         partition_size=partition_size,
+                         npartitions=npartitions,
+                         selected_variables=selected_variables)
+
+
+class WritableCollection(BaseCollection):
+    """Share partition updates and index reconstruction."""
+
+    _index: PartitionIndex
+
+    @abc.abstractmethod
+    def _select_update_partitions(
+        self,
+        filters: PartitionFilter,
+        selected_partitions: Iterable[str] | None,
+    ) -> tuple[str, ...]:
+        """Select the partition paths to update."""
+        ...
+
+    @abc.abstractmethod
+    def _prepare_update(
+        self,
+        func: UpdateCallable,
+        partitions: tuple[str, ...],
+        *,
+        variables: Sequence[str] | None,
+        selected_variables: Iterable[str] | None,
+        delayed: bool,
+        depth: int,
+        trim: bool,
+        client: dask.distributed.Client | None,
+        func_args: tuple[Any, ...],
+        func_kwargs: dict[str, Any],
+    ) -> WrappedPartitionCallable | None:
+        """Validate output variables and prepare the partition update function."""
+        ...
+
+    def _update(
+        self,
+        func: UpdateCallable,
+        /,
+        *args,
+        depth: int,
+        filters: PartitionFilter,
+        variables: Sequence[str] | None,
+        selected_variables: Iterable[str] | None,
+        selected_partitions: Iterable[str] | None,
+        trim: bool,
+        npartitions: int | None,
+        delayed: bool | None,
+        distributed: bool,
+        **kwargs,
+    ) -> None:
+        """Prepare and execute updates, then invalidate the selected paths."""
+        selected_variables = prepare_partition_operation(
+            func, depth, selected_variables)
+        if delayed is None:
+            delayed = distributed
+
+        partitions = self._select_update_partitions(filters,
+                                                    selected_partitions)
+        if not partitions:
+            warn_empty_update()
+            return
+
+        client = dask_utils.get_client() if distributed else None
+        wrap_function = self._prepare_update(
+            func,
+            partitions,
+            variables=variables,
+            selected_variables=selected_variables,
+            delayed=delayed,
+            depth=depth,
+            trim=trim,
+            client=client,
+            func_args=args,
+            func_kwargs=kwargs)
+        if wrap_function is None:
+            warn_empty_update()
+            return
+
+        execute_update(wrap_function,
+                       partitions,
+                       client=client,
+                       synchronizer=self.synchronizer,
+                       name=func.__name__,
+                       npartitions=npartitions,
+                       func_args=args,
+                       func_kwargs=kwargs)
+        tuple(map(self.fs.invalidate_cache, partitions))
+
+    def reindex(self) -> tuple[str, ...]:
+        """Build the index of the partitions from the store.
+
+        A partition the index does not name becomes visible to a listing,
+        and an entry naming a partition the store does not hold is
+        dropped.
+
+        Returns:
+            The path of each partition, relative to the collection.
+        """
+        _LOGGER.info('Indexing the partitions of %s', self)
+        with self.synchronizer:
+            keys = self._index.walk()
+            self._index.write(keys)
+        return tuple(self._index.path_of(key) for key in keys)
+
+
+class ReadOnlyCollection(BaseCollection):
     """Collection base class, offering read-only access to a collection of
     datasets.
 
@@ -369,10 +732,6 @@ class ReadOnlyCollection:
         """Return the immutable variables of the collection."""
         return self.metadata.select_variables_by_dims((self.dimension, ),
                                                       False)
-
-    def is_locked(self) -> bool:
-        """Return whether this instance holds the collection lock."""
-        return self.synchronizer.is_locked()
 
     @classmethod
     def _config(cls, partition_base_dir: str) -> str:
@@ -525,214 +884,34 @@ class ReadOnlyCollection:
                     if (item != self._immutable and self._is_selected(
                         item.replace(base_dir, '').split(sep), expr)))
 
-    # false positive, no code duplication
-    def map(
+    def _prepare_map(
         self,
-        func: MapCallable,
-        /,
-        *args,
-        delayed: bool = True,
-        filters: PartitionFilter = None,
-        partition_size: int | None = None,
-        npartitions: int | None = None,
-        selected_variables: Sequence[str] | None = None,
-        **kwargs,
-    ) -> dask.bag.core.Bag:
-        """Map a function over the partitions of the collection.
+        partitions: tuple[str, ...],
+        *,
+        delayed: bool,
+        depth: int,
+        selected_variables: Iterable[str] | None,
+    ) -> tuple[Callable[[str], dataset.Dataset],
+               Callable[[str], tuple[dataset.Dataset, slice]] | None]:
+        """Prepare the loaders for partition mappings."""
+        immutable = self._immutable if self.have_immutable else None
+        load = functools.partial(_load_dataset,
+                                 delayed,
+                                 self.fs,
+                                 immutable,
+                                 selected_variables=selected_variables)
+        load_overlap = functools.partial(
+            _load_dataset_with_overlap,
+            delayed=delayed,
+            depth=depth,
+            dim=self.dimension,
+            axis=self.axis,
+            fs=self.fs,
+            immutable=immutable,
+            partitions=partitions,
+            selected_variables=selected_variables) if depth else None
 
-        Args:
-            func: The function to apply to every partition of the collection.
-            *args: The positional arguments to pass to the function.
-            delayed: Whether to load the data lazily or not.
-            filters: The predicate used to filter the partitions to process.
-                To get more information on the predicate, see the
-                documentation of the :meth:`partitions` method.
-            partition_size: The length of each bag partition.
-            npartitions: The number of desired bag partitions.
-            selected_variables: A list of variables to retain from the
-                collection. If None, all variables are kept.
-            **kwargs: The keyword arguments to pass to the function.
-
-        Returns:
-            A bag holding, for each partition, the tuple of its scheme and
-            the result of the function. A partition the store no longer
-            holds is left out.
-
-        Example:
-            For a collection with ``var1`` and ``var2`` on the same dimensions,
-            including the partitioned dimension:
-
-            .. code-block:: python
-
-                bag = collection.map(
-                    lambda ds: ds['var1'].values + ds['var2'].values)
-                for partition, values in bag.compute(scheduler='synchronous'):
-                    print(partition, values.tolist())
-        """
-
-        @storage.skip_absent_partition
-        def _wrap(
-            _partition: str,
-            _func: PartitionCallable,
-            _selected_variables: Sequence[str] | None,
-            _delayed: bool,
-            *_args,
-            **_kwargs,
-        ) -> tuple[tuple[tuple[str, int], ...], Any]:
-            """Wraps the function to apply on the partition.
-
-            Args:
-                _func: The function to apply.
-                _partition: The partition to apply the function on.
-                _selected_variables: The list of variables to retain from the
-                    partition.
-                *_args: The positional arguments to pass to the function.
-                **_kwargs: The keyword arguments to pass to the function.
-
-            Returns:
-                The result of the function.
-            """
-            zds = _load_dataset(
-                _delayed, self.fs,
-                self._immutable if self.have_immutable else None, _partition,
-                _selected_variables)
-            return self.partitioning.parse(_partition), _func(
-                zds, *_args, **_kwargs)
-
-        if not callable(func):
-            raise TypeError('func must be a callable')
-
-        bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-            self.partitions(filters=filters), partition_size, npartitions)
-
-        return bag.map(_wrap,
-                       *args,
-                       _func=func,
-                       _selected_variables=selected_variables,
-                       _delayed=delayed,
-                       **kwargs).filter(lambda item: item is not None)
-
-    def map_overlap(
-        self,
-        func: MapCallable,
-        /,
-        *args,
-        delayed: bool = True,
-        depth: int = 1,
-        filters: PartitionFilter = None,
-        partition_size: int | None = None,
-        npartition: int | None = None,
-        selected_variables: Sequence[str] | None = None,
-        **kwargs,
-    ) -> dask.bag.core.Bag:
-        """Map a function over the partitions of the collection with some
-        overlap.
-
-        Args:
-            func: The function to apply to every partition of the collection.
-                If ``func`` accepts a partition_info as a keyword
-                argument, it will be passed a tuple with the name of the
-                partitioned dimension and the slice allowing getting in the
-                dataset the selected partition without the overlap.
-            *args: The positional arguments to pass to the function.
-            delayed: Whether to load the data lazily or not.
-            depth: The depth of the overlap between the partitions. Defaults
-                to 1.
-            filters: The predicate used to filter the partitions to process.
-                To get more information on the predicate, see the
-                documentation of the :meth:`partitions` method.
-            partition_size: The length of each bag partition.
-            npartition: The number of desired bag partitions.
-            selected_variables: A list of variables to retain from the
-                collection. If None, all variables are kept.
-            **kwargs: The keyword arguments to pass to the function.
-
-        Returns:
-            A bag holding, for each partition, the tuple of its scheme and
-            the result of the function. A partition the store no longer
-            holds is left out.
-
-        Example:
-            For a collection with ``var1`` and ``var2`` on the same dimensions,
-            including the partitioned dimension:
-
-            Each printed array includes results for the partition and its
-            available neighbours.
-
-            .. code-block:: python
-
-                bag = collection.map_overlap(
-                    lambda ds: ds['var1'].values + ds['var2'].values,
-                    depth=1)
-                for partition, values in bag.compute(scheduler='synchronous'):
-                    print(partition, values.tolist())
-        """
-        if not callable(func):
-            raise TypeError('func must be a callable')
-
-        add_partition_info: bool = dask.utils.has_keyword(
-            func, 'partition_info')
-
-        @storage.skip_absent_partition
-        def _wrap(
-            _partition: str,
-            _delayed: bool,
-            _depth: int,
-            _partitions: tuple[str, ...],
-            _selected_variables: Sequence[str] | None,
-            _wrapped_func: PartitionCallable,
-            *_args,
-            **_kwargs,
-        ) -> tuple[tuple[tuple[str, int], ...], Any]:
-            """Wraps the function to apply on the partition.
-
-            Args:
-                *_args: The positional arguments to pass to the function.
-                _delayed: Whether to load the data lazily or not.
-                _depth: The depth of the overlap between the partitions.
-                _partition: The partition to apply the function on.
-                _partitions: The partitions to apply the function on.
-                _selected_variables: The list of variables to retain from the
-                    partition.
-                _wrapped_func: The function to apply.
-                **_kwargs: The keyword arguments to pass to the function.
-
-            Returns:
-                The result of the function.
-            """
-            zds: dataset.Dataset
-            indices: slice
-
-            zds, indices = _load_dataset_with_overlap(
-                delayed=_delayed,
-                depth=_depth,
-                dim=self.dimension,
-                fs=self.fs,
-                immutable=self._immutable if self.have_immutable else None,
-                partition=_partition,
-                partitions=_partitions,
-                selected_variables=_selected_variables)
-
-            if add_partition_info:
-                _kwargs = _kwargs.copy()
-                _kwargs['partition_info'] = (self.dimension, indices)
-
-            # Finally, apply the function.
-            return (self.partitioning.parse(_partition),
-                    _wrapped_func(zds, *_args, **_kwargs))
-
-        partitions = tuple(self.partitions(filters=filters))
-        bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-            partitions, partition_size, npartition)
-
-        return bag.map(_wrap,
-                       *args,
-                       _delayed=delayed,
-                       _depth=depth,
-                       _partitions=partitions,
-                       _selected_variables=selected_variables,
-                       _wrapped_func=func,
-                       **kwargs).filter(lambda item: item is not None)
+        return load, load_overlap
 
     def load(
         self,
@@ -1009,19 +1188,3 @@ class ReadOnlyCollection:
         """
         yield from ((self._relative_path(item), item)
                     for item in self.partitions())
-
-    def variables(
-        self,
-        selected_variables: Iterable[str] | None = None
-    ) -> tuple[dataset.Variable, ...]:
-        """Return the variables of the collection.
-
-        Args:
-            selected_variables: The variables to return. If None, all the
-                variables are returned.
-
-        Returns:
-            The variables of the collection.
-        """
-        return dataset.get_dataset_variable_properties(self.metadata,
-                                                       selected_variables)

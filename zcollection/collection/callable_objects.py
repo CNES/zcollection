@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
 from collections.abc import Callable, Sequence
+import dataclasses
 
 if TYPE_CHECKING:
     from .. import dataset
@@ -19,6 +20,21 @@ if TYPE_CHECKING:
 #: :class:`PartitionCallable`.
 WrappedPartitionCallable = Callable[
     [Sequence[str], tuple[Any, ...], dict[str, Any]], None]
+
+
+@dataclasses.dataclass(frozen=True)
+class PartitionInfo:
+    """Identify a partition and its position in the overlap window."""
+    #: Partition key names and their values.
+    partition: dict[str, int]
+    #: Relative partition name, using the partitioner's formatting and '/'.
+    name: str
+    #: The partitioned dimension.
+    dimension: str
+    #: Slice of the partition along dimension within the overlap window,
+    #: including when selected variables omit that dimension.
+    #: Without overlap and during update inference, slice(None).
+    indices: slice
 
 
 #: pylint: disable=too-few-public-methods

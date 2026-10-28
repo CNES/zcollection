@@ -11,7 +11,6 @@ import math
 import time
 
 import dask.array
-import dask.distributed
 import numpy
 import pytest
 import zarr

@@ -15,6 +15,7 @@ import time
 import traceback
 import warnings
 
+import dask.bag.core
 import dask.distributed
 import dask.utils
 
@@ -24,11 +25,13 @@ from ..storage import (
     AbsentPartition,
     execute_transaction,
     open_zarr_group,
+    partition_dimension_size,
     read_partition,
     update_zarr_array,
     warn_absent_partition,
     write_zarr_group,
 )
+from .callable_objects import PartitionInfo
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -36,7 +39,11 @@ if TYPE_CHECKING:
 
     import fsspec
 
-    from .callable_objects import UpdateCallable, WrappedPartitionCallable
+    from .callable_objects import (
+        MapCallable,
+        UpdateCallable,
+        WrappedPartitionCallable,
+    )
 
 #: Partition's type.
 PartitionSlice = tuple[tuple[str, ...], dict[str, slice]]
@@ -71,31 +78,70 @@ def _get_slices(variable: meta.VariableSchema, dim: str,
     return tuple(slices)
 
 
+def prepare_partition_operation(
+    func: Callable,
+    depth: int,
+    selected_variables: Iterable[str] | None,
+) -> tuple[str, ...] | None:
+    """Validate the callback and depth, and retain a reusable variable selection."""
+    if not callable(func):
+        raise TypeError('func must be a callable')
+    if depth < 0:
+        raise ValueError('Depth must be non-negative.')
+    return tuple(
+        selected_variables) if selected_variables is not None else None
+
+
+def _get_partition_info(
+    partition: str,
+    handler: partitioning.Partitioning,
+    dim: str,
+    indices: slice | None = None,
+) -> PartitionInfo:
+    """Describe the partition keys, relative name and central slice."""
+    scheme = handler.parse(partition)
+    return PartitionInfo(
+        partition=dict(scheme),
+        name=handler.join(scheme, '/'),
+        dimension=dim,
+        indices=indices if indices is not None else slice(None))
+
+
+def _call_partition(
+    func: Callable,
+    zds: dataset.Dataset,
+    partition_info: PartitionInfo,
+    func_args: tuple[Any, ...],
+    func_kwargs: dict[str, Any],
+) -> Any:
+    """Pass partition information to callbacks that declare the parameter."""
+    if dask.utils.has_keyword(func, 'partition_info'):
+        func_kwargs = dict(func_kwargs, partition_info=partition_info)
+    return func(zds, *func_args, **func_kwargs)
+
+
 def _try_infer_callable(
     func: Callable,
     zds: dataset.Dataset,
-    dim: str,
-    *args,
-    **kwargs,
+    partition_info: PartitionInfo,
+    func_args: tuple[Any, ...],
+    func_kwargs: dict[str, Any],
 ) -> Any:
     """Try to call a function with the given arguments.
 
     Args:
         func: Function to call.
         zds: Dataset to pass to the function.
-        dim: Name of the partitioning dimension.
-        *args: Positional arguments to pass to the function.
-        **kwargs: Keyword arguments to pass to the function.
+        partition_info: Identity and location of the current partition.
+        func_args: Positional arguments to pass to the function.
+        func_kwargs: Keyword arguments to pass to the function.
 
     Returns:
         The result of the function.
     """
-    partition_info: tuple[str, slice]
-    partition_info = dim, slice(0, zds.dimensions[dim])
     try:
-        if dask.utils.has_keyword(func, 'partition_info'):
-            return func(zds, *args, partition_info=partition_info, **kwargs)
-        return func(zds, *args, **kwargs)
+        return _call_partition(func, zds, partition_info, func_args,
+                               func_kwargs)
     except Exception as exc:
         exc_type: type[BaseException] | None
         exc_traceback: types.TracebackType | None
@@ -104,7 +150,7 @@ def _try_infer_callable(
         execution_tb: str = ''.join(traceback.format_tb(exc_traceback))
         raise RuntimeError(
             f'An error occurred while applying the function {func} with '
-            f'the arguments {args} and {kwargs} to the partition. The '
+            f'the arguments {func_args} and {func_kwargs} to the partition. The '
             f'error is: {exc_type!r}: {exc_value}. The traceback '
             f'is: {execution_tb}') from exc
 
@@ -115,8 +161,8 @@ def _update_partition(
     func_args: tuple[Any, ...],
     func_kwargs: dict[str, Any],
     *,
+    partition_info: PartitionInfo,
     indices: slice | None,
-    dim: str,
     fs: fsspec.AbstractFileSystem,
     path: str,
     trim: bool,
@@ -127,16 +173,12 @@ def _update_partition(
     With overlap, indices selects the current partition within the dataset.
     Without overlap, indices is None.
     """
-    if indices is not None and dask.utils.has_keyword(func, 'partition_info'):
-        dictionary = func(zds,
-                          *func_args,
-                          partition_info=(dim, indices),
-                          **func_kwargs)
-    else:
-        dictionary = func(zds, *func_args, **func_kwargs)
+    dictionary = _call_partition(func, zds, partition_info, func_args,
+                                 func_kwargs)
     for name, array in dictionary.items():
         if trim and indices is not None:
-            slices = _get_slices(metadata.variables[name], dim, indices)
+            slices = _get_slices(metadata.variables[name],
+                                 partition_info.dimension, indices)
             values = array[slices]  # type: ignore[index]
         else:
             values = array
@@ -151,6 +193,8 @@ def infer_variables(
     func_args: tuple[Any, ...],
     func_kwargs: dict[str, Any],
     synchronizer: sync.Sync,
+    *,
+    partitioning: partitioning.Partitioning,
 ) -> tuple[str, ...]:
     """Infer output names from the first available selected partition.
 
@@ -163,8 +207,9 @@ def infer_variables(
         except AbsentPartition:
             warn_absent_partition(partition)
             continue
+        info = _get_partition_info(partition, partitioning, dim)
         return tuple(
-            _try_infer_callable(func, zds, dim, *func_args, **func_kwargs))
+            _try_infer_callable(func, zds, info, func_args, func_kwargs))
     return ()
 
 
@@ -194,6 +239,40 @@ def execute_update(
                          func_args=func_args,
                          func_kwargs=func_kwargs)
     execute_transaction(client, synchronizer, futures)
+
+
+def map_partitions(
+    partitions: Sequence[str],
+    func: MapCallable,
+    load: Callable[[str], dataset.Dataset],
+    *,
+    load_overlap: Callable[[str], tuple[dataset.Dataset, slice]] | None,
+    partitioning: partitioning.Partitioning,
+    dim: str,
+    partition_size: int | None,
+    npartitions: int | None,
+    func_args: tuple[Any, ...],
+    func_kwargs: dict[str, Any],
+) -> dask.bag.core.Bag:
+    """Load each partition or window and map the callback with Dask arguments."""
+
+    def wrap_function(partition: str, /, *args, **kwargs):
+        try:
+            if load_overlap is None:
+                zds = load(partition)
+                indices = None
+            else:
+                zds, indices = load_overlap(partition)
+        except AbsentPartition as err:
+            warn_absent_partition(str(err))
+            return None
+        info = _get_partition_info(partition, partitioning, dim, indices)
+        return tuple(info.partition.items()), _call_partition(
+            func, zds, info, args, kwargs)
+
+    bag = dask.bag.core.from_sequence(partitions, partition_size, npartitions)
+    return bag.map(wrap_function, *func_args,
+                   **func_kwargs).filter(lambda item: item is not None)
 
 
 def _load_dataset(
@@ -235,6 +314,7 @@ def _load_dataset_with_overlap(
     delayed: bool,
     depth: int,
     dim: str,
+    axis: str,
     fs: fsspec.AbstractFileSystem,
     immutable: str | None,
     partitions: Sequence[str],
@@ -246,6 +326,7 @@ def _load_dataset_with_overlap(
         delayed: Whether to load the dataset lazily.
         depth: Depth of the overlap.
         dim: Name of the partitioning dimension.
+        axis: Name of the stored axis variable.
         fs: File system on which the Zarr dataset is stored.
         immutable: Name of the immutable directory.
         partition: Name of the partition.
@@ -263,7 +344,12 @@ def _load_dataset_with_overlap(
         start = 0
         indexes = slice(0, 0, None)
         for idx, ds in enumerate(_groups):
-            size: int = ds.dimensions[dim]
+            size = partition_dimension_size(dimensions=ds.dimensions,
+                                            dim=dim,
+                                            axis=join_path(
+                                                _selected_partitions[idx],
+                                                axis),
+                                            fs=fs)
             indexes = slice(start, start + size, None)
             if partition == _selected_partitions[idx]:
                 break
@@ -330,6 +416,7 @@ def wrap_update(
     load: Callable[[str], dataset.Dataset],
     *,
     load_overlap: Callable[[str], tuple[dataset.Dataset, slice]] | None,
+    partitioning: partitioning.Partitioning,
     dim: str,
     fs: fsspec.AbstractFileSystem,
     metadata: meta.DatasetSchema,
@@ -353,8 +440,9 @@ def wrap_update(
                               zds,
                               func_args,
                               func_kwargs,
+                              partition_info=_get_partition_info(
+                                  partition, partitioning, dim, indices),
                               indices=indices,
-                              dim=dim,
                               fs=fs,
                               path=partition,
                               trim=trim,

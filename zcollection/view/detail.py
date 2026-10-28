@@ -27,6 +27,7 @@ from ..storage import (
     AbsentPartition,
     open_zarr_array,
     open_zarr_group,
+    partition_dimension_size,
     read_partition,
     variable_attributes,
     variable_shape,
@@ -297,7 +298,7 @@ def _load_dataset(
     metadata: meta.DatasetSchema,
     selected_variables: Iterable[str] | None,
 ) -> dataset.Dataset:
-    """Load the selected inputs of one view partition for an update."""
+    """Load the selected variables of one view partition."""
     return _load_one_dataset(
         (view_ref.partitioning.parse(partition), []),
         base_dir=base_dir,
@@ -359,26 +360,32 @@ def _load_dataset_with_overlap(
     # AbsentPartition.
     loaded: list[tuple[dataset.Dataset, str]] = []
     for item in selected:
-        held = _held_one_dataset(
-            (view_ref.partitioning.parse(item), []),
-            base_dir=base_dir,
-            delayed=delayed,
-            fs=fs,
-            selected_variables=view_ref.metadata.select_variables(
-                selected_variables),
-            view_ref=view_ref,
-            variables=metadata.select_variables(selected_variables),
-            with_immutable=True)
-        if held is None:
+        try:
+            zds = _load_dataset(item,
+                                base_dir=base_dir,
+                                delayed=delayed,
+                                fs=fs,
+                                view_ref=view_ref,
+                                metadata=metadata,
+                                selected_variables=selected_variables)
+        except AbsentPartition as err:
             if item == partition:
-                raise AbsentPartition(partition)
+                raise
+            warn_absent_partition(str(err))
             continue
-        loaded.append((held[0], item))
+        loaded.append((zds, item))
 
     start = 0
     indices = slice(0, 0, None)
     for zds, selected_partition in loaded:
-        size: int = zds.dimensions[view_ref.dimension]
+        scheme = view_ref.partitioning.parse(selected_partition)
+        axis = join_path(view_ref.partition_properties.dir,
+                         view_ref.partitioning.join(scheme, view_ref.fs.sep),
+                         view_ref.axis)
+        size = partition_dimension_size(dimensions=zds.dimensions,
+                                        dim=view_ref.dimension,
+                                        axis=axis,
+                                        fs=view_ref.fs)
         indices = slice(start, start + size, None)
         if selected_partition == partition:
             break

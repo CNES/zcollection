@@ -13,7 +13,8 @@ Features
   parameter.
 * Immutable variables are insertable and updatable, and a collection holding
   only immutable variables is readable.
-* A view holding no declared variable reads the collection it references.
+* A view holding no declared variable reads and maps the collection it
+  references with ``load``, ``map`` and ``map_overlap``.
 * The metadata of a collection and of a dataset carry the dimensions, and the
   configuration of a partitioning carries the data types.
 * ``VariableSchema``, ``DatasetSchema`` and ``Dimension`` are reachable from
@@ -36,8 +37,8 @@ Storage
   from the store when it needs to be repaired. See :doc:`partition_index`.
 * The fill value of a variable is held in the ``_FillValue`` attribute of an
   array, beside the fill value Zarr 3 requires of every array.
-* The codecs a variable names with the classes of numcodecs are translated into
-  the ones Zarr 3 builds an array from.
+* Variable schemas accept native Zarr 3 codecs and supported numcodecs codecs.
+  The numcodecs codecs are translated into their Zarr 3 equivalents.
 
 Behaviour
 ^^^^^^^^^
@@ -57,6 +58,18 @@ Behaviour
   error naming the variables in disagreement.
 * ``update`` forwards positional and keyword arguments to the user callback
   (PR #15, issue #12).
+* Callbacks declaring ``partition_info`` receive a
+  :py:class:`zcollection.PartitionInfo` object with ``partition``, ``name``,
+  ``dimension`` and ``indices`` attributes. Callbacks that unpacked the former
+  tuple must access ``dimension`` and ``indices`` through these attributes.
+  The object is available in ``map``, ``map_overlap`` and ``update``, including
+  calls without overlap and the inference call of ``update``.
+* ``Collection.update`` and ``View.update`` default ``delayed`` to ``None``.
+  Variables load as NumPy arrays with ``distributed=False`` and as Dask
+  arrays with ``distributed=True``. An explicit ``delayed`` value overrides
+  this choice.
+* Operations with overlap accept selections that omit the partitioned
+  dimension, including selections containing only immutable variables.
 * ``view.sync()`` honours ``filters`` (issue #24).
 
 Removed
@@ -71,6 +84,8 @@ Removed
 
 Renamed
 ^^^^^^^
+* The ``npartition`` parameter of ``Collection.map_overlap`` is named
+  ``npartitions``.
 * ``meta.Variable`` is named ``meta.VariableSchema``, and ``meta.Dataset`` is
   named ``meta.DatasetSchema``.
 * ``Dataset.dims_chunk`` is named ``dim_chunks``, and holds a mapping of a

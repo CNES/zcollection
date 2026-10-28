@@ -35,17 +35,25 @@ from .. import (
     variable as zvariable,
 )
 from ..partitions import FILENAME as INDEX_FILENAME, PartitionIndex
-from .abc import IMMUTABLE, Indexer, PartitionFilter, ReadOnlyCollection
-from .callable_objects import UpdateCallable, WrappedPartitionCallable
+from .abc import (
+    IMMUTABLE,
+    Indexer,
+    PartitionFilter,
+    ReadOnlyCollection,
+    WritableCollection,
+)
+from .callable_objects import (
+    PartitionInfo,
+    UpdateCallable,
+    WrappedPartitionCallable,
+)
 from .detail import (
     PartitionSlice,
     _insert,
     _load_dataset,
     _load_dataset_with_overlap,
     _try_infer_callable,
-    execute_update,
     infer_variables,
-    warn_empty_update,
     wrap_update,
 )
 
@@ -53,6 +61,7 @@ __all__ = (
     'IMMUTABLE',
     'Indexer',
     'PartitionFilter',
+    'PartitionInfo',
     'PartitionSlice',
     'ReadOnlyCollection',
     'UpdateCallable',
@@ -117,7 +126,7 @@ def _check_partition(
     return partition, storage.check_zarr_group(partition, fs)
 
 
-class Collection(ReadOnlyCollection):
+class Collection(ReadOnlyCollection, WritableCollection):
     """This class manages a collection of files in Zarr format stored in a set
     of subdirectories. These subdirectories split the data, by cycles or dates
     for example, in order to optimize access and updates, deletion or addition
@@ -659,9 +668,15 @@ class Collection(ReadOnlyCollection):
                                  immutable,
                                  selected_variables=selected_variables)
         if not variables:
-            infer = functools.partial(infer_variables, partitions, load, func,
-                                      dim, func_args, func_kwargs,
-                                      self.synchronizer)
+            infer = functools.partial(infer_variables,
+                                      partitions,
+                                      load,
+                                      func,
+                                      dim,
+                                      func_args,
+                                      func_kwargs,
+                                      self.synchronizer,
+                                      partitioning=self.partitioning)
             variables = client.submit(
                 infer, pure=False).result() if client else infer()
         if not variables:
@@ -681,6 +696,7 @@ class Collection(ReadOnlyCollection):
             delayed=delayed,
             depth=depth,
             dim=dim,
+            axis=self.axis,
             fs=self.fs,
             immutable=immutable,
             partitions=partitions,
@@ -688,6 +704,7 @@ class Collection(ReadOnlyCollection):
         return wrap_update(func,
                            load,
                            load_overlap=load_overlap,
+                           partitioning=self.partitioning,
                            dim=dim,
                            fs=self.fs,
                            metadata=self.metadata,
@@ -717,10 +734,7 @@ class Collection(ReadOnlyCollection):
             depth: The depth of the overlap between the partitions. Default is
                 0 (no overlap). If depth is greater than 0, the function is
                 applied on the partition and its neighbors selected by the
-                depth. If ``func`` accepts a partition_info as a keyword
-                argument, it will be passed a tuple with the name of the
-                partitioned dimension and the slice allowing getting in the
-                dataset the selected partition.
+                depth.
             variables: The list of variables updated by the function. If None,
                 the variables are inferred by calling the function on the first
                 available selected partition, using the requested loading and
@@ -752,56 +766,36 @@ class Collection(ReadOnlyCollection):
             values written by another call. Callbacks that read and rewrite
             the same variables must be idempotent and account for these updates.
             Distributed tasks can run in any order. Inference adds a callback
-            invocation whose returned values are discarded.
+            invocation whose returned values are discarded. A callback
+            declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
+            on every call, including inference and calls without overlap.
+            See :doc:`/callbacks` for examples of overlap, trimming and
+            external arguments.
 
         Example:
-            >>> import dask.array
-            >>> import zcollection
-            >>> def ones(ds):
-            ...     return dict(var2=ds.variables["var1"].values * 0 + 1)
-            >>> collection = zcollection.Collection("my_collection", mode="w")
-            >>> collection.update(ones)
+            For an existing writable collection with input ``var1`` and
+            output ``var2``:
+
+            .. code-block:: python
+
+                def ones(ds):
+                    return {'var2': ds['var1'].values * 0 + 1}
+
+                collection.update(ones, variables=('var2', ),
+                                  selected_variables=('var1', ))
         """
-        if not callable(func):
-            raise TypeError('func must be a callable')
-        if depth < 0:
-            raise ValueError('Depth must be non-negative.')
-        if delayed is None:
-            delayed = distributed
-        if selected_variables is not None:
-            selected_variables = tuple(selected_variables)
-
-        partitions = self._select_update_partitions(filters,
-                                                    selected_partitions)
-        if not partitions:
-            warn_empty_update()
-            return
-
-        client = dask_utils.get_client() if distributed else None
-        wrap_function = self._prepare_update(
-            func,
-            partitions,
-            variables=variables,
-            selected_variables=selected_variables,
-            delayed=delayed,
-            depth=depth,
-            trim=trim,
-            client=client,
-            func_args=args,
-            func_kwargs=kwargs)
-        if wrap_function is None:
-            warn_empty_update()
-            return
-
-        execute_update(wrap_function,
-                       partitions,
-                       client=client,
-                       synchronizer=self.synchronizer,
-                       name=func.__name__,
-                       npartitions=npartitions,
-                       func_args=args,
-                       func_kwargs=kwargs)
-        tuple(map(self.fs.invalidate_cache, partitions))
+        self._update(func,
+                     *args,
+                     depth=depth,
+                     filters=filters,
+                     variables=variables,
+                     selected_variables=selected_variables,
+                     selected_partitions=selected_partitions,
+                     trim=trim,
+                     npartitions=npartitions,
+                     delayed=delayed,
+                     distributed=distributed,
+                     **kwargs)
 
     def update_immutable(self, name: str, data: ArrayLike) -> None:
         """Update an immutable variable with provided data..
@@ -1097,23 +1091,6 @@ class Collection(ReadOnlyCollection):
                                       mode=mode,
                                       filesystem=filesystem,
                                       synchronizer=synchronizer)
-
-    def reindex(self) -> tuple[str, ...]:
-        """Build the index of the partitions from the store.
-
-        A partition the index does not name becomes visible to a listing,
-        and an entry naming a partition the store does not hold is
-        dropped.
-
-        Returns:
-            The path of each partition, relative to the collection.
-        """
-        _LOGGER.info('Indexing the partitions of %r',
-                     self.partition_properties.dir)
-        with self.synchronizer:
-            keys = self._index.walk()
-            self._index.write(keys)
-        return tuple(self._index.path_of(key) for key in keys)
 
     def validate_partitions(self,
                             filters: PartitionFilter | None = None,

@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import dask.array.core
-import dask.array.ma
 import numpy
 
 from .abc import (

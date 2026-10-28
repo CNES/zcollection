@@ -15,19 +15,20 @@ import json
 import logging
 import pathlib
 
-import dask.array.core
-import dask.bag.core
-import dask.distributed
-import dask.utils
 import fsspec
 
-from .. import collection, dask_utils, dataset, fs_utils, meta, storage, sync
-from ..collection.detail import (
-    execute_update,
-    infer_variables,
-    warn_empty_update,
-    wrap_update,
+from .. import (
+    collection,
+    dask_utils,
+    dataset,
+    fs_utils,
+    meta,
+    partitioning,
+    storage,
+    sync,
 )
+from ..collection.abc import WritableCollection
+from ..collection.detail import infer_variables, wrap_update
 from ..convenience import collection as convenience
 from ..partitions import PartitionIndex
 from .detail import (
@@ -46,9 +47,9 @@ from .detail import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
 
-    from ..collection.callable_objects import MapCallable, PartitionCallable
+    import dask.distributed
 
 __all__ = ('View', 'ViewReference')
 
@@ -56,7 +57,7 @@ __all__ = ('View', 'ViewReference')
 _LOGGER = logging.getLogger(__name__)
 
 
-class View:
+class View(WritableCollection):
     """View on a reference collection.
 
     Args:
@@ -88,17 +89,15 @@ class View:
                  synchronizer: sync.Sync | None = None,
                  distributed: bool = True,
                  _initialize: bool = True) -> None:
-        #: The file system used to access the view (default local file system).
-        self.fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
+        self._fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
         #: Path to the directory where the view is stored.
         self.base_dir: str = fs_utils.normalize_path(fs=self.fs, path=base_dir)
         #: The reference collection of the view.
         self.view_ref: collection.Collection = convenience.open_collection(
             view_ref.path, mode='r', filesystem=view_ref.filesystem)
         #: The metadata of the variables handled by the view.
-        self.metadata = ds or meta.DatasetSchema([], [], attrs=[])
-        #: The synchronizer used to synchronize the view.
-        self.synchronizer: sync.Sync = synchronizer or sync.NoSync()
+        self._metadata = ds or meta.DatasetSchema([], [], attrs=[])
+        self._synchronizer: sync.Sync = synchronizer or sync.NoSync()
         #: The filters used to select the partitions of the reference.
         self.filters = filters
         #: The partitions of the reference the view holds.
@@ -115,6 +114,31 @@ class View:
                 self._init_partitions(filters, distributed)
         else:
             _LOGGER.info('Opening view %s', self)
+
+    @property
+    def fs(self) -> fsspec.AbstractFileSystem:
+        """The filesystem holding the view."""
+        return self._fs
+
+    @property
+    def synchronizer(self) -> sync.Sync:
+        """The synchronizer used by view operations."""
+        return self._synchronizer
+
+    @property
+    def metadata(self) -> meta.DatasetSchema:
+        """The schema of the variables owned by the view."""
+        return self._metadata
+
+    @property
+    def dimension(self) -> str:
+        """The partitioned dimension of the reference collection."""
+        return self.view_ref.dimension
+
+    @property
+    def partitioning(self) -> partitioning.Partitioning:
+        """The partitioning strategy of the reference collection."""
+        return self.view_ref.partitioning
 
     def _init_partitions(self,
                          filters: collection.PartitionFilter,
@@ -266,22 +290,6 @@ class View:
                     indexer=indexer,
                     selected_partitions=selected_partitions,
                     relative=True) if item in held)
-
-    def variables(
-        self,
-        selected_variables: Iterable[str] | None = None
-    ) -> tuple[dataset.Variable, ...]:
-        """Return the variables of the view.
-
-        Args:
-            selected_variables: The variables to return. If None, all the
-                variables are returned.
-
-        Returns:
-            The variables of the view.
-        """
-        return dataset.get_dataset_variable_properties(self.metadata,
-                                                       selected_variables)
 
     def add_variable(self,
                      variable: meta.VariableSchema | dataset.Variable,
@@ -446,8 +454,8 @@ class View:
                 documentation of the :meth:`Collection.partitions
                 <zcollection.collection.Collection.partitions>` method.
             indexer: The indexer to apply.
-            selected_variables: A list of variables to retain from the view.
-                If None, all variables are loaded.
+            selected_variables: Input variables to load from the view and its
+                reference collection. If None, all variables are loaded.
             selected_partitions: A list of partitions to load (using the
                 partition relative path).
             distributed: Whether to use dask or not. Default To True.
@@ -572,9 +580,15 @@ class View:
                                  metadata=self.metadata,
                                  selected_variables=selected_variables)
         if not variables:
-            infer = functools.partial(infer_variables, partitions, load, func,
-                                      dim, func_args, func_kwargs,
-                                      self.synchronizer)
+            infer = functools.partial(infer_variables,
+                                      partitions,
+                                      load,
+                                      func,
+                                      dim,
+                                      func_args,
+                                      func_kwargs,
+                                      self.synchronizer,
+                                      partitioning=self.view_ref.partitioning)
             variables = client.submit(
                 infer, pure=False).result() if client else infer()
         if not variables:
@@ -597,6 +611,7 @@ class View:
         return wrap_update(func,
                            load,
                            load_overlap=load_overlap,
+                           partitioning=self.view_ref.partitioning,
                            dim=dim,
                            fs=self.fs,
                            metadata=self.metadata,
@@ -627,17 +642,14 @@ class View:
             depth: The depth of the overlap between the partitions. Default is
                 0 (no overlap). If depth is greater than 0, the function is
                 applied on the partition and its neighbors selected by the
-                depth. If ``func`` accepts ``partition_info`` as a keyword
-                argument, it receives a tuple containing the partitioned
-                dimension name and a slice selecting the current partition
-                within the dataset, excluding its neighbors.
+                depth.
             variables: The list of variables updated by the function. If None,
                 the variables are inferred by calling the function on the first
                 available selected partition, using the requested loading and
                 execution modes. This additional call uses that partition alone,
                 including when ``depth`` is greater than 0. Default is None.
-            selected_variables: A list of variables to retain from the view.
-                If None, all variables are loaded.
+            selected_variables: Input variables to load from the view and its
+                reference collection. If None, all variables are loaded.
             selected_partitions: A list of partitions to load (using the
                 partition relative path).
             filters: The expression used to filter the partitions to update.
@@ -664,277 +676,68 @@ class View:
             values written by another call. Callbacks that read and rewrite
             the same variables must be idempotent and account for these updates.
             Distributed tasks can run in any order. Inference adds a callback
-            invocation whose returned values are discarded.
+            invocation whose returned values are discarded. A callback
+            declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
+            on every call, including inference and calls without overlap.
+            See :doc:`/callbacks` for examples of overlap, trimming and
+            external arguments.
 
         Example:
-            >>> def temp_celsius_to_kelvin(
-            ...     dataset: zcollection.dataset.Dataset,
-            ... ) -> Dict[str, numpy.ndarray]:
-            ...     return dict(
-            ...         temperature_kelvin=dataset["temperature"].values +
-            ...         273.15)
-            >>> view.update(temp_celsius_to_kelvin)
+            For a view with input ``temperature`` and its own output
+            ``temperature_kelvin``:
+
+            .. code-block:: python
+
+                def celsius_to_kelvin(ds):
+                    return {'temperature_kelvin': ds['temperature'].values + 273.15}
+
+                view.update(celsius_to_kelvin, variables=('temperature_kelvin', ),
+                            selected_variables=('temperature', ))
         """
         _assert_have_variables(self.metadata)
 
-        if not callable(func):
-            raise TypeError('func must be a callable')
-        if depth < 0:
-            raise ValueError('Depth must be non-negative.')
-        if delayed is None:
-            delayed = distributed
-        if selected_variables is not None:
-            selected_variables = tuple(selected_variables)
+        self._update(func,
+                     *args,
+                     depth=depth,
+                     filters=filters,
+                     variables=variables,
+                     selected_variables=selected_variables,
+                     selected_partitions=selected_partitions,
+                     trim=trim,
+                     npartitions=npartitions,
+                     delayed=delayed,
+                     distributed=distributed,
+                     **kwargs)
 
-        partitions = self._select_update_partitions(filters,
-                                                    selected_partitions)
-        if not partitions:
-            warn_empty_update()
-            return
-
-        client = dask_utils.get_client() if distributed else None
-        wrap_function = self._prepare_update(
-            func,
-            partitions,
-            variables=variables,
-            selected_variables=selected_variables,
+    def _prepare_map(
+        self,
+        partitions: tuple[str, ...],
+        *,
+        delayed: bool,
+        depth: int,
+        selected_variables: Iterable[str] | None,
+    ) -> tuple[Callable[[str], dataset.Dataset],
+               Callable[[str], tuple[dataset.Dataset, slice]] | None]:
+        """Prepare the loaders for partition mappings."""
+        load = functools.partial(_load_dataset,
+                                 base_dir=self.base_dir,
+                                 delayed=delayed,
+                                 fs=self.fs,
+                                 view_ref=self.view_ref,
+                                 metadata=self.metadata,
+                                 selected_variables=selected_variables)
+        load_overlap = functools.partial(
+            _load_dataset_with_overlap,
+            base_dir=self.base_dir,
             delayed=delayed,
             depth=depth,
-            trim=trim,
-            client=client,
-            func_args=args,
-            func_kwargs=kwargs)
-        if wrap_function is None:
-            warn_empty_update()
-            return
+            fs=self.fs,
+            metadata=self.metadata,
+            partitions=partitions,
+            selected_variables=selected_variables,
+            view_ref=self.view_ref) if depth else None
 
-        execute_update(wrap_function,
-                       partitions,
-                       client=client,
-                       synchronizer=self.synchronizer,
-                       name=func.__name__,
-                       npartitions=npartitions,
-                       func_args=args,
-                       func_kwargs=kwargs)
-        tuple(map(self.fs.invalidate_cache, partitions))
-
-    # false positive, no code duplication
-    def map(
-        self,
-        func: MapCallable,
-        /,
-        *args,
-        delayed: bool = True,
-        filters: collection.PartitionFilter = None,
-        partition_size: int | None = None,
-        npartitions: int | None = None,
-        selected_variables: Iterable[str] | None = None,
-        **kwargs,
-    ) -> dask.bag.core.Bag:
-        """Map a function over the partitions of the view.
-
-        Args:
-            func: The function to apply to every partition of the view.
-            *args: The positional arguments to pass to the function.
-            delayed: Whether to load data in a dask array or in memory.
-            filters: The predicate used to filter the partitions to process.
-                To get more information on the predicate, see the
-                documentation of the :meth:`zcollection.Collection.partitions`
-                method.
-            partition_size: The length of each bag partition.
-            npartitions: The number of desired bag partitions.
-            selected_variables: A list of variables to retain from the view.
-                If None, all variables are loaded.
-            **kwargs: The keyword arguments to pass to the function.
-
-        Returns:
-            A bag holding, for each partition, the tuple of its scheme and
-            the result of the function. A partition the store no longer
-            holds is left out.
-
-        Example:
-            For a view defining ``var3`` with the same dimensions as ``var1``
-            in its reference collection:
-
-            .. code-block:: python
-
-                bag = view.map(
-                    lambda ds: ds['var1'].values + ds['var3'].values)
-                for partition, values in bag.compute(scheduler='synchronous'):
-                    print(partition, values.tolist())
-        """
-
-        def _wrap(
-            _partition: str,
-            _func: PartitionCallable,
-            *_args,
-            **_kwargs,
-        ) -> tuple[tuple[tuple[str, int], ...], Any] | None:
-            """Wraps the function to apply on the partition.
-
-            Args:
-                _partition: The partition to apply the function on.
-                _func: The function to apply.
-                *_args: The positional arguments to pass to the function.
-                **_kwargs: The keyword arguments to pass to the function.
-
-            Returns:
-                The result of the function.
-            """
-            held = _held_one_dataset(
-                (self.view_ref.partitioning.parse(_partition), []),
-                base_dir=self.base_dir,
-                delayed=delayed,
-                fs=self.fs,
-                selected_variables=self.view_ref.metadata.select_variables(
-                    selected_variables),
-                view_ref=self.view_ref,
-                variables=self.metadata.select_variables(selected_variables),
-                with_immutable=True)
-            if held is None:
-                return None
-            zds, partition = held
-            return self.view_ref.partitioning.parse(partition), _func(
-                zds, *_args, **_kwargs)
-
-        _assert_have_variables(self.metadata)
-
-        bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-            tuple(self.partitions(filters=filters)), partition_size,
-            npartitions)
-        return bag.map(_wrap, func, *args,
-                       **kwargs).filter(lambda item: item is not None)
-
-    def map_overlap(
-        self,
-        func: MapCallable,
-        /,
-        *args,
-        depth: int = 1,
-        delayed: bool = True,
-        filters: collection.PartitionFilter = None,
-        partition_size: int | None = None,
-        npartitions: int | None = None,
-        selected_variables: Iterable[str] | None = None,
-        **kwargs,
-    ) -> dask.bag.core.Bag:
-        """Map a function over the partitions of the view with some overlap.
-
-        Args:
-            func: The function to apply to every partition of the view.
-            depth: The depth of the overlap between the partitions. Defaults
-                to 1. If depth is greater than 0, the function is
-                applied on the partition and its neighbors selected by the
-                depth. If ``func`` accepts ``partition_info`` as a keyword
-                argument, it receives a tuple containing the partitioned
-                dimension name and a slice selecting the current partition
-                within the dataset, excluding its neighbors.
-            *args: The positional arguments to pass to the function.
-            delayed: Whether to load data in a dask array or in memory.
-            filters: The predicate used to filter the partitions to process.
-                To get more information on the predicate, see the
-                documentation of the :meth:`zcollection.Collection.partitions`
-                method.
-            partition_size: The length of each bag partition.
-            npartitions: The number of desired bag partitions.
-            selected_variables: A list of variables to retain from the view.
-                If None, all variables are loaded.
-            **kwargs: The keyword arguments to pass to the function.
-
-        Returns:
-            A bag holding, for each partition, the tuple of its scheme and
-            the result of the function. A partition the store no longer
-            holds is left out.
-
-        Example:
-            For a view defining ``var3`` with the same dimensions as ``var1``
-            in its reference collection:
-
-            Each printed array includes results for the partition and its
-            available neighbours.
-
-            .. code-block:: python
-
-                bag = view.map_overlap(
-                    lambda ds: ds['var1'].values + ds['var3'].values,
-                    depth=1)
-                for partition, values in bag.compute(scheduler='synchronous'):
-                    print(partition, values.tolist())
-        """
-        if depth < 0:
-            raise ValueError('Depth must be greater than or equal to 0')
-
-        add_partition_info: bool = dask.utils.has_keyword(
-            func, 'partition_info')
-
-        def _wrap(
-            _partition: str,
-            _func: PartitionCallable,
-            _partitions: tuple[str, ...],
-            _depth: int,
-            *_args,
-            **_kwargs,
-        ) -> tuple[tuple[tuple[str, int], ...], Any] | None:
-            """Wraps the function to apply on the partition.
-
-            Args:
-                arguments: The partition scheme and the dataset.
-                _func: The function to apply.
-                datasets: The datasets to apply the function on.
-                _depth: The depth of the overlap between the partitions.
-                *_args: The positional arguments to pass to the function.
-                **_kwargs: The keyword arguments to pass to the function.
-
-            Returns:
-                The result of the function.
-            """
-            # _load_dataset_with_overlap warns about an absent partition
-            # before raising AbsentPartition.
-            try:
-                zds, indices = _load_dataset_with_overlap(
-                    base_dir=self.base_dir,
-                    delayed=delayed,
-                    depth=_depth,
-                    fs=self.fs,
-                    metadata=self.metadata,
-                    partition=_partition,
-                    partitions=_partitions,
-                    selected_variables=selected_variables,
-                    view_ref=self.view_ref)
-            except storage.AbsentPartition:
-                return None
-
-            if add_partition_info:
-                _kwargs = _kwargs.copy()
-                _kwargs['partition_info'] = (self.view_ref.dimension, indices)
-
-            # Finally, apply the function.
-            return (self.view_ref.partitioning.parse(_partition),
-                    _func(zds, *_args, **_kwargs))
-
-        _assert_have_variables(self.metadata)
-
-        partitions = tuple(self.partitions(filters=filters))
-        bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-            partitions, partition_size, npartitions)
-        return bag.map(_wrap, func, partitions, depth, *args,
-                       **kwargs).filter(lambda item: item is not None)
-
-    def reindex(self) -> tuple[str, ...]:
-        """Build the index of the partitions from the store.
-
-        A partition the index does not name becomes visible to a listing,
-        and an entry naming a partition the store does not hold is
-        dropped.
-
-        Returns:
-            The path of each partition, relative to the view.
-        """
-        _LOGGER.info('Indexing the partitions of %s', self)
-        with self.synchronizer:
-            keys = self._index.walk()
-            self._index.write(keys)
-        return tuple(self._index.path_of(key) for key in keys)
+        return load, load_overlap
 
     def is_synced(self, distributed: bool = True) -> bool:
         """Check if the view is synchronized with the underlying collection.

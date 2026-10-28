@@ -72,6 +72,7 @@ def update_target(request):
 
 TARGETS = [(kind, fs) for kind in ('collection', 'view')
            for fs in ('local_fs', 's3_fs')]
+LOCAL_TARGETS = [(kind, 'local_fs') for kind in ('collection', 'view')]
 
 
 def output_name(target):
@@ -79,13 +80,11 @@ def output_name(target):
     return 'output' if isinstance(target, view.View) else 'target'
 
 
-@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 @pytest.mark.parametrize('distributed', [False, True])
 @pytest.mark.parametrize('delayed', [None, False, True])
-@pytest.mark.parametrize('infer', [False, True])
 @pytest.mark.usefixtures('dask_client')
-def test_update_modes_and_selection(update_target, distributed, delayed,
-                                    infer):
+def test_update_modes_and_selection(update_target, distributed, delayed):
     """Inference and updates use the selected partition and loading mode."""
     target = update_target
     output = output_name(target)
@@ -108,7 +107,7 @@ def test_update_modes_and_selection(update_target, distributed, delayed,
                   expected_key=3,
                   delayed=delayed,
                   distributed=distributed,
-                  variables=None if infer else [output],
+                  variables=None,
                   selected_variables=iter(['key', 'source']),
                   selected_partitions=iter(['key=3']))
     result = target.load(delayed=False, distributed=False)
@@ -121,9 +120,8 @@ def test_update_modes_and_selection(update_target, distributed, delayed,
                                      0 if output == 'target' else -1)
 
 
-@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
-@pytest.mark.parametrize('infer', [False, True])
-def test_update_empty_selection(update_target, infer, monkeypatch):
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
+def test_update_empty_selection(update_target, monkeypatch):
     """An empty selection needs neither a client nor a callback."""
 
     def unexpected(*args, **kwargs):
@@ -131,13 +129,12 @@ def test_update_empty_selection(update_target, infer, monkeypatch):
 
     monkeypatch.setattr(dask_utils, 'get_client', unexpected)
     with pytest.warns((RuntimeWarning, UserWarning)):
-        update_target.update(
-            unexpected,
-            selected_partitions=iter(()),
-            variables=None if infer else [output_name(update_target)])
+        update_target.update(unexpected,
+                             selected_partitions=iter(()),
+                             variables=None)
 
 
-@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 @pytest.mark.parametrize('depth', [0, 1])
 def test_update_loads_bounded_window(update_target, depth, monkeypatch):
     """Callbacks run before all partitions are loaded and release their inputs."""
@@ -178,12 +175,10 @@ def test_update_loads_bounded_window(update_target, depth, monkeypatch):
     assert len(calls) == 4
 
 
-@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
-@pytest.mark.parametrize('distributed', [False, True])
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 @pytest.mark.parametrize('trim', [False, True])
 @pytest.mark.usefixtures('dask_client')
-def test_update_overlap_without_reading_output(update_target, distributed,
-                                               trim):
+def test_update_overlap_without_reading_output(update_target, trim):
     """Trimming uses output metadata while loading only callback inputs."""
     target = update_target
     output = output_name(target)
@@ -191,7 +186,7 @@ def test_update_overlap_without_reading_output(update_target, distributed,
 
     def callback(zds, partition_info):
         assert set(zds.variables) == {'source'}
-        dim, indices = partition_info
+        dim, indices = partition_info.dimension, partition_info.indices
         assert dim == 'row'
         values = zds['source'].values + 1
         return {output: values if trim else values[indices]}
@@ -200,7 +195,7 @@ def test_update_overlap_without_reading_output(update_target, distributed,
                   variables=[output],
                   selected_variables=selected,
                   delayed=False,
-                  distributed=distributed,
+                  distributed=True,
                   depth=1,
                   trim=trim)
     assert selected == ['source']
@@ -266,7 +261,10 @@ def test_update_distributes_paths(update_target, depth, infer, monkeypatch,
     output = output_name(update_target)
     synchronizer = sync.ProcessSync(str(tmp_path / 'update.lock'))
     if isinstance(update_target, view.View):
-        update_target.synchronizer = synchronizer
+        update_target = type(update_target).from_config(
+            update_target.base_dir,
+            filesystem=update_target.fs,
+            synchronizer=synchronizer)
     else:
         update_target = type(update_target).from_config(
             update_target.partition_properties.dir,
@@ -281,6 +279,7 @@ def test_update_distributes_paths(update_target, depth, infer, monkeypatch,
         return map_partitions(func, parameters, **kwargs)
 
     def observe_gather(futures, **kwargs):
+        assert update_target.is_locked()
         result = gather(futures, **kwargs)
         assert all(item is None for item in result)
         return result
@@ -298,6 +297,7 @@ def test_update_distributes_paths(update_target, depth, infer, monkeypatch,
                          distributed=True,
                          depth=depth)
     assert sum(map(len, batches)) == 4
+    assert not update_target.is_locked()
 
 
 @pytest.mark.parametrize('missing_all', [False, True])
@@ -310,7 +310,7 @@ def test_inference_skips_absent_partitions(tmp_path, missing_all):
     def load(path):
         assert synchronizer.is_locked()
         loaded.append(path)
-        if path == 'missing' or missing_all:
+        if path == 'key=1' or missing_all:
             raise storage.AbsentPartition(path)
         return dataset.Dataset([
             variable.Array('source', numpy.arange(2), ('row', )),
@@ -322,14 +322,18 @@ def test_inference_skips_absent_partitions(tmp_path, missing_all):
         calls.append(None)
         return {'target': zds['source'].values + 1}
 
-    result = infer_variables(('missing', 'present'), load, callback, 'row', (),
-                             {}, synchronizer)
+    result = infer_variables(('key=1', 'key=2'),
+                             load,
+                             callback,
+                             'row', (), {},
+                             synchronizer,
+                             partitioning=partitioning.Sequence(('key', )))
     assert result == (() if missing_all else ('target', ))
     assert len(calls) == (0 if missing_all else 1)
-    assert loaded == ['missing', 'present']
+    assert loaded == ['key=1', 'key=2']
 
 
-@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 @pytest.mark.parametrize('infer', [False, True])
 def test_update_rejects_unknown_outputs(update_target, infer):
     """Declared and inferred unknown outputs fail before writing."""
@@ -347,10 +351,11 @@ def test_update_rejects_unknown_outputs(update_target, infer):
     assert len(calls) == int(infer)
 
 
-@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 def test_update_invalidates_selected_paths(update_target, monkeypatch):
     """Both update methods invalidate the selected partition paths at the end."""
     partitions = tuple(update_target.partitions())
+    selected = partitions[1:2]
     invalidate = update_target.fs.invalidate_cache
     invalidated = []
     output = output_name(update_target)
@@ -365,12 +370,13 @@ def test_update_invalidates_selected_paths(update_target, monkeypatch):
     monkeypatch.setattr(update_target.fs, 'invalidate_cache', observe)
     update_target.update(callback,
                          variables=[output],
+                         selected_partitions=selected,
                          selected_variables=['source'],
                          distributed=False)
-    assert tuple(invalidated[-len(partitions):]) == partitions
+    assert set(selected).issubset(invalidated)
 
 
-@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 def test_update_rejects_negative_depth_before_callback(update_target):
     """Invalid overlap depths fail before inference or execution."""
 
@@ -381,7 +387,20 @@ def test_update_rejects_negative_depth_before_callback(update_target):
         update_target.update(unexpected, depth=-1, distributed=False)
 
 
-@pytest.mark.parametrize('update_target', TARGETS, indirect=True)
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
+def test_partition_resources_are_read_only(update_target):
+    """A partition index and its operations retain the same filesystem and lock."""
+    fs = update_target.fs
+    synchronizer = update_target.synchronizer
+    with pytest.raises(AttributeError):
+        update_target.fs = fs
+    with pytest.raises(AttributeError):
+        update_target.synchronizer = sync.NoSync()
+    assert update_target.fs is fs
+    assert update_target.synchronizer is synchronizer
+
+
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 @pytest.mark.parametrize('depth', [0, 1])
 def test_update_keeps_callback_keywords(update_target, depth):
     """Callback keywords stay separate from the partition writer's settings."""
@@ -392,7 +411,7 @@ def test_update_keeps_callback_keywords(update_target, depth):
 
     def callback(ds, partition_info=None, **kwargs):
         assert kwargs == payload
-        assert (partition_info is None) == (depth == 0)
+        assert partition_info.dimension == 'row'
         return {output: ds['source'].values.copy()}
 
     update_target.update(callback,
@@ -405,3 +424,37 @@ def test_update_keeps_callback_keywords(update_target, depth):
     assert result is not None
     numpy.testing.assert_array_equal(result[output].values,
                                      result['source'].values)
+
+
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
+@pytest.mark.parametrize('depth', [0, 1])
+@pytest.mark.usefixtures('dask_client')
+def test_update_partition_info(update_target, depth):
+    """Inference and writes receive the identity of the partition they load."""
+    output = output_name(update_target)
+    reference = update_target.view_ref if isinstance(
+        update_target, view.View) else update_target
+    names = dict(
+        zip((1, 2, 3, 4), reference.partitions(relative=True), strict=True))
+
+    def callback(zds, *, partition_info):
+        values = zds['source'].values
+        # Inference loads one partition even when writes use overlap windows.
+        if not depth or values.size == 2:
+            assert partition_info.indices == slice(None)
+        central = values[partition_info.indices]
+        key = int(central[0] - 10)
+        assert partition_info.partition == {'key': key}
+        assert partition_info.name == names[key]
+        assert partition_info.dimension == 'row'
+        numpy.testing.assert_array_equal(central, [key + 10, key + 10])
+        return {output: numpy.full_like(values, key)}
+
+    update_target.update(callback,
+                         selected_variables=('source', ),
+                         delayed=False,
+                         distributed=True,
+                         depth=depth)
+    result = update_target.load(delayed=False, distributed=False)
+    numpy.testing.assert_array_equal(result[output].values,
+                                     numpy.repeat(numpy.arange(1, 5), 2))

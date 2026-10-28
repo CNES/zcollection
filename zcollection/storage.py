@@ -14,10 +14,8 @@ import functools
 import logging
 
 import dask.array.core
-import dask.base
 import dask.distributed
 import dask.local
-import numcodecs.abc
 import numcodecs.blosc
 import numpy
 
@@ -470,6 +468,29 @@ def open_zarr_group(
         variables,
         attrs=tuple(dataset.Attribute(*item) for item in group.attrs.items()),
         delayed=delayed)
+
+
+def partition_dimension_size(
+    *,
+    dimensions: meta.DimensionType,
+    dim: str,
+    axis: str,
+    fs: fsspec.AbstractFileSystem,
+) -> int:
+    """Return a partition's row count from loaded dimensions or axis metadata.
+
+    Args:
+        dimensions: The dimensions of the selected dataset.
+        dim: The partitioned dimension.
+        axis: The path of the stored axis whose first dimension is dim.
+        fs: The file system holding the axis.
+
+    Returns:
+        The size of dim. Reading the axis shape loads only its metadata.
+    """
+    if dim in dimensions:
+        return dimensions[dim]
+    return store.open_array(fs, axis, mode='r').shape[0]
 
 
 def update_zarr_array(

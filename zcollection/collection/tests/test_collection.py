@@ -16,7 +16,6 @@ import json
 import logging
 import multiprocessing
 
-import dask.array.core
 import dask.distributed
 import fsspec
 import numcodecs
@@ -26,6 +25,7 @@ import zarr.codecs
 import zarr.codecs.numcodecs
 
 from ... import (
+    PartitionInfo,
     collection,
     convenience,
     dataset,
@@ -699,11 +699,7 @@ def test_update(
     def update_with_info(zds: dataset.Dataset, partition_info=None, shift=3):
         """Update function used for this test."""
         assert partition_info is not None
-        assert isinstance(partition_info, tuple)
-        assert len(partition_info) == 2
-        assert isinstance(partition_info[0], str)
-        assert isinstance(partition_info[1], slice)
-        assert partition_info[0] == 'num_lines'
+        assert partition_info.dimension == 'num_lines'
         return {'var2': zds.variables['var1'].values * -1 + shift}
 
     zcol.update(
@@ -722,8 +718,8 @@ def test_update(
     def update_and_trim(zds: dataset.Dataset, partition_info=None):
         """Update function used for this test."""
         assert partition_info is not None
-        assert partition_info[0] == 'num_lines'
-        zds = zds.isel(dict((partition_info, )))
+        assert partition_info.dimension == 'num_lines'
+        zds = zds.isel({partition_info.dimension: partition_info.indices})
         return {'var2': zds.variables['var1'].values * -1}
 
     zcol.update(
@@ -1623,11 +1619,12 @@ def test_map_overlap(
     delayed = request.getfixturevalue(arrays_type)
     zcol = create_test_collection(tested_fs, delayed=delayed)
 
-    def func(zds: dataset.Dataset, partition_info: tuple[str, slice]):
-        assert partition_info[0] == 'num_lines'
+    def func(zds: dataset.Dataset, partition_info: PartitionInfo):
+        assert partition_info.dimension == 'num_lines'
         var = zds.variables['var1']
         slices = [slice(None)] * len(var.dimensions)
-        slices[var.dimensions.index(partition_info[0])] = partition_info[1]
+        slices[var.dimensions.index(
+            partition_info.dimension)] = partition_info.indices
         return var.values[tuple(slices)] * 2
 
     result = zcol.map_overlap(

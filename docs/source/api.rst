@@ -51,6 +51,7 @@ Collection
   :toctree: _generated/
 
   zcollection.collection
+  zcollection.PartitionInfo
   zcollection.dask_utils
   zcollection.dataset
   zcollection.expression

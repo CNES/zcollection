@@ -195,36 +195,39 @@ zds.variables['var2'].values
 # .. note::
 #
 #   The method :py:meth:`update<zcollection.collection.Collection.update>`
-#   supports the ``delayed`` parameter. If ``delayed=True``, the function
-#   ``ones`` is applied to each partition using a Dask array as container
-#   for the variables data stored in the provided dataset. This is the default
-#   behavior. If ``delayed=False``, the function ``ones`` is applied to each
-#   partition using a Numpy array as container.
+#   supports the ``delayed`` parameter. With ``delayed=False``, the callback
+#   receives variables stored as NumPy arrays. With ``delayed=True``, their
+#   arrays are Dask arrays. The default, ``None``, follows ``distributed``:
+#   ``True`` uses Dask arrays and ``False`` uses NumPy arrays.
 #
 # Sometime is it important to know the values of the neighboring partitions.
 # This can be done using the
 # :py:meth:`update<zcollection.collection.Collection.update>` method with the
 # ``depth`` argument. In this example, we will set the variable ``var2`` to 2
-# everywhere the processed partition is surrounded by at least one partition, -1
+# wherever the processed partition has a neighbor on each side, -1
 # if the left partition is missing and -2 if the right partition is missing.
 #
 # .. note::
 #
-#   ``partition_info`` contains information about the target partition: a tuple
-#   with the partitioned dimension and the slice to select the partition. If the
-#   start of the slice is 0, it means that the left partition is missing. If the
-#   stop of the slice is equal to the length of the given dataset, it means that
-#   the right partition is missing.
-def twos(ds, partition_info: tuple[str, slice]) -> dict[str, numpy.ndarray]:
+#   ``partition_info.partition`` contains the target partition's keys.
+#   Access a key with ``partition_info.partition['month']`` and the relative
+#   partition name with ``partition_info.name``.
+#   ``partition_info.indices`` selects it along ``partition_info.dimension``.
+#   With depth=1, a slice starting at 0 indicates that the left neighbor is
+#   missing. A slice ending at the dataset's length indicates that the right
+#   neighbor is missing. See :doc:`/callbacks` for overlap and trimming examples.
+def twos(
+        ds,
+        partition_info: zcollection.PartitionInfo) -> dict[str, numpy.ndarray]:
     """Returns a variable with twos everywhere if the partition is surrounded
     by partitions on both sides, -1 if the left partition is missing and -2 if
     the right partition is missing."""
     data = numpy.zeros(ds.variables['var1'].shape, dtype='int8')
-    dim, indices = partition_info
+    dim, indices = partition_info.dimension, partition_info.indices
     assert dim == 'num_lines'
-    if indices.start != 0:
+    if indices.start == 0:
         data[:] = -1
-    elif indices.stop != data.shape[0]:
+    elif indices.stop == data.shape[0]:
         data[:] = -2
     else:
         data[:] = 2

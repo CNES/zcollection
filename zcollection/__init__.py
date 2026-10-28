@@ -12,6 +12,7 @@ from .collection.abc import Indexer, PartitionFilter, PartitionFilterCallback
 from .collection.callable_objects import (
     MapCallable,
     PartitionCallable,
+    PartitionInfo,
     UpdateCallable,
 )
 from .convenience import (
@@ -40,6 +41,7 @@ __all__ = (
     'PartitionCallable',
     'PartitionFilter',
     'PartitionFilterCallback',
+    'PartitionInfo',
     'UpdateCallable',
     'Variable',
     'VariableSchema',

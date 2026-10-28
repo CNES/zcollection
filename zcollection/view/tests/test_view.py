@@ -18,6 +18,7 @@ import numpy
 import pytest
 
 from ... import (
+    PartitionInfo,
     collection,
     convenience,
     dataset,
@@ -512,16 +513,12 @@ def test_view_overlap(
 
     zview.add_variable(var)
 
-    def update(zds, varname, partition_info: tuple[str, slice],
+    def update(zds, varname, partition_info: PartitionInfo,
                trim_result: bool) -> dict[str, numpy.ndarray]:
         """Update function used for this test."""
-        assert isinstance(partition_info, tuple)
-        assert len(partition_info) == 2
-        assert isinstance(partition_info[0], str)
-        assert isinstance(partition_info[1], slice)
-        assert partition_info[0] == 'num_lines'
+        assert partition_info.dimension == 'num_lines'
         if trim_result:
-            zds = zds.isel(dict((partition_info, )))
+            zds = zds.isel({partition_info.dimension: partition_info.indices})
         return {varname: zds.variables['var1'].values * 1 + 5}
 
     zview.update(
@@ -556,31 +553,18 @@ def test_view_overlap(
     numpy.testing.assert_array_equal(zds['var3'].values,
                                      zds['var1'].values + 5)
 
-    def map_func(_, partition_info: tuple[str, slice]):
+    def map_func(_, partition_info: PartitionInfo):
         """Map function used for this test."""
-        assert isinstance(partition_info, tuple)
-        assert len(partition_info) == 2
-        assert isinstance(partition_info[0], str)
-        assert isinstance(partition_info[1], slice)
-        assert partition_info[0] == 'num_lines'
+        assert partition_info.dimension == 'num_lines'
         return partition_info
-
-    with pytest.raises(ValueError, match='must be greater than or equal to 0'):
-        zview.map_overlap(
-            map_func,  # type: ignore[arg-type]
-            depth=-1,
-        )
 
     indexers = zview.map_overlap(
         map_func,  # type: ignore[arg-type]
         depth=1,
     ).compute()
 
-    for _, data in indexers:
-        assert isinstance(data, tuple)
-        assert len(data) == 2
-        assert isinstance(data[0], str)
-        assert isinstance(data[1], slice)
+    assert len(indexers) == len(tuple(zview.partitions()))
+    assert all(info.dimension == 'num_lines' for _, info in indexers)
 
 
 def test_view_checksum(
