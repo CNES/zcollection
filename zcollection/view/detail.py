@@ -96,6 +96,7 @@ def _create_zarr_array(args: tuple[str, str],
                        chunks: dict[str, int] | None,
                        axis: str | None,
                        fs: fsspec.AbstractFileSystem,
+                       reference_fs: fsspec.AbstractFileSystem,
                        invalidate_cache: bool = True) -> None:
     """Create a Zarr array, with fill_value being used as the default value for
     uninitialized portions of the array.
@@ -104,6 +105,7 @@ def _create_zarr_array(args: tuple[str, str],
         args: tuple of (relative path, absolute path).
         base_dir: Base directory for the Zarr array.
         fs: The filesystem used to create the Zarr array.
+        reference_fs: The filesystem used to read the reference axis.
         dimensions: Known dimensions and their size.
         variable: The properties of the variable to create.
         axis: Axis containing the main dimension data and size.
@@ -119,7 +121,7 @@ def _create_zarr_array(args: tuple[str, str],
         variable=variable,
         dimensions=dimensions,
         axis=join_path(partition_ref, axis) if axis is not None else None,
-        fs=fs)
+        fs=reference_fs)
 
     var_chunks: tuple[int, ...] = var_shape if chunks is None else tuple(
         chunks.get(dim, var_shape[ix])
@@ -257,7 +259,7 @@ def _load_one_dataset(
     if with_immutable and view_ref.have_immutable:
         zds.merge(
             open_zarr_group(view_ref.immutable_path,
-                            fs,
+                            view_ref.fs,
                             delayed=delayed,
                             selected_variables=selected_variables))
 
@@ -511,6 +513,7 @@ def _sync_partition(
                 chunks=chunks,
                 axis=view_ref.axis,
                 fs=fs,
+                reference_fs=view_ref.fs,
                 invalidate_cache=False)
         _write_checksum(path, base_dir, view_ref, fs)
         fs.invalidate_cache(path)

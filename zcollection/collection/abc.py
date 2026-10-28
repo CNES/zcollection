@@ -985,6 +985,8 @@ class ReadOnlyCollection(BaseCollection):
             if arrays:
                 array = array.concat(arrays, self.dimension)
 
+        # An explicit selection with no partition data returns None.
+        # Without a selection, immutable variables can still be loaded alone.
         if array is None and (filters is not None or indexer is not None
                               or selected_partitions is not None):
             return None

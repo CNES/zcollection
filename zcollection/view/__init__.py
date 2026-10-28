@@ -369,6 +369,7 @@ class View(WritableCollection):
                 chunks=chunks,
                 axis=self.view_ref.axis,
                 fs=self.fs,
+                reference_fs=self.view_ref.fs,
             )
 
     def _add_variable_distributed(self, variable: meta.VariableSchema,
@@ -387,7 +388,8 @@ class View(WritableCollection):
                        dimensions=dimensions,
                        chunks=chunks,
                        axis=self.view_ref.axis,
-                       fs=self.fs),
+                       fs=self.fs,
+                       reference_fs=self.view_ref.fs),
         )
 
     def drop_variable(
@@ -461,7 +463,10 @@ class View(WritableCollection):
             distributed: Whether to use dask or not. Default To True.
 
         Returns:
-            The dataset.
+            The dataset containing the selected partitions. None when
+            ``filters``, ``indexer`` or ``selected_partitions`` select no
+            data. Without an explicit partition selection, immutable
+            variables from the reference can be loaded alone.
 
         Example:
             >>> view.load()
@@ -527,6 +532,12 @@ class View(WritableCollection):
             array = arrays.pop(0)
             if arrays:
                 array = array.concat(arrays, self.view_ref.dimension)
+
+        # An explicit selection with no partition data returns None.
+        # Without a selection, immutable variables can still be loaded alone.
+        if array is None and (filters is not None or indexer is not None
+                              or selected_partitions is not None):
+            return None
 
         array = self.view_ref.merge_immutable(array, selected_variables,
                                               delayed)

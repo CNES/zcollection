@@ -70,6 +70,10 @@ Behaviour
   this choice.
 * Operations with overlap accept selections that omit the partitioned
   dimension, including selections containing only immutable variables.
+* Views support reference collections on a different filesystem when adding
+  variables, synchronizing partitions and running callbacks.
+* ``View.load`` returns ``None`` when an explicit partition selection retains
+  no data, including when the reference holds immutable variables.
 * ``view.sync()`` honours ``filters`` (issue #24).
 
 Removed

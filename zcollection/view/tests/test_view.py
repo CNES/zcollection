@@ -14,6 +14,7 @@ import pathlib
 import shutil
 
 import dask.distributed
+import fsspec
 import numpy
 import pytest
 
@@ -36,6 +37,139 @@ from ...tests.data import (
 from ...tests.fixture import dask_arrays, numpy_arrays  # noqa: F401
 from ...tests.fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
 from ...view.detail import _calculate_axis_reference
+
+
+@pytest.fixture(params=[
+    pytest.param(('memory', False), id='memory-local'),
+    pytest.param(('s3_fs', False), id='s3-local'),
+    pytest.param(('s3_fs', True), id='s3-distributed'),
+])
+def mixed_filesystem_view(request, tmp_path):
+    """Keep the reference on memory or S3 and the view on local disk."""
+    fs_name, distributed = request.param
+    if fs_name == 'memory':
+        fs = fsspec.filesystem('memory')
+        source = str(tmp_path / 'reference')
+    else:
+        tested_fs = request.getfixturevalue(fs_name)
+        fs = tested_fs.fs
+        source = str(tested_fs.collection)
+    data = dataset.Dataset([
+        dataset.Array('key', numpy.array([1, 1, 2, 2, 2, 3]), ('row', )),
+        dataset.Array('value',
+                      numpy.arange(12).reshape(6, 2), ('row', 'pixel')),
+        dataset.Array('pixel', numpy.array([10, 20]), ('pixel', )),
+    ],
+                           delayed=False)
+    reference = convenience.create_collection('key',
+                                              data,
+                                              partitioning.Sequence(('key', )),
+                                              source,
+                                              filesystem=fs)
+    reference.insert(data.isel({'row': slice(0, 5)}), distributed=False)
+    target = convenience.create_view(str(tmp_path / 'view'),
+                                     view.ViewReference(source, fs),
+                                     distributed=False)
+    yield reference, target, data, distributed
+    if fs_name == 'memory':
+        fs.rm(source, recursive=True)
+
+
+def test_view_add_and_sync_with_distinct_filesystems(
+        mixed_filesystem_view,
+        dask_client,  # noqa: F811
+):
+    """View arrays use reference partition sizes when added and synchronized."""
+    reference, target, data, distributed = mixed_filesystem_view
+    target.add_variable(meta.VariableSchema('derived',
+                                            'int64',
+                                            dimensions=('row', 'pixel'),
+                                            fill_value=-1),
+                        distributed=distributed)
+    loaded = target.load(delayed=False, distributed=False)
+    numpy.testing.assert_array_equal(loaded['derived'].values,
+                                     numpy.full((5, 2), -1))
+
+    reference.insert(data.isel({'row': slice(5, 6)}), distributed=False)
+    target.sync(distributed=distributed)
+    loaded = target.load(delayed=False, distributed=False)
+    numpy.testing.assert_array_equal(loaded['derived'].values,
+                                     numpy.full((6, 2), -1))
+    numpy.testing.assert_array_equal(loaded['value'].values,
+                                     data['value'].values)
+
+
+def test_view_callbacks_with_distinct_filesystems(
+        mixed_filesystem_view,
+        dask_client,  # noqa: F811
+):
+    """Mappings and updates read immutables from the reference filesystem."""
+    _, target, data, distributed = mixed_filesystem_view
+    expected = data['value'].values[:5] + data['pixel'].values
+
+    def mapped(zds, *, partition_info):
+        return (zds['value'].values +
+                zds['pixel'].values)[partition_info.indices]
+
+    for method in ('map', 'map_overlap'):
+        result = getattr(target, method)(
+            mapped, selected_variables=('value', 'pixel'),
+            delayed=False).compute(
+                scheduler='distributed' if distributed else 'synchronous')
+        numpy.testing.assert_array_equal(
+            numpy.concatenate([values for _, values in result]), expected)
+
+    target.add_variable(meta.VariableSchema('derived',
+                                            'int64',
+                                            dimensions=('row', 'pixel'),
+                                            fill_value=-1),
+                        distributed=False)
+
+    def updated(zds):
+        return {'derived': zds['value'].values + zds['pixel'].values}
+
+    target.update(updated,
+                  variables=('derived', ),
+                  selected_variables=('value', 'pixel'),
+                  depth=1,
+                  delayed=False,
+                  distributed=distributed)
+    loaded = target.load(selected_variables=('derived', ),
+                         delayed=False,
+                         distributed=False)
+    numpy.testing.assert_array_equal(loaded['derived'].values, expected)
+
+
+@pytest.mark.parametrize('selection', [
+    {
+        'selected_partitions': []
+    },
+    {
+        'filters': 'key > 99'
+    },
+    {
+        'indexer': []
+    },
+],
+                         ids=['partitions', 'filter', 'indexer'])
+def test_view_empty_selection_matches_collection(tmp_path, selection):
+    """An explicit empty selection returns None despite reference immutables."""
+    data = dataset.Dataset([
+        dataset.Array('key', numpy.array([1, 2]), ('row', )),
+        dataset.Array('pixel', numpy.array([10, 20]), ('pixel', )),
+    ],
+                           delayed=False)
+    reference = convenience.create_collection('key', data,
+                                              partitioning.Sequence(('key', )),
+                                              str(tmp_path / 'reference'))
+    reference.insert(data, distributed=False)
+    target = convenience.create_view(str(tmp_path / 'view'),
+                                     view.ViewReference(
+                                         str(tmp_path / 'reference')),
+                                     distributed=False)
+
+    assert reference.load(distributed=False, **selection) is None
+    assert target.load(distributed=False, **selection) is None
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
