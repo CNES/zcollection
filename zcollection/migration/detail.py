@@ -283,7 +283,7 @@ def _differ(first: NDArray, second: NDArray) -> bool:
 
     Returns:
         Whether the two arrays mask different elements, or hold different
-        values where neither masks one. Two NaNs count as equal.
+        values where neither masks one. Two NaNs or two NaTs count as equal.
     """
     mask: NDArray = numpy.ma.getmaskarray(first)
     if first.shape != second.shape or not numpy.array_equal(
@@ -294,7 +294,7 @@ def _differ(first: NDArray, second: NDArray) -> bool:
     other: NDArray = numpy.ma.getdata(second)[~mask]
     if values.dtype != other.dtype:
         return True
-    if values.dtype.kind in 'fc':
+    if values.dtype.kind in 'fcMm':
         return not numpy.array_equal(values, other, equal_nan=True)
     return not numpy.array_equal(values, other)
 

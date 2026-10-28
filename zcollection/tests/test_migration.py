@@ -392,6 +392,18 @@ def attributes_of(attrs) -> dict[str, Any]:
     return dict(item.get_config() for item in attrs)
 
 
+@pytest.mark.parametrize('dtype', ['datetime64[ns]', 'timedelta64[ns]'])
+def test_temporal_comparison_handles_nat_and_preserves_units(dtype) -> None:
+    """NaT compares equal while real differences and units remain significant."""
+    values = numpy.array([1000, 'NaT'], dtype=dtype)
+
+    assert not migration.detail._differ(values, values.copy())
+    assert migration.detail._differ(values, numpy.array([1000, 0],
+                                                        dtype=dtype))
+    assert migration.detail._differ(
+        values, values.astype(dtype.replace('[ns]', '[us]')))
+
+
 def test_the_migration_module_holds_the_entry_points() -> None:
     """The eight functions and the two reports are named by one module.
 
