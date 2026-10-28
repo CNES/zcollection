@@ -221,9 +221,16 @@ class GroupedSequence(Sequence):
         """Split the variables constituting the partitioning into partitioning
         schemes."""
         last_field = list(variables)[-1]
+        values = variables[last_field]
+        offset = self.start % self.size
 
         variables = variables.copy()
-        variables[last_field] = ((variables[last_field] - self.start) //
-                                 self.size * self.size) + self.start
+        # Shift group numbers by one to keep unsigned arithmetic nonnegative.
+        variables[last_field] = values // self.size + (values % self.size
+                                                       >= offset)
 
-        return super()._split(variables)
+        for fields, indexer in super()._split(variables):
+            # Calculate bounds as Python integers to preserve uint64 precision.
+            group_number = int(fields[-1][1])
+            lower_bound = (group_number - 1) * self.size + offset
+            yield fields[:-1] + ((last_field, lower_bound), ), indexer

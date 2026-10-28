@@ -189,6 +189,51 @@ def test_start_aligns_the_groups(start, expected) -> None:
     assert groups == expected
 
 
+@pytest.mark.parametrize('delayed', [False, True])
+@pytest.mark.parametrize(('start', 'expected'), [(10, [0, 5, 10, 15]),
+                                                 (3, [-2, 3, 8, 13])])
+def test_unsigned_input_below_start(delayed, start, expected) -> None:
+    """Unsigned input preserves group bounds, other keys and row slices."""
+    constructor = dataset.DelayedArray if delayed else dataset.Array
+    zds = dataset.Dataset([
+        constructor('prefix', numpy.ones(7, dtype='uint8'), ('row', )),
+        constructor('key', numpy.array([2, 2, 7, 7, 12, 12, 17],
+                                       dtype='uint8'), ('row', )),
+    ],
+                          delayed=delayed)
+    handler = GroupedSequence(('prefix', 'key'), size=5, start=start)
+
+    partitions = list(handler.index_dataset(zds))
+
+    assert [fields for fields, _ in partitions
+            ] == [(('prefix', 1), ('key', lower)) for lower in expected]
+    assert [indexer for _, indexer in partitions
+            ] == [slice(0, 2),
+                  slice(2, 4),
+                  slice(4, 6),
+                  slice(6, 7)]
+
+
+@pytest.mark.parametrize('delayed', [False, True])
+def test_uint64_group_bounds_keep_their_precision(delayed) -> None:
+    """Large unsigned keys retain exact group bounds and their row slices."""
+    constructor = dataset.DelayedArray if delayed else dataset.Array
+    values = numpy.array([0, 1, 2**63 + 2, 2**63 + 3, 2**64 - 2, 2**64 - 1],
+                         dtype='uint64')
+    zds = dataset.Dataset([constructor('key', values, ('row', ))],
+                          delayed=delayed)
+    handler = GroupedSequence(('key', ), size=2, start=10, dtype=('uint64', ))
+
+    partitions = list(handler.index_dataset(zds))
+
+    assert [fields for fields, _ in partitions] == [(('key', 0), ),
+                                                    (('key', 2**63 + 2), ),
+                                                    (('key', 2**64 - 2), )]
+    assert [indexer for _, indexer in partitions
+            ] == [slice(0, 2), slice(2, 4),
+                  slice(4, 6)]
+
+
 @pytest.mark.parametrize('start', [-10, 0, 10, 100])
 def test_splits(start):
     """Test the _split method with different sets of parameters."""
