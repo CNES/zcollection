@@ -15,6 +15,18 @@ A view can cover a subset of its reference collection. Its partition
 index records that selection. Calling ``sync(filters=...)`` adds the
 selected partitions to the view and retains those already included.
 
+:py:meth:`~zcollection.view.View.is_synced` checks all reference partitions
+by default. For a partial view, pass the filter selecting the partitions
+to check:
+
+.. code-block:: python
+
+    view.is_synced(filters="year == 2026", distributed=False)
+
+The check returns ``False`` if a selected partition is absent from the
+view or its reference axis has changed. This includes new reference
+partitions matching the filter.
+
 Rebuilding the index
 ---------------------
 

@@ -750,16 +750,24 @@ class View(WritableCollection):
 
         return load, load_overlap
 
-    def is_synced(self, distributed: bool = True) -> bool:
-        """Check if the view is synchronized with the underlying collection.
+    def is_synced(self,
+                  distributed: bool = True,
+                  *,
+                  filters: collection.PartitionFilter = None) -> bool:
+        """Check whether selected reference partitions are synchronized.
 
         Args:
             distributed: Whether to use dask or not. Default To True.
+            filters: The predicate used to select reference partitions, as
+                in :meth:`zcollection.Collection.partitions`. If None, all
+                reference partitions are checked.
 
         Returns:
-            True if the view is synchronized, False otherwise.
+            True if all selected partitions are present in the view and their
+            reference axes match, False otherwise.
         """
-        partitions = tuple(self.view_ref.partitions(relative=True))
+        partitions = tuple(
+            self.view_ref.partitions(filters=filters, relative=True))
 
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()

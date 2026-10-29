@@ -723,6 +723,37 @@ def test_view_checksum(
                                  '359e3af9c93572af3e5fe8980ced6956')
 
 
+@pytest.mark.parametrize('distributed', [False, True])
+def test_view_is_synced_with_filters(tmp_path, request, distributed):
+    """Selected reference partitions must be present and synchronized."""
+    if distributed:
+        request.getfixturevalue('dask_client')
+    data = dataset.Dataset([
+        dataset.Array('key', numpy.array([1, 3, 2]), ('row', )),
+    ],
+                           delayed=False)
+    reference = convenience.create_collection('key', data,
+                                              partitioning.Sequence(('key', )),
+                                              str(tmp_path / 'reference'))
+    reference.insert(data.isel({'row': slice(0, 2)}), distributed=False)
+    target = convenience.create_view(str(tmp_path / 'view'),
+                                     view.ViewReference(
+                                         str(tmp_path / 'reference')),
+                                     filters='key < 3',
+                                     distributed=False)
+
+    assert not target.is_synced(distributed)
+    assert target.is_synced(distributed, filters='key < 3')
+
+    reference.insert(data.isel({'row': slice(2, 3)}), distributed=False)
+    assert not target.is_synced(distributed, filters='key < 3')
+    assert len(tuple(target.partitions())) == 1
+
+    target.sync(filters='key == 2', distributed=distributed)
+    assert target.is_synced(distributed, filters='key < 3')
+    assert not target.is_synced(distributed)
+
+
 @pytest.mark.filterwarnings('ignore:.*cannot be serialized.*')
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('distributed', [False, True])

@@ -9,6 +9,8 @@ Features
 * A collection is usable without a Dask cluster (PR #16).
 * ``load`` and ``update`` take a ``selected_partitions`` parameter.
 * ``View.update`` takes a ``variables`` parameter (PR #14, issue #13).
+* ``View.is_synced`` takes a ``filters`` parameter to check selected reference
+  partitions. By default, it checks all reference partitions.
 * ``GroupedSequence`` partitioning, with the starting value of the group as a
   parameter.
 * Immutable variables are insertable and updatable, and a collection holding
