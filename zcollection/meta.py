@@ -152,8 +152,8 @@ class VariableSchema:
         attrs: Attributes of the variable. Defaults to None.
         compressor: Compression codec for the variable. Defaults to None.
         fill_value: Fill value of the variable. Defaults to None. Reading
-            a variable masks the elements equal to it; a NaN or a NaT equals
-            nothing and leaves the result unmasked.
+            a variable masks the elements equal to this value. If it is NaN
+            or NaT, the NaN or NaT elements are masked.
         filters: Filters for the variable. Defaults to None.
 
     Warning:

@@ -18,22 +18,19 @@ every partition:
 
     collection/
     ├── .zcollection
+    ├── .partitions
     ├── .immutable/
     │    ├── lon/
-    │    │    ├── c/
-    │    │    │    └── 0
+    │    │    ├── c.0
     │    │    └── zarr.json
     │    └── zarr.json
     └── year=2022/
          ├── month=01/
          │    ├── time/
-         │    │    ├── c/
-         │    │    │    └── 0
+         │    │    ├── c.0
          │    │    └── zarr.json
          │    ├── var1/
-         │    │    ├── c/
-         │    │    │    └── 0/
-         │    │    │         └── 0
+         │    │    ├── c.0.0
          │    │    └── zarr.json
          │    └── zarr.json
          └── month=02/

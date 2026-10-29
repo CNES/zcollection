@@ -6,8 +6,9 @@ dependencies:
   - dask-core
   - distributed
   - furo
+  - jupyter-sphinx
+  - matplotlib-base
   - pyarrow
-  - pypandoc
   - pytest
   - requests
   - s3fs
