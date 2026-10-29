@@ -280,26 +280,39 @@ def test_remove_tree_raises_if_the_directory_still_exists(
         fs_utils.remove_tree(fs, str(tmp_path))
 
 
-def test_replace_file_leaves_no_half_of_itself(tmp_path) -> None:
-    """A write that stops partway leaves what the file held."""
+@pytest.mark.parametrize('wrapped', [False, True])
+@pytest.mark.parametrize('failure', ['write', 'replace'])
+def test_replace_file_leaves_no_half_of_itself(tmp_path, monkeypatch, wrapped,
+                                               failure) -> None:
+    """An interrupted write or replacement preserves the previous content."""
     fs = fsspec.filesystem('file')
     path = str(tmp_path / 'config.json')
+    if wrapped:
+        fs = fsspec.filesystem('dir', path=str(tmp_path), fs=fs)
+        path = 'config.json'
     fs_utils.replace_file(fs, path, 'first')
-    assert fs.cat_file(path) == b'first'
+    fs_utils.replace_file(fs, path, 'second')
+    assert fs.cat_file(path) == b'second'
 
-    def refuse(target, value, **kwargs):
-        """Write nothing, as a full disk would."""
-        raise OSError('no space left on device')
+    if failure == 'write':
+        pipe_file = fs.pipe_file
 
-    held = fs.pipe_file
-    fs.pipe_file = refuse
-    try:
-        with pytest.raises(OSError, match='no space'):
-            fs_utils.replace_file(fs, path, 'second')
-    finally:
-        fs.pipe_file = held
+        def interrupt_write(target, value, **kwargs):
+            pipe_file(target, value[:3], **kwargs)
+            raise OSError('interrupted write')
 
-    assert fs.cat_file(path) == b'first'
+        monkeypatch.setattr(fs, 'pipe_file', interrupt_write)
+    else:
+
+        def refuse_replace(source, destination):
+            raise OSError('interrupted replacement')
+
+        monkeypatch.setattr(fs_utils.os, 'replace', refuse_replace)
+
+    with pytest.raises(OSError, match='interrupted'):
+        fs_utils.replace_file(fs, path, 'third')
+
+    assert fs.cat_file(path) == b'second'
     assert sorted(item.name for item in tmp_path.iterdir()) == ['config.json']
 
 

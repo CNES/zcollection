@@ -13,6 +13,7 @@ import os
 import uuid
 
 import fsspec
+import fsspec.implementations.dirfs
 import fsspec.implementations.local
 
 if TYPE_CHECKING:
@@ -140,13 +141,12 @@ def replace_file(
     path: str,
     data: str | bytes,
 ) -> None:
-    """Replace what a file holds, in one go.
+    """Replace the contents of a file.
 
-    A reader of the file sees what it held before or what is written here,
-    never a part of either, and a write that stops partway leaves what was
-    there. A local file system is written beside the file and renamed onto
-    it, which the system does in one operation; anywhere else the content
-    goes straight there, a key being written in one request.
+    Local files, accessed directly or through ``DirFileSystem``, are written
+    to a neighboring temporary file and replaced atomically. A failed write
+    or replacement preserves the previous contents. Other filesystems receive
+    a direct ``pipe_file`` call; replacement guarantees depend on the backend.
 
     Args:
         fs: The file system holding the file.
@@ -154,14 +154,24 @@ def replace_file(
         data: What the file is to hold.
     """
     content: bytes = data.encode() if isinstance(data, str) else data
-    if not isinstance(fs, fsspec.implementations.local.LocalFileSystem):
+    backend_fs = fs
+    backend_path = path
+    while isinstance(backend_fs, fsspec.implementations.dirfs.DirFileSystem):
+        if backend_fs.path:
+            backend_path = join_path(backend_fs.path,
+                                     normalize_path(backend_fs, backend_path))
+        backend_fs = backend_fs.fs
+    if not isinstance(backend_fs,
+                      fsspec.implementations.local.LocalFileSystem):
         fs.pipe_file(path, content)
         return
 
-    beside: str = f'{path}.{uuid.uuid4().hex}'
+    local_path = normalize_path(backend_fs, backend_path)
+    suffix = f'.{uuid.uuid4().hex}'
+    beside: str = path + suffix
     try:
         fs.pipe_file(beside, content)
-        fs.mv(beside, path)
+        os.replace(local_path + suffix, local_path)
     except Exception:
         if fs.exists(beside):
             fs.rm(beside)
