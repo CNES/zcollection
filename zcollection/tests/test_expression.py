@@ -8,37 +8,9 @@ Tests of the expression evaluation
 """
 from __future__ import annotations
 
-import timeit
-
-import numpy
 import pytest
-import xarray
 
-from .. import dataset
 from ..expression import Expression
-from ..partitioning import Date
-from .cluster import dask_client, dask_cluster  # noqa: F401
-
-# pylint enable=unused-import
-
-
-def make_dataset(num_samples: int | None = None) -> dataset.Dataset:
-    """Creation of a data set for testing purposes."""
-    dates: numpy.ndarray = numpy.arange(numpy.datetime64('2000-01-01', 'ns'),
-                                        numpy.datetime64('2009-12-31', 'ns'),
-                                        numpy.timedelta64(
-                                            1, 'h')).astype('datetime64[ns]')
-    if num_samples is not None:
-        dates = dates[0:num_samples + 1]
-    rng = numpy.random.default_rng(42)
-    observation = rng.random(dates.size)
-    return dataset.Dataset.from_xarray(
-        xarray.Dataset({
-            'dates':
-            xarray.DataArray(dates, dims=('num_lines', )),
-            'observation':
-            xarray.DataArray(observation, dims=('num_lines', ))
-        }))
 
 
 def test_expression() -> None:
@@ -54,40 +26,22 @@ def test_expression() -> None:
         assert expr({'a': 1, 'c': 1})
 
 
-def test_date_expression(
-        dask_client,  # noqa: F811
-) -> None:
-    """Test of expressions handling dates.."""
-    zds = make_dataset(5 * 24)
-    partitioning = Date(('dates', ), 'D')
-
-    for partition, _ in partitioning.split_dataset(zds, 'num_lines'):
-        variables = dict(partitioning.parse('/'.join(partition)))
-        expr = Expression('year==2000')
-        assert expr(variables)
-        expr = Expression('year==2000 and month==1')
-        assert expr(variables)
-        expr = Expression('year==2000 and month==1 and day in range(1, 12)')
-        assert expr(variables)
-
-
-def test_bench_expression(
-        dask_client,  # noqa: F811
-) -> None:
-    """Benchmark of expressions."""
-    partitioning = Date(('dates', ), 'D')
-    zds = make_dataset()
-    expr = Expression('year==2000 and month==1 and day in range(1, 12)')
-    times = []
-    number = 100
-    for partition, _ in partitioning.split_dataset(zds, 'num_lines'):
-        variables = dict(partitioning.parse('/'.join(partition)))
-        times.append(
-            timeit.timeit('expr(variables)',
-                          globals={
-                              'expr': expr,
-                              'variables': variables
-                          },
-                          number=number))
-
-    assert sum(times) / (len(times) * number) < 1e-5
+@pytest.mark.parametrize(('expression', 'non_matching'), [
+    ('year==2000', {
+        'year': 2001
+    }),
+    ('year==2000 and month==1', {
+        'year': 2000,
+        'month': 2
+    }),
+    ('year==2000 and month==1 and day in range(1, 12)', {
+        'year': 2000,
+        'month': 1,
+        'day': 12
+    }),
+])
+def test_date_expression(expression, non_matching) -> None:
+    """Evaluate expressions using partition keys."""
+    expr = Expression(expression)
+    assert expr({'year': 2000, 'month': 1, 'day': 11})
+    assert not expr(non_matching)

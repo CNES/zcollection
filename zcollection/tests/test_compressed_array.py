@@ -8,98 +8,29 @@ from typing import Any
 import dask.array.core
 import dask.array.creation
 import dask.array.random
-import dask.array.reductions
-import dask.array.routines
-import dask.array.ufunc
 import numpy
 import pytest
 import zarr.abc.codec
 
 from ..compressed_array import CompressedArray
-from .cluster import dask_client, dask_cluster  # noqa: F401
-
-#: Functions to test
-functions = [
-    lambda x: x,
-    dask.array.ufunc.expm1,
-    lambda x: 2 * x,
-    lambda x: x / 2,
-    lambda x: x**2,
-    lambda x: x + x,
-    lambda x: x * x,
-    lambda x: x[0],
-    lambda x: x[:, 1],
-    lambda x: x[:1, :, 1:3],
-    lambda x: x.T,
-    lambda x: dask.array.routines.transpose(x, (1, 2, 0)),
-    dask.array.reductions.nanmean,
-    lambda x: dask.array.reductions.nanmean(x, axis=1),
-    dask.array.reductions.nanmax,
-    dask.array.reductions.nanmin,
-    dask.array.reductions.nanprod,
-    dask.array.reductions.nanstd,
-    dask.array.reductions.nanvar,
-    dask.array.reductions.nansum,
-    lambda x: dask.array.reductions.median(x, axis=0),
-    dask.array.reductions.nanargmax,
-    dask.array.reductions.nanargmin,
-    lambda x: dask.array.reductions.nancumprod(x, axis=0),
-    lambda x: dask.array.reductions.nancumsum(x, axis=0),
-    lambda x: x.sum(),
-    lambda x: x.moment(order=0),
-    lambda x: x.mean(),
-    lambda x: x.mean(axis=1),
-    lambda x: x.std(),
-    lambda x: x.std(axis=1),
-    lambda x: x.var(),
-    lambda x: x.var(axis=1),
-    lambda x: x.dot(numpy.arange(x.shape[-1])),
-    lambda x: x.dot(numpy.eye(x.shape[-1])),
-    lambda x: dask.array.routines.tensordot(
-        x, numpy.ones(x.shape[:2]), axes=[(0, 1),
-                                          (0, 1)]),  # type: ignore[arg-type]
-    lambda x: x.sum(axis=0),
-    lambda x: x.max(axis=0),
-    lambda x: x.min(axis=0),
-    lambda x: x.sum(axis=(1, 2)),
-    lambda x: x.astype(numpy.complex128),
-    lambda x: x.map_blocks(lambda x: x * 2),
-    lambda x: x.map_overlap(
-        lambda x: x * 2, depth=0, trim=True, boundary='none'),
-    lambda x: x.map_overlap(
-        lambda x: x * 2, depth=0, trim=False, boundary='none'),
-    lambda x: x.round(1),
-    lambda x: x.reshape((x.shape[0] * x.shape[1], x.shape[2])),
-    abs,
-    lambda x: x > 0.5,
-    lambda x: x.rechunk((4, 4, 4)),
-    lambda x: x.rechunk((2, 2, 1)),
-    numpy.isneginf,
-    numpy.isposinf,
-]
 
 
-@pytest.mark.filterwarnings(
-    'ignore:Casting complex values to real discards the imaginary part')
-@pytest.mark.parametrize('func', functions)
-def test_basic(
-        func,
-        dask_client,  # noqa: F811
-) -> None:
-    """Test basic functionality."""
+@pytest.mark.parametrize('indexer', [
+    pytest.param(numpy.s_[...], id='all'),
+    pytest.param(numpy.s_[0], id='first-axis'),
+    pytest.param(numpy.s_[:, 1], id='second-axis'),
+    pytest.param(numpy.s_[:1, :, 1:3], id='region'),
+])
+def test_read_through_dask(indexer) -> None:
+    """Reading through Dask selects the values of the compressed array."""
     rng = numpy.random.default_rng(42)
     values: numpy.ndarray = rng.random((2, 3, 4))
     arr: dask.array.core.Array = dask.array.core.from_array(
         CompressedArray(values), chunks='auto')
-    compressed_array: numpy.ndarray = func(arr).compute()
-    array: numpy.ndarray = func(dask.array.core.from_array(values)).compute()
-    assert compressed_array.shape == array.shape
-    assert numpy.allclose(compressed_array, array)
+    numpy.testing.assert_array_equal(arr[indexer].compute(), values[indexer])
 
 
-def test_metadata(
-        dask_client,  # noqa: F811
-) -> None:
+def test_metadata() -> None:
     """Test metadata."""
     y: dask.array.core.Array = dask.array.random.random((10, 10),
                                                         chunks=(5, 5))
@@ -116,9 +47,7 @@ def test_metadata(
     assert isinstance(y.persist()._meta, numpy.ndarray)
 
 
-def test_from_delayed_meta(
-        dask_client,  # noqa: F811
-) -> None:
+def test_from_delayed_meta() -> None:
     """Test from_delayed with meta."""
 
     def f() -> CompressedArray:
@@ -130,9 +59,7 @@ def test_from_delayed_meta(
     assert numpy.all(x.compute() == f()[...])  # type: ignore[index]
 
 
-def test_from_array(
-        dask_client,  # noqa: F811
-) -> None:
+def test_from_array() -> None:
     """Test from_array."""
     x = CompressedArray(numpy.eye(10))
     d: dask.array.core.Array = dask.array.core.from_array(
@@ -144,9 +71,7 @@ def test_from_array(
     assert numpy.allclose(d.compute(), x)
 
 
-def test_map_blocks(
-        dask_client,  # noqa: F811
-) -> None:
+def test_map_blocks() -> None:
     """Test map_blocks."""
     x: dask.array.core.Array = dask.array.creation.eye(
         10, chunks=5)  # type: ignore[arg-type,call-arg]
@@ -201,9 +126,7 @@ def test_rechunk_keeps_the_value_marking_absence() -> None:
     assert mask.sum() == 1
 
 
-def test_compressed_masked_array(
-        dask_client,  # noqa: F811
-) -> None:
+def test_compressed_masked_array() -> None:
     """Test CompressedMaskedArray."""
     x: dask.array.core.Array = dask.array.creation.eye(
         10, chunks=5)  # type: ignore[arg-type]

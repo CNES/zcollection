@@ -25,6 +25,7 @@ from ... import (
     dataset,
     meta,
     partitioning,
+    store,
     variable,
     view,
 )
@@ -701,20 +702,30 @@ def test_view_overlap(
     assert all(info.dimension == 'num_lines' for _, info in indexers)
 
 
-def test_view_checksum(
-    dask_client,  # noqa: F811
-    tmp_path,
-) -> None:
+def test_view_checksum(tmp_path) -> None:
     """Test the checksum calculation."""
-    zds = next(create_test_dataset())
+    values = numpy.array(['2000-01-01'], dtype='datetime64[ns]')
+    zds = dataset.Dataset([
+        dataset.Array('time', values, ('num_lines', )),
+    ],
+                          delayed=False)
     zcol = collection.Collection('time', zds.metadata(),
                                  partitioning.Date(('time', ), 'D'),
                                  str(tmp_path))
+    partition = str(tmp_path / 'year=2000' / 'month=01' / 'day=01')
+    store.create_group(zcol.fs, partition)
+    array = store.create_array(zcol.fs,
+                               partition,
+                               name='time',
+                               shape=values.shape,
+                               dtype=values.dtype,
+                               dimensions=('num_lines', ))
+    array[:] = values
+    store.consolidate(zcol.fs, partition)
 
-    zcol.insert(zds)
-    partition = tmp_path / 'year=2000' / 'month=01' / 'day=01'
-    axis_ref = _calculate_axis_reference(str(partition), zcol)
+    axis_ref = _calculate_axis_reference(partition, zcol)
     assert isinstance(axis_ref.array, numpy.ndarray)
+    numpy.testing.assert_array_equal(axis_ref.array, values)
     assert isinstance(axis_ref.checksum, str)
     assert isinstance(axis_ref.dimension, str)
     assert len(axis_ref.checksum) == 64

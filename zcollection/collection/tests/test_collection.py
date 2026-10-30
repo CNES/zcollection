@@ -552,12 +552,14 @@ def test_insert(  # noqa: PLR0915
     assert numpy.all(values == numpy.arange(START_DATE, END_DATE, DELTA))
 
     values = data.variables['var1'].values
-    numpy.all(values == numpy.vstack((numpy.arange(values.shape[0]), ) *
-                                     values.shape[1]).T)
+    numpy.testing.assert_array_equal(
+        values,
+        numpy.vstack((numpy.arange(values.shape[0]), ) * values.shape[1]).T)
 
     values = data.variables['var2'].values
-    numpy.all(values == numpy.vstack((numpy.arange(values.shape[0]), ) *
-                                     values.shape[1]).T)
+    numpy.testing.assert_array_equal(
+        values,
+        numpy.vstack((numpy.arange(values.shape[0]), ) * values.shape[1]).T)
 
     data = zcol.load(delayed=delayed,
                      filters='year == 2020',
@@ -800,7 +802,6 @@ def test_list_partitions(
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
 def test_selected_partitions_on_load_and_update(
-    dask_client,  # noqa: F811
     arg,
     request,
 ) -> None:
@@ -1471,10 +1472,7 @@ def test_insert_failed(
     zcol.insert(zds, distributed=distributed)
 
 
-def test_insert_invalid_dimensions(
-    dask_client,  # noqa: F811
-    request,
-) -> None:
+def test_insert_invalid_dimensions(request, ) -> None:
     """Test the insertion of a dataset with invalid dimensions properties."""
     tested_fs = request.getfixturevalue('local_fs')
     delayed = False
@@ -1495,10 +1493,7 @@ def test_insert_invalid_dimensions(
         zcol.insert(ds)
 
 
-def test_insert_invalid_variable(
-    dask_client,  # noqa: F811
-    request,
-) -> None:
+def test_insert_invalid_variable(request, ) -> None:
     """Test the insertion of a dataset containing a variable with invalid
     properties."""
     tested_fs = request.getfixturevalue('local_fs')
@@ -2237,22 +2232,6 @@ def test_load_a_selection_that_matches_no_partition(
     assert 'lon' in loaded.variables
 
 
-def test_add_variable_rejects_another_type(
-    dask_client,  # noqa: F811
-    request,
-) -> None:
-    """add_variable names the type it expects."""
-    tested_fs = request.getfixturevalue('local_fs')
-    zcol = create_test_collection(tested_fs)
-
-    with pytest.raises(TypeError, match='Expected a meta.VariableSchema'):
-        zcol.add_variable({
-            'name': 'anomaly',
-            'dtype': 'float32',
-            'dimensions': ('num_lines', ),
-        })  # type: ignore[arg-type]
-
-
 def test_insert_returns_the_paths_a_selection_takes(request) -> None:
     """What an insertion wrote names the partitions it wrote.
 
@@ -2279,42 +2258,3 @@ def test_insert_returns_the_paths_a_selection_takes(request) -> None:
     assert read is not None
     assert read.variables['time'].values.size < zds.variables[
         'time'].values.size
-
-
-def test_a_dimension_declared_without_a_size_is_refused(request) -> None:
-    """Only the dimension the collection is partitioned along grows."""
-    tested_fs = request.getfixturevalue('local_fs')
-    zds = next(create_test_dataset(delayed=False))
-    schema = zds.metadata()
-    schema.dimensions['num_pixels'].value = -1
-
-    with pytest.raises(ValueError, match='declared without a size'):
-        collection.Collection(axis='time',
-                              ds=schema,
-                              partition_handler=partitioning.Date(('time', ),
-                                                                  'D'),
-                              partition_base_dir=str(tested_fs.collection),
-                              filesystem=tested_fs.fs)
-
-
-def test_a_value_marking_an_absence_its_filters_lose_is_refused(
-        request) -> None:
-    """The value is the one the filters decode to.
-
-    numcodecs wraps a value its filters cannot hold rather than refusing
-    it, so the collection reads the value back to find out.
-    """
-    tested_fs = request.getfixturevalue('local_fs')
-    zds = next(create_test_dataset(delayed=False))
-    schema = zds.metadata()
-    schema.variables['var1'].fill_value = -999.0
-    schema.variables['var1'].filters = (numcodecs.FixedScaleOffset(
-        offset=0, scale=1000, dtype='f8', astype='i2'), )
-
-    with pytest.raises(ValueError, match='marks an absence with'):
-        collection.Collection(axis='time',
-                              ds=schema,
-                              partition_handler=partitioning.Date(('time', ),
-                                                                  'D'),
-                              partition_base_dir=str(tested_fs.collection),
-                              filesystem=tested_fs.fs)

@@ -9,54 +9,59 @@ Test of the serialization of data types and fill values
 from __future__ import annotations
 
 from typing import Any
+import json
 
 import numpy
 import pytest
 
 from .. import serialization
 
-#: Fill values and the data type they belong to. Collections on disk hold
-#: values encoded this way, so the encoding is a format, not a detail.
-FILL_VALUES: list[tuple[Any, str]] = [
-    (None, 'float64'),
-    (-999.0, 'float64'),
-    (0.0, 'float32'),
-    (numpy.nan, 'float64'),
-    (numpy.inf, 'float64'),
-    (-numpy.inf, 'float32'),
-    (-99, 'int32'),
-    (0, 'int8'),
-    (2147483647, 'uint32'),
-    (True, 'bool'),
-    (False, 'bool'),
-    (complex(1.5, -2.5), 'complex128'),
-    (b'\x00\x01', 'S2'),
-    ('text', 'U8'),
-    (numpy.datetime64('2000-01-01', 'ns'), 'datetime64[ns]'),
-    (numpy.timedelta64(6, 'h'), 'timedelta64[h]'),
+# Metadata forms from Zarr 2.18.7 Metadata2:
+# https://github.com/zarr-developers/zarr-python/blob/v2.18.7/zarr/meta.py
+
+#: Fill values, their data types and their stored JSON forms.
+FILL_VALUES: list[tuple[Any, str, Any]] = [
+    (None, 'float64', None),
+    (-999.0, 'float64', -999.0),
+    (0.0, 'float32', 0.0),
+    (numpy.nan, 'float64', 'NaN'),
+    (numpy.inf, 'float64', 'Infinity'),
+    (-numpy.inf, 'float32', '-Infinity'),
+    (-99, 'int32', -99),
+    (0, 'int8', 0),
+    (2147483647, 'uint32', 2147483647),
+    (True, 'bool', True),
+    (False, 'bool', False),
+    (complex(1.5, -2.5), 'complex128', [1.5, -2.5]),
+    (b'\x00\x01', 'S2', 'AAE='),
+    ('text', 'U8', 'text'),
+    (numpy.datetime64('2000-01-01',
+                      'ns'), 'datetime64[ns]', 946684800000000000),
+    (numpy.timedelta64(6, 'h'), 'timedelta64[h]', 6),
 ]
 
-#: Data types a variable is declared with.
-DTYPES: list[str] = [
-    'float64',
-    'float32',
-    'int8',
-    'uint64',
-    'bool',
-    'complex128',
-    'S4',
-    'U8',
-    'datetime64[ns]',
-    'timedelta64[h]',
+#: Declared data types and their metadata forms for little-endian storage.
+DTYPES: list[tuple[str, str]] = [
+    ('float64', '<f8'),
+    ('float32', '<f4'),
+    ('int8', '|i1'),
+    ('uint64', '<u8'),
+    ('bool', '|b1'),
+    ('complex128', '<c16'),
+    ('S4', '|S4'),
+    ('U8', '<U8'),
+    ('datetime64[ns]', '<M8[ns]'),
+    ('timedelta64[h]', '<m8[h]'),
 ]
 
 
-@pytest.mark.parametrize(('value', 'dtype'), FILL_VALUES)
-def test_fill_value_round_trips(value, dtype) -> None:
-    """A fill value survives the trip through its encoded form."""
+@pytest.mark.parametrize(('value', 'dtype', 'expected'), FILL_VALUES)
+def test_fill_value_serialization(value, dtype, expected) -> None:
+    """Fill values encode to and decode from the stored JSON form."""
     dtype = numpy.dtype(dtype)
-    decoded = serialization.decode_fill_value(
-        serialization.encode_fill_value(value, dtype), dtype)
+    encoded = serialization.encode_fill_value(value, dtype)
+    assert json.loads(json.dumps(encoded, allow_nan=False)) == expected
+    decoded = serialization.decode_fill_value(expected, dtype)
 
     if value is None:
         assert decoded is None
@@ -66,29 +71,21 @@ def test_fill_value_round_trips(value, dtype) -> None:
         assert decoded == value
 
 
-@pytest.mark.parametrize(('value', 'dtype'), FILL_VALUES)
-def test_fill_value_encodes_as_json(value, dtype) -> None:
-    """The encoded form is what a JSON document can hold."""
-    import json
-
-    encoded = serialization.encode_fill_value(value, numpy.dtype(dtype))
-    assert json.loads(json.dumps(encoded)) == (list(encoded) if isinstance(
-        encoded, tuple) else encoded)
+@pytest.mark.parametrize(('dtype', 'expected'), DTYPES)
+def test_dtype_serialization(dtype, expected) -> None:
+    """Data types encode to and decode from the stored metadata form."""
+    dtype = numpy.dtype(dtype).newbyteorder('<')
+    assert serialization.encode_dtype(dtype) == expected
+    assert serialization.decode_dtype(expected) == dtype
 
 
-@pytest.mark.parametrize('dtype', DTYPES)
-def test_dtype_round_trips(dtype) -> None:
-    """A data type survives the trip through its encoded form."""
-    expected = numpy.dtype(dtype)
-    assert serialization.decode_dtype(
-        serialization.encode_dtype(expected)) == expected
-
-
-def test_structured_dtype_round_trips() -> None:
-    """A structured data type keeps its fields."""
-    expected = numpy.dtype([('a', 'int32'), ('b', 'float64')])
-    assert serialization.decode_dtype(
-        serialization.encode_dtype(expected)) == expected
+def test_structured_dtype_serialization() -> None:
+    """Structured fields encode to and decode from the stored JSON form."""
+    dtype = numpy.dtype([('a', '<i4'), ('b', '<f8')])
+    expected = [['a', '<i4'], ['b', '<f8']]
+    encoded = serialization.encode_dtype(dtype)
+    assert json.loads(json.dumps(encoded)) == expected
+    assert serialization.decode_dtype(expected) == dtype
 
 
 @pytest.mark.parametrize(
@@ -98,50 +95,3 @@ def test_object_data_type_is_refused(function) -> None:
     """A data type holding Python objects has no encoding here."""
     with pytest.raises(TypeError, match='Unsupported data type'):
         function(0, numpy.dtype('O'))
-
-
-class TestAgainstZarrV2:
-    """Compare with the implementation these functions replace.
-
-    Collections written before this module existed were encoded by
-    ``zarr.meta``. These tests state that the encoding did not move. They
-    are skipped once that module is gone, which is what Zarr v3 does to it.
-    """
-
-    @staticmethod
-    def metadata():
-        """Return the Zarr v2 metadata encoder, or skip."""
-        return pytest.importorskip(
-            'zarr.meta', reason='zarr.meta is gone from Zarr v3').Metadata2
-
-    @pytest.mark.parametrize(('value', 'dtype'), FILL_VALUES)
-    def test_fill_value_encoding_is_unchanged(self, value, dtype) -> None:
-        """A fill value encodes the way it used to."""
-        dtype = numpy.dtype(dtype)
-        assert serialization.encode_fill_value(
-            value, dtype) == self.metadata().encode_fill_value(value, dtype)
-
-    @pytest.mark.parametrize(('value', 'dtype'), FILL_VALUES)
-    def test_fill_value_decoding_is_unchanged(self, value, dtype) -> None:
-        """A fill value decodes the way it used to."""
-        dtype = numpy.dtype(dtype)
-        encoded = serialization.encode_fill_value(value, dtype)
-
-        ours = serialization.decode_fill_value(encoded, dtype)
-        theirs = self.metadata().decode_fill_value(encoded, dtype)
-
-        if value is None:
-            assert ours is None
-            assert theirs is None
-        elif isinstance(value, float) and numpy.isnan(value):
-            assert numpy.isnan(ours)
-            assert numpy.isnan(theirs)
-        else:
-            assert ours == theirs
-
-    @pytest.mark.parametrize('dtype', DTYPES)
-    def test_dtype_encoding_is_unchanged(self, dtype) -> None:
-        """A data type encodes the way it used to."""
-        dtype = numpy.dtype(dtype)
-        assert serialization.encode_dtype(
-            dtype) == self.metadata().encode_dtype(dtype)

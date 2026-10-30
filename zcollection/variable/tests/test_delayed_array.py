@@ -13,15 +13,12 @@ import dask.array.ma
 import numpy
 import pytest
 
-from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 from ..delayed_array import _as_dask_array
 
 # pylint enable=unused-import
 
 
-def test_as_dask_array(
-        dask_client,  # noqa: F811
-) -> None:
+def test_as_dask_array() -> None:
     """Test converting array like to a dask array."""
     dask_array: dask.array.core.Array
     fill_value: Any

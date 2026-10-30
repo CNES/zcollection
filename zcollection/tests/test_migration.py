@@ -12,10 +12,10 @@ values, masks, chunking, immutable variables, the configuration of the
 target — what the migration functions report, and that the source stays as
 it was.
 
-A test that touches data starts from the frozen collection
-``deprecated_collection.zip``, or from one of the variants built from it
-here: a collection chunked smaller
-than its shape, a collection carrying an immutable variable, a view.
+Migration scenarios use the frozen collection ``deprecated_collection.zip``
+or variants built from it: a collection chunked smaller than its shape,
+a collection carrying an immutable variable, a view. Pruning guards also
+use small collections in the current format.
 """
 from __future__ import annotations
 
@@ -1422,29 +1422,62 @@ def test_prune_updates_the_source_partition_index(deprecated,
     assert tuple(source.partitions(relative=True)) == PARTITIONS[1:]
 
 
+@pytest.mark.parametrize(('protocol', 'source', 'target'), [
+    ('file', '/collection', '/collection'),
+    ('file', '/collection', '/collection/'),
+    ('file', '/collection', 'file:///collection'),
+    ('file', '/collection', '/other/../collection/.'),
+    ('s3', 'bucket/collection', 'bucket/collection'),
+    ('s3', 'bucket/collection', 'bucket/collection/'),
+    ('s3', 'bucket/collection', 's3://bucket/collection'),
+    ('memory', '/collection', '/collection'),
+    ('memory', '/collection', '/collection/'),
+    ('memory', '/collection', 'memory:///collection'),
+])
+def test_prune_paths_reject_aliases(protocol, source, target) -> None:
+    """Equivalent paths identify the same source location."""
+    if protocol == 's3':
+        pytest.importorskip('s3fs')
+    fs = fsspec.filesystem(protocol)
+
+    with pytest.raises(ValueError, match='same'):
+        migration.detail._require_distinct_paths(source, target, fs, fs)
+
+
+def test_prune_paths_accept_distinct_filesystems() -> None:
+    """Equal paths on different filesystems denote distinct locations."""
+    migration.detail._require_distinct_paths('/collection',
+                                             '/collection', local,
+                                             fsspec.filesystem('memory'))
+
+
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('is_view', [False, True])
-@pytest.mark.parametrize('path_form', ['same', 'trailing', 'protocol'])
-def test_prune_refuses_its_own_source(fs, request, deprecated, deprecated_view,
-                                      is_view, path_form) -> None:
+def test_prune_refuses_its_own_source(fs, request, is_view) -> None:
     """Pruning an identical location preserves every source file."""
     tested_fs = request.getfixturevalue(fs)
-    source = str(tested_fs.view if is_view else tested_fs.collection)
-    (migrate_view if is_view else migrate)(
-        deprecated_view if is_view else deprecated,
-        source,
-        target_filesystem=tested_fs.fs,
-        distributed=False)
-    target = source
-    if path_form == 'trailing':
-        target += '/'
-    elif path_form == 'protocol':
-        target = tested_fs.fs.unstrip_protocol(source)
+    zds = reference.make_dataset(immutable=False).select_vars(
+        ['time', 'plain']).isel({reference.DIMENSION: slice(0, 1)})
+    source = str(tested_fs.collection)
+    zcol = zcollection.create_collection('time',
+                                         zds,
+                                         reference.make_partitioning(),
+                                         source,
+                                         filesystem=tested_fs.fs)
+    zcol.insert(zds, distributed=False)
+    if is_view:
+        zview = zcollection.create_view(str(tested_fs.view),
+                                        zcollection.ViewReference(
+                                            source, tested_fs.fs),
+                                        filesystem=tested_fs.fs,
+                                        distributed=False)
+        zview.add_variable(VIEW_VARIABLE, distributed=False)
+        source = str(tested_fs.view)
     before = digest(tested_fs.fs, source)
 
     with pytest.raises(ValueError, match='same'):
         (prune_view if is_view else prune)(source,
-                                           target,
+                                           source,
                                            source_filesystem=tested_fs.fs,
                                            target_filesystem=tested_fs.fs,
                                            distributed=False)
@@ -1453,24 +1486,11 @@ def test_prune_refuses_its_own_source(fs, request, deprecated, deprecated_view,
 
 
 @pytest.mark.parametrize('is_view', [False, True])
-def test_prune_refuses_a_local_alias(deprecated, deprecated_view,
-                                     is_view) -> None:
-    """Local dot and parent components denote the same source."""
-    source = deprecated_view if is_view else deprecated
-    target = f'{source}/../{pathlib.Path(source).name}/.'
-    before = digest(local, source)
-
-    with pytest.raises(ValueError, match='same'):
-        (prune_view if is_view else prune)(source, target, distributed=False)
-
-    assert digest(local, source) == before
-
-
-@pytest.mark.parametrize('is_view', [False, True])
-def test_prune_accepts_the_same_path_on_distinct_filesystems(
-        deprecated, deprecated_view, is_view) -> None:
+def test_prune_accepts_the_same_path_on_distinct_filesystems(request,
+                                                             is_view) -> None:
     """Equal paths on local and memory filesystems identify two copies."""
-    source = deprecated_view if is_view else deprecated
+    source = request.getfixturevalue(
+        'deprecated_view' if is_view else 'deprecated')
     memory = fsspec.filesystem('memory')
     try:
         (migrate_view if is_view else migrate)(source,

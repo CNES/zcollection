@@ -10,15 +10,12 @@ import numpy
 
 from .. import time_series
 from ...tests import data
-from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 
 if TYPE_CHECKING:
     from ...type_hints import NDArray
 
 
-def test_merge_disjoint(
-        dask_client,  # noqa: F811
-) -> None:
+def test_merge_disjoint() -> None:
     """Test the update of two disjoint time series."""
     generator = data.create_test_dataset()
     zds0 = next(generator)
@@ -37,9 +34,7 @@ def test_merge_disjoint(
         zds.variables['time'].values == zds0.variables['time'].values)
 
 
-def test_merge_intersection(
-        dask_client,  # noqa: F811
-) -> None:
+def test_merge_intersection() -> None:
     """Test the update of two intersecting time series."""
     generator = data.create_test_dataset()
     zds0 = next(generator)

@@ -15,8 +15,6 @@ import numpy
 import pytest
 
 from ... import meta
-from ...tests.cluster import dask_client  # noqa: F401
-from ...tests.cluster import dask_cluster  # noqa: F401
 from ..array import Array
 from ..delayed_array import DelayedArray
 from .data import array, delayed_array
@@ -36,10 +34,7 @@ DELAYED_ARRAY = delayed_array
 
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
-def test_masked_array(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_masked_array(factory) -> None:
     """Test masked array."""
     var1: Variable = factory()
     var2: Variable = var1.rename('var2')
@@ -57,10 +52,7 @@ def test_masked_array(
 
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
-def test_constructor(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_constructor(factory) -> None:
     """Test variable creation."""
     var1: Variable = factory()
     assert var1.name == 'var1'
@@ -123,10 +115,7 @@ def test_constructor(
 
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
-def test_duplicate(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_duplicate(factory) -> None:
     """Test of the duplication of variables."""
     var1: Variable = factory()
     var2: Variable = var1.duplicate(var1.array * 2)
@@ -151,10 +140,7 @@ def test_duplicate(
 
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
-def test_concatenate(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_concatenate(factory) -> None:
     """Test concatenation of variables."""
     var1: Variable = factory()
     var2: Variable = factory()
@@ -173,10 +159,7 @@ def test_concatenate(
 
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
-def test_getitem(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_getitem(factory) -> None:
     """Test getting of variables."""
     var: Variable = factory()
     values: numpy.ndarray = var.values
@@ -192,10 +175,7 @@ def test_getitem(
 
 # typedef: Variable = ARRAY | DELAYED_ARRAY  # type: ignore[misc]
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
-def test_fill(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_fill(factory) -> None:
     """Test filling of variables."""
     var: Variable = factory()
     assert var.values.all() is not numpy.ma.masked
@@ -204,10 +184,7 @@ def test_fill(
 
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
-def test_rechunk(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_rechunk(factory) -> None:
     """Test rechunking of variables."""
     var: Variable = factory()
     values: numpy.ndarray = var.values
@@ -216,10 +193,7 @@ def test_rechunk(
 
 
 @pytest.mark.parametrize('factory', [Array, DelayedArray])
-def test_dimension_less(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_dimension_less(factory) -> None:
     """Concatenate two dimensionless variables."""
     data: numpy.ndarray = numpy.array([0, 1], dtype=numpy.int32)
     var1: Variable = factory('nv',
@@ -242,10 +216,7 @@ def test_dimension_less(
 
 
 @pytest.mark.parametrize('factory', [Array, DelayedArray])
-def test_timedelta64_to_xarray(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_timedelta64_to_xarray(factory) -> None:
     """Test conversion to xarray."""
     delta: numpy.ndarray = numpy.diff(
         numpy.arange(
@@ -269,10 +240,7 @@ def test_timedelta64_to_xarray(
 
 
 @pytest.mark.parametrize('factory', [Array, DelayedArray])
-def test_datetime64_to_xarray(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_datetime64_to_xarray(factory) -> None:
     """Test conversion to xarray."""
     dates: numpy.ndarray = numpy.arange(
         numpy.datetime64('2000-01-01', 'ns'),

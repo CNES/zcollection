@@ -244,28 +244,13 @@ def test_indexer(
     assert indexer.query({'cycle_number': [2, 4]}) == ()
 
 
-def test_a_partition_key_that_does_not_fit_its_type(
-        dask_client,  # noqa: F811
-        local_fs,  # noqa: F811
-):
+def test_a_partition_key_that_does_not_fit_its_type():
     """A value the declared data type does not hold stops with an error."""
-    ds = dataset.Dataset.from_xarray(data.create_test_sequence(5, 20, 10))
-    zcol = convenience.create_collection(
-        axis='time',
-        ds=ds,
-        partition_handler=partitioning.Date(('time', ), 'M'),
-        partition_base_dir=str(local_fs.collection),
-        filesystem=local_fs.fs)
-    indexer = HalfOrbitIndexer.create(str(
-        local_fs.collection.joinpath('index.parquet')),
-                                      zcol,
-                                      filesystem=local_fs.fs)
-
-    #: pylint: disable=protected-access
+    indexer = HalfOrbitIndexer('', filesystem=fsspec.filesystem('memory'))
+    indexer._set_schema(())
     name, column = indexer._partition_column('cycle_number', 2, 3)
     assert name == 'cycle_number'
     assert column.to_pylist() == [2, 2, 2]
 
     with pytest.raises(ValueError, match="of 'cycle_number' does not fit"):
         indexer._partition_column('cycle_number', 70000, 3)
-    #: pylint: enable=protected-access

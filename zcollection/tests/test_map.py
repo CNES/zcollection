@@ -24,6 +24,7 @@ from .. import (
     view,
 )
 from .cluster import dask_client, dask_cluster  # noqa: F401
+from .fixture import empty_target  # noqa: F401
 from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
 
 TARGETS = [('collection', 'local_fs'), ('view', 'local_fs')]
@@ -292,18 +293,26 @@ def test_mapping_preserves_none_result(mapping_target, method):
     assert result == [((('key', n), ), None) for n in (1, 2, 3)]
 
 
-@pytest.mark.parametrize('mapping_target', TARGETS, indirect=True)
-def test_mapping_rejects_non_callable(mapping_target):
-    """An invalid callback is rejected before constructing a bag."""
+def test_mapping_rejects_non_callable(
+        empty_target,  # noqa: F811
+        monkeypatch):
+    """An invalid callback is rejected before selecting partitions."""
+    monkeypatch.setattr(
+        empty_target, 'partitions',
+        lambda *args, **kwargs: pytest.fail('Partitions must not be selected'))
     with pytest.raises(TypeError):
-        mapping_target.map(42)
+        empty_target.map(42)
 
 
-@pytest.mark.parametrize('mapping_target', TARGETS, indirect=True)
-def test_mapping_rejects_negative_depth(mapping_target):
-    """A negative depth is rejected before constructing a bag."""
+def test_mapping_rejects_negative_depth(
+        empty_target,  # noqa: F811
+        monkeypatch):
+    """A negative depth is rejected before selecting partitions."""
+    monkeypatch.setattr(
+        empty_target, 'partitions',
+        lambda *args, **kwargs: pytest.fail('Partitions must not be selected'))
     with pytest.raises(ValueError, match='non-negative'):
-        mapping_target.map_overlap(lambda zds: 1, depth=-1)
+        empty_target.map_overlap(lambda zds: 1, depth=-1)
 
 
 @pytest.mark.parametrize('mapping_target', TARGETS, indirect=True)

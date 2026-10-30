@@ -10,12 +10,14 @@ from typing import TYPE_CHECKING
 import pickle
 
 import dask.array.core
+import dask.distributed
 import numcodecs
 import numpy
 import pytest
 import xarray
 
 from .. import dataset, meta
+from ..compressed_array import CompressedArray
 from ..variable.tests.data import array, delayed_array
 from .cluster import dask_client, dask_cluster  # noqa: F401
 
@@ -60,10 +62,7 @@ def test_compute_preserves_filler_flags() -> None:
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
-def test_dataset(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset(factory) -> None:
     """Test dataset creation."""
     zds = create_delayed_dataset(factory)
     assert zds.dimensions == {'x': 5, 'y': 2}
@@ -106,9 +105,7 @@ def test_dataset(
     assert isinstance(zds.var2, dataset.Array)
 
 
-def test_dataset_dimensions_conflict(
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_dimensions_conflict() -> None:
     """Test dataset creation with dimensions conflict."""
     with pytest.raises(ValueError,
                        match='variable .* has conflicting dimensions'):
@@ -138,24 +135,18 @@ def test_dataset_dimensions_conflict(
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
-def test_xarray(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_xarray(factory) -> None:
     """Test xarray creation."""
     zds = create_delayed_dataset(factory)
     xr1 = zds.to_xarray()
     assert isinstance(xr1, xarray.Dataset)
 
     xr2 = dataset.Dataset.from_xarray(xr1).to_xarray()
-    assert xr1 == xr2
+    xarray.testing.assert_identical(xr1, xr2)
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
-def test_dataset_isel(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_isel(factory) -> None:
     """Test dataset selection."""
     zds = create_delayed_dataset(factory)
     selected_zds = zds.isel(slices={'x': slice(0, 2)})
@@ -177,10 +168,7 @@ def test_dataset_isel(
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
-def test_dataset_delete(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_delete(factory) -> None:
     """Test dataset deletion."""
     zds = create_delayed_dataset(factory)
 
@@ -196,10 +184,7 @@ def test_dataset_delete(
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
-def test_dataset_concat(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_concat(factory) -> None:
     """Test concatenation of datasets."""
     zds1 = create_delayed_dataset(factory)
     zds2 = create_delayed_dataset(factory)
@@ -219,10 +204,7 @@ def test_dataset_concat(
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
-def test_dataset_concat_holding_different_variables(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_concat_holding_different_variables(factory) -> None:
     """Concatenating datasets that do not hold the same variables is an
     error."""
     zds1 = create_delayed_dataset(factory)
@@ -236,10 +218,7 @@ def test_dataset_concat_holding_different_variables(
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
-def test_dataset_pickle(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_pickle(factory) -> None:
     """Test pickling of datasets."""
     zds = create_delayed_dataset(factory)
     other = pickle.loads(pickle.dumps(zds))
@@ -256,10 +235,7 @@ def test_dataset_pickle(
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
-def test_dataset_add_variable(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_add_variable(factory) -> None:
     """Test for adding a variable."""
     zds = create_delayed_dataset(factory)
     var = meta.VariableSchema('var2',
@@ -319,9 +295,7 @@ def test_dataset_add_variable(
         zds.add_variable(var)
 
 
-def test_empty_dataset(
-        dask_client,  # noqa: F811
-) -> None:
+def test_empty_dataset() -> None:
     """Test empty dataset."""
     zds = dataset.Dataset([], attrs=[])
     assert zds.attrs == ()
@@ -333,10 +307,7 @@ Data variables:
 
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
-def test_dataset_rename(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_rename(factory) -> None:
     """Test renaming of datasets."""
     zds = create_delayed_dataset(factory)
     zds.rename({'var1': 'var3', 'var2': 'var4'})
@@ -349,12 +320,15 @@ def test_dataset_rename(
         zds.rename({'var3': 'var4'})
 
 
-@pytest.mark.parametrize('factory', [array, delayed_array])
-def test_dataset_persist(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+@pytest.mark.parametrize(('factory', 'distributed'), [
+    (array, False),
+    (delayed_array, False),
+    (delayed_array, True),
+],
+                         ids=['numpy', 'dask-local', 'dask-distributed'])
+def test_dataset_persist(factory, distributed, request) -> None:
     """Test persisting of datasets."""
+    client = request.getfixturevalue('dask_client') if distributed else None
     zds1 = create_delayed_dataset(factory)
     zds1.persist()
     zds1.persist()
@@ -372,12 +346,31 @@ def test_dataset_persist(
     assert numpy.all(
         zds1.variables['var2'].values == zds2.variables['var2'].values)
 
+    if client is not None:
+        blocks = client.gather(
+            dask.distributed.futures_of(
+                [var.array for var in zds2.variables.values()]))
+        assert blocks
+        assert all(isinstance(block, CompressedArray) for block in blocks)
+        computed = zds2.compute()
+        assert not computed.delayed
+        for name in zds1.variables:
+            numpy.testing.assert_array_equal(computed[name].values,
+                                             zds1[name].values)
+
+
+def test_variable_metadata_rejects_another_type() -> None:
+    """Variable metadata conversion rejects unsupported objects."""
+    with pytest.raises(TypeError, match='Expected a meta.VariableSchema'):
+        dataset.get_variable_metadata({
+            'name': 'anomaly',
+            'dtype': 'float32',
+            'dimensions': ('num_lines', ),
+        })  # type: ignore[arg-type]
+
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
-def test_dataset_rechunk(
-        factory,
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_rechunk(factory) -> None:
     """Test rechunking of datasets."""
     zds1 = create_delayed_dataset(factory)
     zds2 = create_delayed_dataset(factory)
@@ -395,9 +388,7 @@ def test_dataset_rechunk(
         zds1.variables['var2'].values == zds2.variables['var2'].values)
 
 
-def test_dataset_merge(
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_merge() -> None:
     """Test merging of datasets."""
     template = dataset.Dataset(
         [
@@ -496,9 +487,7 @@ def test_dataset_merge(
         zds1.merge(zds2)
 
 
-def test_dataset_select_variables_by_dims(
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_select_variables_by_dims() -> None:
     """Test selecting variables by dimensions."""
     zds = dataset.Dataset([
         dataset.DelayedArray('var1', numpy.empty(10), ('x', )),
@@ -554,9 +543,7 @@ def test_dataset_select_variables_by_dims(
     assert list(selected.variables) == ['var2', 'var4', 'var5', 'var6', 'var7']
 
 
-def test_dataset_expression(
-        dask_client,  # noqa: F811
-) -> None:
+def test_dataset_expression() -> None:
     """Test dataset expression."""
     matrix = numpy.arange(100).reshape((10, 10))
     vector = numpy.arange(10)

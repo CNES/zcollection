@@ -26,6 +26,7 @@ from .. import (
 )
 from ..collection.detail import infer_variables
 from .cluster import dask_client, dask_cluster  # noqa: F401
+from .fixture import empty_target  # noqa: F401
 from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
 
 
@@ -376,28 +377,29 @@ def test_update_invalidates_selected_paths(update_target, monkeypatch):
     assert set(selected).issubset(invalidated)
 
 
-@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
-def test_update_rejects_negative_depth_before_callback(update_target):
+def test_update_rejects_negative_depth_before_callback(
+        empty_target,  # noqa: F811
+        monkeypatch):
     """Invalid overlap depths fail before inference or execution."""
 
-    def unexpected(zds):
-        pytest.fail('The callback must not run with a negative depth')
+    def unexpected(*args, **kwargs):
+        pytest.fail('Partitions must not be selected')
 
+    monkeypatch.setattr(empty_target, '_select_update_partitions', unexpected)
     with pytest.raises(ValueError, match='Depth must be non-negative'):
-        update_target.update(unexpected, depth=-1, distributed=False)
+        empty_target.update(unexpected, depth=-1, distributed=False)
 
 
-@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
-def test_partition_resources_are_read_only(update_target):
+def test_partition_resources_are_read_only(empty_target):  # noqa: F811
     """A partition index and its operations retain the same filesystem and lock."""
-    fs = update_target.fs
-    synchronizer = update_target.synchronizer
+    fs = empty_target.fs
+    synchronizer = empty_target.synchronizer
     with pytest.raises(AttributeError):
-        update_target.fs = fs
+        empty_target.fs = fs
     with pytest.raises(AttributeError):
-        update_target.synchronizer = sync.NoSync()
-    assert update_target.fs is fs
-    assert update_target.synchronizer is synchronizer
+        empty_target.synchronizer = sync.NoSync()
+    assert empty_target.fs is fs
+    assert empty_target.synchronizer is synchronizer
 
 
 @pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)

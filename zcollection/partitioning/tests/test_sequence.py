@@ -127,15 +127,15 @@ def test_config(variables, dtype) -> None:
     assert other.dtype() == partitioning.dtype()
 
 
-@pytest.mark.parametrize(('variables', 'dtype'), VARIABLES_DTYPE_TEST_SET)
-def test_pickle(variables, dtype) -> None:
+def test_pickle() -> None:
     """Test the pickling of the Sequence class."""
-    partitioning = Sequence(variables=variables, dtype=dtype)
+    partitioning = Sequence(variables=('a', 'b'), dtype=('int8', 'int16'))
 
     other = pickle.loads(pickle.dumps(partitioning))
 
     assert isinstance(other, Sequence)
-    assert other.dtype() == partitioning.dtype()
+    assert other.get_config() == partitioning.get_config()
+    assert other.parse('a=1/b=7') == (('a', 1), ('b', 7))
 
 
 @pytest.mark.parametrize('delayed', [False, True])

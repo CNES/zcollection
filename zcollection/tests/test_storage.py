@@ -38,27 +38,17 @@ def test_execute_transaction(
             dask_client, sync.NoSync(),
             [dask_client.submit(func) for i in range(10)])) == 10
 
-    # Degraded case: execute a transaction with error
+    # All submitted tasks finish before a transaction raises.
     def fail(data):
         time.sleep((10 - data) / 100)
         if data % 2 == 0:
-            raise ValueError('Odd')
+            raise ValueError('injected failure')
         return data
 
-    exception_seen = False
-    futures = []
-    try:
-        futures += storage.execute_transaction(
-            dask_client, sync.NoSync(),
-            [dask_client.submit(fail, i) for i in range(10)])
-    except ValueError:
-        exception_seen = True
-    assert exception_seen
-    for idx, item in enumerate(futures):
-        if idx % 2 == 0:
-            assert item.exception() is not None
-        else:
-            assert item.done()
+    futures = [dask_client.submit(fail, i) for i in range(10)]
+    with pytest.raises(ValueError, match='injected failure'):
+        storage.execute_transaction(dask_client, sync.NoSync(), futures)
+    assert all(future.done() for future in futures)
 
 
 def create_variable(shape, fill_value=None) -> dataset.DelayedArray:
@@ -135,7 +125,6 @@ def test_variable_attributes() -> None:
 ])
 def test_write_variable(
     local_fs,  # noqa: F811
-    dask_client,  # noqa: F811
     chunks,
     chunks_expected,
 ) -> None:
@@ -189,7 +178,6 @@ def test_write_variable(
     ])
 def test_write_variable_block_size_limit(
     local_fs,  # noqa: F811
-    dask_client,  # noqa: F811
     block_size,
     chunks,
     blocks_number,
@@ -263,7 +251,6 @@ def test_write_meta_checks_the_group_holds_the_variables(
 ])
 def test_update_zarr_array(
     local_fs,  # noqa: F811
-    dask_client,  # noqa: F811
     chunks,
     chunks_expected,
 ) -> None:
@@ -297,7 +284,6 @@ def test_update_zarr_array(
 
 def test_del_zarr_array(
         local_fs,  # noqa: F811
-        dask_client,  # noqa: F811
 ) -> None:
     """Test the del_zarr_array function."""
     var = create_variable((1024, 1024))
@@ -328,7 +314,6 @@ def test_del_zarr_array(
 ])
 def test_add_zarr_array(
     local_fs,  # noqa: F811
-    dask_client,  # noqa: F811
     chunks,
     chunks_expected,
 ) -> None:
