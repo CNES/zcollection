@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 import dataclasses
+import pickle
 import random
 import string
 
@@ -162,6 +163,30 @@ def test_construction() -> None:
     with pytest.raises(ValueError,
                        match='resolution must be in: Y, M, D, h, m, s'):
         Date(('dates', ), 'W')
+
+
+def test_pickle() -> None:
+    """A restored Date retains its configuration and partitions dates."""
+    partitioning = Date(('dates', ), resolution='h')
+    other = pickle.loads(pickle.dumps(partitioning))
+    zds = dataset.Dataset([
+        dataset.Array(
+            'dates',
+            numpy.array(['2000-01-02T03', '2000-01-02T04'],
+                        dtype='datetime64[h]'), ('row', )),
+    ],
+                          delayed=False)
+
+    assert isinstance(other, Date)
+    assert other.get_config() == partitioning.get_config()
+    assert list(other.split_dataset(zds, 'row')) == [
+        (('year=2000', 'month=01', 'day=02', 'hour=03'), {
+            'row': slice(0, 1)
+        }),
+        (('year=2000', 'month=01', 'day=02', 'hour=04'), {
+            'row': slice(1, 2)
+        }),
+    ]
 
 
 RESOLUTION_DTYPE_TEST_SET = [

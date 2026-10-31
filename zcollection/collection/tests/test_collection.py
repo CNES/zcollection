@@ -396,6 +396,24 @@ def test_native_filter_rejects_a_fill_value_it_changes(fs, request) -> None:
     assert not tested_fs.fs.exists(str(tested_fs.collection))
 
 
+def test_constructor_rejects_an_unsized_secondary_dimension(
+        local_fs) -> None:  # noqa: F811
+    """Collection construction checks the sizes of secondary dimensions."""
+    schema = reference.make_dataset().metadata()
+    schema.dimensions['num_pixels'].value = -1
+
+    with pytest.raises(ValueError,
+                       match="'num_pixels' is declared without a size"):
+        collection.Collection(
+            axis='time',
+            ds=schema,
+            partition_handler=reference.make_partitioning(),
+            partition_base_dir=str(local_fs.collection),
+            filesystem=local_fs.fs,
+            mode='w',
+        )
+
+
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_collection_creation(
     fs,
@@ -917,6 +935,27 @@ def test_drop_variable(
     zds = zcol.load(delayed=False, distributed=distributed)
     assert zds is not None
     assert 'var1' not in zds.variables
+
+
+def test_add_variable_rejects_another_type(local_fs) -> None:  # noqa: F811
+    """Collection.add_variable rejects objects without variable metadata."""
+    zcol = collection.Collection(
+        axis='time',
+        ds=reference.make_dataset().select_vars(['time']).metadata(),
+        partition_handler=reference.make_partitioning(),
+        partition_base_dir=str(local_fs.collection),
+        filesystem=local_fs.fs,
+        mode='w',
+    )
+
+    invalid_variable = {
+        'name': 'anomaly',
+        'dtype': 'float32',
+        'dimensions': ('num_lines', ),
+    }
+
+    with pytest.raises(TypeError, match=r'Expected a meta.VariableSchema'):
+        zcol.add_variable(invalid_variable)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
