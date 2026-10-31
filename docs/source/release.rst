@@ -57,6 +57,10 @@ Behaviour
 * ``insert`` returns partition paths relative to the collection.
 * When ``data`` is omitted, ``Dataset.add_variable`` uses the variable's
   existing data, if available.
+* ``Dataset.add_variable`` raises ``ValueError`` when the number of data
+  dimensions differs from the variable's declared dimensions.
+* ``Sequence.decode`` raises ``ValueError`` when the number of values differs
+  from the number of partitioning variables.
 * Writing a partition stops with an error naming the variables the store does
   not list under it.
 * Concatenating datasets that do not hold the same variables stops with an

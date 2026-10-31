@@ -100,8 +100,8 @@ class PartitionIndex:
         Returns:
             The path of the partition.
         """
-        return self._partitioning.join(tuple(zip(self._names, key)),
-                                       self._fs.sep)
+        return self._partitioning.join(
+            tuple(zip(self._names, key, strict=True)), self._fs.sep)
 
     def keys(self) -> tuple[Key, ...]:
         """Return the key of each partition, ordered by their values.

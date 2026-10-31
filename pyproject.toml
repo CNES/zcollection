@@ -25,7 +25,6 @@ max-line-length = 80
 
 [tool.ruff.lint]
 ignore = [
-  "B905",     # Allow zip's default truncation behavior.
   "C901",
   "E501",
   "E741",

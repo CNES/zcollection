@@ -242,7 +242,7 @@ class Partitioning(metaclass=abc.ABCMeta):
 
     def dtype(self) -> tuple[tuple[str, str], ...]:
         """Return the data type of the partitioning scheme."""
-        return tuple(zip(self._keys(), self._dtype))
+        return tuple(zip(self._keys(), self._dtype, strict=True))
 
     def _keys(self) -> Sequence[str]:
         """Return the different keys of a partition."""
@@ -365,7 +365,7 @@ class Partitioning(metaclass=abc.ABCMeta):
             raise ValueError(
                 f'Partition is not driven by this instance: {partition}')
         groups: tuple[str, ...] = match.groups()
-        return tuple(zip(groups[::2], map(int, groups[1::2])))
+        return tuple(zip(groups[::2], map(int, groups[1::2]), strict=True))
 
     @abc.abstractmethod
     def encode(

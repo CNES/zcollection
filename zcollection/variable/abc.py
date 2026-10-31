@@ -223,7 +223,7 @@ def _variable_repr(var: Variable) -> str:
     """
     # Dimensions
     dims_str: str = representation.dimensions(
-        dict(zip(var.dimensions, var.shape)))
+        dict(zip(var.dimensions, var.shape, strict=True)))
     lines: list[str] = [
         f'<{var.__module__}.{var.__class__.__name__} {dims_str}>',
         f'{var.array!r}'

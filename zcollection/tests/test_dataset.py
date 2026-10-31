@@ -581,3 +581,12 @@ def test_add_variable_holding_data(delayed) -> None:
                       ('num_lines', )))
 
     assert numpy.array_equal(zds['measure'].values, numpy.arange(4))
+
+
+def test_add_variable_rejects_extra_data_dimension() -> None:
+    zds = dataset.Dataset([dataset.Array('x', numpy.arange(4), ('row', ))])
+    variable = meta.VariableSchema('v', 'int64', dimensions=('row', ))
+
+    with pytest.raises(ValueError, match='longer'):
+        zds.add_variable(variable, data=numpy.ones((4, 2)))
+    assert 'v' not in zds.variables

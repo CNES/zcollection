@@ -164,7 +164,9 @@ def dimension_chunks(
     """
     chunks: meta.DimensionType = {}
     for name, array in arrays:
-        for dimension, size in zip(read_dimensions(array), array.chunks):
+        for dimension, size in zip(read_dimensions(array),
+                                   array.chunks,
+                                   strict=True):
             held: int = chunks.setdefault(dimension, size)
             if held != size:
                 raise ValueError(

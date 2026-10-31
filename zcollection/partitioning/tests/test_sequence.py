@@ -46,8 +46,12 @@ def test_construction() -> None:
                        match='Partition is not driven by this instance'):
         partitioning.encode((('A', 1), ('b', 2)))
     assert partitioning.decode((1, 2)) == (('a', 1), ('b', 2))
+    with pytest.raises(ValueError, match='shorter'):
+        partitioning.decode((1, ))
+    with pytest.raises(ValueError, match='longer'):
+        partitioning.decode((1, 2, 3))
     assert partition_keys == (('a', 1), ('b', 2))
-    with pytest.raises(ValueError, match='invalid literal for int()'):
+    with pytest.raises(ValueError, match=r'invalid literal for int()'):
         partitioning.parse('a=1/b=2/c=3')
     with pytest.raises(ValueError,
                        match='Partition is not driven by this instance'):
