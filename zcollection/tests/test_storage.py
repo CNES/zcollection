@@ -19,7 +19,7 @@ from .. import dataset, storage, store, sync
 from ..fs_utils import join_path
 from ..variable.abc import not_equal
 from .cluster import dask_client, dask_cluster  # noqa: F401
-from .fs import local_fs  # noqa: F401
+from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
 
 
 def test_execute_transaction(
@@ -469,6 +469,36 @@ def test_a_failed_write_names_the_variable(
                                     local_fs.fs)
 
     assert "while writing the variable 'ssh'" in caught.value.__notes__
+
+
+@pytest.mark.parametrize('remove_partition', [False, True])
+def test_read_partition_refreshes_cached_listings(
+        s3_fs,  # noqa: F811
+        remove_partition) -> None:
+    """Missing metadata is propagated; an absent partition is classified."""
+    fs = s3_fs.fs
+    dirname = join_path(str(s3_fs.collection), 'key=1')
+    store.create_group(fs, dirname)
+    store.create_array(fs,
+                       dirname,
+                       name='key',
+                       shape=(1, ),
+                       dtype='int64',
+                       dimensions=('row', ))
+    store.consolidate(fs, dirname)
+    fs.ls(str(s3_fs.collection))
+
+    external = type(fs)(**fs.storage_options, skip_instance_cache=True)
+    external.rm(
+        dirname if remove_partition else join_path(dirname, 'zarr.json'),
+        recursive=remove_partition)
+    assert fs.exists(dirname)
+
+    with pytest.raises(FileNotFoundError) as caught:
+        storage.read_partition(dirname, fs, delayed=False)
+
+    assert isinstance(caught.value,
+                      storage.AbsentPartition) == remove_partition
 
 
 def test_an_absent_group_is_not_valid(

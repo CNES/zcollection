@@ -386,8 +386,9 @@ def read_partition(
                                delayed=delayed,
                                selected_variables=selected_variables)
     except FileNotFoundError as err:
-        # A missing file in an existing partition indicates an incomplete
-        # partition. Propagate that error to the caller.
+        # Distinguish an absent partition from an incomplete one using
+        # a fresh directory listing.
+        fs.invalidate_cache(dirname)
         if fs.exists(dirname):
             raise
         raise AbsentPartition(dirname) from err
