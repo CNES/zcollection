@@ -546,7 +546,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
             ]
             storage.execute_transaction(client, sync.NoSync(), futures)
 
-    def _insert_sequential(self, ds: xarray.Dataset | dataset.Dataset,
+    def _insert_sequential(self, ds: dataset.Dataset,
                            partitions: tuple[PartitionSlice, ...],
                            merge_callable: merging.MergeCallable | None,
                            **kwargs):

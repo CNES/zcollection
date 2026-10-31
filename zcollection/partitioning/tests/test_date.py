@@ -157,7 +157,7 @@ def test_construction() -> None:
 
     with pytest.raises(
             ValueError,
-            match='Partitioning on dates is performed on a single variable.'):
+            match=r'Partitioning on dates is performed on a single variable.'):
         Date(('dates1', 'dates2'), 'D')
 
     with pytest.raises(ValueError,

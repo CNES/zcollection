@@ -223,7 +223,7 @@ def test_view(  # noqa: PLR0915
 
     with pytest.raises(
             ValueError,
-            match='The variable .* already exists in the collection.'):
+            match=r'The variable .* already exists in the collection.'):
         zview.add_variable(var, distributed=distributed)
 
     zview = convenience.open_view(str(tested_fs.view), filesystem=tested_fs.fs)
@@ -357,7 +357,7 @@ def test_view(  # noqa: PLR0915
         for item in zview.partitions(filters=zview.sync())) == (str(
             tested_fs.view.joinpath('year=2000', 'month=01', 'day=13')), )
 
-    with pytest.raises(ValueError, match='zarr view not found at path .*'):
+    with pytest.raises(ValueError, match=r'zarr view not found at path .*'):
         convenience.open_view(str(tested_fs.collection),
                               filesystem=tested_fs.fs)
 

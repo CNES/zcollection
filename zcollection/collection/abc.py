@@ -214,8 +214,8 @@ def _check_fill_values(ds: meta.DatasetSchema) -> None:
         values = numpy.full((1, ) * len(item.dimensions),
                             item.fill_value,
                             dtype=item.dtype)
-        values = store.roundtrip_filters(values, item.filters)
-        read: Any = numpy.asarray(values, dtype=item.dtype).reshape(-1)[0]
+        decoded = store.roundtrip_filters(values, item.filters)
+        read: Any = numpy.asarray(decoded, dtype=item.dtype).reshape(-1)[0]
         if not_equal(read, item.fill_value):
             raise ValueError(
                 f'The variable {item.name!r} marks an absence with '

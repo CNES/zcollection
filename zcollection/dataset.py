@@ -433,10 +433,10 @@ class Dataset:
             (name, var.to_xarray()) for name, var in self.variables.items())
         attrs = collections.OrderedDict(
             (item.name, item.value) for item in self.attrs)
-        data_vars, attrs, coord_names = xarray.conventions.decode_cf_variables(
-            data_vars, attrs, **kwargs)
-        result = xarray.Dataset(data_vars, attrs=attrs)
-        return result.set_coords(coord_names.intersection(data_vars))
+        decoded_vars, decoded_attrs, coord_names = (
+            xarray.conventions.decode_cf_variables(data_vars, attrs, **kwargs))
+        result = xarray.Dataset(decoded_vars, attrs=decoded_attrs)
+        return result.set_coords(coord_names.intersection(decoded_vars))
 
     def to_dict(
         self,

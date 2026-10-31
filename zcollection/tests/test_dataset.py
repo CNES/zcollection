@@ -108,7 +108,7 @@ def test_dataset(factory) -> None:
 def test_dataset_dimensions_conflict() -> None:
     """Test dataset creation with dimensions conflict."""
     with pytest.raises(ValueError,
-                       match='variable .* has conflicting dimensions'):
+                       match=r'variable .* has conflicting dimensions'):
         dataset.Dataset([
             dataset.DelayedArray(name='var1',
                                  data=numpy.arange(10, dtype='int64').reshape(
@@ -316,7 +316,7 @@ def test_dataset_rename(factory) -> None:
     assert 'var1' not in zds.variables
     assert 'var2' not in zds.variables
 
-    with pytest.raises(ValueError, match='.* already exists in the dataset'):
+    with pytest.raises(ValueError, match=r'.* already exists in the dataset'):
         zds.rename({'var3': 'var4'})
 
 
@@ -361,7 +361,7 @@ def test_dataset_persist(factory, distributed, request) -> None:
 
 def test_variable_metadata_rejects_another_type() -> None:
     """Variable metadata conversion rejects unsupported objects."""
-    with pytest.raises(TypeError, match='Expected a meta.VariableSchema'):
+    with pytest.raises(TypeError, match=r'Expected a meta.VariableSchema'):
         dataset.get_variable_metadata({
             'name': 'anomaly',
             'dtype': 'float32',
@@ -473,7 +473,7 @@ def test_dataset_merge() -> None:
         attrs=[dataset.Attribute('attr1', 1),
                dataset.Attribute('attr2', 2)])
     zds1 = pickle.loads(pickle.dumps(template))
-    with pytest.raises(ValueError, match='variable .* already exists'):
+    with pytest.raises(ValueError, match=r'variable .* already exists'):
         zds1.merge(zds2)
 
     zds2 = dataset.Dataset(
@@ -483,7 +483,7 @@ def test_dataset_merge() -> None:
         attrs=[dataset.Attribute('attr3', 3),
                dataset.Attribute('attr4', 4)])
     zds1 = pickle.loads(pickle.dumps(template))
-    with pytest.raises(ValueError, match='dimensions .* are not identical'):
+    with pytest.raises(ValueError, match=r'dimensions .* are not identical'):
         zds1.merge(zds2)
 
 

@@ -29,6 +29,8 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     import numcodecs.abc
+    from zarr.core.buffer import NDArrayLikeOrScalar
+    from zarr.core.common import JSON
 
     from .type_hints import DTypeLike, NDArray
 
@@ -43,7 +45,12 @@ DEFAULT_CHUNKS = 'auto'
 #: indices of the chunk, joined with a dot. One file sits beside the
 #: metadata of the array, where a separator of ``/`` nests one directory
 #: per dimension.
-CHUNK_KEY_ENCODING = {'name': 'default', 'configuration': {'separator': '.'}}
+CHUNK_KEY_ENCODING: dict[str, JSON] = {
+    'name': 'default',
+    'configuration': {
+        'separator': '.'
+    }
+}
 
 #: Start of the warning Zarr emits when it consolidates the metadata of a
 #: group. The core specification names the field a group holds them in, and
@@ -162,7 +169,8 @@ def create_array(  # noqa: PLR0913
         dtype=dtype,
         chunks=chunks,  # type: ignore[arg-type]
         compressors=codecs.compressors(compressor),
-        filters=codecs.filters(filters),
+        # Zarr checks whether each translated codec is valid as a filter.
+        filters=codecs.filters(filters),  # type: ignore[arg-type]
         fill_value=fill_value,
         dimension_names=dimensions,
         attributes=attributes,
@@ -182,7 +190,7 @@ def create_group(fs: fsspec.AbstractFileSystem, path: str) -> None:
 
 
 def roundtrip_filters(values: NDArray,
-                      filters: Sequence[codecs.Codec]) -> NDArray:
+                      filters: Sequence[codecs.Codec]) -> NDArrayLikeOrScalar:
     """Encode and decode values through filters in a temporary memory store.
 
     Args:
@@ -192,11 +200,13 @@ def roundtrip_filters(values: NDArray,
     Returns:
         The decoded values.
     """
-    array = zarr.create_array(store=zarr.storage.MemoryStore(),
-                              data=values,
-                              filters=codecs.filters(filters),
-                              compressors=None,
-                              config={'write_empty_chunks': True})
+    array = zarr.create_array(
+        store=zarr.storage.MemoryStore(),
+        data=values,
+        # Zarr checks the role of each codec.
+        filters=codecs.filters(filters),  # type: ignore[arg-type]
+        compressors=None,
+        config={'write_empty_chunks': True})
     return array[...]
 
 

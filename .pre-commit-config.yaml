@@ -15,18 +15,18 @@ repos:
       - id: trailing-whitespace
         exclude: conda/meta.yaml
   - repo: https://github.com/asottile/pyupgrade
-    rev: "v3.21.2"
+    rev: "v3.22.0"
     hooks:
     - id: pyupgrade
       args: [--py312-plus]
   - repo: https://github.com/PyCQA/isort
-    rev: 6.0.1
+    rev: 9.0.2
     hooks:
       - id: isort
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.6
+    rev: v0.17.3
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: [--fix]
         exclude: (examples/.*\.py|docs/.*\.py)
   - repo: https://github.com/pre-commit/pygrep-hooks
@@ -44,11 +44,11 @@ repos:
         additional_dependencies:
           - toml
   - repo: https://github.com/codespell-project/codespell
-    rev: "v2.4.2"
+    rev: "v2.4.3"
     hooks:
     - id: codespell
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.1.0
+    rev: v2.4.1
     hooks:
       - id: mypy
         exclude: docs
@@ -56,8 +56,14 @@ repos:
           # Type stubs
           - types-requests
           - types-setuptools
-          # Typed libraries
-          - dask
-          - numpy
+          # Project dependencies and typed libraries
+          - dask>=2022.8.0
+          - distributed
+          - fasteners
+          - fsspec
+          - numcodecs
+          - numpy>=1.20
           - pandas
           - pyarrow
+          - xarray
+          - zarr>=3.4

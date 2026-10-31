@@ -141,5 +141,5 @@ def test_split_sequence():
     ]
     with pytest.raises(
             ValueError,
-            match='The number of sections must be greater than zero.'):
+            match=r'The number of sections must be greater than zero.'):
         list(dask_utils.split_sequence(list(range(10)), 0))

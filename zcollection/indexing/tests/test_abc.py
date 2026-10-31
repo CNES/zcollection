@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+import itertools
 
 import fsspec
 import numpy
@@ -47,7 +48,7 @@ def split_half_orbit(
                                               dtype='int64'))))
     del pass_idx, cycle_idx
 
-    yield from tuple(zip(half_orbit[:-1], half_orbit[1:]))
+    yield from itertools.pairwise(half_orbit)
 
 
 # The signature of the function must follow the signature of

@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 import contextlib
 import gzip
+import itertools
 import json
 import logging
 import zlib
@@ -250,7 +251,7 @@ class PartitionIndex:
                     for row in rows):
                 raise ValueError('Invalid partition keys')
             keys = tuple(tuple(row) for row in rows)
-            if any(left >= right for left, right in zip(keys, keys[1:])):
+            if any(left >= right for left, right in itertools.pairwise(keys)):
                 raise ValueError('Partition keys must be unique and ordered')
             return keys
         except FileNotFoundError:

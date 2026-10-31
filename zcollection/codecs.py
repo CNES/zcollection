@@ -30,6 +30,7 @@ import zarr.registry
 Codec: TypeAlias = numcodecs.abc.Codec | zarr.abc.codec.Codec
 
 if TYPE_CHECKING:
+    from typing import Literal
     from collections.abc import Callable, Iterable, Sequence
 
     #: Builds the Zarr codecs standing for a codec, from its configuration.
@@ -40,7 +41,7 @@ DEFAULT_COMPRESSOR = 'auto'
 
 #: :class:`numcodecs.Blosc` names a shuffle by an integer, Zarr by a name.
 #: ``None`` lets Zarr pick one from the size of an item.
-_SHUFFLE: dict[int, str | None] = {
+_SHUFFLE: dict[int, Literal['noshuffle', 'shuffle', 'bitshuffle'] | None] = {
     numcodecs.Blosc.NOSHUFFLE: 'noshuffle',
     numcodecs.Blosc.SHUFFLE: 'shuffle',
     numcodecs.Blosc.BITSHUFFLE: 'bitshuffle',

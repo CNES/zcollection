@@ -251,7 +251,7 @@ def test_missing_variables() -> None:
     other.variables['XXX'].name = 'XXX'
     with pytest.raises(
             ValueError,
-            match='The reference dataset does not define the .* variables '
+            match=r'The reference dataset does not define the .* variables '
             'that are defined in this dataset.'):
         ds.missing_variables(other)
 
@@ -284,19 +284,19 @@ def test_add_variable() -> None:
 
     with pytest.raises(
             ValueError,
-            match='The new variable must use the dataset dimensions.'):
+            match=r'The new variable must use the dataset dimensions.'):
         ds.add_variable(
             meta.VariableSchema('d', numpy.float64, dimensions=('a', 'y')))
 
     with pytest.raises(
             ValueError,
-            match='The new variable must use the dataset dimensions.'):
+            match=r'The new variable must use the dataset dimensions.'):
         ds.add_variable(
             meta.VariableSchema('e', numpy.float64, dimensions=('a', 'b')))
 
     with pytest.raises(
             ValueError,
-            match='The new variable must use the dataset dimensions.'):
+            match=r'The new variable must use the dataset dimensions.'):
         ds.add_variable(
             meta.VariableSchema('f', numpy.float64, dimensions=('a', )))
 

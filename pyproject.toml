@@ -16,7 +16,7 @@ __version__ = "{version}"
 '''
 
 
-[tools.ruff]
+[tool.ruff]
 target-version = "py312"
 line-length = 80
 
@@ -24,7 +24,16 @@ line-length = 80
 max-line-length = 80
 
 [tool.ruff.lint]
-ignore = ["C901", "E501", "E741", "F402", "F823" ]
+ignore = [
+  "B905",     # Allow zip's default truncation behavior.
+  "C901",
+  "E501",
+  "E741",
+  "F402",
+  "F823",
+  "PLC0415",  # Local imports can resolve circular dependencies.
+  "PLW1641",  # Classes with value equality may remain unhashable.
+]
 select = [
   "F",      # pyflakes
   "E",      # pycodestyle errors

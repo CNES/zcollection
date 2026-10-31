@@ -6,6 +6,8 @@
 Test merging.
 =============
 """
+from typing import cast
+
 import numpy
 import pytest
 import zarr
@@ -96,5 +98,7 @@ def test_perform(
     dask_client.gather(future)
 
     zgroup = zarr.open_consolidated(local_fs.get_mapper(path))
-    assert numpy.all(zgroup['time'][...] == zds['time'].values)
-    assert numpy.all(zgroup['var1'][...] == zds['var1'].values)
+    assert numpy.all(
+        cast('zarr.Array', zgroup['time'])[...] == zds['time'].values)
+    assert numpy.all(
+        cast('zarr.Array', zgroup['var1'])[...] == zds['var1'].values)

@@ -63,7 +63,7 @@ def test_construction() -> None:
     assert partitioning.decode((1, 2)) == (('a', 1), ('b', 2))
     assert partition_keys == (('a', 1), ('b', 2))
 
-    with pytest.raises(ValueError, match='invalid literal for int()'):
+    with pytest.raises(ValueError, match=r'invalid literal for int()'):
         partitioning.parse('a=1/b=2/c=3')
 
     with pytest.raises(ValueError,

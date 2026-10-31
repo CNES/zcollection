@@ -17,12 +17,15 @@ import dask.base
 import numpy
 import numpy.lib.mixins
 import zarr
-import zarr.abc.codec
 
 from .type_hints import DType, NDArray, NDMaskedArray
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from zarr.core.buffer import NDArrayLikeOrScalar
+
+    from .codecs import Codec
 
 #: Type of arrays returned when a compressed array is decompressed.
 Array = NDArray | NDMaskedArray
@@ -69,7 +72,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
     def __getitem__(
         self,
         key: int | tuple[int | slice, ...],
-    ) -> Array:
+    ) -> NDArrayLikeOrScalar | NDMaskedArray:
         """Retrieve data for an item or region of the array.
 
         Args:
@@ -78,7 +81,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         Returns:
             The data for the key.
         """
-        values: Array = self._array[key]
+        values: NDArrayLikeOrScalar | NDMaskedArray = self._array[key]
         if self._fill_value is not None:
             values = numpy.ma.masked_equal(values, self._fill_value)
         return values
@@ -127,7 +130,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return self._array.nbytes
 
     @property
-    def compressors(self) -> tuple[zarr.abc.codec.Codec, ...]:
+    def compressors(self) -> tuple[Codec, ...]:
         """The codecs the compressed chunks are held behind."""
         return self._array.compressors
 
@@ -137,7 +140,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return self._fill_value
 
     @property
-    def filters(self) -> tuple[zarr.abc.codec.Codec, ...]:
+    def filters(self) -> tuple[Codec, ...]:
         """The codecs applied to the values before compression."""
         return self._array.filters
 

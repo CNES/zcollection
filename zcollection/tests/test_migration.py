@@ -19,7 +19,7 @@ use small collections in the current format.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 import copy
 import dataclasses
 import hashlib
@@ -221,7 +221,7 @@ def checksum_of(fs: fsspec.AbstractFileSystem, partition: str) -> str:
     array = store.open_array(fs,
                              fs_utils.join_path(partition, '.checksum'),
                              mode='r')
-    return array.attrs['checksum']
+    return cast('str', array.attrs['checksum'])
 
 
 def unconsolidate(fs: fsspec.AbstractFileSystem, partition: str) -> None:
@@ -296,6 +296,7 @@ def downgrade(partition: str) -> None:
                        if item.is_dir()):
         array: zarr.Array = zarr.open_array(store=str(path), mode='r')
         attrs = dict(array.attrs)
+        assert isinstance(array.metadata, zarr.core.metadata.ArrayV3Metadata)
         attrs['_ARRAY_DIMENSIONS'] = list(array.metadata.dimension_names or ())
         shape, dtype = array.shape, array.dtype
         fill_value, values = array.fill_value, array[...]
@@ -1223,7 +1224,7 @@ def test_check_view_names_the_variables_the_target_changed(
                              fs_utils.join_path(target, PARTITIONS[0],
                                                 VIEW_VARIABLE.name),
                              mode='a')
-    array[...] = array[...] + 1
+    array[...] = cast('numpy.ndarray', array[...]) + 1
 
     outcome = check_view(deprecated_view, target, distributed=False)
 

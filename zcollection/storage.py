@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     import zarr
 
     from .codecs import Codec
-    from .type_hints import ArrayLike, NDArray
+    from .type_hints import ArrayLike
 
 #: Module logger.
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -102,13 +102,15 @@ def _to_zarr(array: dask.array.core.Array, dirname: str, name: str,
                                             overwrite=True,
                                             write_empty_chunks=False,
                                             **kwargs)
-    dask.array.core.store(array,
-                          target,
-                          flush=True,
-                          lock=False,
-                          compute=True,
-                          scheduler=dask.local.get_sync,
-                          return_stored=False)
+    dask.array.core.store(
+        array,
+        # Dask accepts writable Zarr arrays as targets.
+        target,  # type: ignore[arg-type]
+        flush=True,
+        lock=False,
+        compute=True,
+        scheduler=dask.local.get_sync,
+        return_stored=False)
 
 
 def variable_attributes(
@@ -658,7 +660,7 @@ def check_zarr_group(
     try:
         group: zarr.Group = store.open_group(fs, dirname)
         for _, array in group.arrays():
-            data: NDArray = array[...]
+            data = array[...]
             del data
     except (FileNotFoundError, ValueError, TypeError, RuntimeError):
         return False

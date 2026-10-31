@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 import abc
 from collections.abc import Iterable
 import functools
+import itertools
 import pathlib
 
 import fsspec
@@ -424,7 +425,7 @@ class Indexer(abc.ABC):
         return (  # force yapf to respect the line break for flake8
             (tuple((name, data[name][ix0])
                    for name in column_names), slice(start[ix0], stop[ix1 - 1]))
-            for ix0, ix1 in zip(chunks[:-1], chunks[1:]))
+            for ix0, ix1 in itertools.pairwise(chunks))
 
     def query(
         self,

@@ -241,4 +241,4 @@ class GroupedSequence(Sequence):
                     f"The lower bound {lower_bound} of {last_field!r} "
                     f"does not fit the declared {key_dtype} partition key dtype."
                 )
-            yield fields[:-1] + ((last_field, lower_bound), ), indexer
+            yield (*fields[:-1], (last_field, lower_bound)), indexer

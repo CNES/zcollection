@@ -13,6 +13,7 @@ are pinned here.
 """
 from __future__ import annotations
 
+from typing import cast
 import warnings
 
 import numcodecs
@@ -80,7 +81,10 @@ def test_chunks_are_held_behind_the_default_compressor(
                                shape=(4, ),
                                dtype=numpy.dtype('float64'))
 
-    assert [codec.to_dict()['name'] for codec in array.compressors] == ['zstd']
+    assert [
+        cast('zarr.abc.codec.BytesBytesCodec', codec).to_dict()['name']
+        for codec in array.compressors
+    ] == ['zstd']
 
 
 def test_filters_are_applied(local_fs) -> None:  # noqa: F811
@@ -97,9 +101,12 @@ def test_filters_are_applied(local_fs) -> None:  # noqa: F811
                                filters=(codec, ))
     array[...] = [0.001, 0.002, 0.003, 0.004]
 
-    assert [item.to_dict()['name']
-            for item in array.filters] == ['numcodecs.fixedscaleoffset']
-    numpy.testing.assert_allclose(array[...], [0.001, 0.002, 0.003, 0.004])
+    assert [
+        cast('zarr.abc.codec.ArrayArrayCodec', item).to_dict()['name']
+        for item in array.filters
+    ] == ['numcodecs.fixedscaleoffset']
+    numpy.testing.assert_allclose(cast('numpy.ndarray', array[...]),
+                                  [0.001, 0.002, 0.003, 0.004])
 
 
 def test_name_holds_the_array_inside_the_store(local_fs) -> None:  # noqa: F811
@@ -115,7 +122,7 @@ def test_name_holds_the_array_inside_the_store(local_fs) -> None:  # noqa: F811
 
     group = store.open_group(local_fs.fs, path)
     assert set(group) == {'variable'}
-    assert group['variable'].shape == (4, )
+    assert cast('zarr.Array', group['variable']).shape == (4, )
 
 
 def test_overwrite_replaces_an_array(local_fs) -> None:  # noqa: F811
@@ -203,7 +210,7 @@ def test_a_group_opens_read_only(local_fs) -> None:  # noqa: F811
     group = store.open_group(local_fs.fs, path)
     assert group.read_only
     with pytest.raises(ValueError, match='read-only'):
-        group['variable'][...] = 1
+        cast('zarr.Array', group['variable'])[...] = 1
 
     assert not store.open_group(local_fs.fs, path, mode='r+').read_only
 

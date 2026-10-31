@@ -6,7 +6,7 @@
 Testing the storage module.
 ===========================
 """
-from typing import Any
+from typing import Any, cast
 import math
 import time
 
@@ -138,7 +138,7 @@ def test_write_variable(
     path = str(local_fs.root.joinpath('var'))
     assert local_fs.exists(path)
     mapper = local_fs.get_mapper(path)
-    zarray = zarr.open(mapper)
+    zarray = zarr.open_array(mapper, mode='a')
     assert zarray.shape == (dim_size, dim_size)
     assert numpy.all(zarray[...] == 1)
 
@@ -148,7 +148,7 @@ def test_write_variable(
     assert zarray.nchunks == chunks_number
 
     other = storage.open_zarr_array(
-        zarray,  # type: ignore[call-arg]
+        zarray,
         'var',
     )
     assert other.metadata() == var.metadata()
@@ -192,7 +192,7 @@ def test_write_variable_block_size_limit(
                                 block_size_limit=block_size)
     path = str(local_fs.root.joinpath('var'))
     mapper = local_fs.get_mapper(path)
-    zarray = zarr.open(mapper)
+    zarray = zarr.open_array(mapper, mode='a')
 
     assert zarray.nchunks == blocks_number
 
@@ -210,11 +210,13 @@ def test_write_zarr_group(
     future.result()
     mapper = local_fs.get_mapper(str(local_fs.root))
     zarray = zarr.open_group(mapper)
-    assert numpy.all(zarray['var'][...] == 1)
+    assert numpy.all(cast('zarr.Array', zarray['var'])[...] == 1)
     assert zarray.attrs['a'] == 1
     assert zarray.attrs['b'] == 2
     assert zarray.attrs['long_name'] == 'long name'
-    assert zarray['var'].metadata.dimension_names == ('x', 'y')
+    metadata = cast('zarr.core.metadata.ArrayV3Metadata',
+                    cast('zarr.Array', zarray['var']).metadata)
+    assert metadata.dimension_names == ('x', 'y')
 
     other = storage.open_zarr_group(str(local_fs.root), local_fs.fs)
     assert other.metadata() == zds.metadata()
@@ -266,14 +268,14 @@ def test_update_zarr_array(
     storage.update_zarr_array(path, dask.array.full((dim_size, dim_size), 2),
                               local_fs.fs)
     mapper = local_fs.get_mapper(path)
-    zarray = zarr.open(mapper)
+    zarray = zarr.open_array(mapper, mode='a')
     assert numpy.all(zarray[...] == 2)
     data: Any = numpy.full((dim_size, dim_size), 2)
     data[:, 0] = 5
     data = numpy.ma.masked_equal(data, 5)
     assert numpy.all(data[:, 0].mask)
     storage.update_zarr_array(path, data, local_fs.fs)
-    zarray = zarr.open(mapper)
+    zarray = zarr.open_array(mapper, mode='a')
     assert numpy.all(zarray[:, 0] == 10)
 
     chunks_number = math.ceil(dim_size / chunks_expected[0]) * math.ceil(
@@ -336,14 +338,14 @@ def test_add_zarr_array(
                            fs=local_fs.fs,
                            chunks=chunks)
     mapper = local_fs.get_mapper(root)
-    zarray = zarr.open(mapper)
-    assert numpy.all(zarray['var2'][...] == 10)
+    zarray = zarr.open_group(mapper, mode='a')
+    assert numpy.all(cast('zarr.Array', zarray['var2'])[...] == 10)
 
     chunks_number = math.ceil(dim_size / chunks_expected[0]) * math.ceil(
         dim_size / chunks_expected[1])
 
     for varname in ['var1', 'var2']:
-        var_array = zarray[varname]
+        var_array = cast('zarr.Array', zarray[varname])
         assert var_array.chunks == chunks_expected
         assert var_array.nchunks == chunks_number
 
@@ -360,7 +362,7 @@ def test_add_zarr_array(
 
     # We'll try to read 'y' from existing data and generate a zarr
     # exception
-    with pytest.raises(Exception, match='.*'):
+    with pytest.raises(Exception, match=r'.*'):
         storage.add_zarr_array(dirname=root,
                                variable=var.metadata(),
                                dimensions={
@@ -421,7 +423,8 @@ def test_a_written_variable_reads_back_its_fill_value(
     storage.write_zarr_variable(('var', var), str(local_fs.root), local_fs.fs)
 
     group = zarr.open_group(local_fs.get_mapper(str(local_fs.root)))
-    read = dataset.DelayedArray.from_zarr(group['var'], 'var')
+    read = dataset.DelayedArray.from_zarr(cast('zarr.Array', group['var']),
+                                          'var')
 
     assert not_equal(read.fill_value, fill_value) is False
 

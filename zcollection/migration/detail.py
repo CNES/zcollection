@@ -14,7 +14,7 @@ immutable variables of the source stay.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 import json
 import logging
 import math
@@ -427,7 +427,7 @@ def differing_arrays(
         second = store.open_array(target_fs,
                                   fs_utils.join_path(target_dirname, name),
                                   mode='r')
-        if _differ(first[...], second[...]):
+        if _differ(cast('NDArray', first[...]), cast('NDArray', second[...])):
             differing.add(name)
     return tuple(sorted(differing))
 

@@ -8,7 +8,7 @@ Implementation details.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 import base64
 import dataclasses
 import hashlib
@@ -413,8 +413,8 @@ def _calculate_axis_reference(
         The axis reference of the partition.
     """
     group: zarr.Group = store.open_group(view_ref.fs, path)
-    array: zarr.Array = group[view_ref.axis]  # type: ignore[arg-type]
-    axis: NDArray = array[...]
+    array = cast('zarr.Array', group[view_ref.axis])
+    axis = cast('NDArray', array[...])
     checksum: str = hashlib.sha256(axis.tobytes()).hexdigest()
     return AxisReference(axis, read_dimensions(array)[0], checksum)
 
@@ -593,7 +593,7 @@ def _sync(
     if axis_ref.checksum != array.attrs[CHECKSUM_ATTR]:
         # The axis of the view is a prefix of the reference one when the
         # partition holds the same measurements up to its end.
-        axis_view: NDArray = array[:]
+        axis_view = cast('NDArray', array[:])
         if axis_ref.array.size > axis_view.size and numpy.all(
                 axis_view == axis_ref.array[:axis_view.size]):
             # The cache is invalidated by _extend_partition.

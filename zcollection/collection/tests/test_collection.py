@@ -8,6 +8,7 @@ Test of the collections
 """
 from __future__ import annotations
 
+from typing import cast
 import concurrent.futures
 import copy
 import datetime
@@ -219,7 +220,7 @@ def test_insert_validates_all_variables_before_writing(fs, request,
             dimensions=(reference.IMMUTABLE_DIMENSION, reference.DIMENSION))
     before = collection_files(zcol)
 
-    with pytest.raises(ValueError, match='unknown|invalid'):
+    with pytest.raises(ValueError, match=r'unknown|invalid'):
         zcol.insert(incoming, distributed=False)
 
     assert collection_files(zcol) == before
@@ -244,7 +245,7 @@ def test_insert_validates_immutable_only_data(fs, request, invalid) -> None:
     ]))
     before = collection_files(zcol)
 
-    with pytest.raises(ValueError, match='unknown|invalid'):
+    with pytest.raises(ValueError, match=r'unknown|invalid'):
         zcol.insert(incoming, distributed=False)
 
     assert collection_files(zcol) == before
@@ -302,9 +303,11 @@ def test_insert_immutables_uses_the_declared_encoding(fs, request,
     assert bool(written) is not immutable_only
     array = store.open_array(zcol.fs, f'{zcol.immutable_path}/pixel')
     assert array.chunks == (1, )
-    assert array.compressors[0].to_dict(
-    ) == declared['pixel'].compressor.to_dict()
-    assert array.filters[0].to_dict() == declared['pixel'].filters[0].to_dict()
+    assert cast('zarr.abc.codec.BytesBytesCodec', array.compressors[0]
+                ).to_dict() == declared['pixel'].compressor.to_dict()
+    assert cast(
+        'zarr.abc.codec.ArrayArrayCodec',
+        array.filters[0]).to_dict() == declared['pixel'].filters[0].to_dict()
     loaded = zcol.load(delayed=False, distributed=False)
     assert loaded is not None
     assert loaded['pixel'].fill_value == -99
@@ -443,11 +446,11 @@ def test_collection_creation(
     ) == zcol.partitioning.get_config()
 
     with pytest.raises(ValueError,
-                       match='zarr collection not found at path .*'):
+                       match=r'zarr collection not found at path .*'):
         collection.Collection.from_config(str(tested_fs.collection.parent))
 
     with pytest.raises(ValueError,
-                       match='The variable .* is not defined in the dataset'):
+                       match=r'The variable .* is not defined in the dataset'):
         collection.Collection('time_tai', zds.metadata(),
                               partitioning.Date(('time', ), 'D'),
                               str(tested_fs.collection))
@@ -507,12 +510,12 @@ def test_collection_holding_a_package_version(fs, request) -> None:
 
     with pytest.raises(
             ValueError,
-            match='The partitioning key .* is not defined in the dataset.'):
+            match=r'The partitioning key .* is not defined in the dataset.'):
         collection.Collection('time', zds.metadata(),
                               partitioning.Date(('time_tai', ), 'D'),
                               str(tested_fs.collection))
 
-    with pytest.raises(ValueError, match='he mode .* is not supported'):
+    with pytest.raises(ValueError, match=r'he mode .* is not supported'):
         collection.Collection(
             axis='time',
             ds=zds.metadata(),
@@ -917,7 +920,7 @@ def test_drop_variable(
                                   distributed=distributed)
 
     with pytest.raises(ValueError,
-                       match='The variable .* is part of the partitioning'):
+                       match=r'The variable .* is part of the partitioning'):
         zcol.drop_variable('time', distributed=distributed)
     zcol.drop_variable('var1', distributed=distributed)
 
@@ -1781,7 +1784,7 @@ def test_insert_immutable(
     )
     with pytest.raises(
             ValueError,
-            match='The new variable must use the dataset dimensions.'):
+            match=r'The new variable must use the dataset dimensions.'):
         zcol.add_variable(new_variable, distributed=distributed)
 
 

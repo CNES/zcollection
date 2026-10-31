@@ -12,6 +12,8 @@ each codec is translated into.
 """
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numcodecs
 import numpy
 import pytest
@@ -26,7 +28,10 @@ from .fs import local_fs  # noqa: F401
 
 def names(codec: numcodecs.abc.Codec) -> list[str]:
     """Return the names the translation of a codec is written under."""
-    return [item.to_dict()['name'] for item in codecs.translate(codec)]
+    return [
+        cast('str',
+             item.to_dict()['name']) for item in codecs.translate(codec)
+    ]
 
 
 @pytest.mark.parametrize(('codec', 'expected'), [
@@ -65,14 +70,15 @@ def test_an_unregistered_codec_keeps_its_own_name(codec, expected) -> None:
 def test_the_shuffle_of_blosc_is_carried(shuffle, expected) -> None:
     """Blosc names a shuffle by an integer, Zarr by a name."""
     codec, = codecs.translate(numcodecs.Blosc(shuffle=shuffle))
-    assert codec.to_dict()['configuration']['shuffle'] == expected
+    config = cast('dict[str, Any]', codec.to_dict()['configuration'])
+    assert config['shuffle'] == expected
 
 
 def test_the_shuffle_blosc_picks_is_left_to_zarr() -> None:
     """A shuffle Blosc picks from the size of an item is left to Zarr."""
     codec, = codecs.translate(
         numcodecs.Blosc(shuffle=numcodecs.Blosc.AUTOSHUFFLE))
-    assert codec.shuffle is not None
+    assert cast('zarr.codecs.BloscCodec', codec).shuffle is not None
 
 
 def test_a_zarr_codec_is_carried_as_it_is() -> None:
@@ -121,11 +127,13 @@ def test_a_translated_scaling_holds_the_same_values(
                                        scale=1000,
                                        dtype='f8',
                                        astype=astype)
-    array = zarr.create_array(store=f'{local_fs.root}/scaled',
-                              shape=values.shape,
-                              dtype='float64',
-                              filters=codecs.filters((codec, )),
-                              compressors=[zarr.codecs.BloscCodec()])
+    array = zarr.create_array(
+        store=f'{local_fs.root}/scaled',
+        shape=values.shape,
+        dtype='float64',
+        # Zarr checks the role of each codec.
+        filters=codecs.filters((codec, )),  # type: ignore[arg-type]
+        compressors=[zarr.codecs.BloscCodec()])
     array[...] = values
 
     numpy.testing.assert_array_equal(array[...],

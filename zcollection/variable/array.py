@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     import zarr
+    from zarr.core.buffer import NDArrayLikeOrScalar
 
     from ..codecs import Codec
     from ..meta import Attribute
@@ -79,7 +80,7 @@ class Array(Variable):
 
     def __init__(self,
                  name: str,
-                 data: ArrayLike[Any],
+                 data: ArrayLike[Any] | NDArrayLikeOrScalar,
                  dimensions: Sequence[str],
                  *,
                  attrs: Sequence[Attribute] | None = None,
