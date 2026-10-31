@@ -15,6 +15,15 @@ import zarr.abc.codec
 from ..compressed_array import CompressedArray
 
 
+def test_numpy_conversion_of_scalar() -> None:
+    """Converting a compressed scalar preserves its shape, dtype and value."""
+    values = numpy.array(7, dtype='int16')
+
+    result = numpy.asarray(CompressedArray(values))
+
+    numpy.testing.assert_array_equal(result, values, strict=True)
+
+
 @pytest.mark.parametrize('indexer', [
     pytest.param(numpy.s_[...], id='all'),
     pytest.param(numpy.s_[0], id='first-axis'),

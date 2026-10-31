@@ -183,7 +183,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
             The numpy.ndarray of the array or numpy.ma.masked_array if
             a fill_value is defined.
         """
-        array: Array = self._array[...]
+        array: Array = numpy.asanyarray(self._array[...])
         if self._fill_value is not None:
             array = numpy.ma.masked_equal(array, self._fill_value)
         if dtype is not None:
