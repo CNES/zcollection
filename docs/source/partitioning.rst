@@ -69,6 +69,11 @@ last variable into bins, so one key covers a range of them. ``size`` is how
 many values a bin spans, ``start`` is the value the bins are aligned on, and
 the last pair of the key carries the lower bound of the bin.
 
+``dtype`` declares the types used to store partition keys, which can differ
+from the input variable types. Each lower bound must fit its declared key
+type, otherwise splitting raises ``ValueError``. Use a signed key type when
+the alignment produces negative bounds, even with unsigned input values.
+
 .. jupyter-execute::
 
     for start in (1, 0):

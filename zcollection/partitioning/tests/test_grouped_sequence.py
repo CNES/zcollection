@@ -211,6 +211,42 @@ def test_unsigned_input_below_start(delayed, start, expected) -> None:
 
 
 @pytest.mark.parametrize('delayed', [False, True])
+@pytest.mark.parametrize(('input_dtype', 'values', 'key_dtype', 'lower_bound'),
+                         [
+                             ('uint64', [0, 1, 2], 'uint64', -2),
+                             ('int8', [-128, -127, -126], 'int8', -132),
+                             ('uint16', [258, 259], 'uint8', 258),
+                         ])
+def test_group_bound_must_fit_key_dtype(delayed, input_dtype, values,
+                                        key_dtype, lower_bound) -> None:
+    """Splitting rejects group bounds outside the declared key dtype."""
+    constructor = dataset.DelayedArray if delayed else dataset.Array
+    zds = dataset.Dataset([
+        constructor('key', numpy.array(values, dtype=input_dtype), ('row', )),
+    ],
+                          delayed=delayed)
+    handler = GroupedSequence(('key', ), size=5, start=3, dtype=(key_dtype, ))
+
+    with pytest.raises(
+            ValueError,
+            match=f"lower bound {lower_bound} of 'key'.*{key_dtype}"):
+        list(handler.index_dataset(zds))
+
+
+@pytest.mark.parametrize('delayed', [False, True])
+def test_unsigned_key_with_nonzero_alignment(delayed) -> None:
+    """Unsigned keys accept an aligned bound that fits their dtype."""
+    constructor = dataset.DelayedArray if delayed else dataset.Array
+    zds = dataset.Dataset([
+        constructor('key', numpy.array([3, 4], dtype='uint64'), ('row', )),
+    ],
+                          delayed=delayed)
+    handler = GroupedSequence(('key', ), size=5, start=3, dtype=('uint64', ))
+
+    assert list(handler.index_dataset(zds)) == [((('key', 3), ), slice(0, 2))]
+
+
+@pytest.mark.parametrize('delayed', [False, True])
 def test_uint64_group_bounds_keep_their_precision(delayed) -> None:
     """Large unsigned keys retain exact group bounds and their row slices."""
     constructor = dataset.DelayedArray if delayed else dataset.Array

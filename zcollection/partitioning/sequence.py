@@ -185,8 +185,9 @@ class GroupedSequence(Sequence):
             Sequence partitioning scheme).
         start: The value the groups are aligned on. Defaults to 0.
         dtype: An optional sequence of strings representing the data type used
-            to store variable values in a binary representation without data
-            loss. Must be one of the following allowed data types: ``int8``,
+            to store partition keys without data loss. Group lower bounds
+            must fit the last declared type; use a signed type if they can be
+            negative. Must be one of the following allowed data types: ``int8``,
             ``int16``, ``int32``, ``int64``, ``uint8``, ``uint16``, ``uint32``,
             ``uint64``. If not provided, defaults to ``int64`` for all
             variables.
@@ -223,6 +224,8 @@ class GroupedSequence(Sequence):
         last_field = list(variables)[-1]
         values = variables[last_field]
         offset = self.start % self.size
+        key_dtype = self._dtype[-1]
+        limits = numpy.iinfo(key_dtype)
 
         variables = variables.copy()
         # Shift group numbers by one to keep unsigned arithmetic nonnegative.
@@ -233,4 +236,9 @@ class GroupedSequence(Sequence):
             # Calculate bounds as Python integers to preserve uint64 precision.
             group_number = int(fields[-1][1])
             lower_bound = (group_number - 1) * self.size + offset
+            if not limits.min <= lower_bound <= limits.max:
+                raise ValueError(
+                    f"The lower bound {lower_bound} of {last_field!r} "
+                    f"does not fit the declared {key_dtype} partition key dtype."
+                )
             yield fields[:-1] + ((last_field, lower_bound), ), indexer
