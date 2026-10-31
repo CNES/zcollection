@@ -15,9 +15,10 @@ import zarr.abc.codec
 from ..compressed_array import CompressedArray
 
 
-def test_numpy_conversion_of_scalar() -> None:
+@pytest.mark.parametrize(('value', 'dtype'), [(7, 'int16'), ('a', 'U8')])
+def test_numpy_conversion_of_scalar(value, dtype) -> None:
     """Converting a compressed scalar preserves its shape, dtype and value."""
-    values = numpy.array(7, dtype='int16')
+    values = numpy.array(value, dtype=dtype)
 
     result = numpy.asarray(CompressedArray(values))
 
@@ -120,6 +121,17 @@ def test_rechunk() -> None:
     assert rechunked.compressors == array.compressors
     assert rechunked.filters == array.filters
     assert numpy.array_equal(numpy.asarray(rechunked), values)
+
+
+def test_rechunk_scalar() -> None:
+    """Rechunking a scalar preserves its shape, dtype and value."""
+    values = numpy.array('a', dtype='U8')
+
+    rechunked = CompressedArray(values).rechunk(())
+
+    numpy.testing.assert_array_equal(numpy.asarray(rechunked),
+                                     values,
+                                     strict=True)
 
 
 def test_rechunk_keeps_the_value_marking_absence() -> None:

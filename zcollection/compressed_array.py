@@ -166,7 +166,8 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         Returns:
             The rechunked array.
         """
-        return CompressedArray(self._array[...],
+        return CompressedArray(numpy.asanyarray(self._array[...],
+                                                dtype=self.dtype),
                                chunks=chunks,
                                compressors=self._array.compressors,
                                filters=self._array.filters,
@@ -183,7 +184,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
             The numpy.ndarray of the array or numpy.ma.masked_array if
             a fill_value is defined.
         """
-        array: Array = numpy.asanyarray(self._array[...])
+        array: Array = numpy.asanyarray(self._array[...], dtype=self.dtype)
         if self._fill_value is not None:
             array = numpy.ma.masked_equal(array, self._fill_value)
         if dtype is not None:
