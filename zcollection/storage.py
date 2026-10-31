@@ -246,8 +246,9 @@ def write_zarr_group(
     with synchronizer:
         if distributed:
             with dask.distributed.worker_client() as client:
+                # Keep input keys independent of earlier writes being released.
                 iterables: list[tuple[str, Any]] = [
-                    (name, client.scatter(variable))
+                    (name, client.scatter(variable, hash=False))
                     for name, variable in zds.variables.items()
                 ]
                 futures: list[dask.distributed.Future] = client.map(
