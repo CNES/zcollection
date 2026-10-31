@@ -44,6 +44,9 @@ Storage
 
 Behaviour
 ^^^^^^^^^
+* With ``ProcessSync``, ``Collection.is_locked()`` reports whether its
+  synchronizer holds the lock. It returns ``False`` after release and
+  when the lock is held by another process.
 * A partition is written with the compressor, the filters and the fill value
   the collection declares for each of its variables.
 * Dimensions other than the partitioned dimension must declare a size.

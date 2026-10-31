@@ -121,7 +121,8 @@ class PartitionIndex:
         _LOGGER.warning(
             'The partitions of %r were read by walking its directory tree, '
             'because its index is unavailable or its update is unfinished. '
-            'Call reindex to write the index.', self._base_dir)
+            'Rebuilding the index with reindex requires a writable view or '
+            "a collection opened with mode='w'.", self._base_dir)
         return keys
 
     @contextlib.contextmanager
