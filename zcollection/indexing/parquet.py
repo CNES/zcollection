@@ -169,7 +169,9 @@ class Indexer:
                 structured array or a dict of arrays.
 
         """
-        prior = existing if isinstance(existing, cls) else cls.read(existing)
+        prior = (
+            existing if isinstance(existing, Indexer) else cls.read(existing)
+        )
 
         def _worker(ds: Any) -> pyarrow.Table:
             return _payload_to_table_no_partition(builder(ds))
