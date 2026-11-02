@@ -95,7 +95,7 @@ class Catalog:
             return None
         try:
             doc = json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError, UnicodeDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             # Treat a corrupted catalog as missing; callers will rebuild.
             return None
         paths = tuple(doc.get("paths", ()))
@@ -109,13 +109,25 @@ class Catalog:
 
     # --- write -------------------------------------------------------
 
-    def write(self, paths: list[str] | tuple[str, ...]) -> None:
-        """Write ``paths`` to the catalog (sorted and deduplicated)."""
-        sorted_paths = sorted(set(paths))
+    def write(
+        self,
+        paths: list[str] | tuple[str, ...],
+        *,
+        assume_sorted_unique: bool = False,
+    ) -> None:
+        """Write ``paths`` to the catalog.
+
+        ``assume_sorted_unique=True`` lets callers that already produced
+        a sorted, deduplicated list skip the re-sort/re-dedup pass; the
+        checksum step is also folded in.
+        """
+        sorted_paths = (
+            list(paths) if assume_sorted_unique else sorted(set(paths))
+        )
         payload = {
             "format_version": CATALOG_FORMAT_VERSION,
             "paths": sorted_paths,
-            "checksum": _checksum(sorted_paths),
+            "checksum": _checksum_sorted_unique(sorted_paths),
         }
         self._store.write_bytes(
             CATALOG_FILE,
@@ -126,13 +138,18 @@ class Catalog:
         """Merge ``paths`` into the catalog."""
         current = self.read_paths() or []
         merged = sorted(set(current) | set(paths))
-        self.write(merged)
+        self.write(merged, assume_sorted_unique=True)
 
     def remove(self, paths: list[str] | tuple[str, ...]) -> None:
         """Remove ``paths`` from the catalog."""
         current = self.read_paths() or []
         gone = set(paths)
-        self.write([p for p in current if p not in gone])
+        # ``current`` from a prior write is sorted + unique; filtering
+        # preserves both invariants.
+        self.write(
+            [p for p in current if p not in gone],
+            assume_sorted_unique=True,
+        )
 
     def drop(self) -> None:
         """Delete the catalog directory."""
@@ -159,8 +176,13 @@ def reconcile(
 
 
 def _checksum(paths: list[str] | tuple[str, ...]) -> str:
+    return _checksum_sorted_unique(sorted(set(paths)))
+
+
+def _checksum_sorted_unique(paths: list[str] | tuple[str, ...]) -> str:
+    """Checksum of an already-sorted, already-deduplicated path list."""
     h = hashlib.sha256()
-    for p in sorted(set(paths)):
+    for p in paths:
         h.update(p.encode("utf-8"))
         h.update(b"\n")
     return f"sha256:{h.hexdigest()}"
