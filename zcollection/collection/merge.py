@@ -257,12 +257,16 @@ def upsert(
     if existing_axis.size == 0:
         return inserted
 
+    sorted_ins = numpy.sort(inserted_axis)
+    n = sorted_ins.size
+    idx = numpy.searchsorted(sorted_ins, existing_axis)
     if tolerance is None:
-        keep = ~numpy.isin(existing_axis, inserted_axis)
+        # Exact-equality membership: searchsorted + one comparison runs
+        # in O((N+M) log M), vs numpy.isin's O(N*M) with no `assume_
+        # unique` hint. Equivalent to ``~numpy.isin(existing, inserted)``.
+        clipped = numpy.clip(idx, 0, n - 1)
+        keep = sorted_ins[clipped] != existing_axis
     else:
-        sorted_ins = numpy.sort(inserted_axis)
-        n = sorted_ins.size
-        idx = numpy.searchsorted(sorted_ins, existing_axis)
         left = numpy.clip(idx - 1, 0, n - 1)
         right = numpy.clip(idx, 0, n - 1)
         # numpy handles |a - b| correctly for both numeric and datetime64.
