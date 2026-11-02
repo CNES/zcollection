@@ -697,19 +697,14 @@ class Collection:
         Wrapped in a store session so transactional backends commit
         the whole drop atomically.
 
-        Unlike :meth:`insert`, :meth:`query`, :meth:`map` and
-        :meth:`update`, this method has no ``_async`` sibling: deletes
-        are sequential by design (the store-session commit is one
-        transaction).
-
         Args:
             filters: A partition-key predicate; see :meth:`partitions`.
                 If ``None``, **every** partition is dropped — pass an
                 explicit filter when you don't mean that.
 
         Returns:
-            The list of partition paths that were removed, in the
-            order they were processed.
+            The list of partition paths that were removed, in sorted
+            order.
 
         Raises:
             ~zcollection.errors.ReadOnlyError: If the collection was
@@ -718,12 +713,34 @@ class Collection:
                 malformed; see :meth:`partitions`.
 
         """
+        from ..dask.scheduler import run_sync
+
+        return run_sync(self.drop_partitions_async(filters=filters))
+
+    async def drop_partitions_async(
+        self,
+        *,
+        filters: str | None = None,
+    ) -> list[str]:
+        """Async variant of :meth:`drop_partitions`.
+
+        Deletes run concurrently inside the store session, bounded by
+        ``zcollection.config["partition.concurrency"]``. Each
+        ``delete_prefix`` call is a blocking store call offloaded to a
+        worker thread so the event loop isn't stalled.
+        """
         self._require_writable()
-        dropped: list[str] = []
+        parts = await self._partitions_async(filters=filters)
+        concurrency = max(1, int(config_get("partition.concurrency")))
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _delete(path: str) -> str:
+            async with sem:
+                await asyncio.to_thread(self._store.delete_prefix, path)
+            return path
+
         with self._store.session():
-            for path in list(self.partitions(filters=filters)):
-                self._store.delete_prefix(path)
-                dropped.append(path)
+            dropped = sorted(await asyncio.gather(*(_delete(p) for p in parts)))
             if self._catalog is not None and dropped:
                 self._catalog.remove(dropped)
         return dropped

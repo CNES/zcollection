@@ -218,5 +218,11 @@ def _payload_to_table(
                 f"builder output missing required column {col!r}",
             )
     n = len(next(iter(cols.values())))
-    cols[PARTITION_COL] = numpy.array([partition] * n, dtype=object)
-    return pyarrow.table(cols)
+    # Dictionary-encode: one physical string, N int32 indices — cardinality
+    # of this column across the full index is #partitions, not #rows.
+    partition_col = pyarrow.DictionaryArray.from_arrays(
+        pyarrow.array(numpy.zeros(n, dtype=numpy.int32)),
+        pyarrow.array([partition], type=pyarrow.string()),
+    )
+    table = pyarrow.table(cols)
+    return table.append_column(PARTITION_COL, partition_col)
