@@ -542,3 +542,89 @@ def test_collection_update_attributes_read_only(
     ro = zc.open_collection(store, mode="r")
     with pytest.raises(zc.ReadOnlyError):
         ro.update_attributes(attrs={"provider": "ACME"})
+
+
+def test_indexer_update_replaces_touched_partitions(
+    tmp_path, schema, dataset, partitioning
+):
+    """``Indexer.update`` left-anti-merges fresh rows into an existing index (issue #33)."""
+    store = zc.LocalStore(tmp_path / "col")
+    col = zc.create_collection(
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    col.insert(dataset)
+
+    def _build_single(ds: zc.Dataset) -> dict[str, numpy.ndarray]:
+        nums = ds["num"].to_numpy()
+        return {
+            "num": numpy.array([int(nums[0])], dtype="int64"),
+            "_start": numpy.array([0], dtype="int64"),
+            "_stop": numpy.array([nums.size], dtype="int64"),
+        }
+
+    initial = Indexer.build(col, builder=_build_single)
+    assert len(initial) == 3
+
+    # Return TWO rows per partition for num == 1 so we can observe the
+    # replacement rather than an idempotent rebuild.
+    def _build_double(ds: zc.Dataset) -> dict[str, numpy.ndarray]:
+        nums = ds["num"].to_numpy()
+        n = nums.size
+        half = n // 2 or 1
+        return {
+            "num": numpy.array([int(nums[0])] * 2, dtype="int64"),
+            "_start": numpy.array([0, half], dtype="int64"),
+            "_stop": numpy.array([half, n], dtype="int64"),
+        }
+
+    updated = Indexer.update(
+        col,
+        builder=_build_double,
+        existing=initial,
+        filters="num == 1",
+    )
+
+    hits = updated.lookup(num=1)
+    # num == 1 now has 2 rows (fresh build), others untouched (1 each).
+    assert hits["num=1"] == [(0, 1), (1, 2)]
+    assert updated.lookup(num=0)["num=0"] == [(0, 2)]
+    assert updated.lookup(num=2)["num=2"] == [(0, 3)]
+    assert len(updated) == 4
+
+
+def test_indexer_update_accepts_path(tmp_path, schema, dataset, partitioning):
+    """``Indexer.update`` can read ``existing`` from a Parquet path."""
+    store = zc.LocalStore(tmp_path / "col")
+    col = zc.create_collection(
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    col.insert(dataset)
+
+    def _build(ds: zc.Dataset) -> dict[str, numpy.ndarray]:
+        nums = ds["num"].to_numpy()
+        return {
+            "num": numpy.array([int(nums[0])], dtype="int64"),
+            "_start": numpy.array([0], dtype="int64"),
+            "_stop": numpy.array([nums.size], dtype="int64"),
+        }
+
+    idx = Indexer.build(col, builder=_build)
+    out_path = tmp_path / "idx.parquet"
+    idx.write(str(out_path))
+
+    refreshed = Indexer.update(
+        col,
+        builder=_build,
+        existing=str(out_path),
+        filters="num == 0",
+    )
+    assert len(refreshed) == 3
+    assert refreshed.lookup(num=0)["num=0"] == [(0, 2)]

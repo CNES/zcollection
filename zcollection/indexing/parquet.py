@@ -127,6 +127,87 @@ class Indexer:
         return cls(pyarrow.concat_tables(rows, promote_options="default"))
 
     @classmethod
+    def update(
+        cls,
+        collection: Collection,
+        *,
+        builder: IndexBuilder,
+        existing: Indexer | str,
+        filters: str | None = None,
+        variables: Iterable[str] | None = None,
+    ) -> Indexer:
+        """Rebuild the rows of partitions matching ``filters`` and merge them.
+
+        Issue #33 fix: ``build`` always walks every partition and
+        rematerialises the whole index — unworkable when the index is
+        larger than RAM and only a handful of partitions changed. This
+        method walks only the filtered partitions, drops every existing
+        row whose ``_partition`` matches one of them (a left-anti merge
+        on the partition column), then concatenates the fresh rows.
+
+        Args:
+            collection: The :class:`~zcollection.Collection` to re-index.
+            builder: Same contract as :meth:`build`.
+            existing: Either a loaded :class:`Indexer` or a path to an
+                on-disk Parquet file. Rows for untouched partitions are
+                copied straight through from this input.
+            filters: Partition-key predicate forwarded to
+                :meth:`Collection.partitions` — the set of partitions to
+                re-index.
+            variables: Optional whitelist of variables to load before
+                calling ``builder``.
+
+        Returns:
+            A new :class:`Indexer` whose table is
+            ``kept_existing + fresh_rows``. Column order follows the
+            fresh build; schema promotion handles minor dtype drift.
+
+        Raises:
+            ValueError: If ``builder``'s output for any partition omits
+                a ``_start`` or ``_stop`` column.
+            TypeError: If ``builder`` returns something other than a
+                structured array or a dict of arrays.
+
+        """
+        prior = existing if isinstance(existing, cls) else cls.read(existing)
+
+        def _worker(ds: Any) -> pyarrow.Table:
+            return _payload_to_table_no_partition(builder(ds))
+
+        fresh_rows: list[pyarrow.Table] = []
+        touched_partitions: list[str] = []
+        per_partition = collection.map(
+            _worker,
+            filters=filters,
+            variables=variables,
+        )
+        for path, tbl in per_partition.items():
+            touched_partitions.append(path)
+            if tbl.num_rows:
+                fresh_rows.append(_attach_partition_column(tbl, partition=path))
+
+        # Left-anti filter on the existing table: drop rows whose
+        # ``_partition`` is in the set we just rebuilt.
+        prior_tbl = prior.table
+        if touched_partitions:
+            mask = pc.invert(  # type: ignore[attr-defined]
+                pc.is_in(  # type: ignore[attr-defined]
+                    prior_tbl.column(PARTITION_COL),
+                    value_set=pyarrow.array(touched_partitions),
+                ),
+            )
+            kept = prior_tbl.filter(mask)
+        else:
+            kept = prior_tbl
+
+        if not fresh_rows:
+            return cls(kept)
+        combined = pyarrow.concat_tables(
+            [kept, *fresh_rows], promote_options="default"
+        )
+        return cls(combined)
+
+    @classmethod
     def read(cls, path: str) -> Indexer:
         """Load an indexer from a Parquet file at ``path``."""
         return cls(pq.read_table(path))
