@@ -41,6 +41,9 @@ Storage
   array, beside the fill value Zarr 3 requires of every array.
 * Variable schemas accept native Zarr 3 codecs and supported numcodecs codecs.
   The numcodecs codecs are translated into their Zarr 3 equivalents.
+* Opening a group or an array of a Zarr 3 collection costs one request for its
+  metadata. Reading a collection, updating it and reading a view send fewer
+  requests to the store.
 
 Behaviour
 ^^^^^^^^^

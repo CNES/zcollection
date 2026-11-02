@@ -434,7 +434,7 @@ def _write_checksum_array(
     array: zarr.Array
     checksum_path = join_path(partition, CHECKSUM_FILE)
     if fs.exists(checksum_path):
-        array = store.open_array(fs, checksum_path, mode='a')
+        array = store.open_array(fs, checksum_path, mode='r+')
     else:
         array = store.create_array(fs,
                                    checksum_path,

@@ -517,7 +517,7 @@ def update_zarr_array(
         array.
     """
     _LOGGER.debug('Updating Zarr array %r', dirname)
-    target: zarr.Array = store.open_array(fs, dirname, mode='a')
+    target: zarr.Array = store.open_array(fs, dirname, mode='r+')
 
     if isinstance(array, dask.array.core.Array):
         array = array.compute()

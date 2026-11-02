@@ -12,7 +12,7 @@ path, and knows nothing of the mapping between the two.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 import warnings
 
 import fsspec.implementations.local
@@ -26,7 +26,7 @@ from . import codecs
 from .codecs import DEFAULT_COMPRESSOR
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     import numcodecs.abc
     from zarr.core.buffer import NDArrayLikeOrScalar
@@ -37,6 +37,12 @@ if TYPE_CHECKING:
 __all__ = ('DEFAULT_COMPRESSOR', 'consolidate', 'contains_group',
            'create_array', 'create_group', 'open_array', 'open_group',
            'write_group_attributes')
+
+#: Version of the Zarr format this release writes.
+_FORMAT = 3
+
+#: A group or an array held in a Zarr store.
+_Node = TypeVar('_Node', zarr.Array, zarr.Group)
 
 #: Marker letting Zarr pick the shape of a chunk.
 DEFAULT_CHUNKS = 'auto'
@@ -78,6 +84,34 @@ def _store(
     return zarr.storage.FsspecStore.from_mapper(fs.get_mapper(path))
 
 
+def _open(
+    opener: Callable[..., _Node],
+    fs: fsspec.AbstractFileSystem,
+    path: str,
+    mode: str,
+) -> _Node:
+    """Open a node, naming the format this release writes.
+
+    A call naming a format costs one request. A call naming none costs
+    one request for each format Zarr knows. The second call here names
+    none, which is how a collection written by an earlier release is
+    read.
+
+    Args:
+        opener: The Zarr function that opens the node.
+        fs: The file system the node is held on.
+        path: The path of the node.
+        mode: The mode to open the node with.
+
+    Returns:
+        The node.
+    """
+    try:
+        return opener(store=_store(fs, path), mode=mode, zarr_format=_FORMAT)
+    except zarr.errors.BaseZarrError:
+        return opener(store=_store(fs, path), mode=mode)
+
+
 def open_array(
     fs: fsspec.AbstractFileSystem,
     path: str,
@@ -96,7 +130,7 @@ def open_array(
     Returns:
         The array.
     """
-    return zarr.open_array(store=_store(fs, path), mode=mode)
+    return _open(zarr.open_array, fs, path, mode)
 
 
 def open_group(
@@ -115,7 +149,7 @@ def open_group(
     Returns:
         The group.
     """
-    return zarr.open_consolidated(store=_store(fs, path), mode=mode)
+    return _open(zarr.open_consolidated, fs, path, mode)
 
 
 # The parameters are the ones Zarr names an array with.
@@ -221,7 +255,7 @@ def contains_group(fs: fsspec.AbstractFileSystem, path: str) -> bool:
         Whether a group is held there.
     """
     try:
-        zarr.open_group(store=_store(fs, path), mode='r')
+        _open(zarr.open_group, fs, path, 'r')
     except (FileNotFoundError, zarr.errors.GroupNotFoundError):
         return False
     return True
@@ -239,7 +273,7 @@ def write_group_attributes(
         path: The path of the group.
         attributes: The attributes to hold.
     """
-    zarr.open_group(store=_store(fs, path), mode='r+').attrs.put(attributes)
+    _open(zarr.open_group, fs, path, 'r+').attrs.put(attributes)
 
 
 def consolidate(fs: fsspec.AbstractFileSystem, path: str) -> zarr.Group:

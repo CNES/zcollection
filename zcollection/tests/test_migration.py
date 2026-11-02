@@ -1035,7 +1035,7 @@ def fill_the_masked_variable(partition: str) -> None:
     """
     array = store.open_array(local,
                              fs_utils.join_path(partition, 'masked'),
-                             mode='a')
+                             mode='r+')
     array[...] = reference.FILL_VALUE
 
 

@@ -13,7 +13,9 @@ are pinned here.
 """
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
+import contextlib
+from unittest import mock
 import warnings
 
 import numcodecs
@@ -27,6 +29,39 @@ from ..fs_utils import join_path
 from .fs import local_fs  # noqa: F401
 
 # pylint: enable=unused-import
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    import fsspec
+
+
+@contextlib.contextmanager
+def keys_read(fs: fsspec.AbstractFileSystem, path: str) -> Iterator[list[str]]:
+    """Record the keys read from a store.
+
+    The record holds the keys read from every store of the kind that
+    holds this path.
+
+    Args:
+        fs: The file system the store is held on.
+        path: The path of the store.
+
+    Yields:
+        The keys, in the order they are read.
+    """
+    #: pylint: disable=protected-access
+    target = type(store._store(fs, path))
+    #: pylint: enable=protected-access
+    held: list[str] = []
+    asked = target.get
+
+    async def record(self, key, *args, **kwargs):
+        held.append(key)
+        return await asked(self, key, *args, **kwargs)
+
+    with mock.patch.object(target, 'get', record):
+        yield held
 
 
 def test_uninitialized_values_read_as_zero(local_fs) -> None:  # noqa: F811
@@ -249,3 +284,28 @@ def test_opening_an_absent_array_raises(local_fs) -> None:  # noqa: F811
         store.open_array(local_fs.fs, path)
 
     assert not local_fs.fs.exists(path)
+
+
+def test_opening_a_node_reads_its_metadata_once(
+        local_fs) -> None:  # noqa: F811
+    """A group and an array each cost one request to open.
+
+    The key read is the metadata of the format this release writes.
+    """
+    path = join_path(str(local_fs.root), 'group')
+    store.create_group(local_fs.fs, path)
+    store.create_array(local_fs.fs,
+                       path,
+                       name='variable',
+                       shape=(4, ),
+                       dtype=numpy.dtype('int32'))
+    store.consolidate(local_fs.fs, path)
+
+    with keys_read(local_fs.fs, path) as group_keys:
+        store.open_group(local_fs.fs, path)
+
+    with keys_read(local_fs.fs, path) as array_keys:
+        store.open_array(local_fs.fs, join_path(path, 'variable'))
+
+    assert group_keys == ['zarr.json']
+    assert array_keys == ['zarr.json']
