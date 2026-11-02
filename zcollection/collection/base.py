@@ -46,6 +46,7 @@ from ..io import (
     open_immutable_dataset_async,
     open_partition_dataset_async,
     partition_exists,
+    partition_exists_async,
     read_root_config,
     write_immutable_dataset,
     write_partition_dataset_async,
@@ -482,39 +483,42 @@ class Collection:
                 (key, sl, self._partitioning.encode(key))
                 for key, sl in self._partitioning.split(dataset)
             ]
+            # Single shared semaphore gates variable-level I/O across all
+            # partitions; without it, outer (per-partition) and inner
+            # (per-variable) semaphores would compose to C² concurrent
+            # ops.
             sem = asyncio.Semaphore(concurrency)
 
             async def _write(key, sl, path) -> str:
-                async with sem:
-                    sub = _slice_dataset(
-                        dataset,
-                        dim=self._partitioning.dimension,
-                        sl=sl,
-                    )
-                    if merge is not None and partition_exists(
-                        self._store, path
-                    ):
-                        existing = await open_partition_dataset_async(
-                            self._store,
-                            path,
-                            self._schema,
-                        )
-                        sub = merge_fn(
-                            existing,
-                            sub,
-                            axis=self._axis,
-                            partitioning_dim=self._partitioning.dimension,
-                        )
-                    extra = {"_zc_partition_key": [list(t) for t in key]}
-                    await write_partition_dataset_async(
+                sub = _slice_dataset(
+                    dataset,
+                    dim=self._partitioning.dimension,
+                    sl=sl,
+                )
+                if merge is not None and await partition_exists_async(
+                    self._store, path
+                ):
+                    existing = await open_partition_dataset_async(
                         self._store,
                         path,
-                        sub,
-                        overwrite=overwrite,
-                        extra_attrs=extra,
-                        concurrency=concurrency,
+                        self._schema,
                     )
-                    return path
+                    sub = merge_fn(
+                        existing,
+                        sub,
+                        axis=self._axis,
+                        partitioning_dim=self._partitioning.dimension,
+                    )
+                extra = {"_zc_partition_key": [list(t) for t in key]}
+                await write_partition_dataset_async(
+                    self._store,
+                    path,
+                    sub,
+                    overwrite=overwrite,
+                    extra_attrs=extra,
+                    sem=sem,
+                )
+                return path
 
             written = list(await asyncio.gather(*[_write(*t) for t in plan]))
             if self._catalog is not None and written:
@@ -563,10 +567,21 @@ class Collection:
         *,
         filters: str | None = None,
         variables: Iterable[str] | None = None,
+        _parts: list[str] | None = None,
     ) -> Dataset | None:
-        """Async variant of :meth:`query`."""
+        """Async variant of :meth:`query`.
+
+        ``_parts`` is a private hook: a caller that already enumerated
+        the matching partitions (e.g. ``View.query_async``) passes them
+        in to skip a second walk of the store. ``filters`` is then
+        ignored for enumeration.
+        """
         wanted = list(variables) if variables is not None else None
-        parts = list(self.partitions(filters=filters))
+        parts = (
+            _parts
+            if _parts is not None
+            else list(self.partitions(filters=filters))
+        )
         if not parts:
             return None
         concurrency = max(1, int(config_get("partition.concurrency")))
@@ -581,13 +596,14 @@ class Collection:
                     variables=wanted,
                 )
 
-        loaded_task = asyncio.gather(*[_load(p) for p in parts])
-        immutable_task = open_immutable_dataset_async(
-            self._store,
-            self._schema,
-            variables=wanted,
+        loaded, immutable = await asyncio.gather(
+            asyncio.gather(*(_load(p) for p in parts)),
+            open_immutable_dataset_async(
+                self._store,
+                self._schema,
+                variables=wanted,
+            ),
         )
-        loaded, immutable = await asyncio.gather(loaded_task, immutable_task)
         merged = _concat_datasets(
             list(loaded),
             dim=self._partitioning.dimension,
@@ -780,15 +796,15 @@ class Collection:
                     self._schema,
                     variables=wanted,
                 )
-                new_ds = fn(_attach_immutable(ds, immutable))
-                await write_partition_dataset_async(
-                    self._store,
-                    path,
-                    new_ds,
-                    overwrite=True,
-                    concurrency=concurrency,
-                )
-                return path
+            new_ds = fn(_attach_immutable(ds, immutable))
+            await write_partition_dataset_async(
+                self._store,
+                path,
+                new_ds,
+                overwrite=True,
+                sem=sem,
+            )
+            return path
 
         with self._store.session():
             return list(await asyncio.gather(*[_update(p) for p in parts]))

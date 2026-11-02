@@ -97,8 +97,15 @@ async def write_partition_dataset_async(
     overwrite: bool = True,
     extra_attrs: dict[str, Any] | None = None,
     concurrency: int = 8,
+    sem: asyncio.Semaphore | None = None,
 ) -> None:
-    """Async write of one partition (root group + nested arrays/groups)."""
+    """Async write of one partition (root group + nested arrays/groups).
+
+    When ``sem`` is provided it caps variable-level I/O across *all*
+    partitions sharing it; ``concurrency`` is then ignored. Pass it from
+    the batch caller to avoid the C^2 (outer x inner) blow-up that
+    separate semaphores would create.
+    """
     _LOGGER.debug("Async writing partition %r", partition_path)
 
     zstore = store.zarr_store()
@@ -114,7 +121,8 @@ async def write_partition_dataset_async(
     )
 
     dim_chunks = dataset.schema.dim_chunks
-    sem = asyncio.Semaphore(max(1, concurrency))
+    if sem is None:
+        sem = asyncio.Semaphore(max(1, concurrency))
     await _write_group_async(
         root, dataset, dim_chunks, sem, overwrite=overwrite
     )
@@ -213,5 +221,12 @@ async def open_partition_dataset_async(
 
 
 async def partition_exists_async(store: Store, partition_path: str) -> bool:
-    """Return whether a partition exists at ``partition_path`` in ``store``."""
-    return store.exists(join_path(partition_path, "zarr.json"))
+    """Return whether a partition exists at ``partition_path`` in ``store``.
+
+    Offloads the blocking ``store.exists`` call to a worker thread so an
+    event loop handling many concurrent lookups isn't stalled by the
+    round-trip.
+    """
+    return await asyncio.to_thread(
+        store.exists, join_path(partition_path, "zarr.json")
+    )

@@ -20,7 +20,7 @@ from ..errors import (
 )
 from ..io import (
     open_partition_dataset_async,
-    partition_exists,
+    partition_exists_async,
     write_partition_dataset_async,
 )
 from ..schema import DatasetSchema, VariableSchema
@@ -274,9 +274,14 @@ class View:
         )
         view_wanted = None if wanted is None else sorted(wanted & view_names)
 
+        # Enumerate the matching partitions ONCE and share the list with
+        # the base query so the store isn't walked twice (base + view).
+        parts = list(self.partitions(filters=filters))
+
         base_ds = await self._base.query_async(
             filters=filters,
             variables=base_wanted,
+            _parts=parts,
         )
         if base_ds is None:
             return None
@@ -284,7 +289,6 @@ class View:
         if view_wanted == []:
             return base_ds
 
-        parts = list(self.partitions(filters=filters))
         if not parts:
             return base_ds
 
@@ -293,7 +297,7 @@ class View:
 
         async def _load(path: str) -> Dataset | None:
             async with sem:
-                if not partition_exists(self._store, path):
+                if not await partition_exists_async(self._store, path):
                     return None
                 return await open_partition_dataset_async(
                     self._store,
@@ -383,26 +387,26 @@ class View:
                     self._base.schema,
                     variables=base_wanted,
                 )
-                produced = fn(base_ds)
-                view_vars = {
-                    name: Variable(self._view_schema.variables[name], data)
-                    for name, data in produced.items()
-                    if name in view_names
-                }
-                if not view_vars:
-                    return path
-                ds = Dataset(
-                    schema=self._view_schema,
-                    variables=view_vars,
-                )
-                await write_partition_dataset_async(
-                    self._store,
-                    path,
-                    ds,
-                    overwrite=True,
-                    concurrency=concurrency,
-                )
+            produced = fn(base_ds)
+            view_vars = {
+                name: Variable(self._view_schema.variables[name], data)
+                for name, data in produced.items()
+                if name in view_names
+            }
+            if not view_vars:
                 return path
+            ds = Dataset(
+                schema=self._view_schema,
+                variables=view_vars,
+            )
+            await write_partition_dataset_async(
+                self._store,
+                path,
+                ds,
+                overwrite=True,
+                sem=sem,
+            )
+            return path
 
         return list(await asyncio.gather(*[_step(p) for p in parts]))
 
