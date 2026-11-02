@@ -140,36 +140,35 @@ async def _read_group_async(
     dict[str, dict[str, Variable]],
     dict[str, dict[str, Any]],
 ]:
-    async def _one_var(name: str, vschema: Any) -> tuple[str, Variable] | None:
+    # Enumerate members ONCE (a single consolidated LIST) instead of
+    # one ``getitem`` per declared variable; partitions that materialise
+    # only a subset of the schema's variables used to pay a KeyError-GET
+    # per absent name on every open.
+    present: set[str] = {name async for name in zgroup.keys()}
+
+    async def _one_var(name: str, vschema: Any) -> tuple[str, Variable]:
         async with sem:
-            try:
-                zarr_arr = await zgroup.getitem(name)
-            except KeyError:
-                return None
+            zarr_arr = await zgroup.getitem(name)
             data = await zarr_arr.getitem(Ellipsis)  # type: ignore[arg-type]
             return name, Variable(vschema, numpy.asarray(data))
 
     var_tasks = []
     for name, vschema in group_schema.variables.items():
-        if vschema.immutable:
+        if vschema.immutable or name not in present:
             continue
         path = f"{prefix}{name}" if prefix else name
         if wanted_paths is not None and path not in wanted_paths:
             continue
         var_tasks.append(_one_var(name, vschema))
 
-    own: dict[str, Variable] = {}
-    for item in await asyncio.gather(*var_tasks):
-        if item is not None:
-            own[item[0]] = item[1]
+    own: dict[str, Variable] = dict(await asyncio.gather(*var_tasks))
 
     nested_vars: dict[str, dict[str, Variable]] = {}
     nested_attrs: dict[str, dict[str, Any]] = {}
     for child_name, child_schema in group_schema.groups.items():
-        try:
-            child_zgroup = await zgroup.getitem(child_name)
-        except KeyError:
+        if child_name not in present:
             continue
+        child_zgroup = await zgroup.getitem(child_name)
         child_prefix = f"{prefix}{child_name}/" if prefix else f"{child_name}/"
         child_path = child_prefix.rstrip("/")
         nested_attrs[child_path] = dict(child_zgroup.attrs)
