@@ -545,6 +545,91 @@ def test_update_writes_back(tmp_path, schema, dataset, partitioning):
     )
 
 
+def test_update_with_depth_sees_neighbours(
+    tmp_path, schema, dataset, partitioning
+):
+    """``update(depth=1)`` lets ``fn`` observe neighbours (issue #27)."""
+    store = zc.LocalStore(tmp_path / "col")
+    col = zc.create_collection(
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    col.insert(dataset)
+
+    observed_lens: dict[int, int] = {}
+
+    def rolling_mean(ds: zc.Dataset) -> zc.Dataset:
+        # Record the window size the center partition saw.
+        n = ds["value"].to_numpy().shape[0]
+        key = int(ds["num"].to_numpy()[0])
+        observed_lens[key] = n
+        new_vars = dict(ds.variables)
+        new_vars["value"] = zc.Variable(
+            ds["value"].schema,
+            ds["value"].to_numpy() + 1.0,
+        )
+        return zc.Dataset(schema=ds.schema, variables=new_vars, attrs=ds.attrs)
+
+    col.update(rolling_mean, filters="num == 1", depth=1)
+
+    # num=0 has 2 rows, num=1 has 2, num=2 has 3; depth=1 window around
+    # num=1 covers all three partitions => 2+2+3 = 7 rows.
+    assert observed_lens == {0: 7}
+    # Only num=1 was written; neighbours untouched.
+    out = col.query()
+    original = dataset["value"].to_numpy()
+    updated = out["value"].to_numpy()
+    numpy.testing.assert_array_equal(updated[:2], original[:2])
+    numpy.testing.assert_array_equal(updated[2:4], original[2:4] + 1.0)
+    numpy.testing.assert_array_equal(updated[4:], original[4:])
+
+
+def test_update_depth_at_boundary(tmp_path, schema, dataset, partitioning):
+    """``depth`` is clipped at the first/last partition — no out-of-range reads."""
+    store = zc.LocalStore(tmp_path / "col")
+    col = zc.create_collection(
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    col.insert(dataset)
+
+    observed_lens: dict[int, int] = {}
+
+    def passthrough(ds: zc.Dataset) -> zc.Dataset:
+        key = int(ds["num"].to_numpy()[0])
+        observed_lens[key] = ds["value"].to_numpy().shape[0]
+        return ds
+
+    col.update(passthrough, filters="num == 0", depth=1)
+    # num=0 has no left neighbour; window = num=0 (2) + num=1 (2) = 4.
+    assert observed_lens == {0: 4}
+
+    observed_lens.clear()
+    col.update(passthrough, filters="num == 2", depth=1)
+    # num=2 has no right neighbour; window = num=1 (2) + num=2 (3) = 5.
+    assert observed_lens == {1: 5}
+
+
+def test_update_rejects_negative_depth(tmp_path, schema, dataset, partitioning):
+    """``depth`` must be a non-negative integer."""
+    store = zc.LocalStore(tmp_path / "col")
+    col = zc.create_collection(
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    with pytest.raises(ValueError, match="depth must be >= 0"):
+        col.update(lambda ds: ds, depth=-1)
+
+
 # --- single-writer-per-partition concurrency -----------------------
 
 

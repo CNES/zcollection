@@ -35,7 +35,7 @@ their direct backers.
 
 from typing import TYPE_CHECKING, Any
 import asyncio
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 
 import numpy
 
@@ -813,6 +813,7 @@ class Collection:
         *,
         filters: str | None = None,
         variables: Iterable[str] | None = None,
+        depth: int = 0,
     ) -> list[str]:
         """Read each matching partition, transform it, and write it back.
 
@@ -847,6 +848,13 @@ class Collection:
                 calling ``fn``. Reduces I/O at read time, but does
                 *not* protect unloaded variables from being dropped on
                 write — see the warning above.
+            depth: Number of neighbour partitions on each side to
+                include in the dataset passed to ``fn`` (issue #27).
+                Clipped at the collection's first/last partition.
+                ``fn`` must return a dataset of the same partition-dim
+                length as the extended window; the overlap context is
+                discarded before writing. The default ``0`` keeps the
+                historical whole-partition contract.
 
         Returns:
             The list of partition paths that were written, in the
@@ -862,7 +870,9 @@ class Collection:
         from ..dask.scheduler import run_sync
 
         return run_sync(
-            self.update_async(fn, filters=filters, variables=variables)
+            self.update_async(
+                fn, filters=filters, variables=variables, depth=depth
+            )
         )
 
     async def update_async(
@@ -871,11 +881,23 @@ class Collection:
         *,
         filters: str | None = None,
         variables: Iterable[str] | None = None,
+        depth: int = 0,
     ) -> list[str]:
-        """Async variant of :meth:`update`."""
+        """Async variant of :meth:`update`.
+
+        ``depth`` (issue #27) extends the dataset passed to ``fn`` with
+        ``depth`` neighbouring partitions on each side (clipped at the
+        collection boundary) along the partitioning dimension. ``fn``
+        must return a dataset of the *same* partition-dim length as the
+        extended window; the matched partition's slice is written back
+        and the overlap context is discarded. ``depth=0`` (default)
+        keeps the historical whole-partition contract.
+        """
         self._require_writable()
+        if depth < 0:
+            raise ValueError("depth must be >= 0")
         wanted = list(variables) if variables is not None else None
-        parts = await self._partitions_async(filters=filters)
+        matched = await self._partitions_async(filters=filters)
         concurrency = max(1, int(config_get("partition.concurrency")))
         sem = asyncio.Semaphore(concurrency)
         immutable = await open_immutable_dataset_async(
@@ -884,26 +906,67 @@ class Collection:
             variables=wanted,
         )
 
-        async def _update(path: str) -> str:
-            async with sem:
-                ds = await open_partition_dataset_async(
+        if depth == 0:
+
+            async def _update(path: str) -> str:
+                async with sem:
+                    ds = await open_partition_dataset_async(
+                        self._store,
+                        path,
+                        self._schema,
+                        variables=wanted,
+                    )
+                new_ds = fn(_attach_immutable(ds, immutable))
+                await write_partition_dataset_async(
                     self._store,
                     path,
-                    self._schema,
-                    variables=wanted,
+                    new_ds,
+                    overwrite=True,
+                    sem=sem,
                 )
-            new_ds = fn(_attach_immutable(ds, immutable))
-            await write_partition_dataset_async(
-                self._store,
-                path,
-                new_ds,
-                overwrite=True,
-                sem=sem,
-            )
-            return path
+                return path
+        else:
+            all_parts = await self._enumerate_partitions_async()
+            index: dict[str, int] = {p: i for i, p in enumerate(all_parts)}
+            dim = self._partitioning.dimension
+
+            async def _load(path: str) -> Dataset:
+                async with sem:
+                    return await open_partition_dataset_async(
+                        self._store,
+                        path,
+                        self._schema,
+                        variables=wanted,
+                    )
+
+            async def _update(path: str) -> str:
+                i = index[path]
+                lo = max(0, i - depth)
+                hi = min(len(all_parts), i + depth + 1)
+                neighbours = all_parts[lo:hi]
+                loaded = await asyncio.gather(*(_load(p) for p in neighbours))
+                window = _concat_datasets(list(loaded), dim=dim)
+                center_offset = sum(
+                    _length_along(p, dim) for p in loaded[: i - lo]
+                )
+                center_len = _length_along(loaded[i - lo], dim)
+                new_window = fn(_attach_immutable(window, immutable))
+                new_center = _slice_dataset(
+                    new_window,
+                    dim=dim,
+                    sl=slice(center_offset, center_offset + center_len),
+                )
+                await write_partition_dataset_async(
+                    self._store,
+                    path,
+                    new_center,
+                    overwrite=True,
+                    sem=sem,
+                )
+                return path
 
         with self._store.session():
-            return list(await asyncio.gather(*[_update(p) for p in parts]))
+            return list(await asyncio.gather(*[_update(p) for p in matched]))
 
     # --- Internal --------------------------------------------------
 
@@ -912,6 +975,54 @@ class Collection:
             raise ReadOnlyError(
                 f"collection at {self._store.root_uri} is read-only"
             )
+
+    # --- Attributes -----------------------------------------------
+
+    def update_attributes(
+        self,
+        *,
+        attrs: Mapping[str, Any] | None = None,
+        variables: Mapping[str, Mapping[str, Any]] | None = None,
+    ) -> None:
+        """Merge new attributes into the schema and persist them (issue #20).
+
+        Only the collection's root config (``_zcollection.json``) is
+        rewritten: already-written partitions keep their per-group
+        ``zarr.json`` as-is, which never carried schema-level attrs in
+        the first place. Subsequent ``query``/``open`` operations see
+        the updated attrs through the refreshed schema.
+
+        Args:
+            attrs: Keys merged into the collection-wide attributes
+                (``schema.attrs``). ``None`` leaves them untouched.
+            variables: ``{name: {k: v}}`` merged into each named
+                variable's ``attrs``. Keys may be short names (root
+                scope) or absolute paths (``/grp/var``). Unknown names
+                raise :class:`~zcollection.errors.SchemaError`.
+
+        Raises:
+            ~zcollection.errors.ReadOnlyError: If the collection was
+                opened with ``read_only=True``.
+            ~zcollection.errors.SchemaError: If any key in ``variables``
+                is not a known variable path.
+
+        """
+        self._require_writable()
+        if attrs is None and not variables:
+            return
+        new_schema = self._schema.with_attrs(
+            attrs=attrs,
+            variables=variables,
+        )
+        with self._store.session():
+            write_root_config(
+                self._store,
+                schema=new_schema,
+                axis=self._axis,
+                partitioning=self._partitioning.to_json(),
+                catalog_enabled=self._catalog_enabled,
+            )
+        self._schema = new_schema
 
 
 def _rebind_to_schema(dataset: Dataset, schema: DatasetSchema) -> Dataset:
@@ -946,6 +1057,19 @@ def _attach_immutable(
         variables=merged,
         attrs=dataset.attrs,
     )
+
+
+def _length_along(dataset: Dataset, dim: str) -> int:
+    """Return the dataset's length along ``dim``.
+
+    Picks the first variable (root or nested) that spans ``dim`` and
+    returns its shape at that axis. All partition-dim-spanning variables
+    agree on this length by the collection's shape contract.
+    """
+    for var in dataset.all_variables().values():
+        if dim in var.dimensions:
+            return int(var.shape[var.dimensions.index(dim)])
+    raise ValueError(f"no variable spans dimension {dim!r}")
 
 
 def _slice_dataset(dataset: Dataset, *, dim: str, sl: slice) -> Dataset:

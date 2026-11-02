@@ -5,7 +5,7 @@
 """Dataset-level schema (root :class:`GroupSchema`)."""
 
 from typing import Any
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from ..errors import SchemaError
@@ -199,6 +199,73 @@ class DatasetSchema(GroupSchema):
             variables=dict(filtered.variables),
             groups=dict(filtered.groups),
             attrs=dict(self.attrs),
+            format_version=self.format_version,
+        )
+
+    def with_attrs(
+        self,
+        *,
+        attrs: Mapping[str, Any] | None = None,
+        variables: Mapping[str, Mapping[str, Any]] | None = None,
+    ) -> DatasetSchema:
+        """Return a copy with merged global and per-variable attributes.
+
+        Args:
+            attrs: Keys merged into the root group's ``attrs``. Pass
+                ``None`` to leave the global attrs alone.
+            variables: ``{path: {k: v}}``. Each inner mapping is merged
+                into the named variable's ``attrs``. Keys may be short
+                names (resolved against the root group) or absolute
+                paths (``/grp/var``). Unknown names raise.
+
+        Returns:
+            A new :class:`DatasetSchema` with the merged attributes;
+            dimensions, variable dtypes/codecs/roles are untouched.
+
+        Raises:
+            SchemaError: If any key in ``variables`` is not a known
+                variable path.
+
+        """
+        merged_root_attrs = dict(self.attrs)
+        if attrs is not None:
+            merged_root_attrs.update(attrs)
+
+        resolved: dict[str, dict[str, Any]] = {}
+        if variables:
+            all_vars = self.all_variables()
+            for name, extra in variables.items():
+                key = name.lstrip("/") if name.startswith("/") else name
+                if key not in all_vars:
+                    if name in self.variables:
+                        key = name
+                    else:
+                        raise SchemaError(
+                            f"unknown variable {name!r}: cannot update attrs"
+                        )
+                merged = dict(all_vars[key].attrs)
+                merged.update(extra)
+                resolved[key] = merged
+
+        def _rebind(group: GroupSchema, prefix: str) -> GroupSchema:
+            new_vars = {}
+            for vn, v in group.variables.items():
+                full = f"{prefix}{vn}" if prefix else vn
+                new_vars[vn] = (
+                    v.with_attrs(resolved[full]) if full in resolved else v
+                )
+            new_groups = {
+                gn: _rebind(g, f"{prefix}{gn}/")
+                for gn, g in group.groups.items()
+            }
+            return group._replace(variables=new_vars, groups=new_groups)
+
+        retagged = _rebind(self, "")
+        return DatasetSchema(
+            dimensions=dict(self.dimensions),
+            variables=dict(retagged.variables),
+            groups=dict(retagged.groups),
+            attrs=merged_root_attrs,
             format_version=self.format_version,
         )
 

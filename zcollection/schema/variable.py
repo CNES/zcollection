@@ -73,6 +73,19 @@ class VariableSchema:
             immutable=immutable,
         )
 
+    def with_attrs(self, attrs: dict[str, Any]) -> VariableSchema:
+        """Return a copy with ``attrs`` as the full attribute mapping."""
+        return VariableSchema(
+            name=self.name,
+            dtype=self.dtype,
+            dimensions=self.dimensions,
+            fill_value=self.fill_value,
+            codecs=self.codecs,
+            attrs=dict(attrs),
+            role=self.role,
+            immutable=self.immutable,
+        )
+
     def to_json(self) -> dict[str, Any]:
         """Serialize the variable to a JSON-compatible dict."""
         return {

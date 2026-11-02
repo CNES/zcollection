@@ -486,3 +486,59 @@ def test_view_config_is_json(tmp_path, schema, dataset, partitioning):
     payload = json.loads(raw)
     assert payload["format_version"] == 1
     assert payload["reference"]["uri"].endswith("col")
+
+
+def test_collection_update_attributes_persists(
+    tmp_path, schema, dataset, partitioning
+):
+    """``Collection.update_attributes`` persists global + per-variable attrs (issue #20)."""
+    store = zc.LocalStore(tmp_path / "col")
+    col = zc.create_collection(
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    col.insert(dataset)
+    col.update_attributes(
+        attrs={"provider": "ACME", "level": 2},
+        variables={"value": {"units": "m/s"}},
+    )
+    reopened = zc.open_collection(store, mode="r")
+    assert reopened.schema.attrs["provider"] == "ACME"
+    assert reopened.schema.attrs["level"] == 2
+    assert reopened.schema.variables["value"].attrs["units"] == "m/s"
+
+
+def test_collection_update_attributes_rejects_unknown_variable(
+    tmp_path, schema, dataset, partitioning
+):
+    """``update_attributes`` raises on an unknown variable path."""
+    store = zc.LocalStore(tmp_path / "col")
+    col = zc.create_collection(
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    with pytest.raises(zc.SchemaError, match="unknown variable"):
+        col.update_attributes(variables={"not_a_var": {"units": "m"}})
+
+
+def test_collection_update_attributes_read_only(
+    tmp_path, schema, dataset, partitioning
+):
+    """A read-only collection refuses attribute updates."""
+    store = zc.LocalStore(tmp_path / "col")
+    zc.create_collection(
+        store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    ro = zc.open_collection(store, mode="r")
+    with pytest.raises(zc.ReadOnlyError):
+        ro.update_attributes(attrs={"provider": "ACME"})
