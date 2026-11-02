@@ -223,6 +223,14 @@ class View:
 
     # --- listing ----------------------------------------------------
 
+    async def _partitions_async(
+        self,
+        *,
+        filters: str | None = None,
+    ) -> list[str]:
+        """Async sibling of :meth:`partitions`: concurrent store walk + filter."""
+        return await self._base._partitions_async(filters=filters)
+
     def partitions(self, *, filters: str | None = None) -> Iterator[str]:
         """Yield partition paths from the base collection, optionally filtered."""
         return self._base.partitions(filters=filters)
@@ -276,7 +284,7 @@ class View:
 
         # Enumerate the matching partitions ONCE and share the list with
         # the base query so the store isn't walked twice (base + view).
-        parts = list(self.partitions(filters=filters))
+        parts = await self._partitions_async(filters=filters)
 
         base_ds = await self._base.query_async(
             filters=filters,
@@ -375,7 +383,7 @@ class View:
             else sorted((wanted & base_names) | (wanted - view_names))
         )
 
-        parts = list(self.partitions(filters=filters))
+        parts = await self._partitions_async(filters=filters)
         concurrency = max(1, int(config_get("partition.concurrency")))
         sem = asyncio.Semaphore(concurrency)
 

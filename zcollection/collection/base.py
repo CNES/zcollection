@@ -346,9 +346,88 @@ class Collection:
                 return cached
         return sorted(self._walk_partitions())
 
+    async def _enumerate_partitions_async(self) -> list[str]:
+        """Async sibling of :meth:`_enumerate_partitions`.
+
+        Uses a fan-out ``list_dir`` walk when the catalog is unavailable;
+        on S3 this trades depth-sequential LISTs for depth-parallel ones.
+        """
+        if self._catalog is not None:
+            cached = self._catalog.read_paths()
+            if cached is not None:
+                return cached
+        depth = len(self._partitioning.axis)
+        concurrency = max(1, int(config_get("partition.concurrency")))
+        sem = asyncio.Semaphore(concurrency)
+        return sorted(await self._walk_async("", depth, sem))
+
     def _walk_partitions(self) -> Iterator[str]:
         depth = len(self._partitioning.axis)
         yield from self._walk(prefix="", depth=depth)
+
+    async def _walk_async(
+        self,
+        prefix: str,
+        depth: int,
+        sem: asyncio.Semaphore,
+    ) -> list[str]:
+        """Fan-out partition walk; one bounded ``list_dir`` call per directory."""
+        async with sem:
+            children = sorted(
+                await asyncio.to_thread(self._store.list_dir, prefix)
+            )
+        if not prefix:
+            children = [c for c in children if c not in _RESERVED_TOP_LEVEL]
+        if depth == 1:
+
+            async def _check(child: str) -> str | None:
+                full = join_path(prefix, child)
+                async with sem:
+                    exists = await partition_exists_async(self._store, full)
+                return full if exists else None
+
+            results = await asyncio.gather(*(_check(c) for c in children))
+            return [r for r in results if r is not None]
+
+        nested = await asyncio.gather(
+            *(
+                self._walk_async(join_path(prefix, c), depth - 1, sem)
+                for c in children
+            )
+        )
+        return [p for group in nested for p in group]
+
+    def _filtered_partitions(
+        self,
+        paths: Iterable[str],
+        filters: str | None,
+    ) -> list[str]:
+        """Apply a partition-key predicate to an already-enumerated list.
+
+        Shared between :meth:`partitions` and the async enumerators to
+        keep the decode-and-filter rules in one place.
+        """
+        predicate = compile_filter(filters)
+        out: list[str] = []
+        for path in paths:
+            try:
+                key = self._partitioning.decode(path)
+            except PartitionError:
+                continue
+            if predicate(key_to_dict(key)):
+                out.append(path)
+        return out
+
+    async def _partitions_async(
+        self,
+        *,
+        filters: str | None = None,
+    ) -> list[str]:
+        """Async sibling of :meth:`partitions`: concurrent walk + filter."""
+        return self._filtered_partitions(
+            await self._enumerate_partitions_async(),
+            filters,
+        )
 
     def repair_catalog(self) -> list[str]:
         """Rebuild the catalog by walking the store; return the new path list.
@@ -580,7 +659,7 @@ class Collection:
         parts = (
             _parts
             if _parts is not None
-            else list(self.partitions(filters=filters))
+            else await self._partitions_async(filters=filters)
         )
         if not parts:
             return None
@@ -689,7 +768,7 @@ class Collection:
     ) -> dict[str, Any]:
         """Async variant of :meth:`map`."""
         wanted = list(variables) if variables is not None else None
-        parts = list(self.partitions(filters=filters))
+        parts = await self._partitions_async(filters=filters)
         concurrency = max(1, int(config_get("partition.concurrency")))
         sem = asyncio.Semaphore(concurrency)
         immutable = await open_immutable_dataset_async(
@@ -779,7 +858,7 @@ class Collection:
         """Async variant of :meth:`update`."""
         self._require_writable()
         wanted = list(variables) if variables is not None else None
-        parts = list(self.partitions(filters=filters))
+        parts = await self._partitions_async(filters=filters)
         concurrency = max(1, int(config_get("partition.concurrency")))
         sem = asyncio.Semaphore(concurrency)
         immutable = await open_immutable_dataset_async(
