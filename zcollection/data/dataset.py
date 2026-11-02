@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, Any
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping
 
+import numpy
+
 from ..codecs import CodecStack
 from ..schema import DatasetSchema, GroupSchema, SchemaBuilder
 from .group import Group
@@ -236,10 +238,23 @@ class Dataset(Group):
         )
         data_vars = {}
         for name, var in target.variables.items():
+            raw = var.data
+            attrs = dict(var.attrs)
+            # xarray promotes masked integer arrays to float64 (filling
+            # the mask with NaN). To keep the schema dtype intact — the
+            # fix for issue #21 — fill with the schema's fill_value and
+            # advertise it as ``_FillValue`` so CF-aware readers can
+            # restore the mask on their side.
+            if isinstance(raw, numpy.ma.MaskedArray):
+                fill = var.fill_value
+                if fill is None:
+                    fill = raw.fill_value
+                raw = raw.filled(fill)
+                attrs.setdefault("_FillValue", fill)
             data_vars[name] = xr.Variable(
                 dims=var.dimensions,
-                data=var.data,
-                attrs=var.attrs,
+                data=raw,
+                attrs=attrs,
                 fastpath=False,
             )
         return xr.Dataset(data_vars=data_vars, attrs=dict(target.attrs))
