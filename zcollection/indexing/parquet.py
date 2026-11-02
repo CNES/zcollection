@@ -99,16 +99,22 @@ class Indexer:
                 structured array or a dict of arrays.
 
         """
+
+        # Push the numpy->arrow conversion onto the per-partition step so
+        # it runs in parallel on workers; the client only adds the
+        # (dictionary-encoded, O(1)) ``_partition`` column at the end.
+        def _worker(ds: Any) -> pyarrow.Table:
+            return _payload_to_table_no_partition(builder(ds))
+
         rows: list[pyarrow.Table] = []
         per_partition = collection.map(
-            builder,
+            _worker,
             filters=filters,
             variables=variables,
         )
-        for path, payload in per_partition.items():
-            tbl = _payload_to_table(payload, partition=path)
+        for path, tbl in per_partition.items():
             if tbl.num_rows:
-                rows.append(tbl)
+                rows.append(_attach_partition_column(tbl, partition=path))
         if not rows:
             empty = pyarrow.table(
                 {
@@ -198,11 +204,10 @@ class Indexer:
 # --- helpers --------------------------------------------------------
 
 
-def _payload_to_table(
+def _payload_to_table_no_partition(
     payload: numpy.ndarray | dict[str, numpy.ndarray],
-    *,
-    partition: str,
 ) -> pyarrow.Table:
+    """Convert a builder payload to a PyArrow table (no partition column)."""
     if isinstance(payload, numpy.ndarray) and payload.dtype.names is not None:
         cols = {name: payload[name] for name in payload.dtype.names}
     elif isinstance(payload, dict):
@@ -217,12 +222,21 @@ def _payload_to_table(
             raise ValueError(
                 f"builder output missing required column {col!r}",
             )
-    n = len(next(iter(cols.values())))
-    # Dictionary-encode: one physical string, N int32 indices — cardinality
-    # of this column across the full index is #partitions, not #rows.
+    return pyarrow.table(cols)
+
+
+def _attach_partition_column(
+    table: pyarrow.Table, *, partition: str
+) -> pyarrow.Table:
+    """Append a dictionary-encoded ``_partition`` column with a single value.
+
+    Cardinality of this column across the full index is ``#partitions``,
+    not ``#rows``, so dictionary encoding keeps both in-memory and
+    on-disk size proportional to the number of partitions.
+    """
+    n = table.num_rows
     partition_col = pyarrow.DictionaryArray.from_arrays(
         pyarrow.array(numpy.zeros(n, dtype=numpy.int32)),
         pyarrow.array([partition], type=pyarrow.string()),
     )
-    table = pyarrow.table(cols)
     return table.append_column(PARTITION_COL, partition_col)
