@@ -211,6 +211,59 @@ class View:
         """Return the reference to the base collection."""
         return self._reference
 
+    # --- rebind ------------------------------------------------------
+
+    def relink(
+        self,
+        new_base: Collection,
+        *,
+        reference: ViewReference | str | None = None,
+    ) -> None:
+        """Point this view at a moved or restored base collection.
+
+        Use when the base collection has been moved, archived under a
+        different URI, or reconstructed from a backup: the overlay data
+        is unchanged, but the ``reference`` stored in
+        ``_zcollection_view.json`` no longer resolves.
+
+        The new base's schema must stay compatible with the view's
+        overlay schema: every overlay variable's dimensions must still
+        exist on the new base, and no overlay variable may collide with
+        a base-collection variable (same contract as :meth:`create`).
+
+        Args:
+            new_base: The replacement base collection.
+            reference: The new on-disk pointer. Defaults to
+                ``ViewReference(uri=new_base.store.root_uri)``; pass an
+                explicit value when the stored URI should differ from
+                the live store (e.g. a canonical form).
+
+        Raises:
+            ~zcollection.errors.ReadOnlyError: If the view was opened
+                read-only.
+            ZCollectionError: If ``new_base``'s schema is incompatible
+                with the view's overlay schema.
+
+        """
+        self._require_writable()
+        for var in self._view_schema.variables.values():
+            _ensure_view_variable(var, new_base.schema)
+        ref = reference if reference is not None else new_base.store.root_uri
+        new_ref = (
+            ref if isinstance(ref, ViewReference) else ViewReference(uri=ref)
+        )
+        payload = {
+            "format_version": VIEW_FORMAT_VERSION,
+            "reference": new_ref.to_json(),
+            "schema": self._view_schema.to_json(),
+        }
+        self._store.write_bytes(
+            VIEW_CONFIG_FILE,
+            json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        )
+        self._base = new_base
+        self._reference = new_ref
+
     @property
     def variables(self) -> tuple[str, ...]:
         """Return the names of the view's overlay variables."""

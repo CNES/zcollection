@@ -279,6 +279,94 @@ def test_view_persists_and_reopens(tmp_path, schema, dataset, partitioning):
     assert reopened.reference.uri.endswith("col")
 
 
+def test_view_relink_rewrites_reference(
+    tmp_path, schema, dataset, partitioning
+):
+    """``View.relink`` rebinds a view to a moved base collection (issue #26)."""
+    base_store = zc.LocalStore(tmp_path / "col-old")
+    base = zc.create_collection(
+        base_store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    base.insert(dataset)
+    view_store = zc.LocalStore(tmp_path / "view")
+    derived = zc.VariableSchema(
+        name="bias",
+        dtype=numpy.dtype("float32"),
+        dimensions=("num", "x"),
+    )
+    view = View.create(
+        view_store,
+        base=base,
+        variables=[derived],
+        reference=f"file://{tmp_path / 'col-old'}",
+    )
+
+    # Move the base to a new location (fresh collection with the same schema).
+    new_base_store = zc.LocalStore(tmp_path / "col-new")
+    new_base = zc.create_collection(
+        new_base_store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+
+    view.relink(new_base, reference=f"file://{tmp_path / 'col-new'}")
+
+    assert view.base is new_base
+    assert view.reference.uri.endswith("col-new")
+    reopened = View.open(view_store, base=new_base)
+    assert reopened.reference.uri.endswith("col-new")
+
+
+def test_view_relink_rejects_incompatible_base(
+    tmp_path, schema, dataset, partitioning
+):
+    """``relink`` refuses a new base whose schema breaks the overlay contract."""
+    base_store = zc.LocalStore(tmp_path / "col")
+    base = zc.create_collection(
+        base_store,
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    view_store = zc.LocalStore(tmp_path / "view")
+    view = View.create(
+        view_store,
+        base=base,
+        variables=[
+            zc.VariableSchema(
+                name="bias",
+                dtype=numpy.dtype("float32"),
+                dimensions=("num", "x"),
+            ),
+        ],
+        reference=f"file://{tmp_path / 'col'}",
+    )
+    # New base lacks the "x" dimension the overlay variable depends on.
+    bad_schema = (
+        zc.SchemaBuilder()
+        .with_dimension("num", chunks=4)
+        .with_variable("value", dtype="float32", dimensions=("num",))
+        .build()
+    )
+    bad_base_store = zc.LocalStore(tmp_path / "col-bad")
+    bad_base = zc.create_collection(
+        bad_base_store,
+        schema=bad_schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    with pytest.raises(zc.ZCollectionError, match="unknown dimension"):
+        view.relink(bad_base)
+
+
 def test_view_rejects_colliding_variable(
     tmp_path, schema, dataset, partitioning
 ):
