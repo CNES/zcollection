@@ -2,14 +2,19 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""Per-partition Zarr v3 group I/O — synchronous path."""
+"""Per-partition Zarr v3 group I/O — sync facade + helpers shared with async.
+
+The sync ``write_partition_dataset`` / ``open_partition_dataset`` entry
+points are thin ``run_sync`` wrappers over their async counterparts; the
+array-building helpers (``_build_array_kwargs``, ``_chunks_for``) and the
+tree-attach helper (``_attach_nested``) live here because the async
+module imports them.
+"""
 
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterable
-import logging
 
 import numpy
-import zarr
 import zarr.codecs as zcodecs
 
 from ..codecs import resolve_codec
@@ -21,8 +26,6 @@ from ..store import join_path
 if TYPE_CHECKING:
     from ..schema import DatasetSchema, GroupSchema, VariableSchema
     from ..store import Store
-
-_LOGGER = logging.getLogger(__name__)
 
 
 def _build_array_kwargs(
@@ -93,55 +96,6 @@ def _chunks_for(
     return tuple(out)
 
 
-def _write_variable(
-    zgroup: zarr.Group,
-    var: Variable,
-    dim_chunks: dict[str, int | None],
-    *,
-    overwrite: bool,
-) -> None:
-    """Write one :class:`Variable` as a Zarr array under ``zgroup``."""
-    data = var.to_numpy()
-    shape = data.shape
-    inner_chunks = _chunks_for(var.schema, shape, dim_chunks)
-    array_kwargs = _build_array_kwargs(
-        var.schema, shape, inner_chunks, data.dtype
-    )
-    arr = zgroup.create_array(
-        name=var.name,
-        shape=shape,
-        dtype=data.dtype,
-        fill_value=var.fill_value,
-        attributes=dict(var.attrs),
-        dimension_names=list(var.dimensions),
-        overwrite=overwrite,
-        **array_kwargs,
-    )
-    arr[...] = data
-
-
-def _write_group(
-    zgroup: zarr.Group,
-    group: Group,
-    dim_chunks: dict[str, int | None],
-    *,
-    overwrite: bool,
-) -> None:
-    """Recursively write ``group``'s variables and child groups under ``zgroup``."""
-    for var in group.variables.values():
-        if var.schema.immutable:
-            continue  # immutable vars live in the root _immutable/ group
-        _write_variable(zgroup, var, dim_chunks, overwrite=overwrite)
-
-    for name, child in group.groups.items():
-        sub = zgroup.create_group(
-            name=name,
-            attributes=dict(child.attrs),
-            overwrite=overwrite,
-        )
-        _write_group(sub, child, dim_chunks, overwrite=overwrite)
-
-
 def write_partition_dataset(
     store: Store,
     partition_path: str,
@@ -150,86 +104,29 @@ def write_partition_dataset(
     overwrite: bool = True,
     extra_attrs: dict[str, Any] | None = None,
 ) -> None:
-    """Write one partition's data as a (possibly nested) Zarr v3 group tree."""
-    _LOGGER.debug("Writing partition %r", partition_path)
+    """Write one partition's data as a (possibly nested) Zarr v3 group tree.
 
-    zstore = store.zarr_store()
-    group_attrs = dict(dataset.attrs)
-    if extra_attrs:
-        group_attrs.update(extra_attrs)
+    Thin ``run_sync`` wrapper over :func:`write_partition_dataset_async`;
+    kept so sync callers (and tests) have a non-``await`` entry point
+    without maintaining a parallel recursive walker.
+    """
+    from ..dask.scheduler import run_sync
+    from .async_partition import write_partition_dataset_async
 
-    root = zarr.create_group(
-        store=zstore,
-        path=partition_path,
-        overwrite=overwrite,
-        attributes=group_attrs,
+    run_sync(
+        write_partition_dataset_async(
+            store,
+            partition_path,
+            dataset,
+            overwrite=overwrite,
+            extra_attrs=extra_attrs,
+        )
     )
-
-    dim_chunks = dataset.schema.dim_chunks
-    _write_group(root, dataset, dim_chunks, overwrite=overwrite)
 
 
 def partition_exists(store: Store, partition_path: str) -> bool:
     """Return whether a partition exists at ``partition_path`` in ``store``."""
     return store.exists(join_path(partition_path, "zarr.json"))
-
-
-def _read_group(
-    zgroup: zarr.Group,
-    group_schema: GroupSchema,
-    *,
-    wanted_paths: set[str] | None,
-    prefix: str,
-) -> tuple[
-    dict[str, Variable],
-    dict[str, dict[str, Variable]],
-    dict[str, dict[str, Any]],
-]:
-    """Recursively read variables under ``zgroup``.
-
-    Returns:
-        - own_vars: variables for this group, keyed by short name.
-        - nested_vars: dict of ``{group_path: {var_name: Variable}}`` for all
-          descendants of this group.
-        - nested_attrs: dict of ``{group_path: {attr: value}}`` for all
-          descendants (so the caller can attach attrs when building Group
-          instances).
-
-    """
-    own: dict[str, Variable] = {}
-    for name, vschema in group_schema.variables.items():
-        if vschema.immutable:
-            continue
-        path = f"{prefix}{name}" if prefix else name
-        if wanted_paths is not None and path not in wanted_paths:
-            continue
-        if name not in zgroup:
-            continue
-        zarr_arr = zgroup[name]
-        data = numpy.asarray(zarr_arr[...])  # type: ignore[index]
-        own[name] = Variable(vschema, data)
-
-    nested_vars: dict[str, dict[str, Variable]] = {}
-    nested_attrs: dict[str, dict[str, Any]] = {}
-    for child_name, child_schema in group_schema.groups.items():
-        if child_name not in zgroup:
-            continue
-        child_zgroup = zgroup[child_name]
-        if not isinstance(child_zgroup, zarr.Group):
-            continue
-        child_prefix = f"{prefix}{child_name}/" if prefix else f"{child_name}/"
-        child_path = child_prefix.rstrip("/")
-        nested_attrs[child_path] = dict(child_zgroup.attrs)
-        sub_own, sub_nested, sub_attrs = _read_group(
-            child_zgroup,
-            child_schema,
-            wanted_paths=wanted_paths,
-            prefix=child_prefix,
-        )
-        nested_vars[child_path] = sub_own
-        nested_vars.update(sub_nested)
-        nested_attrs.update(sub_attrs)
-    return own, nested_vars, nested_attrs
 
 
 def open_partition_dataset(
@@ -241,28 +138,17 @@ def open_partition_dataset(
 ) -> Dataset:
     """Open a partition's Zarr v3 group tree and return a :class:`Dataset`.
 
-    This sync helper loads variables eagerly into numpy; for non-blocking
-    loading, use :func:`open_partition_dataset_async`.
+    Thin ``run_sync`` wrapper over :func:`open_partition_dataset_async`;
+    the async form is the one implementation.
     """
-    zstore = store.zarr_store()
-    root_zgroup = zarr.open_group(store=zstore, path=partition_path, mode="r")
+    from ..dask.scheduler import run_sync
+    from .async_partition import open_partition_dataset_async
 
-    wanted_paths: set[str] | None = None
-    if variables is not None:
-        wanted_paths = {n.lstrip("/") for n in variables}
-
-    own_vars, nested_vars, nested_attrs = _read_group(
-        root_zgroup, schema, wanted_paths=wanted_paths, prefix=""
+    return run_sync(
+        open_partition_dataset_async(
+            store, partition_path, schema, variables=variables
+        )
     )
-
-    # Build child Group objects bottom-up.
-    dataset = Dataset(
-        schema=schema,
-        variables=own_vars,
-        attrs=dict(root_zgroup.attrs),
-    )
-    _attach_nested(dataset, schema, nested_vars, nested_attrs)
-    return dataset
 
 
 def _attach_nested(
