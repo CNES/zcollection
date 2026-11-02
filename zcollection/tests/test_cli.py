@@ -117,3 +117,61 @@ def test_missing_collection_returns_error(tmp_path):
     """Inspecting a missing collection exits with code 2."""
     rc, _ = _run(["inspect", str(tmp_path / "nope")])
     assert rc == 2
+
+
+def test_view_relink_cli(tmp_path, schema, dataset, partitioning):
+    """``view relink`` rewrites a view's reference to point at a new base."""
+    import numpy
+
+    from zcollection.view import View
+
+    base_old_path = str(tmp_path / "col-old")
+    base_old = zc.create_collection(
+        zc.LocalStore(base_old_path),
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+    base_old.insert(dataset)
+
+    view_path = str(tmp_path / "view")
+    View.create(
+        zc.LocalStore(view_path),
+        base=base_old,
+        variables=[
+            zc.VariableSchema(
+                name="bias",
+                dtype=numpy.dtype("float32"),
+                dimensions=("num", "x"),
+            ),
+        ],
+        reference=f"file://{base_old_path}",
+    )
+
+    base_new_path = str(tmp_path / "col-new")
+    zc.create_collection(
+        zc.LocalStore(base_new_path),
+        schema=schema,
+        axis="num",
+        partitioning=partitioning,
+        overwrite=True,
+    )
+
+    rc, txt = _run(
+        [
+            "view",
+            "relink",
+            view_path,
+            base_new_path,
+            "--reference",
+            f"file://{base_new_path}",
+        ],
+    )
+    assert rc == 0
+    assert "relinked view" in txt
+    reopened = View.open(
+        zc.LocalStore(view_path),
+        base=zc.open_collection(zc.LocalStore(base_new_path), mode="r"),
+    )
+    assert reopened.reference.uri.endswith("col-new")

@@ -113,6 +113,19 @@ def _cmd_drop(
     return 0
 
 
+def _cmd_view_relink(args: argparse.Namespace, out: TextIO) -> int:
+    from zcollection.view import View
+
+    base = _open_ro(args.base)
+    view_store = zc.open_store(args.view)
+    view = View.open(view_store, base=base)
+    view.relink(base, reference=args.reference)
+    out.write(
+        f"relinked view at {view.store.root_uri} -> {view.reference.uri}\n"
+    )
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="zcollection",
@@ -145,6 +158,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Skip the confirmation prompt.",
     )
 
+    view = sub.add_parser("view", help="View management.")
+    view_sub = view.add_subparsers(dest="view_cmd", required=True)
+    relink = view_sub.add_parser(
+        "relink",
+        help="Rebind a view to a moved or restored base collection.",
+    )
+    relink.add_argument("view", help="View URL or filesystem path.")
+    relink.add_argument(
+        "base", help="Replacement base collection URL or filesystem path."
+    )
+    relink.add_argument(
+        "--reference",
+        default=None,
+        help=(
+            "Reference URI to persist in the view config. Defaults to the "
+            "base collection's own URI."
+        ),
+    )
+
     return p
 
 
@@ -165,6 +197,8 @@ def main(
             return _cmd_inspect(args, out)
         if args.cmd == "drop":
             return _cmd_drop(args, out, stdin)
+        if args.cmd == "view" and args.view_cmd == "relink":
+            return _cmd_view_relink(args, out)
     except (CollectionNotFoundError, StoreError) as exc:
         sys.stderr.write(f"error: {exc}\n")
         return 2
