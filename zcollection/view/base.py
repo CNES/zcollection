@@ -343,6 +343,17 @@ class View:
         :attr:`view_schema`'s variables; missing keys are ignored,
         unknown keys raise.
 
+        .. warning::
+
+            Each partition's overlay group is **rewritten in full** on
+            every call: the view-variable set produced by ``fn`` is the
+            new on-disk truth for that partition. A view variable that
+            previously existed on an overlay partition but is absent
+            from ``fn``'s return value for that partition is **dropped
+            from disk**. If you want to add a new view variable without
+            disturbing earlier ones, have ``fn`` re-emit the earlier
+            ones alongside the new one.
+
         Args:
             fn: Pure function ``Dataset -> {name: numpy.ndarray}``.
             filters: Partition-key predicate (same syntax as
