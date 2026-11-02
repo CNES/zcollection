@@ -580,7 +580,7 @@ def test_upsert_within_with_jittered_timestamps(
             ),
         },
     )
-    strategy = upsert_within(numpy.timedelta64(5))
+    strategy = upsert_within(5)
     out = strategy(existing, inserted, axis="time", partitioning_dim="time")
     times = out["time"].to_numpy()
     # 0 and 100 from existing match exactly → dropped.
