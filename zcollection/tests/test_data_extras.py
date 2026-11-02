@@ -492,6 +492,39 @@ def test_dataset_to_xarray_roundtrip(flat_dataset: zc.Dataset) -> None:
     )
 
 
+def test_to_xarray_preserves_masked_int_dtype(
+    flat_schema: zc.DatasetSchema,
+) -> None:
+    """Regression for issue #21: masked int preserved by ``to_xarray``.
+
+    The reporter saw ``.values`` on the resulting xarray variable come
+    back as ``float64`` because the old code path funnelled through
+    ``numpy.ma.filled(fill_value=NaN)``. ``to_xarray`` now fills with
+    the schema's ``fill_value`` and advertises ``_FillValue``, so a
+    masked ``int64`` must stay ``int64``.
+    """
+    pytest.importorskip("xarray")
+    n = 4
+    masked_time = numpy.ma.masked_array(
+        numpy.arange(n, dtype="int64"),
+        mask=[False, True, False, True],
+    )
+    ds = zc.Dataset(
+        schema=flat_schema,
+        variables={
+            "time": zc.Variable(flat_schema.variables["time"], masked_time),
+            "v": zc.Variable(
+                flat_schema.variables["v"], numpy.zeros(n, dtype="float32")
+            ),
+            "s": zc.Variable(
+                flat_schema.variables["s"], numpy.zeros(n, dtype="float32")
+            ),
+        },
+    )
+    xds = ds.to_xarray()
+    assert xds["time"].dtype == numpy.dtype("int64")
+
+
 # %%
 # Merge fast-paths and errors --------------------------------------------
 
