@@ -21,6 +21,8 @@ Features
   configuration of a partitioning carries the data types.
 * ``VariableSchema``, ``DatasetSchema`` and ``Dimension`` are reachable from
   the package.
+* ``AbsentPartition`` and ``ModifiedVariableError`` are reachable from the
+  package.
 
 Storage
 ^^^^^^^

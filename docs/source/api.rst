@@ -72,6 +72,15 @@ Indexing
   zcollection.indexing
   zcollection.indexing.abc
 
+Exceptions
+==========
+
+.. autosummary::
+  :toctree: _generated/
+
+  zcollection.AbsentPartition
+  zcollection.ModifiedVariableError
+
 Convenience functions
 =====================
 

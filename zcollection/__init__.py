@@ -23,11 +23,14 @@ from .convenience import (
 )
 from .dataset import Dataset, Expression
 from .meta import Attribute, DatasetSchema, Dimension, VariableSchema
+from .storage import AbsentPartition
 from .variable import Array, DelayedArray, Variable
+from .variable.delayed_array import ModifiedVariableError
 from .version import __version__
 from .view import View, ViewReference, ViewUpdateCallable
 
 __all__ = (
+    'AbsentPartition',
     'Array',
     'Attribute',
     'Collection',
@@ -38,6 +41,7 @@ __all__ = (
     'Expression',
     'Indexer',
     'MapCallable',
+    'ModifiedVariableError',
     'PartitionCallable',
     'PartitionFilter',
     'PartitionFilterCallback',
