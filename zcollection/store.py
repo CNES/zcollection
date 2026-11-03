@@ -44,6 +44,9 @@ _FORMAT = 3
 #: A group or an array held in a Zarr store.
 _Node = TypeVar('_Node', zarr.Array, zarr.Group)
 
+#: The modes opening a node the store holds.
+_READ_MODES: frozenset[str] = frozenset({'r', 'r+'})
+
 #: Marker letting Zarr pick the shape of a chunk.
 DEFAULT_CHUNKS = 'auto'
 
@@ -101,11 +104,17 @@ def _open(
         opener: The Zarr function that opens the node.
         fs: The file system the node is held on.
         path: The path of the node.
-        mode: The mode to open the node with.
+        mode: Either ``'r'`` or ``'r+'``.
 
     Returns:
         The node.
+
+    Raises:
+        ValueError: If the mode creates a node.
     """
+    if mode not in _READ_MODES:
+        raise ValueError(f'the mode {mode!r} creates a node; the modes '
+                         f'reading one are {sorted(_READ_MODES)}')
     try:
         return opener(store=_store(fs, path), mode=mode, zarr_format=_FORMAT)
     except zarr.errors.BaseZarrError:
@@ -123,12 +132,15 @@ def open_array(
     Args:
         fs: The file system the array is held on.
         path: The path of the array.
-        mode: The mode to open the array with. The default reads the
-            array, and raises when the store holds none at that path. A
-            mode that writes builds the array the store does not hold.
+        mode: Either ``'r'``, which reads the array, or ``'r+'``,
+            which also writes to it.
 
     Returns:
         The array.
+
+    Raises:
+        ValueError: If the mode creates an array.
+        FileNotFoundError: If the store holds no array at that path.
     """
     return _open(zarr.open_array, fs, path, mode)
 
@@ -144,10 +156,16 @@ def open_group(
     Args:
         fs: The file system the group is held on.
         path: The path of the group.
-        mode: The mode to open the group with.
+        mode: Either ``'r'``, which reads the group, or ``'r+'``,
+            which also writes to it.
 
     Returns:
         The group.
+
+    Raises:
+        ValueError: If the mode creates a group.
+        zarr.errors.GroupNotFoundError: If the store holds no group at
+            that path.
     """
     return _open(zarr.open_consolidated, fs, path, mode)
 

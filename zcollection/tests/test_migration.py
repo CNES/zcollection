@@ -768,7 +768,7 @@ def test_check_names_the_variables_the_target_changed(deprecated,
         array = store.open_array(local,
                                  fs_utils.join_path(target, PARTITIONS[2],
                                                     name),
-                                 mode='a')
+                                 mode='r+')
         array[...] = numpy.ones(array.shape, dtype=array.dtype)
 
     outcome = check(deprecated, target, distributed=False)
@@ -976,7 +976,7 @@ def test_check_compares_the_immutable_variables(deprecated, tmp_path) -> None:
     array = store.open_array(local,
                              fs_utils.join_path(target, collection.IMMUTABLE,
                                                 'pixel'),
-                             mode='a')
+                             mode='r+')
     array[...] = reference.pixel_values() + 1
 
     outcome = check(deprecated, target, distributed=False)
@@ -1158,7 +1158,7 @@ def test_check_names_a_variable_whose_attributes_changed(deprecated,
     array = store.open_array(local,
                              fs_utils.join_path(target, PARTITIONS[0],
                                                 'counts'),
-                             mode='a')
+                             mode='r+')
     array.attrs['units'] = 'furlongs'
     store.consolidate(local, fs_utils.join_path(target, PARTITIONS[0]))
 
@@ -1223,7 +1223,7 @@ def test_check_view_names_the_variables_the_target_changed(
     array = store.open_array(local,
                              fs_utils.join_path(target, PARTITIONS[0],
                                                 VIEW_VARIABLE.name),
-                             mode='a')
+                             mode='r+')
     array[...] = cast('numpy.ndarray', array[...]) + 1
 
     outcome = check_view(deprecated_view, target, distributed=False)
@@ -1261,7 +1261,7 @@ def test_check_names_a_variable_whose_fill_value_changed(deprecated,
     for name, value in (('plain', -1234.0), ('counts', -98)):
         array = store.open_array(local,
                                  fs_utils.join_path(partition, name),
-                                 mode='a')
+                                 mode='r+')
         array.attrs[FILL_VALUE] = value
     store.consolidate(local, partition)
 
@@ -1305,7 +1305,7 @@ def test_check_names_a_variable_the_target_masks_otherwise(
     array = store.open_array(local,
                              fs_utils.join_path(target, PARTITIONS[0],
                                                 'masked'),
-                             mode='a')
+                             mode='r+')
     assert numpy.ma.getmaskarray(
         read_collection(deprecated, local).variables['masked'].values).any()
     array[...] = numpy.ones(array.shape, dtype=array.dtype)

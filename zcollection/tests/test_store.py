@@ -276,6 +276,20 @@ def test_consolidation_says_nothing(local_fs) -> None:  # noqa: F811
     assert [str(item.message) for item in seen] == ['another matter']
 
 
+@pytest.mark.parametrize('mode', ['a', 'w', 'w-'])
+def test_opening_a_node_with_a_creating_mode_raises(
+        mode, local_fs) -> None:  # noqa: F811
+    """Both openers refuse a mode that creates a node."""
+    path = join_path(str(local_fs.root), 'group')
+    store.create_group(local_fs.fs, path)
+
+    with pytest.raises(ValueError, match='creates a node'):
+        store.open_group(local_fs.fs, path, mode=mode)
+
+    with pytest.raises(ValueError, match='creates a node'):
+        store.open_array(local_fs.fs, path, mode=mode)
+
+
 def test_opening_an_absent_array_raises(local_fs) -> None:  # noqa: F811
     """Opening an array the store does not hold builds none of it."""
     path = join_path(str(local_fs.root), 'absent')

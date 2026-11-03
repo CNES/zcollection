@@ -529,10 +529,12 @@ def _extend_partition(
     fs: fsspec.AbstractFileSystem,
     axis_ref: AxisReference,
 ) -> None:
-    """Sync a partition: create the partition and the underlying variables.
+    """Resize each array of a partition carrying the reference axis.
+
+    The checksum array of the partition is written again.
 
     Args:
-        partition: The partition to sync.
+        partition: The partition to extend.
         fs: The file system used to access the variables in the view.
         axis_ref: The axis reference of the partition.
     """
@@ -542,7 +544,7 @@ def _extend_partition(
         for variable in fs.listdir(partition):
             array: zarr.Array = store.open_array(fs,
                                                  variable['name'],
-                                                 mode='a')
+                                                 mode='r+')
             dimensions: Sequence[str] = read_dimensions(array)
             if axis_name in dimensions:
                 axis: int = dimensions.index(axis_name)
