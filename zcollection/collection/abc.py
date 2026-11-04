@@ -8,14 +8,16 @@ Base classes for collections.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NoReturn, Optional
 import abc
 from collections.abc import Callable, Iterable, Iterator, Sequence
 import dataclasses
 import functools
+import io
 import itertools
 import logging
 import pathlib
+import types
 
 import dask.bag.core
 import dask.distributed
@@ -611,6 +613,24 @@ class WritableCollection(BaseCollection):
                        func_args=args,
                        func_kwargs=kwargs)
         tuple(map(self.fs.invalidate_cache, partitions))
+
+    @staticmethod
+    def _unsupported_operation(*args, **kwargs) -> NoReturn:
+        """Refuse a call that writes."""
+        raise io.UnsupportedOperation('not writable')
+
+    def _refuse_writes(self, methods: Iterable[str]) -> None:
+        """Bind each named method to :meth:`_unsupported_operation`.
+
+        Args:
+            methods: The name of each method that writes.
+        """
+        for item in methods:
+            assert hasattr(self, item), f'{item} is not a known method.'
+            setattr(
+                self, item,
+                types.MethodType(WritableCollection._unsupported_operation,
+                                 self))
 
     @abc.abstractmethod
     def validate_partitions(self,

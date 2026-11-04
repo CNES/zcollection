@@ -31,9 +31,8 @@ Features
 
 Storage
 ^^^^^^^
-* Collections use Zarr 3. Existing Zarr 2 collections remain readable;
-  migrate them to create writable copies. Views in the previous storage
-  format must be migrated before they can be opened. See :doc:`migration`.
+* Collections and views use Zarr 3. Existing Zarr 2 collections and views
+  remain readable; migration creates a writable copy. See :doc:`migration`.
 * ``.zcollection`` carries the version of the layout it is written in. A
   collection written in a newer one is refused.
 * ``zcollection.migration`` supports selective migration of collections

@@ -72,6 +72,10 @@ class View(WritableCollection):
         synchronizer: The synchronizer used to synchronize the view.
         distributed: Whether to use dask or not. Default To True.
         _initialize: Whether to populate the partitions of a new view.
+        _deprecated: Whether the view was written by an earlier release. Such
+            a view can only be read: ``add_variable``, ``drop_variable``,
+            ``reindex``, ``sync`` and ``update`` stop with an
+            :py:class:`io.UnsupportedOperation`.
 
     Note:
         Normally, you should not call this constructor directly. Instead, use
@@ -90,7 +94,8 @@ class View(WritableCollection):
                  filters: collection.PartitionFilter = None,
                  synchronizer: sync.Sync | None = None,
                  distributed: bool = True,
-                 _initialize: bool = True) -> None:
+                 _initialize: bool = True,
+                 _deprecated: bool = False) -> None:
         self._fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
         #: Path to the directory where the view is stored.
         self.base_dir: str = fs_utils.normalize_path(fs=self.fs, path=base_dir)
@@ -106,7 +111,16 @@ class View(WritableCollection):
         self._index = PartitionIndex(self.fs,
                                      self.base_dir,
                                      self.view_ref.partitioning,
-                                     writable=True)
+                                     writable=not _deprecated)
+
+        if _deprecated:
+            self._refuse_writes((
+                'add_variable',
+                'drop_variable',
+                'reindex',
+                'sync',
+                'update',
+            ))
 
         if not self.fs.exists(self.base_dir):
             _LOGGER.info('Creating view %s', self)
@@ -251,11 +265,15 @@ class View(WritableCollection):
                 'This version of zcollection reads up to version '
                 f'{meta.FORMAT_VERSION}.')
 
-        if version == meta.DEPRECATED_FORMAT_VERSION:
-            raise ValueError(
-                'This view was written by an earlier release. Use the '
-                "'zcollection.migration.migrate_view' function to copy it into a view "
-                'this release writes.')
+        deprecated = version == meta.DEPRECATED_FORMAT_VERSION
+        if deprecated:
+            warnings.warn(
+                message=('This view was written by an earlier release and '
+                         'can only be read. Use the '
+                         "'zcollection.migration.migrate_view' function to "
+                         'copy it into a view this release writes.'),
+                category=UserWarning,
+                stacklevel=2)
 
         view_ref: dict[str, Any] = data['view_ref']
         return View(data['base_dir'],
@@ -266,7 +284,8 @@ class View(WritableCollection):
                     ds=meta.DatasetSchema.from_config(data['metadata']),
                     filesystem=filesystem,
                     filters=_deserialize_filters(data['filters']),
-                    synchronizer=synchronizer)
+                    synchronizer=synchronizer,
+                    _deprecated=deprecated)
 
     def partitions(
         self,

@@ -30,9 +30,6 @@ stops with a ``ValueError`` naming the same release, and inserting a dataset
 into it or adding a variable to it stops with an
 :py:class:`io.UnsupportedOperation`.
 
-A view written by an earlier release does not open at all: reading one stops
-with a ``ValueError``, whatever the mode asked for.
-
 Migrating it
 ------------
 
@@ -200,6 +197,16 @@ under ``skipped``. :py:func:`zcollection.migration.status` and
 
 Views
 -----
+
+A view written by an earlier release opens with a warning naming
+``migrate_view``, and reads. A view on a collection that release also wrote
+warns twice, once for each.
+
+Calling ``add_variable``, ``drop_variable``, ``reindex``, ``sync`` or
+``update`` on it stops with an :py:class:`io.UnsupportedOperation`.
+``validate_partitions`` lists its invalid partitions; with ``fix=True`` it
+stops with a :py:class:`PermissionError` on the first one and changes
+nothing.
 
 Migrate the collection a view references before the view itself, then point
 the copy of the view at the copy of the collection:

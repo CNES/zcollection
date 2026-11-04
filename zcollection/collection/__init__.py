@@ -8,14 +8,12 @@ Collection of Zarr groups
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, NoReturn
+from typing import TYPE_CHECKING, Any, Literal
 import datetime
 import functools
-import io
 import json
 import logging
 import os
-import types
 import warnings
 
 import dask.bag.core
@@ -203,29 +201,19 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 f'partition_base_dir={self.partition_properties.dir!r}'
                 f'mode={self.mode!r}>')
 
-    @staticmethod
-    def _unsupported_operation(*args, **kwargs) -> NoReturn:
-        """Raise an exception if the operation is not supported."""
-        raise io.UnsupportedOperation('not writable')
-
     def _read_only_mode(self) -> None:
-        """Set the unsupported methods to raise an exception when the
-        collection is opened in read-only mode."""
-        # Set each unsupported method to raise an exception.
-        for item in [
-                'drop_partitions',
-                'add_variable',
-                'drop_variable',
-                'add_dimension',
-                'drop_dimension',
-                'insert',
-                'reindex',
-                'update',
-                'update_immutable',
-        ]:
-            assert hasattr(self, item), f'{item} is not a known method.'
-            setattr(self, item,
-                    types.MethodType(Collection._unsupported_operation, self))
+        """The collection is read-only, so refuse each method that writes."""
+        self._refuse_writes((
+            'add_dimension',
+            'add_variable',
+            'drop_dimension',
+            'drop_partitions',
+            'drop_variable',
+            'insert',
+            'reindex',
+            'update',
+            'update_immutable',
+        ))
 
     def _write_config(self, skip_if_exists: bool = False) -> None:
         """Write the configuration file."""

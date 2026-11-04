@@ -23,6 +23,7 @@ from typing import Any, cast
 import copy
 import dataclasses
 import hashlib
+import io
 import json
 import logging
 import pathlib
@@ -51,6 +52,7 @@ from ..migration import (
     status,
     view_status,
 )
+from ..partitions import FILENAME as PARTITION_INDEX
 from ..variable.abc import FILL_VALUE
 from .cluster import dask_client, dask_cluster  # noqa: F401
 from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
@@ -124,6 +126,8 @@ def deprecated_view(deprecated, tmp_path) -> str:
     config = read_view_config(local, path)
     del config['version']
     write_view_config(local, path, config)
+    # An earlier release wrote no index of the partitions.
+    local.rm(fs_utils.join_path(path, PARTITION_INDEX))
     return path
 
 
@@ -1595,3 +1599,54 @@ def test_view_migration_resumes_with_a_compatible_target(
     assert zds is not None
     numpy.testing.assert_array_equal(zds.variables[VIEW_VARIABLE.name].values,
                                      reference.plain_values() * 2.0)
+
+
+def test_a_deprecated_view_is_read(deprecated, deprecated_view) -> None:
+    """A deprecated view opens, with a warning, and reads."""
+    with pytest.warns(UserWarning, match='written by an earlier release'):
+        zview = zcollection.open_view(deprecated_view)
+
+    assert len(tuple(zview.partitions())) == len(PARTITIONS)
+    zds = zview.load(delayed=False, distributed=False)
+    assert zds is not None
+    numpy.testing.assert_array_equal(zds.variables[VIEW_VARIABLE.name].values,
+                                     reference.plain_values() * 2.0)
+
+
+def test_a_deprecated_view_refuses_what_writes(deprecated,
+                                               deprecated_view) -> None:
+    """A deprecated view refuses each of its methods that writes."""
+    with pytest.warns(UserWarning, match='written by an earlier release'):
+        zview = zcollection.open_view(deprecated_view)
+
+    calls = (
+        lambda: zview.add_variable(VIEW_VARIABLE),
+        lambda: zview.drop_variable(VIEW_VARIABLE.name),
+        zview.reindex,
+        zview.sync,
+        lambda: zview.update(double_the_plain_variable, VIEW_VARIABLE.name),
+    )
+    for call in calls:
+        with pytest.raises(io.UnsupportedOperation, match='not writable'):
+            call()
+
+
+def test_a_deprecated_view_repairs_no_partition(deprecated,
+                                                deprecated_view) -> None:
+    """Repairing the partitions of a deprecated view changes nothing."""
+    with pytest.warns(UserWarning, match='written by an earlier release'):
+        zview = zcollection.open_view(deprecated_view)
+
+    partition = fs_utils.join_path(deprecated_view, PARTITIONS[1])
+    zview.fs.rm(fs_utils.join_path(partition, VIEW_VARIABLE.name),
+                recursive=True)
+    zview.fs.invalidate_cache()
+
+    with pytest.warns(RuntimeWarning, match='Invalid partition'):
+        assert zview.validate_partitions(distributed=False) == [partition]
+
+    with pytest.warns(RuntimeWarning, match='Invalid partition'), \
+            pytest.raises(PermissionError, match='read only'):
+        zview.validate_partitions(distributed=False, fix=True)
+
+    assert len(tuple(zview.partitions())) == len(PARTITIONS)
