@@ -79,6 +79,49 @@ def collection_files(zcol) -> dict[str, bytes]:
 
 
 @pytest.mark.usefixtures('dask_client')
+@pytest.mark.parametrize('distributed', [False, True])
+def test_insert_hands_the_merge_callable_the_representation_asked_for(
+        local_fs, distributed) -> None:  # noqa: F811
+    """``delayed`` sets the representation the merge callable receives."""
+    original = reference.make_dataset()
+    zcol = convenience.create_collection('time',
+                                         original,
+                                         reference.make_partitioning(),
+                                         str(local_fs.collection),
+                                         filesystem=local_fs.fs)
+    zcol.insert(original, distributed=False)
+    incoming = reference.make_dataset(delayed=True)
+
+    def merge(existing_ds: dataset.Dataset, inserted_ds: dataset.Dataset,
+              axis: str, partitioning_dim: str, **kwargs) -> dataset.Dataset:
+        assert not existing_ds.delayed
+        assert not inserted_ds.delayed
+        return inserted_ds
+
+    zcol.insert(incoming,
+                merge_callable=merge,
+                delayed=False,
+                distributed=distributed)
+
+    loaded = zcol.load(delayed=False, distributed=False)
+    assert loaded is not None
+
+
+def test_insert_refuses_a_delayed_merge_of_materialized_data(
+        local_fs) -> None:  # noqa: F811
+    """``delayed`` set to True needs a dataset of Dask arrays."""
+    original = reference.make_dataset()
+    zcol = convenience.create_collection('time',
+                                         original,
+                                         reference.make_partitioning(),
+                                         str(local_fs.collection),
+                                         filesystem=local_fs.fs)
+
+    with pytest.raises(ValueError, match='delayed is True'):
+        zcol.insert(original, delayed=True, distributed=False)
+
+
+@pytest.mark.usefixtures('dask_client')
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('delayed', [False, True])
 @pytest.mark.parametrize('distributed', [False, True])
@@ -100,6 +143,8 @@ def test_partial_insert_preserves_filler_flags_for_merging(
 
     def merge(existing_ds: dataset.Dataset, inserted_ds: dataset.Dataset,
               axis: str, partitioning_dim: str, **kwargs) -> dataset.Dataset:
+        assert existing_ds.delayed is delayed
+        assert inserted_ds.delayed is delayed
         assert {
             name: var.filler
             for name, var in inserted_ds.variables.items()

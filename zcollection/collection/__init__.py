@@ -344,6 +344,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
         *,
         merge_callable: merging.MergeCallable | None = None,
         npartitions: int | None = None,
+        delayed: bool | None = None,
         distributed: bool = True,
         **kwargs,
     ) -> tuple[str, ...]:
@@ -358,6 +359,9 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 partitioned data.
             npartitions: The maximum number of partitions to process in
                 parallel. By default, partitions are processed one by one.
+            delayed: Whether the merge callable receives the stored
+                partition and the inserted one as Dask arrays. Defaults to
+                ``None``, which gives it Dask arrays when ``ds`` holds them.
             distributed: Whether to use dask or not. Default To True.
             kwargs: Additional keyword arguments passed to the merge callable.
 
@@ -378,7 +382,9 @@ class Collection(ReadOnlyCollection, WritableCollection):
 
         Raises:
             ValueError:
-                If the dataset does not match the definition of the collection.
+                If the dataset does not match the definition of the
+                collection, or if ``delayed`` is ``True`` and ``ds`` holds no
+                Dask array.
 
         Warns:
             UserWarning:
@@ -396,6 +402,10 @@ class Collection(ReadOnlyCollection, WritableCollection):
 
         if isinstance(ds, xarray.Dataset):
             ds = dataset.Dataset.from_xarray(ds)
+
+        if delayed and not ds.delayed:
+            raise ValueError(
+                'delayed is True and the dataset holds no Dask array')
 
         _LOGGER.info('Inserting of a %s dataset in the collection',
                      dask.utils.format_bytes(ds.nbytes))
@@ -425,10 +435,17 @@ class Collection(ReadOnlyCollection, WritableCollection):
             fs_utils.join_path(*item) for item, _ in partitions)
         with self.synchronizer, self._index.updating():
             if distributed:
-                self._insert_distributed(ds, partitions, npartitions,
-                                         merge_callable, **kwargs)
+                self._insert_distributed(ds,
+                                         partitions,
+                                         npartitions,
+                                         merge_callable,
+                                         delayed=delayed,
+                                         **kwargs)
             else:
-                self._insert_sequential(ds, partitions, merge_callable,
+                self._insert_sequential(ds,
+                                        partitions,
+                                        merge_callable,
+                                        delayed=delayed,
                                         **kwargs)
             self._index.add(written)
         return written
@@ -519,10 +536,13 @@ class Collection(ReadOnlyCollection, WritableCollection):
                                   fill_value=var_meta.fill_value,
                                   filters=var_meta.filters)
 
-    def _insert_distributed(self, ds: xarray.Dataset | dataset.Dataset,
-                            partitions: tuple[PartitionSlice,
-                                              ...], npartitions: int | None,
+    def _insert_distributed(self,
+                            ds: xarray.Dataset | dataset.Dataset,
+                            partitions: tuple[PartitionSlice, ...],
+                            npartitions: int | None,
                             merge_callable: merging.MergeCallable | None,
+                            *,
+                            delayed: bool | None = None,
                             **kwargs):
         """Insert a dataset into the collection using dask."""
         if npartitions is not None:
@@ -541,17 +561,20 @@ class Collection(ReadOnlyCollection, WritableCollection):
                     fs=self.fs,
                     merge_callable=merge_callable,
                     partitioning_properties=self.partition_properties,
+                    delayed=delayed,
                     **kwargs,
                 ) for partition in sequence
             ]
             storage.execute_transaction(client, sync.NoSync(), futures)
 
-    def _insert_sequential(self, ds: dataset.Dataset,
+    def _insert_sequential(self,
+                           ds: dataset.Dataset,
                            partitions: tuple[PartitionSlice, ...],
                            merge_callable: merging.MergeCallable | None,
+                           *,
+                           delayed: bool | None = None,
                            **kwargs):
         """Insert a dataset into the collection without using dask."""
-        ds = ds.compute()
         for partition in partitions:
             _insert(args=partition,
                     axis=self.axis,
@@ -559,6 +582,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
                     fs=self.fs,
                     merge_callable=merge_callable,
                     partitioning_properties=self.partition_properties,
+                    delayed=delayed,
                     distributed=False,
                     **kwargs)
 

@@ -8,6 +8,8 @@ Features
 ^^^^^^^^
 * A collection is usable without a Dask cluster (PR #16).
 * ``load`` and ``update`` take a ``selected_partitions`` parameter.
+* ``insert`` takes a ``delayed`` parameter setting the representation its
+  merge callable receives the partitions in.
 * ``View.update`` takes a ``variables`` parameter (PR #14, issue #13).
 * ``View.is_synced`` takes a ``filters`` parameter to check selected reference
   partitions. By default, it checks all reference partitions.
@@ -60,6 +62,9 @@ Behaviour
   NaN or NaT.
 * Variables loaded from a collection have a deterministic order.
 * ``insert`` returns partition paths relative to the collection.
+* ``insert`` hands its merge callable the representation of the dataset it
+  receives. A dataset of Dask arrays stays lazy through an insertion made
+  without a Dask cluster.
 * When ``data`` is omitted, ``Dataset.add_variable`` uses the variable's
   existing data, if available.
 * ``Dataset.add_variable`` raises ``ValueError`` when the number of data

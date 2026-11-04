@@ -146,7 +146,7 @@ def perform(
     fs: fsspec.AbstractFileSystem,
     partitioning_dim: str,
     *,
-    delayed: bool = True,
+    delayed: bool | None = None,
     distributed: bool = True,
     merge_callable: MergeCallable | None,
     synchronizer: sync.Sync | None = None,
@@ -160,8 +160,9 @@ def perform(
         axis: The axis to merge on.
         fs: The file system on which the partition is stored.
         partitioning_dim: The partitioning dimension.
-        delayed: If True, the existing dataset is loaded lazily. Defaults to
-            True.
+        delayed: Whether the merge callable receives the stored partition
+            and the inserted one as Dask arrays. Defaults to ``None``, which
+            gives it Dask arrays when the inserted dataset holds them.
         distributed: Whether to use dask or not. Default To True.
         merge_callable: The merge callable. If None, the inserted dataset
             overwrites the existing dataset stored in the partition.
@@ -174,9 +175,13 @@ def perform(
     if merge_callable is None:
         zds = ds_inserted
     else:
-        ds = storage.open_zarr_group(dirname,
-                                     fs,
-                                     delayed=delayed if distributed else False)
+        if delayed is None:
+            delayed = ds_inserted.delayed
+        if not delayed:
+            # Load the inserted data into memory: a merge cannot combine
+            # a NumPy dataset with a Dask one.
+            ds_inserted = ds_inserted.compute()
+        ds = storage.open_zarr_group(dirname, fs, delayed=delayed)
         # Read dataset does not contain insertion properties.
         # These properties might be loss in the merge_callable depending on which
         # dataset is used.

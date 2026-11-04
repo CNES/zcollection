@@ -480,6 +480,7 @@ def _insert(
     fs: fsspec.AbstractFileSystem,
     merge_callable: merging.MergeCallable | None,
     partitioning_properties: PartitioningProperties,
+    delayed: bool | None = None,
     distributed: bool = True,
     **kwargs,
 ) -> None:
@@ -492,6 +493,9 @@ def _insert(
         fs: The file system that the partition is stored on.
         merge_callable: The merge callable.
         partitioning_properties: The partitioning properties.
+        delayed: Whether the merge callable receives the stored partition
+            and the inserted one as Dask arrays. Defaults to ``None``, which
+            gives it Dask arrays when the inserted dataset holds them.
         distributed: Whether to use dask or not. Default To True.
         **kwargs: Additional keyword arguments to pass to the merge callable.
     """
@@ -508,7 +512,7 @@ def _insert(
                         axis,
                         fs,
                         partitioning_properties.dim,
-                        delayed=zds.delayed if distributed else False,
+                        delayed=delayed,
                         distributed=distributed,
                         merge_callable=merge_callable,
                         **kwargs)
