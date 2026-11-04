@@ -14,6 +14,7 @@ import dataclasses
 import hashlib
 import io
 import logging
+import os
 import pathlib
 import pickle
 import warnings
@@ -558,6 +559,51 @@ def _extend_partition(
         fs.rm(partition, recursive=True)
         fs.invalidate_cache(partition)
         raise exc from None
+
+
+def _check_partition(
+    partition: str,
+    *,
+    base_dir: str,
+    fs: fsspec.AbstractFileSystem,
+    view_ref: collection.Collection,
+    metadata: meta.DatasetSchema,
+) -> tuple[str, bool]:
+    """Check whether a partition of a view is valid.
+
+    Args:
+        partition: The partition to check, relative to the view.
+        base_dir: The base directory of the view.
+        fs: The file system used to access the variables in the view.
+        view_ref: The view reference.
+        metadata: The schema of the variables owned by the view.
+
+    Returns:
+        The partition, and whether the reference collection still holds it,
+        the partition contains every variable the view declares and the
+        checksum array, and each of those arrays is readable.
+    """
+    partition_ref = join_path(view_ref.partition_properties.dir, partition)
+    if not view_ref.fs.exists(partition_ref):
+        return partition, False
+
+    path = join_path(base_dir, partition)
+    expected = {*metadata.variables, CHECKSUM_FILE}
+    try:
+        held = {os.path.basename(item['name']) for item in fs.listdir(path)}
+    except FileNotFoundError:
+        return partition, False
+    if not expected.issubset(held):
+        return partition, False
+
+    try:
+        for name in expected:
+            array = store.open_array(fs, join_path(path, name), mode='r')
+            data = array[...]
+            del data
+    except (FileNotFoundError, ValueError, TypeError, RuntimeError):
+        return partition, False
+    return partition, True
 
 
 def _sync(

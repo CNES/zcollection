@@ -14,13 +14,16 @@ import functools
 import json
 import logging
 import pathlib
+import warnings
 
+import dask.distributed
 import fsspec
 
 from .. import (
     collection,
     dask_utils,
     dataset,
+    expression,
     fs_utils,
     meta,
     partitioning,
@@ -36,6 +39,7 @@ from .detail import (
     ViewUpdateCallable,
     _assert_have_variables,
     _assert_variable_handled,
+    _check_partition,
     _create_zarr_array,
     _deserialize_filters,
     _drop_zarr_zarr,
@@ -48,8 +52,6 @@ from .detail import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
-
-    import dask.distributed
 
 __all__ = ('View', 'ViewReference')
 
@@ -856,3 +858,98 @@ class View(WritableCollection):
         partition_ids = tuple(
             dict(self.view_ref.partitioning.parse(item)) for item in synced)
         return lambda item: item in partition_ids
+
+    def validate_partitions(self,
+                            filters: collection.PartitionFilter = None,
+                            distributed: bool = True,
+                            fix: bool = False) -> list[str]:
+        """List the invalid partitions of the view.
+
+        A partition is invalid when it cannot be read, or when the reference
+        collection no longer has it.
+
+        Args:
+            filters: The predicate selecting the partitions to check. By
+                default, every partition is checked.
+            distributed: Whether to use dask or not. Default To True.
+            fix: Whether to repair the invalid partitions. When the reference
+                collection still has the partition, the view writes it again.
+                Otherwise the view deletes the partition and removes it from
+                the index.
+
+        Returns:
+            The path of each invalid partition.
+        """
+        if isinstance(filters, str):
+            expr: Any = expression.Expression(filters)
+        elif callable(filters):
+            expr = filters
+        else:
+            expr = None
+
+        sep = self.fs.sep
+        partitions = tuple(item for item in self._held_partitions()
+                           if self._is_selected(item.split(sep), expr))
+        if not partitions:
+            return []
+
+        invalid_partitions: list[str] = []
+
+        def _validity_check(partition: str, valid: bool) -> None:
+            """Warn about the partition and keep its path when it is not
+            valid."""
+            if not valid:
+                warnings.warn(f'Invalid partition: {partition}',
+                              category=RuntimeWarning,
+                              stacklevel=2)
+                invalid_partitions.append(partition)
+
+        check = functools.partial(_check_partition,
+                                  base_dir=self.base_dir,
+                                  fs=self.fs,
+                                  view_ref=self.view_ref,
+                                  metadata=self.metadata)
+        if distributed:
+            client = dask_utils.get_client()
+            for item in dask.distributed.as_completed(
+                    client.map(check, partitions)):
+                _validity_check(*item.result())
+        else:
+            for item in partitions:
+                _validity_check(*check(item))
+
+        if fix and invalid_partitions:
+            self._fix_partitions(invalid_partitions)
+        return [
+            fs_utils.join_path(self.base_dir, item)
+            for item in invalid_partitions
+        ]
+
+    def _fix_partitions(self, partitions: Sequence[str]) -> None:
+        """Write the invalid partitions again, or delete them.
+
+        Args:
+            partitions: The path of each invalid partition, relative to the
+                view.
+        """
+        orphans: list[str] = []
+        with self.synchronizer, self._index.updating():
+            for item in partitions:
+                path = fs_utils.join_path(self.base_dir, item)
+                if self.fs.exists(path):
+                    self.fs.rm(path, recursive=True)
+                    self.fs.invalidate_cache(path)
+                if self.view_ref.fs.exists(
+                        fs_utils.join_path(
+                            self.view_ref.partition_properties.dir, item)):
+                    _LOGGER.info('Writing partition again: %s', item)
+                    _sync(item,
+                          base_dir=self.base_dir,
+                          fs=self.fs,
+                          view_ref=self.view_ref,
+                          metadata=self.metadata)
+                else:
+                    _LOGGER.info('Removing invalid partition: %s', item)
+                    orphans.append(item)
+            if orphans:
+                self._index.remove(orphans)

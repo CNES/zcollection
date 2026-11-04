@@ -10,6 +10,9 @@ Features
 * ``load`` and ``update`` take a ``selected_partitions`` parameter.
 * ``insert`` takes a ``delayed`` parameter setting the representation its
   merge callable receives the partitions in.
+* ``View.validate_partitions`` lists the invalid partitions of a view. With
+  ``fix``, the view writes again the ones the reference collection still has,
+  and deletes the others.
 * ``View.update`` takes a ``variables`` parameter (PR #14, issue #13).
 * ``View.is_synced`` takes a ``filters`` parameter to check selected reference
   partitions. By default, it checks all reference partitions.

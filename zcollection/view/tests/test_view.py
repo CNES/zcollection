@@ -964,3 +964,129 @@ def test_view_written_in_a_newer_layout(fs, request) -> None:
 
     with pytest.raises(ValueError, match='written in version'):
         convenience.open_view(str(tested_fs.view), filesystem=tested_fs.fs)
+
+
+def _view_owning_a_variable(
+        tested_fs) -> tuple[collection.Collection, view.View]:
+    """Create a view owning one variable, on a reference of six partitions.
+
+    Args:
+        tested_fs: The file system holding the collection and the view.
+
+    Returns:
+        The reference collection and the view.
+    """
+    zcol = create_test_collection(tested_fs, distributed=False)
+    zview = convenience.create_view(str(tested_fs.view),
+                                    view.ViewReference(
+                                        str(tested_fs.collection),
+                                        tested_fs.fs),
+                                    filesystem=tested_fs.fs,
+                                    distributed=False)
+    zview.add_variable(meta.VariableSchema('var3',
+                                           numpy.float64,
+                                           dimensions=('num_lines',
+                                                       'num_pixels')),
+                       distributed=False)
+    return zcol, zview
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+@pytest.mark.parametrize('distributed', [False, True])
+def test_validate_partitions_reports_a_missing_variable(
+        fs, request, distributed) -> None:
+    """A partition short of a declared variable is written again."""
+    tested_fs = request.getfixturevalue(fs)
+    if distributed:
+        request.getfixturevalue('dask_client')
+    _, zview = _view_owning_a_variable(tested_fs)
+    partitions = tuple(zview.partitions())
+    zview.fs.rm(zview.fs.sep.join((partitions[1], 'var3')), recursive=True)
+    zview.fs.invalidate_cache()
+
+    with pytest.warns(RuntimeWarning, match='Invalid partition'):
+        invalid = zview.validate_partitions(distributed=distributed)
+    assert invalid == [partitions[1]]
+
+    with pytest.warns(RuntimeWarning, match='Invalid partition'):
+        zview.validate_partitions(distributed=distributed, fix=True)
+
+    assert zview.validate_partitions(distributed=distributed) == []
+    assert tuple(zview.partitions()) == partitions
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_validate_partitions_reports_a_missing_checksum(fs, request) -> None:
+    """A partition short of its checksum array is written again."""
+    tested_fs = request.getfixturevalue(fs)
+    _, zview = _view_owning_a_variable(tested_fs)
+    partitions = tuple(zview.partitions())
+    zview.fs.rm(zview.fs.sep.join((partitions[0], '.checksum')),
+                recursive=True)
+    zview.fs.invalidate_cache()
+
+    with pytest.warns(RuntimeWarning, match='Invalid partition'):
+        invalid = zview.validate_partitions(distributed=False, fix=True)
+    assert invalid == [partitions[0]]
+    assert zview.validate_partitions(distributed=False) == []
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_validate_partitions_reports_an_orphan(fs, request) -> None:
+    """A partition the reference no longer has is deleted and unindexed."""
+    tested_fs = request.getfixturevalue(fs)
+    zcol, zview = _view_owning_a_variable(tested_fs)
+    partitions = tuple(zview.partitions())
+    assert len(partitions) == 6
+    zcol.drop_partitions(filters='day == 1', distributed=False)
+
+    with pytest.warns(RuntimeWarning, match='Invalid partition'):
+        invalid = zview.validate_partitions(distributed=False)
+    assert invalid == [partitions[0]]
+
+    with pytest.warns(RuntimeWarning, match='Invalid partition'):
+        zview.validate_partitions(distributed=False, fix=True)
+
+    assert not zview.fs.exists(partitions[0])
+    assert zview.validate_partitions(distributed=False) == []
+    assert len(zview._held_partitions()) == 5
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_validate_partitions_reports_an_unreadable_array(fs, request) -> None:
+    """A variable whose chunk does not decode is written again."""
+    tested_fs = request.getfixturevalue(fs)
+    _, zview = _view_owning_a_variable(tested_fs)
+    partitions = tuple(zview.partitions())
+    var3 = zview.fs.sep.join((partitions[2], 'var3'))
+    array = store.open_array(zview.fs, var3, mode='r+')
+    array[...] = 1
+    chunks = [
+        item for item in zview.fs.find(var3) if not item.endswith('zarr.json')
+    ]
+    assert chunks
+    with zview.fs.open(chunks[0], 'wb') as stream:
+        stream.write(b'invalid')
+    zview.fs.invalidate_cache()
+
+    with pytest.warns(RuntimeWarning, match='Invalid partition'):
+        invalid = zview.validate_partitions(distributed=False, fix=True)
+    assert invalid == [partitions[2]]
+    assert zview.validate_partitions(distributed=False) == []
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_validate_partitions_checks_the_selected_partitions(fs,
+                                                            request) -> None:
+    """A filter excluding the invalid partition leaves it unreported."""
+    tested_fs = request.getfixturevalue(fs)
+    _, zview = _view_owning_a_variable(tested_fs)
+    partitions = tuple(zview.partitions())
+    zview.fs.rm(zview.fs.sep.join((partitions[1], 'var3')), recursive=True)
+    zview.fs.invalidate_cache()
+
+    assert zview.validate_partitions(filters='day == 1',
+                                     distributed=False) == []
+    with pytest.warns(RuntimeWarning, match='Invalid partition'):
+        assert zview.validate_partitions(filters='day == 4',
+                                         distributed=False) == [partitions[1]]

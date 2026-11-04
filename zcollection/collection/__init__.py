@@ -106,23 +106,17 @@ def _copy_partition(source: str, target: str,
 def _check_partition(
     partition: str,
     fs: fsspec.AbstractFileSystem,
-    partitioning_strategy: partitioning.Partitioning,
 ) -> tuple[str, bool]:
     """Check if a given partition is a valid Zarr group.
 
     Args:
         partition: The partition to check.
         fs: The file system to use.
-        partitioning_strategy: The partitioning strategy.
 
     Returns:
         A tuple containing the partition and a boolean indicating whether it is
         a valid Zarr group.
     """
-    try:
-        partitioning_strategy.parse(partition)
-    except ValueError:
-        return partition, False
     return partition, storage.check_zarr_group(partition, fs)
 
 
@@ -1117,22 +1111,22 @@ class Collection(ReadOnlyCollection, WritableCollection):
                                       synchronizer=synchronizer)
 
     def validate_partitions(self,
-                            filters: PartitionFilter | None = None,
+                            filters: PartitionFilter = None,
                             distributed: bool = True,
                             fix: bool = False) -> list[str]:
-        """Validates partitions in the collection by checking if they exist and
-        are readable. If `fix` is True, invalid partitions will be removed from
-        the collection.
+        """List the invalid partitions of the collection.
+
+        A partition is invalid when it cannot be read.
 
         Args:
-            filters: The predicate used to filter the partitions to
-                validate. By default, all partitions are validated.
-            fix: Whether to fix invalid partitions by removing them from
-                the collection.
+            filters: The predicate selecting the partitions to check. By
+                default, every partition is checked.
             distributed: Whether to use dask or not. Default To True.
+            fix: Whether to delete the invalid partitions and remove them
+                from the index.
 
         Returns:
-            A list of invalid partitions.
+            The path of each invalid partition.
         """
         partitions = tuple(self.partitions(filters=filters))
         if not partitions:
@@ -1140,31 +1134,24 @@ class Collection(ReadOnlyCollection, WritableCollection):
 
         invalid_partitions: list[str] = []
 
-        def _validity_check(_partition, _valid):
-            """Check partition validity and add it to invalid partitions if not
+        def _validity_check(partition: str, valid: bool) -> None:
+            """Warn about the partition and keep its path when it is not
             valid."""
-            if not _valid:
-                warnings.warn(f'Invalid partition: {_partition}',
+            if not valid:
+                warnings.warn(f'Invalid partition: {partition}',
                               category=RuntimeWarning,
                               stacklevel=2)
-                invalid_partitions.append(_partition)
+                invalid_partitions.append(partition)
 
+        check = functools.partial(_check_partition, fs=self.fs)
         if distributed:
-            client: dask.distributed.Client = dask_utils.get_client()
-            futures: list[dask.distributed.Future] = client.map(
-                _check_partition,
-                partitions,
-                fs=self.fs,
-                partitioning_strategy=self.partitioning)
-
-            for item in dask.distributed.as_completed(futures):
-                partition, valid = item.result()
-                _validity_check(partition, valid)
+            client = dask_utils.get_client()
+            for item in dask.distributed.as_completed(
+                    client.map(check, partitions)):
+                _validity_check(*item.result())
         else:
             for item in partitions:
-                partition, valid = _check_partition(item, self.fs,
-                                                    self.partitioning)
-                _validity_check(partition, valid)
+                _validity_check(*check(item))
 
         if fix and invalid_partitions:
             with self.synchronizer, self._index.updating():

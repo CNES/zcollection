@@ -508,6 +508,23 @@ class BaseCollection(abc.ABC):
                          npartitions=npartitions,
                          selected_variables=selected_variables)
 
+    def _is_selected(
+        self,
+        partition: Sequence[str],
+        expr: Callable[[dict[str, int]], bool] | None,
+    ) -> bool:
+        """Return whether the partition is selected.
+
+        Args:
+            partition: The partition to check.
+            expr: The expression used to filter the partition.
+
+        Returns:
+            Whether the partition is selected.
+        """
+        return True if expr is None else expr(
+            dict(self.partitioning.parse('/'.join(partition))))
+
 
 class WritableCollection(BaseCollection):
     """Share partition updates and index reconstruction."""
@@ -594,6 +611,26 @@ class WritableCollection(BaseCollection):
                        func_args=args,
                        func_kwargs=kwargs)
         tuple(map(self.fs.invalidate_cache, partitions))
+
+    @abc.abstractmethod
+    def validate_partitions(self,
+                            filters: PartitionFilter = None,
+                            distributed: bool = True,
+                            fix: bool = False) -> list[str]:
+        """List the invalid partitions.
+
+        A partition is invalid when it cannot be read.
+
+        Args:
+            filters: The predicate selecting the partitions to check. By
+                default, every partition is checked.
+            distributed: Whether to use dask or not. Default To True.
+            fix: Whether to repair the invalid partitions.
+
+        Returns:
+            The path of each invalid partition.
+        """
+        ...
 
     def reindex(self) -> tuple[str, ...]:
         """Build the index of the partitions from the store.
@@ -737,23 +774,6 @@ class ReadOnlyCollection(BaseCollection):
     def _config(cls, partition_base_dir: str) -> str:
         """Return the configuration path."""
         return fs_utils.join_path(partition_base_dir, cls.CONFIG)
-
-    def _is_selected(
-        self,
-        partition: Sequence[str],
-        expr: Callable[[dict[str, int]], bool] | None,
-    ) -> bool:
-        """Return whether the partition is selected.
-
-        Args:
-            partition: The partition to check.
-            expr: The expression used to filter the partition.
-
-        Returns:
-            Whether the partition is selected.
-        """
-        return True if expr is None else expr(
-            dict(self.partitioning.parse('/'.join(partition))))
 
     def _indexed_partitions(self) -> tuple[str, ...]:
         """Return the path of each partition the index names.
