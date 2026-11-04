@@ -112,6 +112,7 @@ class View(WritableCollection):
             _LOGGER.info('Creating view %s', self)
             self.fs.makedirs(self.base_dir)
             self._write_config()
+            self._index.write(self._index.walk())
             if _initialize:
                 self._init_partitions(filters, distributed)
         else:

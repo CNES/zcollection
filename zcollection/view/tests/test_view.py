@@ -29,6 +29,7 @@ from ... import (
     variable,
     view,
 )
+from ...partitions import FILENAME
 from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 from ...tests.data import (
     create_test_collection,
@@ -1090,3 +1091,19 @@ def test_validate_partitions_checks_the_selected_partitions(fs,
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         assert zview.validate_partitions(filters='day == 4',
                                          distributed=False) == [partitions[1]]
+
+
+@pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
+def test_creating_a_view_writes_its_index(fs, request, caplog) -> None:
+    """A view holds an index of its partitions as soon as it is created."""
+    tested_fs = request.getfixturevalue(fs)
+    create_test_collection(tested_fs, distributed=False)
+    with caplog.at_level(logging.WARNING, logger='zcollection.partitions'):
+        zview = convenience.create_view(str(tested_fs.view),
+                                        view.ViewReference(
+                                            str(tested_fs.collection),
+                                            tested_fs.fs),
+                                        filesystem=tested_fs.fs,
+                                        distributed=False)
+    assert not caplog.records
+    assert zview.fs.exists(zview.fs.sep.join((zview.base_dir, FILENAME)))
