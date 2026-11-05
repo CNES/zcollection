@@ -10,6 +10,11 @@ Features
 * ``load`` and ``update`` take a ``selected_partitions`` parameter.
 * ``insert`` takes a ``delayed`` parameter setting the representation its
   merge callable receives the partitions in.
+* ``Collection.update_from`` and ``View.update_from`` write the variables of a
+  dataset into existing partitions. Each row of the dataset is written to the
+  row of its partition that has the same value of ``align_on``; a view reads
+  ``align_on`` from its reference collection. The other rows and variables
+  keep their values.
 * ``View.validate_partitions`` lists the invalid partitions of a view. With
   ``fix``, the view writes again the ones the reference collection still has,
   and deletes the others.

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import warnings
 
 import fsspec.implementations.local
+import numpy
 import zarr
 import zarr.abc.codec
 import zarr.abc.store
@@ -143,6 +144,25 @@ def open_array(
         FileNotFoundError: If the store holds no array at that path.
     """
     return _open(zarr.open_array, fs, path, mode)
+
+
+def open_ndarray(
+    fs: fsspec.AbstractFileSystem,
+    path: str,
+) -> NDArray:
+    """Read every value of an array.
+
+    Args:
+        fs: File system containing the array.
+        path: Path of the array.
+
+    Returns:
+        Values of the array.
+
+    Raises:
+        FileNotFoundError: If no array exists at that path.
+    """
+    return numpy.asarray(open_array(fs, path)[...])
 
 
 def open_group(

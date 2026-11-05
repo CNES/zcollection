@@ -18,6 +18,7 @@ import warnings
 import dask.bag.core
 import dask.distributed
 import dask.utils
+import numpy
 
 from .. import dask_utils, dataset, merging, meta, partitioning, store, sync
 from ..fs_utils import join_path
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 
     import fsspec
 
+    from ..type_hints import NDArray
     from .callable_objects import (
         MapCallable,
         UpdateCallable,
@@ -153,6 +155,104 @@ def _try_infer_callable(
             f'the arguments {func_args} and {func_kwargs} to the partition. The '
             f'error is: {exc_type!r}: {exc_value}. The traceback '
             f'is: {execution_tb}') from exc
+
+
+def aligned_positions(
+    stored: NDArray,
+    wanted: NDArray,
+    *,
+    name: str,
+    partition: str,
+) -> NDArray:
+    """Find the rows of a partition matching the wanted values of a variable.
+
+    Args:
+        stored: Values of the variable in the partition.
+        wanted: Values to locate.
+        name: Name of the variable, used in error messages.
+        partition: Partition path, used in error messages.
+
+    Returns:
+        Position in `stored` of each wanted value.
+
+    Raises:
+        ValueError: If the values of `stored` or of `wanted` repeat, or a
+            wanted value has no match.
+    """
+    order = numpy.argsort(stored, kind='stable')
+    ordered = stored[order]
+    if numpy.any(ordered[1:] == ordered[:-1]):
+        raise ValueError(f'The values of {name!r} repeat in the partition '
+                         f'{partition!r}.')
+    requested = numpy.sort(wanted)
+    if numpy.any(requested[1:] == requested[:-1]):
+        raise ValueError(f'The values of {name!r} repeat in the dataset rows '
+                         f'of the partition {partition!r}.')
+
+    positions = numpy.searchsorted(ordered, wanted)
+    # searchsorted returns `ordered.size` for a value greater than every
+    # stored one; that position is out of range and counts as no match.
+    placed = positions < ordered.size
+    found = numpy.zeros(wanted.shape, dtype=bool)
+    found[placed] = ordered[positions[placed]] == wanted[placed]
+
+    if not found.all():
+        missing = int((~found).sum())
+        first = wanted[numpy.flatnonzero(~found)[0]]
+        raise ValueError(f'The partition {partition!r} has no match for '
+                         f'{missing} of the {name!r} values of the dataset; '
+                         f'the first is {first}.')
+    return order[positions]
+
+
+def update_partition_from(
+    args: tuple[str, str, dict[str, slice]],
+    *,
+    zds: dataset.Dataset,
+    names: Sequence[str],
+    align_on: str,
+    dim: str,
+    fs: fsspec.AbstractFileSystem,
+    reference_fs: fsspec.AbstractFileSystem,
+) -> None:
+    """Update variables of one partition from a dataset.
+
+    The rows are matched before any variable of the partition is written: if
+    a row of the dataset has no match, or the values of `align_on` repeat in
+    the partition or in the dataset, the partition keeps its values.
+
+    Args:
+        args: Partition path, path of its reference partition, and dataset
+            indexer.
+        zds: Dataset containing the values to write.
+        names: Names of the variables to update.
+        align_on: Variable identifying the rows.
+        dim: Partitioned dimension.
+        fs: File system containing the partition.
+        reference_fs: File system containing the reference partition.
+
+    Raises:
+        ValueError: If the values of `align_on` repeat in the reference
+            partition or in the dataset, or a row of the dataset has no match
+            in the reference partition.
+    """
+    partition, reference, indexer = args
+    selected = zds.isel(indexer)
+    positions = aligned_positions(store.open_ndarray(
+        reference_fs, join_path(reference, align_on)),
+                                  selected.variables[align_on].values,
+                                  name=align_on,
+                                  partition=reference)
+    for name in names:
+        variable = selected.variables[name]
+        # Select `positions` along the partitioned dimension and every
+        # element along the others.
+        rows: list[Any] = [slice(None)] * len(variable.dimensions)
+        rows[variable.dimensions.index(dim)] = positions
+        update_zarr_array(join_path(partition, name),
+                          variable.array,
+                          fs,
+                          selection=tuple(rows))
 
 
 def _update_partition(

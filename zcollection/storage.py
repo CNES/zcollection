@@ -501,6 +501,8 @@ def update_zarr_array(
     dirname: str,
     array: ArrayLike,
     fs: fsspec.AbstractFileSystem,
+    *,
+    selection: tuple[Any, ...] | None = None,
 ) -> None:
     """Update a Zarr array with new data.
 
@@ -508,13 +510,12 @@ def update_zarr_array(
         dirname: The directory where the Zarr array is stored.
         array: The new data to write to the array.
         fs: The file system where the Zarr array is stored.
+        selection: Orthogonal selection of the elements to write, one entry
+            per dimension. Defaults to the whole array.
 
     Notes:
-        This function updates the entire Zarr array with the new data. If the
-        array is a Dask array, it must be computed before writing to the Zarr.
-        If the array is a masked array and the Zarr array has a fill value, the
-        masked values are filled with the fill value before writing to the Zarr
-        array.
+        A Dask array is computed before it is written. When the Zarr array
+        has a fill value, it replaces the masked values of a masked array.
     """
     _LOGGER.debug('Updating Zarr array %r', dirname)
     target: zarr.Array = store.open_array(fs, dirname, mode='r+')
@@ -526,7 +527,10 @@ def update_zarr_array(
                   numpy.ma.MaskedArray) and target.fill_value is not None:
         array = array.filled(target.fill_value)
 
-    target[:] = array
+    if selection is None:
+        target[:] = array
+    else:
+        target.set_orthogonal_selection(selection, array)
 
     # Invalidate any cached directory information.
     fs.invalidate_cache(dirname)

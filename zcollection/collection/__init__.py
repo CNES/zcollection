@@ -201,6 +201,14 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 f'partition_base_dir={self.partition_properties.dir!r}'
                 f'mode={self.mode!r}>')
 
+    @property
+    def _partitions_dir(self) -> str:
+        return self.partition_properties.dir
+
+    @property
+    def _reference(self) -> ReadOnlyCollection:
+        return self
+
     def _read_only_mode(self) -> None:
         """The collection is read-only, so refuse each method that writes."""
         self._refuse_writes((

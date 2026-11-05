@@ -157,6 +157,14 @@ class View(WritableCollection):
         """The partitioning strategy of the reference collection."""
         return self.view_ref.partitioning
 
+    @property
+    def _partitions_dir(self) -> str:
+        return self.base_dir
+
+    @property
+    def _reference(self) -> collection.Collection:
+        return self.view_ref
+
     def _init_partitions(self,
                          filters: collection.PartitionFilter,
                          distributed: bool = True) -> None:

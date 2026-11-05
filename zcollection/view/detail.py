@@ -415,7 +415,7 @@ def _calculate_axis_reference(
     """
     group: zarr.Group = store.open_group(view_ref.fs, path)
     array = cast('zarr.Array', group[view_ref.axis])
-    axis = cast('NDArray', array[...])
+    axis = numpy.asarray(array[...])
     checksum: str = hashlib.sha256(axis.tobytes()).hexdigest()
     return AxisReference(axis, read_dimensions(array)[0], checksum)
 
@@ -641,7 +641,7 @@ def _sync(
     if axis_ref.checksum != array.attrs[CHECKSUM_ATTR]:
         # The axis of the view is a prefix of the reference one when the
         # partition holds the same measurements up to its end.
-        axis_view = cast('NDArray', array[:])
+        axis_view = numpy.asarray(array[:])
         if axis_ref.array.size > axis_view.size and numpy.all(
                 axis_view == axis_ref.array[:axis_view.size]):
             # The cache is invalidated by _extend_partition.

@@ -44,6 +44,7 @@ from .detail import (
     execute_update,
     map_partitions,
     prepare_partition_operation,
+    update_partition_from,
     warn_empty_update,
 )
 
@@ -613,6 +614,145 @@ class WritableCollection(BaseCollection):
                        func_args=args,
                        func_kwargs=kwargs)
         tuple(map(self.fs.invalidate_cache, partitions))
+
+    @property
+    @abc.abstractmethod
+    def _partitions_dir(self) -> str:
+        """Directory of the partitions."""
+        ...
+
+    @property
+    @abc.abstractmethod
+    def _reference(self) -> ReadOnlyCollection:
+        """Collection that provides the values of `align_on`."""
+        ...
+
+    def _variables_to_update(self, zds: dataset.Dataset,
+                             align_on: str) -> tuple[str, ...]:
+        """Check the dataset given to :meth:`update_from`.
+
+        Args:
+            zds: Dataset to update from.
+            align_on: Variable identifying the rows of a partition.
+
+        Returns:
+            Names of the variables to update.
+
+        Raises:
+            ValueError: If `align_on` cannot identify the rows, or the dataset
+                lacks a variable it needs or contains one the schema does not
+                define along the same dimensions.
+        """
+        reference = self._reference
+        aligned = reference.metadata.variables.get(align_on)
+        if aligned is None:
+            raise ValueError(
+                f'The collection {reference.partition_properties.dir!r} has '
+                f'no variable {align_on!r}.')
+        if aligned.dimensions != (self.dimension, ):
+            raise ValueError(
+                f'The variable {align_on!r} must have {self.dimension!r} as '
+                'its only dimension.')
+
+        required = (*self.partitioning.variables, align_on)
+        missing = [name for name in required if name not in zds.variables]
+        if missing:
+            raise ValueError('The dataset does not contain the variables '
+                             f'{", ".join(repr(name) for name in missing)}.')
+
+        names = tuple(name for name in zds.variables if name not in required)
+        unknown = sorted(set(names) - set(self.metadata.variables))
+        if unknown:
+            raise ValueError('The schema does not define the variables '
+                             f'{", ".join(repr(x) for x in unknown)}.')
+
+        for name in names:
+            declared = self.metadata.variables[name].dimensions
+            if self.dimension not in declared:
+                raise ValueError(f'The variable {name!r} does not have the '
+                                 f'dimension {self.dimension!r}.')
+            if zds.variables[name].dimensions != declared:
+                raise ValueError(
+                    f'The variable {name!r} has the dimensions '
+                    f'{zds.variables[name].dimensions} in the dataset and '
+                    f'{declared} in the schema.')
+        return names
+
+    def update_from(self,
+                    zds: dataset.Dataset,
+                    *,
+                    align_on: str,
+                    distributed: bool = True) -> tuple[str, ...]:
+        """Write the variables of a dataset into existing partitions.
+
+        Each row of the dataset is written to the row of its partition that
+        has the same value of `align_on`. The other rows and variables keep
+        their values.
+
+        The dataset is checked before anything is written: it must contain
+        `align_on` and the partitioning variables, the schema must declare
+        each other variable along the partitioned dimension with the
+        dimensions it has in the dataset, and each row must fall in an
+        existing partition. Each partition is then matched and written on its
+        own: a partition with an unmatched row or a repeated value of
+        `align_on` keeps its values, but other partitions may already be
+        updated.
+
+        Args:
+            zds: Dataset containing the partitioning variables, `align_on`
+                and the variables to update.
+            align_on: Variable identifying the rows of a partition. A view
+                reads it from its reference collection.
+            distributed: Whether to use Dask. Defaults to True.
+
+        Returns:
+            Paths of the updated partitions.
+
+        Raises:
+            ValueError: If `align_on` cannot identify the rows, the dataset
+                lacks a variable it needs or contains one the schema does not
+                declare as above, a row falls in a partition that does not
+                exist, the values of `align_on` repeat among the stored rows
+                of a partition or among the dataset rows that fall in it, or
+                a row of the dataset has no match in its partition.
+        """
+        names = self._variables_to_update(zds, align_on)
+        if not names:
+            return ()
+
+        reference = self._reference
+        existing = frozenset(self.partitions())
+        plan: list[tuple[str, str, dict[str, slice]]] = []
+        for keys, indexer in self.partitioning.split_dataset(
+                zds=zds, axis=self.dimension):
+            partition = fs_utils.join_path(self._partitions_dir, *keys)
+            if partition not in existing:
+                raise ValueError(
+                    f'The partition {partition!r} does not exist.')
+            plan.append((partition,
+                         fs_utils.join_path(reference.partition_properties.dir,
+                                            *keys), indexer))
+
+        options = {
+            'names': names,
+            'align_on': align_on,
+            'dim': self.dimension,
+            'fs': self.fs,
+            'reference_fs': reference.fs,
+        }
+        with self.synchronizer:
+            if distributed:
+                client = dask_utils.get_client()
+                storage.execute_transaction(
+                    client, sync.NoSync(),
+                    client.map(update_partition_from,
+                               plan,
+                               zds=client.scatter(zds),
+                               **options))
+            else:
+                for item in plan:
+                    update_partition_from(item, zds=zds, **options)
+        return tuple(partition for partition, _, _ in plan)
 
     @staticmethod
     def _unsupported_operation(*args, **kwargs) -> NoReturn:

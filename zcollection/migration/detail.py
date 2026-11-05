@@ -14,7 +14,7 @@ immutable variables of the source stay.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 import json
 import logging
 import math
@@ -423,13 +423,11 @@ def differing_arrays(
     held = _nodes(target_fs, target_dirname)
     differing = {name for name in names if name not in held}
     for name in set(names) - differing:
-        first = store.open_array(source_fs,
-                                 fs_utils.join_path(source_dirname, name),
-                                 mode='r')
-        second = store.open_array(target_fs,
-                                  fs_utils.join_path(target_dirname, name),
-                                  mode='r')
-        if _differ(cast('NDArray', first[...]), cast('NDArray', second[...])):
+        if _differ(
+                store.open_ndarray(source_fs,
+                                   fs_utils.join_path(source_dirname, name)),
+                store.open_ndarray(target_fs,
+                                   fs_utils.join_path(target_dirname, name))):
             differing.add(name)
     return tuple(sorted(differing))
 
