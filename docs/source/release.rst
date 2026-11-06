@@ -69,6 +69,10 @@ Behaviour
   NaN or NaT.
 * Variables loaded from a collection have a deterministic order.
 * ``insert`` returns partition paths relative to the collection.
+* With ``distributed=True``, ``insert`` writes up to ``npartitions``
+  partitions at a time. Earlier releases wrote fewer partitions at a time
+  than requested: 5 instead of 10 for 10 partitions and ``npartitions=10``.
+* Inserting an empty dataset with ``distributed=True`` returns an empty tuple.
 * ``Collection.copy`` without ``filesystem`` writes the copy on the file system
   of the collection.
 * ``insert`` hands its merge callable the representation of the dataset it

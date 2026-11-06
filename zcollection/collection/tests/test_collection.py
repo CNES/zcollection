@@ -13,9 +13,11 @@ import concurrent.futures
 import copy
 import datetime
 import io
+import itertools
 import json
 import logging
 import multiprocessing
+from unittest import mock
 
 import dask.distributed
 import fsspec
@@ -105,6 +107,65 @@ def test_insert_hands_the_merge_callable_the_representation_asked_for(
 
     loaded = zcol.load(delayed=False, distributed=False)
     assert loaded is not None
+
+
+def ten_daily_partitions() -> dataset.Dataset:
+    """Return a dataset spreading over ten daily partitions."""
+    time = numpy.datetime64(
+        '2000-01-01', 'ns') + numpy.arange(40) * numpy.timedelta64(6, 'h')
+    return dataset.Dataset([
+        dataset.Array('time', time, ('num_lines', )),
+        dataset.Array('value', numpy.ones(40), ('num_lines', )),
+    ],
+                           delayed=False)
+
+
+@pytest.mark.usefixtures('dask_client')
+@pytest.mark.parametrize('npartitions', [None, 1, 2, 3, 5, 20])
+def test_insert_processes_npartitions_partitions_at_a_time(
+        local_fs, npartitions) -> None:  # noqa: F811
+    """``npartitions`` is the number of partitions written in parallel."""
+    inserted = ten_daily_partitions()
+    zcol = convenience.create_collection('time',
+                                         inserted,
+                                         partitioning.Date(('time', ), 'D'),
+                                         str(local_fs.collection),
+                                         filesystem=local_fs.fs)
+    execute = storage.execute_transaction
+    batches: list[int] = []
+
+    def record(client, synchronizer, futures, **kwargs):
+        if not any(
+                isinstance(item, dask.distributed.Future) for item in futures):
+            batches.append(len(futures))
+        return execute(client, synchronizer, futures, **kwargs)
+
+    with mock.patch.object(storage, 'execute_transaction', record):
+        written = zcol.insert(inserted, npartitions=npartitions)
+
+    assert len(written) == 10
+    assert batches == [
+        len(batch) for batch in itertools.batched(range(10), npartitions or 1)
+    ]
+
+
+@pytest.mark.usefixtures('dask_client')
+@pytest.mark.parametrize('npartitions', [None, 2])
+def test_insert_of_an_empty_dataset_writes_nothing(
+        local_fs, npartitions) -> None:  # noqa: F811
+    """Inserting a dataset without rows writes no partition."""
+    inserted = ten_daily_partitions()
+    zcol = convenience.create_collection('time',
+                                         inserted,
+                                         partitioning.Date(('time', ), 'D'),
+                                         str(local_fs.collection),
+                                         filesystem=local_fs.fs)
+
+    written = zcol.insert(inserted.isel({'num_lines': slice(0, 0)}),
+                          npartitions=npartitions)
+
+    assert written == ()
+    assert tuple(zcol.partitions()) == ()
 
 
 def test_insert_refuses_a_delayed_merge_of_materialized_data(

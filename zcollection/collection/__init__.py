@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 import datetime
 import functools
+import itertools
 import json
 import logging
 import os
@@ -349,6 +350,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 partitioned data.
             npartitions: The maximum number of partitions to process in
                 parallel. By default, partitions are processed one by one.
+                Ignored when ``distributed`` is False.
             delayed: Whether the merge callable receives the stored
                 partition and the inserted one as Dask arrays. Defaults to
                 ``None``, which gives it Dask arrays when ``ds`` holds them.
@@ -535,14 +537,12 @@ class Collection(ReadOnlyCollection, WritableCollection):
                             delayed: bool | None = None,
                             **kwargs):
         """Insert a dataset into the collection using dask."""
-        if npartitions is not None:
-            if npartitions < 1:
-                raise ValueError('The number of partitions must be positive')
-            npartitions = len(partitions) // npartitions + 1
+        if npartitions is not None and npartitions < 1:
+            raise ValueError('The number of partitions must be positive')
 
         client: dask.distributed.Client = dask_utils.get_client()
         scattered_ds: Any = client.scatter(ds)
-        for sequence in dask_utils.split_sequence(partitions, npartitions):
+        for sequence in itertools.batched(partitions, npartitions or 1):
             futures: list[dask.distributed.Future] = [
                 dask_utils.simple_delayed('insert', _insert)(
                     args=partition,  # type: ignore[arg-type]
