@@ -178,7 +178,7 @@ def test_an_unusable_index_is_walked_without_writing(
         assert local_fs.fs.cat_file(path) == written
 
 
-def test_a_read_only_collection_walks_without_writing(
+def test_a_read_only_collection_lists_without_writing(
         local_fs,  # noqa: F811
         caplog) -> None:
     """A collection that may not be written is listed without an index."""
@@ -193,7 +193,7 @@ def test_a_read_only_collection_walks_without_writing(
 
     assert tuple(reader.partitions()) == expected
     assert not local_fs.fs.exists(path)
-    assert 'walking its directory tree' in caplog.text
+    assert 'listed from the store' in caplog.text
 
 
 def test_a_dropped_partition_leaves_the_index(local_fs) -> None:  # noqa: F811
@@ -409,7 +409,32 @@ def test_an_interrupted_insertion_keeps_written_partitions_visible(
     reopened = open_collection(str(tested_fs.collection),
                                filesystem=tested_fs.fs)
     assert len(tuple(reopened.partitions())) == 7
-    assert len(zcol._index.keys()) == len(zcol._index.walk())
+    assert zcol._index._read() == zcol._index.walk()
+
+
+def test_a_failed_reindex_after_a_failed_insertion_leaves_the_index_marked(
+        local_fs,  # noqa: F811
+        caplog) -> None:
+    """A failed insertion whose reindex also fails leaves the index marked."""
+    zcol = create_test_collection(local_fs, delayed=False, distributed=False)
+    datasets = create_test_dataset(delayed=False)
+    next(datasets)
+
+    def fail(**kwargs):
+        raise OSError('injected partition failure')
+
+    def fail_walk(index):
+        raise OSError('injected walk failure')
+
+    with mock.patch.object(collection, '_insert', fail), \
+            mock.patch.object(partitions.PartitionIndex, 'walk', fail_walk):
+        with pytest.raises(OSError, match='injected partition failure'):
+            zcol.insert(next(datasets), distributed=False)
+
+    stored = json.loads(gzip.decompress(local_fs.fs.cat_file(
+        zcol._index.path)))
+    assert stored['state'] == 'updating'
+    assert 'could not be rebuilt' in caplog.text
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
@@ -426,10 +451,10 @@ def test_sync_retries_an_interrupted_index_publication(fs, request) -> None:
     zcol.insert(next(datasets), distributed=False)
     write = partitions.PartitionIndex.write
 
-    def fail_view(index, keys):
-        if index.path == zview._index.path:
+    def fail_view(index, keys, *, updating=False):
+        if index.path == zview._index.path and not updating:
             raise OSError('injected publication failure')
-        return write(index, keys)
+        return write(index, keys, updating=updating)
 
     with mock.patch.object(partitions.PartitionIndex, 'write', fail_view):
         with pytest.raises(OSError, match='injected publication failure'):
@@ -473,6 +498,24 @@ def test_a_listing_cannot_overwrite_a_newer_index(
 
     assert local_fs.fs.cat_file(writer._index.path) == published
     assert len(tuple(writer.partitions())) == 11
+
+
+def test_a_copy_writes_the_index_of_its_partitions(
+        local_fs,  # noqa: F811
+        caplog) -> None:
+    """A copy indexes the partitions it copies."""
+    zcol = create_test_collection(local_fs, distributed=False)
+    selected = tuple(zcol.partitions(relative=True))[:3]
+    target = local_fs.collection.parent / 'copy'
+
+    copied = zcol.copy(str(target),
+                       filters=lambda keys: zcol._index.path_of(
+                           tuple(keys.values())) in selected,
+                       distributed=False)
+
+    assert tuple(copied.partitions(relative=True)) == selected
+    assert copied._index._read() == copied._index.walk()
+    assert 'listed from the store' not in caplog.text
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])

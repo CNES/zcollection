@@ -793,19 +793,17 @@ class WritableCollection(BaseCollection):
         ...
 
     def reindex(self) -> tuple[str, ...]:
-        """Build the index of the partitions from the store.
+        """Rebuild the index from a listing of the partitions in the store.
 
-        A partition the index does not name becomes visible to a listing,
-        and an entry naming a partition the store does not hold is
-        dropped.
+        A partition missing from the index becomes visible to `partitions`,
+        and an entry for a partition absent from the store is dropped.
 
         Returns:
             The path of each partition, relative to the collection.
         """
         _LOGGER.info('Indexing the partitions of %s', self)
         with self.synchronizer:
-            keys = self._index.walk()
-            self._index.write(keys)
+            keys = self._index.reindex()
         return tuple(self._index.path_of(key) for key in keys)
 
 

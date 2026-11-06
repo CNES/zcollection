@@ -193,7 +193,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 storage.init_zarr_group(self._immutable, self.fs)
                 self._write_config(skip_if_exists=True)
                 if new_collection:
-                    self._index.write(self._index.walk())
+                    self._index.reindex()
 
     def __str__(self) -> str:
         return (f'<{self.__class__.__name__} '
@@ -423,7 +423,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
 
         written: tuple[str, ...] = tuple(
             fs_utils.join_path(*item) for item, _ in partitions)
-        with self.synchronizer, self._index.updating():
+        with self.synchronizer, self._index.updating(reindex_on_error=True):
             if distributed:
                 self._insert_distributed(ds,
                                          partitions,
@@ -1043,14 +1043,15 @@ class Collection(ReadOnlyCollection, WritableCollection):
             >>> collection.copy(target="my_new_collection")
         """
         _LOGGER.info('Copying of the collection to %r', target)
-        filesystem = filesystem or fs_utils.get_fs(target)
+        filesystem = filesystem or self.fs
         filesystem.makedirs(target, exist_ok=True)
 
         index = PartitionIndex(filesystem,
                                fs_utils.normalize_path(filesystem, target),
                                self.partitioning,
                                writable=True)
-        with synchronizer or sync.NoSync(), index.updating():
+        with synchronizer or sync.NoSync():
+            index.write((), updating=True)
             selected = self.partitions(filters=filters)
 
             if distributed:
@@ -1088,9 +1089,8 @@ class Collection(ReadOnlyCollection, WritableCollection):
                                     fs_source=self.fs,
                                     fs_target=filesystem)
 
-            # Then the remaining files in the root directory (config, metadata,
-            # etc.). The index of the partitions is left out: the copy holds the
-            # partitions selected here, not the ones this collection holds.
+            # Then the files of the root directory other than the index,
+            # which is rebuilt at the end.
             fs_utils.copy_files([
                 item['name']
                 for item in self.fs.listdir(self.partition_properties.dir,
@@ -1099,7 +1099,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 and os.path.basename(item['name']) != INDEX_FILENAME
             ], target, self.fs, filesystem)
 
-            index.add(index.path_of(key) for key in index.walk())
+            index.reindex()
 
         return Collection.from_config(target,
                                       mode=mode,

@@ -69,6 +69,8 @@ Behaviour
   NaN or NaT.
 * Variables loaded from a collection have a deterministic order.
 * ``insert`` returns partition paths relative to the collection.
+* ``Collection.copy`` without ``filesystem`` writes the copy on the file system
+  of the collection.
 * ``insert`` hands its merge callable the representation of the dataset it
   receives. A dataset of Dask arrays stays lazy through an insertion made
   without a Dask cluster.

@@ -6,12 +6,12 @@
 Index of the partitions
 =======================
 
-The index of the partitions a collection or a view holds, kept in one
-file at its root. A listing reads that file instead of walking the
-directory tree, which costs one request per directory it visits.
+The index of the partitions of a collection or a view is one file at
+its root. Reading it costs one request; listing the partitions from the
+store costs one request per directory.
 
 A partition is named by its key, the value each of the names of the
-partitioning takes. The index holds the key of each partition, ordered
+partitioning takes. The index stores the key of each partition, ordered
 by their values, and the names. A path is built from a key by
 :meth:`zcollection.partitioning.abc.Partitioning.join`.
 """
@@ -107,9 +107,9 @@ class PartitionIndex:
         """Return the key of each partition, ordered by their values.
 
         If the index is absent, unreadable, written in another layout or
-        for another partitioning, the keys are obtained by walking the
-        directory tree. An unfinished update also requires a walk.
-        Reading leaves the stored index unchanged.
+        for another partitioning, or marked as updating, the
+        partitions are listed from the store. Reading leaves the stored
+        index unchanged.
 
         Returns:
             The key of each partition.
@@ -120,60 +120,82 @@ class PartitionIndex:
 
         keys = self.walk()
         _LOGGER.warning(
-            'The partitions of %r were read by walking its directory tree, '
-            'because its index is unavailable or its update is unfinished. '
+            'The partitions of %r were listed from the store, because its '
+            'index is unavailable or its update is unfinished. '
             'Rebuilding the index with reindex requires a writable view or '
             "a collection opened with mode='w'.", self._base_dir)
         return keys
 
     @contextlib.contextmanager
-    def updating(self) -> Iterator[None]:
-        """Mark a partition update before writing data, then publish its keys.
+    def updating(self, *, reindex_on_error: bool = False) -> Iterator[None]:
+        """Mark the index as updating while partitions are written.
 
-        An interrupted update remains marked until a writer publishes an
-        index. The caller serializes writers with its synchronizer.
+        The index is written when the block ends.
+
+        Args:
+            reindex_on_error: Whether to rebuild the index when the block
+                raises. Otherwise, or if the rebuild fails, the index stays
+                marked. A failed rebuild is logged.
         """
         keys = set(self.keys())
-        self._write(sorted(keys), state='updating')
+        self.write(sorted(keys), updating=True)
         self._pending = keys
         try:
             yield
-            self.write(sorted(keys))
+        except Exception:
+            if reindex_on_error:
+                self._reindex_or_log()
+            raise
         finally:
             self._pending = None
+        self.write(sorted(keys))
+
+    def _reindex_or_log(self) -> None:
+        """Rebuild the index, logging a failure."""
+        try:
+            self.reindex()
+        except Exception:
+            _LOGGER.exception('The index of %r could not be rebuilt',
+                              self._base_dir)
+
+    def reindex(self) -> tuple[Key, ...]:
+        """Rebuild the index from a listing of the partitions in the store.
+
+        Returns:
+            The key of each partition, ordered by their values.
+        """
+        keys = self.walk()
+        self.write(keys)
+        return keys
 
     def walk(self) -> tuple[Key, ...]:
-        """Return the key of each partition the store holds.
+        """List the partitions in the store.
 
         Returns:
             The key of each partition, ordered by their values.
         """
         self._fs.invalidate_cache()
-        handler: partitioning.Partitioning = self._partitioning
         try:
-            return tuple(
-                tuple(value for _, value in handler.parse(path))
-                for path in handler.list_partitions(self._fs, self._base_dir))
+            paths = tuple(
+                self._partitioning.list_partitions(self._fs, self._base_dir))
         except FileNotFoundError:
             if self._fs.exists(self._base_dir):
                 raise
-            return ()
+            paths = ()
+        return self.keys_of(paths)
 
-    def write(self, keys: Iterable[Key]) -> None:
+    def write(self, keys: Iterable[Key], *, updating: bool = False) -> None:
         """Write the index.
 
         Args:
             keys: The key of each partition, ordered by their values.
+            updating: Whether to mark the index as updating.
         """
-        self._write(keys, state='ready')
-
-    def _write(self, keys: Iterable[Key], *, state: str) -> None:
-        """Write partition keys with the state of their update."""
         if not self._writable:
             raise PermissionError('The partition index is read only')
         data: dict[str, Any] = {
             'version': VERSION,
-            'state': state,
+            'state': 'updating' if updating else 'ready',
             'names': list(self._names),
             'partitions': [list(key) for key in keys],
         }
@@ -254,11 +276,6 @@ class PartitionIndex:
             if any(left >= right for left, right in itertools.pairwise(keys)):
                 raise ValueError('Partition keys must be unique and ordered')
             return keys
-        except FileNotFoundError:
-            return None
         except (OSError, ValueError, KeyError, TypeError, EOFError,
                 zlib.error):
-            _LOGGER.warning(
-                'The index of the partitions of %r is unreadable and is '
-                'replaced by a walk of its directory tree.', self._base_dir)
             return None
