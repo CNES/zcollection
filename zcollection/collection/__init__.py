@@ -739,7 +739,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
             invocation whose returned values are discarded. A callback
             declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
             on every call, including inference and calls without overlap.
-            See :doc:`/functions` for examples of overlap, trimming and
+            See :doc:`/updating` for examples of overlap, trimming and
             external arguments.
 
         Example:

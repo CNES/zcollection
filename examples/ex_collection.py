@@ -215,7 +215,7 @@ zds.variables['var2'].values
 #   ``partition_info.indices`` selects it along ``partition_info.dimension``.
 #   With depth=1, a slice starting at 0 indicates that the left neighbor is
 #   missing. A slice ending at the dataset's length indicates that the right
-#   neighbor is missing. See :doc:`/functions` for overlap and trimming examples.
+#   neighbor is missing. See :doc:`/computing` for overlap and trimming examples.
 def twos(
         ds,
         partition_info: zcollection.PartitionInfo) -> dict[str, numpy.ndarray]:

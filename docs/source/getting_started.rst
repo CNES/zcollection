@@ -241,14 +241,21 @@ Where to go next
 :doc:`partitioning`
     Date against sequence, the resolution and what it costs.
 
-:doc:`writing`
-    Execution, failures and retries of insert, update and update_from.
+:doc:`inserting`
+    Replacing or merging the data of existing partitions, and inserting with
+    Dask.
 
-:doc:`functions`
-    Mapping and updating partitions, using neighbors and external Dask arrays.
+:doc:`computing`
+    Functions called on each partition, with or without its neighbors.
+
+:doc:`updating`
+    Variables computed by a function or copied from a dataset.
+
+:doc:`failures`
+    The report of the partitions that failed, and how to retry them.
 
 :doc:`auto_examples/ex_collection`
-    Dropping partitions and variables, mapping a function over a collection.
+    Dropping partitions and variables.
 
 :doc:`auto_examples/ex_view`
     Holding variables of your own beside a collection you read.
@@ -257,4 +264,4 @@ Where to go next
     Building an index to read a part of a collection without opening it.
 
 :doc:`auto_examples/ex_without_dask`
-    Reading and writing with no Dask cluster, and computing a bag.
+    Reading and writing with no Dask cluster.

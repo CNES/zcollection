@@ -1,7 +1,7 @@
 .. _partition-index:
 
-Partition index
-===============
+Maintaining the partition index
+===============================
 
 The partition index is the list of partitions known to a collection or a
 view. ``partitions()`` returns this list, and you can select partitions

@@ -66,7 +66,7 @@ Execution
   workers. With ``distributed=False``, the partitions are processed one at a
   time in the calling process. By default, earlier releases inserted one
   partition at a time and updated the partitions in one batch per worker.
-  See :doc:`writing`.
+  See :doc:`failures`.
 * If a partition fails, these operations raise ``PartitionErrors``. Its
   ``written``, ``failed`` and ``not_attempted`` attributes give the
   partitions written, the traceback of each failed partition and the

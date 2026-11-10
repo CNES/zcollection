@@ -426,7 +426,7 @@ class BaseCollection(abc.ABC):
             Exceptions raised by the callback are propagated. A callback
             declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
             identifying the current partition and its slice within the overlap window.
-            See :doc:`/functions` for input selection, callback arguments and
+            See :doc:`/computing` for input selection, callback arguments and
             execution choices.
 
         Example:
@@ -495,7 +495,7 @@ class BaseCollection(abc.ABC):
             Exceptions raised by the callback are propagated. A callback
             declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
             identifying the current partition and its slice within the overlap window.
-            See :doc:`/functions` for input selection, callback arguments and
+            See :doc:`/computing` for input selection, callback arguments and
             execution choices.
 
         Example:

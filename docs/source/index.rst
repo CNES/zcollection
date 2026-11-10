@@ -102,8 +102,8 @@ variables are filled with `Dask arrays
 a computation asks for them. With ``delayed=False`` they are filled with
 NumPy arrays, read there and then.
 
-See :doc:`functions` for callback arguments, overlap windows and execution
-choices.
+See :doc:`computing` and :doc:`updating` for function arguments, overlap
+windows and execution choices.
 
 File systems
 ------------
@@ -115,16 +115,33 @@ tests cover a local disk and S3.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: First steps
 
    install
    getting_started
+
+.. toctree::
+   :maxdepth: 2
+   :caption: User guide
+
    partitioning
-   writing
-   functions
+   inserting
+   computing
+   updating
+   failures
    partition_index
-   auto_examples/index.rst
    migration
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Examples
+
+   auto_examples/index.rst
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Reference
+
    api
    release
 
