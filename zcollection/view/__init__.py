@@ -30,7 +30,7 @@ from .. import (
     storage,
     sync,
 )
-from ..collection.abc import WritableCollection
+from ..collection.abc import WritableCollection, warn_missing_partitions
 from ..collection.detail import infer_variables, wrap_update
 from ..convenience import collection as convenience
 from ..partitions import PartitionIndex
@@ -307,19 +307,24 @@ class View(WritableCollection):
         Args:
             filters: The partition filters.
             indexer: The indexer to apply.
-            selected_partitions: A list of partitions to load (using the
-                partition relative path).
+            selected_partitions: The paths of the partitions to select, relative
+                to the view.
 
         Returns:
             The list of partitions.
         """
         held: frozenset[str] = self._held_partitions()
-        return (fs_utils.join_path(self.base_dir, item)
-                for item in self.view_ref.partitions(
-                    filters=filters,
-                    indexer=indexer,
-                    selected_partitions=selected_partitions,
-                    relative=True) if item in held)
+        listed = tuple(
+            self.view_ref.partitions(filters=filters,
+                                     indexer=indexer,
+                                     selected_partitions=selected_partitions,
+                                     relative=True))
+        if selected_partitions is not None:
+            missing = [item for item in listed if item not in held]
+            if missing:
+                warn_missing_partitions(missing)
+        return (fs_utils.join_path(self.base_dir, item) for item in listed
+                if item in held)
 
     def add_variable(self,
                      variable: meta.VariableSchema | dataset.Variable,
@@ -488,8 +493,8 @@ class View(WritableCollection):
             indexer: The indexer to apply.
             selected_variables: Input variables to load from the view and its
                 reference collection. If None, all variables are loaded.
-            selected_partitions: A list of partitions to load (using the
-                partition relative path).
+            selected_partitions: The paths of the partitions to select, relative
+                to the view.
             distributed: Whether to use dask or not. Default To True.
 
         Returns:
@@ -590,14 +595,20 @@ class View(WritableCollection):
         """Select reference partitions held by the view for an update."""
         with self.synchronizer:
             held = self._held_partitions()
-        return tuple(
-            fs_utils.join_path(self.base_dir, item) for item in
+        listed = tuple(
             self.view_ref.partitions(filters=filters,
                                      selected_partitions=selected_partitions,
                                      relative=True,
-                                     lock=True) if item in held)
+                                     lock=True))
+        if selected_partitions is not None:
+            missing = [item for item in listed if item not in held]
+            if missing:
+                warn_missing_partitions(missing)
+        return tuple(
+            fs_utils.join_path(self.base_dir, item) for item in listed
+            if item in held)
 
-    def _prepare_update(
+    def _prepare_update(  # noqa: PLR0913
         self,
         func: collection.UpdateCallable,
         partitions: tuple[str, ...],
@@ -606,6 +617,7 @@ class View(WritableCollection):
         selected_variables: Iterable[str] | None,
         delayed: bool,
         depth: int,
+        pool: tuple[str, ...],
         trim: bool,
         client: dask.distributed.Client | None,
         func_args: tuple[Any, ...],
@@ -646,7 +658,7 @@ class View(WritableCollection):
             depth=depth,
             fs=self.fs,
             metadata=self.metadata,
-            partitions=partitions,
+            partitions=pool,
             selected_variables=selected_variables,
             view_ref=self.view_ref) if depth else None
         return wrap_update(func,
@@ -683,8 +695,10 @@ class View(WritableCollection):
             args: The positional arguments to pass to the function.
             depth: The depth of the overlap between the partitions. Default is
                 0 (no overlap). If depth is greater than 0, the function is
-                applied on the partition and its neighbors selected by the
-                depth.
+                applied on each partition with ``depth`` neighbors on each
+                side, whether ``filters`` and ``selected_partitions`` select
+                these neighbors or not. Only the selected partitions are
+                written.
             variables: The list of variables updated by the function. If None,
                 the variables are inferred by calling the function on the first
                 available selected partition, using the requested loading and
@@ -692,8 +706,8 @@ class View(WritableCollection):
                 including when ``depth`` is greater than 0. Default is None.
             selected_variables: Input variables to load from the view and its
                 reference collection. If None, all variables are loaded.
-            selected_partitions: A list of partitions to load (using the
-                partition relative path).
+            selected_partitions: The paths of the partitions to select, relative
+                to the view.
             filters: The expression used to filter the partitions to update.
             trim: Whether to keep only the current partition's values from
                 the results returned by ``func`` when using overlap. Set it

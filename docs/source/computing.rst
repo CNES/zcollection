@@ -61,12 +61,21 @@ Choosing the inputs
 -------------------
 
 ``selected_variables`` lists the variables to load: the ones the function
-reads. ``filters`` selects the partitions by their keys.
+reads. ``filters`` selects the partitions by their keys, and
+``selected_partitions`` selects them by their paths. Given both, only the
+partitions they both select are kept.
 
 .. jupyter-execute::
 
     bag = collection.map(mean, selected_variables=('signal', ),
                          filters='segment >= 2', delayed=False)
+    bag.compute(scheduler='synchronous')
+
+.. jupyter-execute::
+
+    bag = collection.map(mean, selected_variables=('signal', ),
+                         selected_partitions=['segment=1', 'segment=3'],
+                         delayed=False)
     bag.compute(scheduler='synchronous')
 
 The arguments following the function, and the extra keyword arguments, are
@@ -118,9 +127,10 @@ Using neighboring partitions
 ----------------------------
 
 ``map_overlap`` loads each partition with ``depth`` neighboring partitions on
-each side, concatenated along the partitioned dimension. The neighbors are
-taken among the selected partitions, after ``filters`` is applied.
-``partition_info.indices`` locates the partition in this window. At
+each side, concatenated along the partitioned dimension. ``filters`` and
+``selected_partitions`` select the partitions to process; the neighbors of
+each are loaded whether these parameters select them or not.
+``partition_info.indices`` locates the partition in its window. At
 ``depth=1``:
 
 .. list-table:: Windows and central slices

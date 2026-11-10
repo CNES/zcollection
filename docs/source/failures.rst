@@ -126,10 +126,6 @@ again. If the function reads a variable it also writes, the second run reads
 the values the failed run wrote, so the function must give the same result
 when it runs twice.
 
-With ``depth``, the window of a partition contains only selected partitions. To
-give the failed partitions their full windows, select their neighbors too;
-``update`` then writes the neighbors again.
-
 To retry an insertion, insert the dataset again, or only its rows that fall
 in the failed and not attempted partitions. Inserting the whole dataset again
 writes it again into every partition, including those already written; with

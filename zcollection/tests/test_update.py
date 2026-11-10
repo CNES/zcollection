@@ -327,6 +327,34 @@ def test_update_reports_each_partition(update_target, distributed,
 
 
 @pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
+@pytest.mark.parametrize('selection', [{
+    'filters': 'key == 2'
+}, {
+    'selected_partitions': ['key=2']
+}])
+def test_a_partial_update_reads_the_neighbors_it_does_not_update(
+        update_target, selection) -> None:
+    """A window contains the neighbors of a partition even when they are not
+    selected, so a partial update writes what a full one does (issue #27)."""
+    output = output_name(update_target)
+
+    def window_size(zds):
+        size = zds['source'].values.size
+        return {output: numpy.full(size, size)}
+
+    assert update_target.update(window_size,
+                                variables=[output],
+                                depth=1,
+                                delayed=False,
+                                distributed=False,
+                                **selection) == ('key=2', )
+    loaded = update_target.load(delayed=False, distributed=False)
+    assert loaded is not None
+    numpy.testing.assert_array_equal(
+        loaded[output].values[loaded['key'].values == 2], [6, 6])
+
+
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 def test_update_holds_the_lock_without_dask(update_target, tmp_path) -> None:
     """Without Dask, each partition is updated while the lock is held."""
     output = output_name(update_target)

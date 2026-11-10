@@ -120,6 +120,84 @@ def test_mapping_internal_keyword_names(mapping_target, method):
 
 
 @pytest.mark.parametrize('mapping_target', TARGETS, indirect=True)
+@pytest.mark.parametrize(('method', 'expected'), [
+    ('map', [[10, 11], [30, 31]]),
+    ('map_overlap', [[10, 11, 20, 21], [20, 21, 30, 31]]),
+])
+def test_mapping_selected_partitions(mapping_target, method, expected):
+    """Only the partitions named by selected_partitions are processed, and
+    map_overlap loads their neighbors whether they are selected or not."""
+
+    def callback(zds, *, partition_info):
+        return zds['x'].values.tolist()
+
+    result = getattr(mapping_target, method)(
+        callback,
+        delayed=False,
+        selected_variables=('x', ),
+        selected_partitions=['key=1',
+                             'key=3']).compute(scheduler='synchronous')
+    assert sorted(values for _, values in result) == expected
+
+
+@pytest.mark.parametrize('mapping_target', TARGETS, indirect=True)
+def test_a_selected_partition_that_does_not_exist_is_reported(
+        mapping_target, caplog):
+    """A selected path that names no partition is left out with a warning."""
+    result = mapping_target.map(
+        lambda zds: zds['x'].values.tolist(),
+        delayed=False,
+        selected_variables=('x', ),
+        selected_partitions=['key=1',
+                             'key=9']).compute(scheduler='synchronous')
+
+    assert [values for _, values in result] == [[10, 11]]
+    assert "'key=9'" in caplog.text
+
+
+def test_a_selected_partition_the_view_does_not_hold_is_reported(
+        local_fs, caplog):  # noqa: F811
+    """A selected path that names a partition of the reference but not of
+    the view is left out with a warning."""
+    zds = dataset.Dataset([
+        variable.Array('key', numpy.repeat([1, 2], 2), ('row', )),
+        variable.Array('x', numpy.arange(4), ('row', )),
+    ],
+                          delayed=False)
+    zcol = convenience.create_collection('key',
+                                         zds,
+                                         partitioning.Sequence(('key', )),
+                                         str(local_fs.collection),
+                                         filesystem=local_fs.fs)
+    zcol.insert(zds, distributed=False)
+    zview = convenience.create_view(str(local_fs.view),
+                                    view.ViewReference(
+                                        str(local_fs.collection), local_fs.fs),
+                                    filesystem=local_fs.fs,
+                                    filters='key == 1',
+                                    distributed=False)
+
+    assert [
+        zview._relative_path(item)
+        for item in zview.partitions(selected_partitions=['key=1', 'key=2'])
+    ] == ['key=1']
+    assert "'key=2'" in caplog.text
+
+    caplog.clear()
+    zview.add_variable(meta.VariableSchema('derived',
+                                           'int64',
+                                           dimensions=('row', ),
+                                           fill_value=None),
+                       distributed=False)
+    assert zview.update(lambda zds: {'derived': zds['x'].values},
+                        variables=['derived'],
+                        selected_partitions=['key=1', 'key=2'],
+                        delayed=False,
+                        distributed=False) == ('key=1', )
+    assert "'key=2'" in caplog.text
+
+
+@pytest.mark.parametrize('mapping_target', TARGETS, indirect=True)
 @pytest.mark.usefixtures('dask_client')
 def test_mapping_scattered_argument(mapping_target):
     """A scattered argument reaches the callback as usable data."""

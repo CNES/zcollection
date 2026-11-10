@@ -57,6 +57,19 @@ if TYPE_CHECKING:
         WrappedPartitionCallable,
     )
 
+
+def warn_missing_partitions(paths: Iterable[str]) -> None:
+    """Log a warning naming the paths in ``selected_partitions`` that name
+    no partition.
+
+    Args:
+        paths: The paths left out.
+    """
+    _LOGGER.warning(
+        'The selected paths %s name no partition of the collection or the '
+        'view and are left out.', ', '.join(repr(path) for path in paths))
+
+
 #: Type of functions filtering the partitions.
 PartitionFilterCallback = Callable[[dict[str, int]], bool]
 
@@ -334,6 +347,20 @@ class BaseCollection(abc.ABC):
         return pathlib.PurePosixPath(path).relative_to(
             self._partitions_dir).as_posix()
 
+    def _overlap_pool(self, partitions: Iterable[str]) -> tuple[str, ...]:
+        """Return the partitions among which the overlap windows are formed.
+
+        The pool holds every partition of the collection or the view,
+        selected for processing or not.
+
+        Args:
+            partitions: The partitions selected for processing.
+        """
+        return tuple(
+            sorted(set(self.partitions()) | set(partitions),
+                   key=lambda path: self.partitioning.parse(
+                       self._relative_path(path))))
+
     def is_locked(self) -> bool:
         """Return whether this instance holds the collection lock."""
         return self.synchronizer.is_locked()
@@ -363,6 +390,7 @@ class BaseCollection(abc.ABC):
         delayed: bool,
         depth: int,
         filters: PartitionFilter,
+        selected_partitions: Iterable[str] | None,
         partition_size: int | None,
         npartitions: int | None,
         selected_variables: Iterable[str] | None,
@@ -370,9 +398,11 @@ class BaseCollection(abc.ABC):
         """Prepare the partition loaders and build the mapping bag."""
         selected_variables = prepare_partition_operation(
             func, depth, selected_variables)
-        partitions = tuple(self.partitions(filters=filters))
+        partitions = tuple(
+            self.partitions(filters=filters,
+                            selected_partitions=selected_partitions))
         load, load_overlap = self._prepare_map(
-            partitions,
+            self._overlap_pool(partitions) if depth else partitions,
             delayed=delayed,
             depth=depth,
             selected_variables=selected_variables)
@@ -394,6 +424,7 @@ class BaseCollection(abc.ABC):
         *args,
         delayed: bool = True,
         filters: PartitionFilter = None,
+        selected_partitions: Iterable[str] | None = None,
         partition_size: int | None = None,
         npartitions: int | None = None,
         selected_variables: Iterable[str] | None = None,
@@ -408,6 +439,8 @@ class BaseCollection(abc.ABC):
             filters: The predicate used to filter the partitions to process.
                 To get more information on the predicate, see the
                 documentation of the :meth:`partitions` method.
+            selected_partitions: The paths of the partitions to select, relative
+                to the collection or the view.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
             selected_variables: A list of variables to retain from the
@@ -447,6 +480,7 @@ class BaseCollection(abc.ABC):
                          delayed=delayed,
                          depth=0,
                          filters=filters,
+                         selected_partitions=selected_partitions,
                          partition_size=partition_size,
                          npartitions=npartitions,
                          selected_variables=selected_variables)
@@ -459,6 +493,7 @@ class BaseCollection(abc.ABC):
         delayed: bool = True,
         depth: int = 1,
         filters: PartitionFilter = None,
+        selected_partitions: Iterable[str] | None = None,
         partition_size: int | None = None,
         npartitions: int | None = None,
         selected_variables: Iterable[str] | None = None,
@@ -472,10 +507,13 @@ class BaseCollection(abc.ABC):
             *args: The positional arguments to pass to the function.
             delayed: Whether to load the data lazily or not.
             depth: The depth of the overlap between the partitions. Defaults
-                to 1.
+                to 1. The neighbors are loaded whether ``filters`` and
+                ``selected_partitions`` select them or not.
             filters: The predicate used to filter the partitions to process.
                 To get more information on the predicate, see the
                 documentation of the :meth:`partitions` method.
+            selected_partitions: The paths of the partitions to select, relative
+                to the collection or the view.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
             selected_variables: A list of variables to retain from the
@@ -519,6 +557,7 @@ class BaseCollection(abc.ABC):
                          delayed=delayed,
                          depth=depth,
                          filters=filters,
+                         selected_partitions=selected_partitions,
                          partition_size=partition_size,
                          npartitions=npartitions,
                          selected_variables=selected_variables)
@@ -556,7 +595,7 @@ class WritableCollection(BaseCollection):
         ...
 
     @abc.abstractmethod
-    def _prepare_update(
+    def _prepare_update(  # noqa: PLR0913
         self,
         func: UpdateCallable,
         partitions: tuple[str, ...],
@@ -565,6 +604,7 @@ class WritableCollection(BaseCollection):
         selected_variables: Iterable[str] | None,
         delayed: bool,
         depth: int,
+        pool: tuple[str, ...],
         trim: bool,
         client: dask.distributed.Client | None,
         func_args: tuple[Any, ...],
@@ -611,6 +651,7 @@ class WritableCollection(BaseCollection):
         wrap_function = self._prepare_update(
             func,
             partitions,
+            pool=self._overlap_pool(partitions) if depth else partitions,
             variables=variables,
             selected_variables=selected_variables,
             delayed=delayed,
@@ -991,10 +1032,18 @@ class ReadOnlyCollection(BaseCollection):
         partitions_scheme = sorted(
             {self.partitioning.parse(item)
              for item in partitions})
-        return filter(self.fs.exists, (self.fs.sep.join(
-            (self.partition_properties.dir,
-             self.partitioning.join(partition, self.fs.sep)))
-                                       for partition in partitions_scheme))
+        paths = [
+            self.fs.sep.join((self.partition_properties.dir,
+                              self.partitioning.join(partition, self.fs.sep)))
+            for partition in partitions_scheme
+        ]
+        existing = [path for path in paths if self.fs.exists(path)]
+        if len(existing) < len(paths):
+            warn_missing_partitions([
+                self._relative_path(path) for path in paths
+                if path not in existing
+            ])
+        return existing
 
     def dimensions_properties(self) -> tuple[dict[str, int], dict[str, int]]:
         """Extract dimension properties (size and chunks).
@@ -1032,8 +1081,8 @@ class ReadOnlyCollection(BaseCollection):
                 variables. If the predicate is a function, it is a function that
                 takes the partition scheme as input and returns a boolean.
             indexer: The indexer to apply.
-            selected_partitions: A list of partitions to load (using the
-                partition relative path).
+            selected_partitions: The paths of the partitions to select, relative
+                to the collection.
             relative: Whether to return the relative path.
             lock: Whether to lock the collection or not to avoid listing
                 partitions while the collection is being modified.
@@ -1133,8 +1182,8 @@ class ReadOnlyCollection(BaseCollection):
             indexer: The indexer to apply.
             selected_variables: A list of variables to retain from the
                 collection. If None, all variables are kept.
-            selected_partitions: A list of partitions to load (using the
-                partition relative path).
+            selected_partitions: The paths of the partitions to select, relative
+                to the collection.
             distributed: Whether to use dask or not. Default To True.
 
         Returns:
@@ -1248,8 +1297,8 @@ class ReadOnlyCollection(BaseCollection):
                 the :meth:`partitions` method.
             selected_variables: A list of variables to retain from the
                 collection. If None, all variables are kept.
-            selected_partitions: A list of partitions to load (using the
-                partition relative path).
+            selected_partitions: The paths of the partitions to select, relative
+                to the collection.
             distributed: Whether to use dask or not. Default To True.
 
         Returns:
@@ -1309,8 +1358,8 @@ class ReadOnlyCollection(BaseCollection):
                 the :meth:`partitions` method.
             selected_variables: A list of variables to retain from the
                 collection. If None, all variables are kept.
-            selected_partitions: A list of partitions to load (using the
-                partition relative path).
+            selected_partitions: The paths of the partitions to select, relative
+                to the collection.
             distributed: Whether to use dask or not. Default To True.
 
         Returns:

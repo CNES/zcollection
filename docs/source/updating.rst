@@ -84,7 +84,8 @@ Updating some partitions
 ------------------------
 
 ``filters`` selects the partitions by their keys, and
-``selected_partitions`` by their paths. ``selected_variables`` lists the
+``selected_partitions`` selects them by their paths; given both, only the
+partitions they both select are kept. ``selected_variables`` lists the
 variables to load, as in :doc:`computing`.
 
 .. jupyter-execute::
@@ -114,9 +115,10 @@ Using neighboring partitions
 ----------------------------
 
 With ``depth``, the function receives each partition with its neighbors, as
-``map_overlap`` does, and returns values for the whole window. With
-``trim=True``, the default, ``update`` keeps the values of the processed
-partition.
+``map_overlap`` does, and returns values for the whole window. The neighbors
+are loaded whether ``filters`` and ``selected_partitions`` select them or
+not, and only the processed partition is written. With ``trim=True``, the
+default, ``update`` keeps the values of the processed partition.
 
 .. jupyter-execute::
 

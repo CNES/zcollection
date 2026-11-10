@@ -7,7 +7,10 @@ Release notes
 Features
 ^^^^^^^^
 * A collection is usable without a Dask cluster (PR #16).
-* ``load`` and ``update`` take a ``selected_partitions`` parameter.
+* ``partitions``, ``load``, ``update``, ``map`` and ``map_overlap`` take a
+  ``selected_partitions`` parameter. A path that follows the partitioning
+  but names no existing partition is left out, and the collection or the
+  view logs a warning naming it.
 * ``insert`` takes a ``delayed`` parameter setting the representation its
   merge callable receives the partitions in.
 * ``Collection.update_from`` and ``View.update_from`` write the variables of a
@@ -89,6 +92,13 @@ Execution
 
 Behaviour
 ^^^^^^^^^
+* With ``depth``, ``map_overlap`` and ``update`` load the neighbors of a
+  partition whether ``filters`` and ``selected_partitions`` select them or
+  not, so a partial update
+  writes the values a full one does (issue #27). Earlier releases formed the
+  windows among the filtered partitions only.
+* A keyword argument named ``selected_partitions`` given to ``update``,
+  ``map`` or ``map_overlap`` no longer reaches the function.
 * With ``ProcessSync``, ``Collection.is_locked()`` reports whether its
   synchronizer holds the lock. It returns ``False`` after release and
   when the lock is held by another process.
