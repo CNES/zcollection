@@ -14,7 +14,7 @@ import itertools
 import numcodecs
 import numpy
 
-from .. import collection, dataset, partitioning
+from .. import collection, dataset, partitioning, sync, view
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -125,3 +125,16 @@ FILE_SYSTEM_DATASET = list(
         create_test_dataset,
         create_test_dataset_with_fillvalue,
     ]))
+
+
+def with_process_sync(target, tmp_path):
+    """Reopen the target with a synchronizer that reports its lock."""
+    synchronizer = sync.ProcessSync(str(tmp_path / 'update.lock'))
+    if isinstance(target, view.View):
+        return type(target).from_config(target.base_dir,
+                                        filesystem=target.fs,
+                                        synchronizer=synchronizer)
+    return type(target).from_config(target.partition_properties.dir,
+                                    mode='w',
+                                    filesystem=target.fs,
+                                    synchronizer=synchronizer)

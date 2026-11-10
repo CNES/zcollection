@@ -20,11 +20,11 @@ import dask.distributed
 import dask.utils
 import numpy
 
-from .. import dask_utils, dataset, merging, meta, partitioning, store, sync
+from .. import dataset, merging, meta, partitioning, store, sync
+from ..execution import SKIPPED
 from ..fs_utils import join_path
 from ..storage import (
     AbsentPartition,
-    execute_transaction,
     open_zarr_group,
     partition_dimension_size,
     read_partition,
@@ -35,7 +35,7 @@ from ..storage import (
 from .callable_objects import PartitionInfo
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
     import types
 
     import fsspec
@@ -313,34 +313,6 @@ def infer_variables(
     return ()
 
 
-def execute_update(
-    func: WrappedPartitionCallable,
-    partitions: Sequence[str],
-    *,
-    client: dask.distributed.Client | None,
-    synchronizer: sync.Sync,
-    name: str,
-    npartitions: int | None,
-    func_args: tuple[Any, ...],
-    func_kwargs: dict[str, Any],
-) -> None:
-    """Execute partition updates locally or in batches on Dask workers."""
-    if client is None:
-        func(partitions, func_args, func_kwargs)
-        return
-
-    batches = tuple(
-        dask_utils.split_sequence(
-            partitions, npartitions
-            or dask_utils.dask_workers(client, cores_only=True)))
-    futures = client.map(func,
-                         batches,
-                         key=name,
-                         func_args=func_args,
-                         func_kwargs=func_kwargs)
-    execute_transaction(client, synchronizer, futures)
-
-
 def map_partitions(
     partitions: Sequence[str],
     func: MapCallable,
@@ -522,33 +494,38 @@ def wrap_update(
     metadata: meta.DatasetSchema,
     trim: bool,
 ) -> WrappedPartitionCallable:
-    """Load, update and write one partition or overlap window per iteration."""
+    """Return the function that loads one partition or its overlap window,
+    calls `func` on it and writes the partition.
 
-    def wrap_function(partitions: Sequence[str], func_args: tuple[Any, ...],
-                      func_kwargs: dict[str, Any]) -> None:
-        for partition in partitions:
-            try:
-                if load_overlap is None:
-                    zds = load(partition)
-                    indices = None
-                else:
-                    zds, indices = load_overlap(partition)
-            except AbsentPartition:
-                warn_absent_partition(partition)
-                continue
-            _update_partition(func,
-                              zds,
-                              func_args,
-                              func_kwargs,
-                              partition_info=_get_partition_info(
-                                  partition, partitioning, dim, indices),
-                              indices=indices,
-                              fs=fs,
-                              path=partition,
-                              trim=trim,
-                              metadata=metadata)
-            del zds
+    The function returns :data:`zcollection.execution.SKIPPED` for an absent
+    partition, after a warning.
+    """
 
+    def wrap_function(partition: str, func_args: tuple[Any, ...],
+                      func_kwargs: dict[str, Any]) -> Any:
+        try:
+            if load_overlap is None:
+                zds = load(partition)
+                indices = None
+            else:
+                zds, indices = load_overlap(partition)
+        except AbsentPartition:
+            warn_absent_partition(partition)
+            return SKIPPED
+        _update_partition(func,
+                          zds,
+                          func_args,
+                          func_kwargs,
+                          partition_info=_get_partition_info(
+                              partition, partitioning, dim, indices),
+                          indices=indices,
+                          fs=fs,
+                          path=partition,
+                          trim=trim,
+                          metadata=metadata)
+        return None
+
+    wrap_function.__name__ = getattr(func, '__name__', 'update')
     return wrap_function
 
 
@@ -573,8 +550,9 @@ def _rm(fs: fsspec.AbstractFileSystem, dirname: str) -> None:
 
 
 def _insert(
-    *,
     args: PartitionSlice,
+    /,
+    *,
     axis: str,
     zds: dataset.Dataset,
     fs: fsspec.AbstractFileSystem,
@@ -582,7 +560,7 @@ def _insert(
     partitioning_properties: PartitioningProperties,
     delayed: bool | None = None,
     distributed: bool = True,
-    **kwargs,
+    merge_kwargs: Mapping[str, Any] | None = None,
 ) -> None:
     """Insert or update a partition in the collection.
 
@@ -597,7 +575,7 @@ def _insert(
             and the inserted one as Dask arrays. Defaults to ``None``, which
             gives it Dask arrays when the inserted dataset holds them.
         distributed: Whether to use dask or not. Default To True.
-        **kwargs: Additional keyword arguments to pass to the merge callable.
+        merge_kwargs: Keyword arguments passed to the merge callable.
     """
     partition: tuple[str, ...]
     indexer: dict[str, slice]
@@ -615,7 +593,7 @@ def _insert(
                         delayed=delayed,
                         distributed=distributed,
                         merge_callable=merge_callable,
-                        **kwargs)
+                        merge_kwargs=merge_kwargs)
         return
 
     try:

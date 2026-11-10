@@ -9,17 +9,18 @@ Callable objects.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 import dataclasses
 
 if TYPE_CHECKING:
     from .. import dataset
     from ..type_hints import ArrayLike
 
-#: Function type to load and call a callback function of type
-#: :class:`PartitionCallable`.
-WrappedPartitionCallable = Callable[
-    [Sequence[str], tuple[Any, ...], dict[str, Any]], None]
+#: Function type to load a partition or its overlap window, call an
+#: :class:`UpdateCallable` on it and write the partition. It returns
+#: :data:`zcollection.execution.SKIPPED` for an absent partition.
+WrappedPartitionCallable = Callable[[str, tuple[Any, ...], dict[str, Any]],
+                                    Any]
 
 
 @dataclasses.dataclass(frozen=True)

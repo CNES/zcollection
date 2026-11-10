@@ -5,12 +5,25 @@
 """Tests of `update_from` on collections and views."""
 from __future__ import annotations
 
+from unittest import mock
+
 import numpy
 import pytest
 
 from . import reference
-from .. import collection, convenience, dataset, meta, partitioning, store, view
+from .. import (
+    collection,
+    convenience,
+    dask_utils,
+    dataset,
+    execution,
+    meta,
+    partitioning,
+    store,
+    view,
+)
 from .cluster import dask_client, dask_cluster  # noqa: F401
+from .data import with_process_sync
 from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
 
 
@@ -110,6 +123,81 @@ def test_a_variable_the_schema_does_not_define_is_refused(
 
 
 @pytest.mark.parametrize('update_from_target', LOCAL_TARGETS, indirect=True)
+@pytest.mark.parametrize('distributed', [False, True])
+@pytest.mark.parametrize(('stop_on_error', 'written', 'not_attempted'), [
+    (True, [0], [2]),
+    (False, [0, 2], []),
+])
+@pytest.mark.usefixtures('dask_client')
+def test_update_from_reports_each_partition(update_from_target, distributed,
+                                            stop_on_error, written,
+                                            not_attempted) -> None:
+    """A partition with an unmatched row is reported as failed, with the
+    partitions written and not attempted."""
+    names = sorted(
+        update_from_target._relative_path(item)
+        for item in update_from_target.partitions())
+    carried = carrying(update_from_target)
+    # The row stays in the second partition, where no such value exists.
+    carried['time'].array[5] = carried['time'].array[5] + reference.DELTA // 2
+
+    with pytest.raises(execution.PartitionErrors) as info:
+        update_from_target.update_from(carried,
+                                       align_on='time',
+                                       npartitions=1,
+                                       distributed=distributed,
+                                       stop_on_error=stop_on_error)
+
+    assert info.value.written == tuple(names[index] for index in written)
+    assert list(info.value.failed) == [names[1]]
+    assert 'has no match' in info.value.failed[names[1]]
+    assert info.value.not_attempted == tuple(names[index]
+                                             for index in not_attempted)
+
+
+@pytest.mark.parametrize('update_from_target', LOCAL_TARGETS, indirect=True)
+@pytest.mark.parametrize('distributed', [False, True])
+def test_update_from_without_rows_writes_nothing(update_from_target,
+                                                 distributed) -> None:
+    """A dataset without rows writes no partition and asks for no Dask
+    client, whatever the value of npartitions."""
+    carried = carrying(update_from_target)
+
+    with mock.patch.object(dask_utils,
+                           'get_client',
+                           side_effect=AssertionError):
+        assert update_from_target.update_from(carried.isel(
+            {reference.DIMENSION: slice(0, 0)}),
+                                              align_on='time',
+                                              npartitions=0,
+                                              distributed=distributed) == ()
+
+
+@pytest.mark.parametrize('update_from_target', LOCAL_TARGETS, indirect=True)
+def test_update_from_plans_under_the_lock(update_from_target, tmp_path,
+                                          monkeypatch) -> None:
+    """The partitions are listed while the lock is held."""
+    update_from_target = with_process_sync(update_from_target, tmp_path)
+    carried = carrying(update_from_target)
+    partitions = update_from_target.partitions
+    held = []
+
+    def record(*args, **kwargs):
+        held.append(update_from_target.is_locked())
+        return partitions(*args, **kwargs)
+
+    monkeypatch.setattr(update_from_target, 'partitions', record)
+    written = update_from_target.update_from(carried,
+                                             align_on='time',
+                                             distributed=False)
+
+    assert held == [True]
+    assert written == tuple(
+        sorted(
+            update_from_target._relative_path(item) for item in partitions()))
+
+
+@pytest.mark.parametrize('update_from_target', LOCAL_TARGETS, indirect=True)
 def test_a_partition_with_an_unmatched_row_keeps_its_values(
         update_from_target) -> None:
     """The partition with an unmatched row keeps its values; the ones before
@@ -121,7 +209,7 @@ def test_a_partition_with_an_unmatched_row_keeps_its_values(
     carried['time'].array[-1] = (carried['time'].array[-1] +
                                  reference.DELTA // 2)
 
-    with pytest.raises(ValueError,
+    with pytest.raises(execution.PartitionErrors,
                        match="has no match for 1 of the 'time' values"):
         update_from_target.update_from(carried,
                                        align_on='time',
@@ -147,7 +235,8 @@ def test_repeated_values_of_align_on_are_refused(update_from_target) -> None:
     values[1] = values[0]
     store.open_array(reference.fs, path, mode='r+')[...] = values
 
-    with pytest.raises(ValueError, match="values of 'time' repeat"):
+    with pytest.raises(execution.PartitionErrors,
+                       match="values of 'time' repeat"):
         update_from_target.update_from(carried,
                                        align_on='time',
                                        distributed=False)
@@ -283,7 +372,8 @@ def test_repeated_values_of_align_on_in_the_dataset_are_refused(
     carried = carrying(update_from_target)
     carried['time'].array[1] = carried['time'].array[0]
 
-    with pytest.raises(ValueError, match='repeat in the dataset rows'):
+    with pytest.raises(execution.PartitionErrors,
+                       match='repeat in the dataset rows'):
         update_from_target.update_from(carried,
                                        align_on='time',
                                        distributed=False)

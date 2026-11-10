@@ -14,7 +14,8 @@ Features
   dataset into existing partitions. Each row of the dataset is written to the
   row of its partition that has the same value of ``align_on``; a view reads
   ``align_on`` from its reference collection. The other rows and variables
-  keep their values.
+  keep their values. ``update_from`` returns the paths of the partitions it
+  wrote, relative to the collection or the view.
 * ``View.validate_partitions`` lists the invalid partitions of a view. With
   ``fix``, the view writes again the ones the reference collection still has,
   and deletes the others.
@@ -31,8 +32,8 @@ Features
   configuration of a partitioning carries the data types.
 * ``VariableSchema``, ``DatasetSchema`` and ``Dimension`` are reachable from
   the package.
-* ``AbsentPartition`` and ``ModifiedVariableError`` are reachable from the
-  package.
+* ``AbsentPartition``, ``ModifiedVariableError`` and ``PartitionErrors`` are
+  reachable from the package.
 
 Storage
 ^^^^^^^
@@ -56,6 +57,36 @@ Storage
   metadata. Reading a collection, updating it and reading a view send fewer
   requests to the store.
 
+Execution
+^^^^^^^^^
+* ``insert`` and ``update`` process each partition in a task of its own,
+  and ``update_from`` follows the same rules. With ``distributed=True``, at
+  most ``npartitions`` tasks run at the same time, and a task starts when
+  another one finishes; ``npartitions`` defaults to the number of Dask
+  workers. With ``distributed=False``, the partitions are processed one at a
+  time in the calling process. By default, earlier releases inserted one
+  partition at a time and updated the partitions in one batch per worker.
+  See :doc:`writing`.
+* If a partition fails, these operations raise ``PartitionErrors``. Its
+  ``written``, ``failed`` and ``not_attempted`` attributes give the
+  partitions written, the traceback of each failed partition and the
+  partitions not attempted. An ``except`` clause naming the type of an error
+  raised while a partition is processed no longer catches that error.
+* With ``stop_on_error=True``, the default, an operation starts no partition
+  after the first failure, and the partitions in progress finish; with
+  ``False``, it starts all of them.
+* These operations hold the lock of the synchronizer until their tasks
+  finish, including after a failure. ``insert`` writes the immutable
+  variables under the same lock as the partitions.
+* ``update`` returns the paths of the partitions it wrote, relative to the
+  collection or the view.
+* After a failed ``update``, the file system cache of the selected partitions
+  is cleared.
+* ``merging.perform`` takes the arguments of the merge callable in
+  ``merge_kwargs``. Every extra keyword argument of ``insert`` reaches the
+  merge callable. One named after a positional parameter of the merge
+  callable makes each partition fail with ``TypeError``.
+
 Behaviour
 ^^^^^^^^^
 * With ``ProcessSync``, ``Collection.is_locked()`` reports whether its
@@ -69,9 +100,6 @@ Behaviour
   NaN or NaT.
 * Variables loaded from a collection have a deterministic order.
 * ``insert`` returns partition paths relative to the collection.
-* With ``distributed=True``, ``insert`` writes up to ``npartitions``
-  partitions at a time. Earlier releases wrote fewer partitions at a time
-  than requested: 5 instead of 10 for 10 partitions and ``npartitions=10``.
 * Inserting an empty dataset with ``distributed=True`` returns an empty tuple.
 * ``Collection.copy`` without ``filesystem`` writes the copy on the file system
   of the collection.

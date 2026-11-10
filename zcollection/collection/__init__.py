@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 import datetime
 import functools
-import itertools
 import json
 import logging
 import os
@@ -25,6 +24,7 @@ import xarray
 from .. import (
     dask_utils,
     dataset,
+    execution,
     fs_utils,
     merging,
     meta,
@@ -203,10 +203,6 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 f'mode={self.mode!r}>')
 
     @property
-    def _partitions_dir(self) -> str:
-        return self.partition_properties.dir
-
-    @property
     def _reference(self) -> ReadOnlyCollection:
         return self
 
@@ -337,6 +333,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
         npartitions: int | None = None,
         delayed: bool | None = None,
         distributed: bool = True,
+        stop_on_error: bool = True,
         **kwargs,
     ) -> tuple[str, ...]:
         """Insert a dataset into the collection.
@@ -348,24 +345,19 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 already stored in partitions with the new partitioned data. If
                 None, the new partitioned data overwrites the existing
                 partitioned data.
-            npartitions: The maximum number of partitions to process in
-                parallel. By default, partitions are processed one by one.
-                Ignored when ``distributed`` is False.
+            npartitions: The largest number of partitions written at the
+                same time. Defaults to the number of Dask workers. Each
+                partition is written by one worker, which writes its
+                variables in parallel. With ``distributed=False``, the
+                partitions are processed one at a time.
             delayed: Whether the merge callable receives the stored
                 partition and the inserted one as Dask arrays. Defaults to
                 ``None``, which gives it Dask arrays when ``ds`` holds them.
             distributed: Whether to use dask or not. Default To True.
+            stop_on_error: If True, no partition starts after the first
+                failure, and the partitions in progress finish. Defaults
+                to True.
             kwargs: Additional keyword arguments passed to the merge callable.
-
-                .. note::
-
-                    When inserting partitions, Dask parallelizes the writing of
-                    each partition across its workers. Additionally, the writing
-                    of variables within a partition is parallelized on the
-                    worker responsible for inserting that partition, using
-                    multiple threads. If you're using a single Dask worker,
-                    partition insertion will happen sequentially and changing
-                    this parameter will have no effect.
 
         Returns:
             The path of each partition written, relative to the collection.
@@ -375,8 +367,10 @@ class Collection(ReadOnlyCollection, WritableCollection):
         Raises:
             ValueError:
                 If the dataset does not match the definition of the
-                collection, or if ``delayed`` is ``True`` and ``ds`` holds no
-                Dask array.
+                collection, if ``delayed`` is ``True`` and ``ds`` holds no
+                Dask array, or if ``npartitions`` is below one.
+            PartitionErrors:
+                If a partition failed.
 
         Warns:
             UserWarning:
@@ -404,42 +398,42 @@ class Collection(ReadOnlyCollection, WritableCollection):
 
         ds = self._set_ds_for_insertion(ds=ds)
 
-        storage.write_zarr_group_missing(ds.select_variables_by_dims(
-            (self.dimension, ), False),
-                                         self._immutable,
-                                         self.fs,
-                                         self.synchronizer,
-                                         distributed=False)
-
-        # Remove the immutable variables.
+        immutable = ds.select_variables_by_dims((self.dimension, ), False)
         ds = ds.select_variables_by_dims((self.dimension, ))
 
-        if not ds.variables:
-            # No variable to insert
-            return ()
-
-        # Process the partitions to insert or update by batches to avoid
-        # memory issues.
-        partitions = tuple(
-            self.partitioning.split_dataset(zds=ds, axis=self.dimension))
-
-        written: tuple[str, ...] = tuple(
-            fs_utils.join_path(*item) for item, _ in partitions)
-        with self.synchronizer, self._index.updating(reindex_on_error=True):
-            if distributed:
-                self._insert_distributed(ds,
-                                         partitions,
-                                         npartitions,
-                                         merge_callable,
-                                         delayed=delayed,
-                                         **kwargs)
-            else:
-                self._insert_sequential(ds,
-                                        partitions,
-                                        merge_callable,
-                                        delayed=delayed,
-                                        **kwargs)
-            self._index.add(written)
+        with self.synchronizer:
+            storage.write_zarr_group_missing(immutable,
+                                             self._immutable,
+                                             self.fs,
+                                             sync.NoSync(),
+                                             distributed=False)
+            if not ds.variables:
+                return ()
+            partitions = tuple(
+                self.partitioning.split_dataset(zds=ds, axis=self.dimension))
+            if not partitions:
+                return ()
+            client = dask_utils.get_client() if distributed else None
+            with self._index.updating(reindex_on_error=True):
+                written = execution.run(
+                    _insert,
+                    partitions,
+                    [fs_utils.join_path(*keys) for keys, _ in partitions],
+                    client=client,
+                    npartitions=npartitions,
+                    stop_on_error=stop_on_error,
+                    kwargs={
+                        'axis': self.axis,
+                        'zds':
+                        client.scatter(ds, hash=False) if client else ds,
+                        'fs': self.fs,
+                        'merge_callable': merge_callable,
+                        'partitioning_properties': self.partition_properties,
+                        'delayed': delayed,
+                        'distributed': distributed,
+                        'merge_kwargs': kwargs,
+                    })
+                self._index.add(written)
         return written
 
     def _set_ds_for_insertion(self, ds: dataset.Dataset) -> dataset.Dataset:
@@ -527,54 +521,6 @@ class Collection(ReadOnlyCollection, WritableCollection):
                                   compressor=var_meta.compressor,
                                   fill_value=var_meta.fill_value,
                                   filters=var_meta.filters)
-
-    def _insert_distributed(self,
-                            ds: xarray.Dataset | dataset.Dataset,
-                            partitions: tuple[PartitionSlice, ...],
-                            npartitions: int | None,
-                            merge_callable: merging.MergeCallable | None,
-                            *,
-                            delayed: bool | None = None,
-                            **kwargs):
-        """Insert a dataset into the collection using dask."""
-        if npartitions is not None and npartitions < 1:
-            raise ValueError('The number of partitions must be positive')
-
-        client: dask.distributed.Client = dask_utils.get_client()
-        scattered_ds: Any = client.scatter(ds)
-        for sequence in itertools.batched(partitions, npartitions or 1):
-            futures: list[dask.distributed.Future] = [
-                dask_utils.simple_delayed('insert', _insert)(
-                    args=partition,  # type: ignore[arg-type]
-                    axis=self.axis,
-                    zds=scattered_ds,
-                    fs=self.fs,
-                    merge_callable=merge_callable,
-                    partitioning_properties=self.partition_properties,
-                    delayed=delayed,
-                    **kwargs,
-                ) for partition in sequence
-            ]
-            storage.execute_transaction(client, sync.NoSync(), futures)
-
-    def _insert_sequential(self,
-                           ds: dataset.Dataset,
-                           partitions: tuple[PartitionSlice, ...],
-                           merge_callable: merging.MergeCallable | None,
-                           *,
-                           delayed: bool | None = None,
-                           **kwargs):
-        """Insert a dataset into the collection without using dask."""
-        for partition in partitions:
-            _insert(args=partition,
-                    axis=self.axis,
-                    zds=ds,
-                    fs=self.fs,
-                    merge_callable=merge_callable,
-                    partitioning_properties=self.partition_properties,
-                    delayed=delayed,
-                    distributed=False,
-                    **kwargs)
 
     def drop_partitions(
         self,
@@ -724,7 +670,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
                            metadata=self.metadata,
                            trim=trim)
 
-    def update(
+    def update(  # noqa: PLR0913
         self,
         func: UpdateCallable,
         /,
@@ -738,8 +684,9 @@ class Collection(ReadOnlyCollection, WritableCollection):
         npartitions: int | None = None,
         delayed: bool | None = None,
         distributed: bool = True,
+        stop_on_error: bool = True,
         **kwargs,
-    ) -> None:
+    ) -> tuple[str, ...]:
         """Update the selected partitions.
 
         Args:
@@ -762,17 +709,26 @@ class Collection(ReadOnlyCollection, WritableCollection):
             trim: Whether to keep only the current partition's values from
                 the results returned by ``func`` when using overlap. Set it
                 to ``False`` if your function already returns only those values.
-            npartitions: The number of partitions to update in parallel. By
-                default, it is equal to the number of Dask workers available
-                when calling this method.
+            npartitions: The largest number of partitions updated at the
+                same time. Defaults to the number of Dask workers. With
+                ``distributed=False``, the partitions are processed one at a
+                time.
             delayed: If True, load variables as Dask arrays. If False, load
                 variables directly into NumPy arrays. If None, use the value of
                 ``distributed``. Default is None.
             distributed: Whether to use dask or not. Default To True.
+            stop_on_error: If True, no partition starts after the first
+                failure, and the partitions in progress finish. Defaults
+                to True.
             **kwargs: The keyword arguments to pass to the function.
 
+        Returns:
+            The path of each partition written, relative to the collection.
+
         Raises:
-            ValueError: If the variables to update are not in the collection.
+            ValueError: If the variables to update are not in the collection,
+                or if ``npartitions`` is below one.
+            PartitionErrors: If a partition failed.
 
         Notes:
             Each task loads and writes one partition or overlap window at a
@@ -783,7 +739,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
             invocation whose returned values are discarded. A callback
             declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
             on every call, including inference and calls without overlap.
-            See :doc:`/callbacks` for examples of overlap, trimming and
+            See :doc:`/functions` for examples of overlap, trimming and
             external arguments.
 
         Example:
@@ -798,18 +754,19 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 collection.update(ones, variables=('var2', ),
                                   selected_variables=('var1', ))
         """
-        self._update(func,
-                     *args,
-                     depth=depth,
-                     filters=filters,
-                     variables=variables,
-                     selected_variables=selected_variables,
-                     selected_partitions=selected_partitions,
-                     trim=trim,
-                     npartitions=npartitions,
-                     delayed=delayed,
-                     distributed=distributed,
-                     **kwargs)
+        return self._update(func,
+                            *args,
+                            depth=depth,
+                            filters=filters,
+                            variables=variables,
+                            selected_variables=selected_variables,
+                            selected_partitions=selected_partitions,
+                            trim=trim,
+                            npartitions=npartitions,
+                            delayed=delayed,
+                            distributed=distributed,
+                            stop_on_error=stop_on_error,
+                            **kwargs)
 
     def update_immutable(self, name: str, data: ArrayLike) -> None:
         """Update an immutable variable with provided data..

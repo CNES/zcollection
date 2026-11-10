@@ -26,6 +26,7 @@ import numpy
 from .. import (
     dask_utils,
     dataset,
+    execution,
     expression,
     fs_utils,
     meta,
@@ -41,7 +42,6 @@ from .detail import (
     _load_and_apply_indexer,
     _load_dataset,
     _load_dataset_with_overlap,
-    execute_update,
     map_partitions,
     prepare_partition_operation,
     update_partition_from,
@@ -322,6 +322,18 @@ class BaseCollection(abc.ABC):
         """Prepare the loaders for partition mappings."""
         ...
 
+    @property
+    @abc.abstractmethod
+    def _partitions_dir(self) -> str:
+        """Directory of the partitions."""
+        ...
+
+    def _relative_path(self, path: str) -> str:
+        """Return the path of a partition relative to the directory of the
+        partitions."""
+        return pathlib.PurePosixPath(path).relative_to(
+            self._partitions_dir).as_posix()
+
     def is_locked(self) -> bool:
         """Return whether this instance holds the collection lock."""
         return self.synchronizer.is_locked()
@@ -414,7 +426,7 @@ class BaseCollection(abc.ABC):
             Exceptions raised by the callback are propagated. A callback
             declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
             identifying the current partition and its slice within the overlap window.
-            See :doc:`/callbacks` for input selection, callback arguments and
+            See :doc:`/functions` for input selection, callback arguments and
             execution choices.
 
         Example:
@@ -483,7 +495,7 @@ class BaseCollection(abc.ABC):
             Exceptions raised by the callback are propagated. A callback
             declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
             identifying the current partition and its slice within the overlap window.
-            See :doc:`/callbacks` for input selection, callback arguments and
+            See :doc:`/functions` for input selection, callback arguments and
             execution choices.
 
         Example:
@@ -561,7 +573,7 @@ class WritableCollection(BaseCollection):
         """Validate output variables and prepare the partition update function."""
         ...
 
-    def _update(
+    def _update(  # noqa: PLR0913
         self,
         func: UpdateCallable,
         /,
@@ -575,9 +587,15 @@ class WritableCollection(BaseCollection):
         npartitions: int | None,
         delayed: bool | None,
         distributed: bool,
+        stop_on_error: bool,
         **kwargs,
-    ) -> None:
-        """Prepare and execute updates, then invalidate the selected paths."""
+    ) -> tuple[str, ...]:
+        """Prepare and execute updates, then invalidate the selected paths.
+
+        Returns:
+            The path of each partition written, relative to the collection or
+            the view.
+        """
         selected_variables = prepare_partition_operation(
             func, depth, selected_variables)
         if delayed is None:
@@ -587,7 +605,7 @@ class WritableCollection(BaseCollection):
                                                     selected_partitions)
         if not partitions:
             warn_empty_update()
-            return
+            return ()
 
         client = dask_utils.get_client() if distributed else None
         wrap_function = self._prepare_update(
@@ -603,23 +621,23 @@ class WritableCollection(BaseCollection):
             func_kwargs=kwargs)
         if wrap_function is None:
             warn_empty_update()
-            return
+            return ()
 
-        execute_update(wrap_function,
-                       partitions,
-                       client=client,
-                       synchronizer=self.synchronizer,
-                       name=func.__name__,
-                       npartitions=npartitions,
-                       func_args=args,
-                       func_kwargs=kwargs)
-        tuple(map(self.fs.invalidate_cache, partitions))
-
-    @property
-    @abc.abstractmethod
-    def _partitions_dir(self) -> str:
-        """Directory of the partitions."""
-        ...
+        with self.synchronizer:
+            try:
+                return execution.run(
+                    wrap_function,
+                    partitions,
+                    [self._relative_path(item) for item in partitions],
+                    client=client,
+                    npartitions=npartitions,
+                    stop_on_error=stop_on_error,
+                    kwargs={
+                        'func_args': args,
+                        'func_kwargs': kwargs
+                    })
+            finally:
+                tuple(map(self.fs.invalidate_cache, partitions))
 
     @property
     @abc.abstractmethod
@@ -682,7 +700,9 @@ class WritableCollection(BaseCollection):
                     zds: dataset.Dataset,
                     *,
                     align_on: str,
-                    distributed: bool = True) -> tuple[str, ...]:
+                    npartitions: int | None = None,
+                    distributed: bool = True,
+                    stop_on_error: bool = True) -> tuple[str, ...]:
         """Write the variables of a dataset into existing partitions.
 
         Each row of the dataset is written to the row of its partition that
@@ -695,64 +715,72 @@ class WritableCollection(BaseCollection):
         dimensions it has in the dataset, and each row must fall in an
         existing partition. Each partition is then matched and written on its
         own: a partition with an unmatched row or a repeated value of
-        `align_on` keeps its values, but other partitions may already be
-        updated.
+        `align_on` keeps its values and is reported as failed.
 
         Args:
             zds: Dataset containing the partitioning variables, `align_on`
                 and the variables to update.
             align_on: Variable identifying the rows of a partition. A view
                 reads it from its reference collection.
+            npartitions: The largest number of partitions written at the
+                same time. Defaults to the number of Dask workers. With
+                ``distributed=False``, the partitions are processed one at a
+                time.
             distributed: Whether to use Dask. Defaults to True.
+            stop_on_error: If True, no partition starts after the first
+                failure, and the partitions in progress finish. Defaults
+                to True.
 
         Returns:
-            Paths of the updated partitions.
+            The path of each partition written, relative to the collection or
+            the view.
 
         Raises:
             ValueError: If `align_on` cannot identify the rows, the dataset
                 lacks a variable it needs or contains one the schema does not
                 declare as above, a row falls in a partition that does not
-                exist, the values of `align_on` repeat among the stored rows
-                of a partition or among the dataset rows that fall in it, or
-                a row of the dataset has no match in its partition.
+                exist, or ``npartitions`` is below one.
+            PartitionErrors: If a partition failed, for example when the
+                values of `align_on` repeat among its stored rows or among
+                the dataset rows that fall in it, or when a row of the
+                dataset has no match in it.
         """
         names = self._variables_to_update(zds, align_on)
         if not names:
             return ()
 
         reference = self._reference
-        existing = frozenset(self.partitions())
-        plan: list[tuple[str, str, dict[str, slice]]] = []
-        for keys, indexer in self.partitioning.split_dataset(
-                zds=zds, axis=self.dimension):
-            partition = fs_utils.join_path(self._partitions_dir, *keys)
-            if partition not in existing:
-                raise ValueError(
-                    f'The partition {partition!r} does not exist.')
-            plan.append((partition,
-                         fs_utils.join_path(reference.partition_properties.dir,
-                                            *keys), indexer))
-
-        options = {
-            'names': names,
-            'align_on': align_on,
-            'dim': self.dimension,
-            'fs': self.fs,
-            'reference_fs': reference.fs,
-        }
         with self.synchronizer:
-            if distributed:
-                client = dask_utils.get_client()
-                storage.execute_transaction(
-                    client, sync.NoSync(),
-                    client.map(update_partition_from,
-                               plan,
-                               zds=client.scatter(zds),
-                               **options))
-            else:
-                for item in plan:
-                    update_partition_from(item, zds=zds, **options)
-        return tuple(partition for partition, _, _ in plan)
+            existing = frozenset(self.partitions())
+            plan: list[tuple[str, str, dict[str, slice]]] = []
+            for keys, indexer in self.partitioning.split_dataset(
+                    zds=zds, axis=self.dimension):
+                partition = fs_utils.join_path(self._partitions_dir, *keys)
+                if partition not in existing:
+                    raise ValueError(
+                        f'The partition {partition!r} does not exist.')
+                plan.append(
+                    (partition,
+                     fs_utils.join_path(reference.partition_properties.dir,
+                                        *keys), indexer))
+            if not plan:
+                return ()
+            client = dask_utils.get_client() if distributed else None
+            return execution.run(
+                update_partition_from,
+                plan,
+                [self._relative_path(partition) for partition, _, _ in plan],
+                client=client,
+                npartitions=npartitions,
+                stop_on_error=stop_on_error,
+                kwargs={
+                    'zds': client.scatter(zds, hash=False) if client else zds,
+                    'names': names,
+                    'align_on': align_on,
+                    'dim': self.dimension,
+                    'fs': self.fs,
+                    'reference_fs': reference.fs,
+                })
 
     @staticmethod
     def _unsupported_operation(*args, **kwargs) -> NoReturn:
@@ -944,17 +972,9 @@ class ReadOnlyCollection(BaseCollection):
             fs_utils.join_path(base_dir, self._index.path_of(key))
             for key in self._index.keys())
 
-    def _relative_path(self, path: str) -> str:
-        """Return the relative path to the collection.
-
-        Args:
-            path: The path to the dataset.
-
-        Returns:
-            The relative path to the collection.
-        """
-        return pathlib.Path(path).relative_to(
-            self.partition_properties.dir).as_posix()
+    @property
+    def _partitions_dir(self) -> str:
+        return self.partition_properties.dir
 
     def _normalize_partitions(self,
                               partitions: Iterable[str]) -> Iterable[str]:

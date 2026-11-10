@@ -13,7 +13,6 @@ import concurrent.futures
 import copy
 import datetime
 import io
-import itertools
 import json
 import logging
 import multiprocessing
@@ -31,7 +30,9 @@ from ... import (
     PartitionInfo,
     collection,
     convenience,
+    dask_utils,
     dataset,
+    execution,
     merging,
     meta,
     partitioning,
@@ -120,40 +121,130 @@ def ten_daily_partitions() -> dataset.Dataset:
                            delayed=False)
 
 
+def fail_on_the_fourth_day(existing_ds: dataset.Dataset,
+                           inserted_ds: dataset.Dataset, axis: str,
+                           partitioning_dim: str, **kwargs) -> dataset.Dataset:
+    """Fail on the partition of 2000-01-04, and keep the inserted data."""
+    if inserted_ds['time'].values[0] == numpy.datetime64('2000-01-04', 'ns'):
+        raise ValueError('merge failed')
+    return inserted_ds
+
+
 @pytest.mark.usefixtures('dask_client')
-@pytest.mark.parametrize('npartitions', [None, 1, 2, 3, 5, 20])
-def test_insert_processes_npartitions_partitions_at_a_time(
-        local_fs, npartitions) -> None:  # noqa: F811
-    """``npartitions`` is the number of partitions written in parallel."""
+@pytest.mark.parametrize('distributed', [False, True])
+@pytest.mark.parametrize(('stop_on_error', 'written', 'not_attempted'), [
+    (True, range(3), range(4, 10)),
+    (False, [0, 1, 2, 4, 5, 6, 7, 8, 9], ()),
+])
+def test_insert_reports_each_partition(
+        local_fs,  # noqa: F811
+        distributed,
+        stop_on_error,
+        written,
+        not_attempted) -> None:
+    """A failed merge gives the partitions written, failed and not
+    attempted, in paths relative to the collection."""
     inserted = ten_daily_partitions()
     zcol = convenience.create_collection('time',
                                          inserted,
                                          partitioning.Date(('time', ), 'D'),
                                          str(local_fs.collection),
                                          filesystem=local_fs.fs)
-    execute = storage.execute_transaction
-    batches: list[int] = []
+    names = zcol.insert(inserted, distributed=distributed)
+    assert names == tuple(f'year=2000/month=01/day={day:02d}'
+                          for day in range(1, 11))
 
-    def record(client, synchronizer, futures, **kwargs):
-        if not any(
-                isinstance(item, dask.distributed.Future) for item in futures):
-            batches.append(len(futures))
-        return execute(client, synchronizer, futures, **kwargs)
+    with pytest.raises(execution.PartitionErrors) as info:
+        zcol.insert(inserted,
+                    merge_callable=fail_on_the_fourth_day,
+                    npartitions=1,
+                    distributed=distributed,
+                    stop_on_error=stop_on_error)
 
-    with mock.patch.object(storage, 'execute_transaction', record):
-        written = zcol.insert(inserted, npartitions=npartitions)
+    assert info.value.written == tuple(names[index] for index in written)
+    assert list(info.value.failed) == [names[3]]
+    assert 'merge failed' in info.value.failed[names[3]]
+    assert info.value.not_attempted == tuple(names[index]
+                                             for index in not_attempted)
 
-    assert len(written) == 10
-    assert batches == [
-        len(batch) for batch in itertools.batched(range(10), npartitions or 1)
-    ]
+
+def keep_inserted(existing_ds: dataset.Dataset, inserted_ds: dataset.Dataset,
+                  axis: str, partitioning_dim: str,
+                  **kwargs) -> dataset.Dataset:
+    """Keep the inserted data, checking the keyword arguments."""
+    assert kwargs == {'zds': 'merge argument', 'fs': 'merge argument'}
+    return inserted_ds
+
+
+def test_insert_passes_its_keyword_arguments_to_the_merge_callable(
+        local_fs) -> None:  # noqa: F811
+    """A keyword argument of insert reaches the merge callable, also when an
+    internal argument of the insertion has the same name."""
+    inserted = ten_daily_partitions()
+    zcol = convenience.create_collection('time',
+                                         inserted,
+                                         partitioning.Date(('time', ), 'D'),
+                                         str(local_fs.collection),
+                                         filesystem=local_fs.fs)
+    zcol.insert(inserted, distributed=False)
+
+    assert len(
+        zcol.insert(inserted,
+                    merge_callable=keep_inserted,
+                    distributed=False,
+                    zds='merge argument',
+                    fs='merge argument')) == 10
+
+
+class RecordingSync(sync.Sync):
+    """A synchronizer that reports whether it is entered."""
+
+    def __init__(self) -> None:
+        self.held = False
+
+    def __enter__(self) -> bool:
+        self.held = True
+        return True
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.held = False
+
+    def is_locked(self) -> bool:
+        return self.held
 
 
 @pytest.mark.usefixtures('dask_client')
-@pytest.mark.parametrize('npartitions', [None, 2])
+@pytest.mark.parametrize('distributed', [False, True])
+def test_insert_writes_the_immutable_variables_under_the_lock(
+        local_fs, distributed) -> None:  # noqa: F811
+    """The immutable variables are written while the collection holds its
+    lock."""
+    original = reference.make_dataset()
+    zcol = convenience.create_collection('time',
+                                         original,
+                                         reference.make_partitioning(),
+                                         str(local_fs.collection),
+                                         filesystem=local_fs.fs,
+                                         synchronizer=RecordingSync())
+    write = storage.write_zarr_group_missing
+    held: list[bool] = []
+
+    def record(*args, **kwargs):
+        held.append(zcol.synchronizer.held)
+        return write(*args, **kwargs)
+
+    with mock.patch.object(storage, 'write_zarr_group_missing', record):
+        zcol.insert(original, distributed=distributed)
+
+    assert held == [True]
+
+
+@pytest.mark.parametrize('distributed', [False, True])
+@pytest.mark.parametrize('npartitions', [None, 2, 0])
 def test_insert_of_an_empty_dataset_writes_nothing(
-        local_fs, npartitions) -> None:  # noqa: F811
-    """Inserting a dataset without rows writes no partition."""
+        local_fs, npartitions, distributed) -> None:  # noqa: F811
+    """Inserting a dataset without rows writes no partition and asks for no
+    Dask client."""
     inserted = ten_daily_partitions()
     zcol = convenience.create_collection('time',
                                          inserted,
@@ -161,8 +252,12 @@ def test_insert_of_an_empty_dataset_writes_nothing(
                                          str(local_fs.collection),
                                          filesystem=local_fs.fs)
 
-    written = zcol.insert(inserted.isel({'num_lines': slice(0, 0)}),
-                          npartitions=npartitions)
+    with mock.patch.object(dask_utils,
+                           'get_client',
+                           side_effect=AssertionError):
+        written = zcol.insert(inserted.isel({'num_lines': slice(0, 0)}),
+                              npartitions=npartitions,
+                              distributed=distributed)
 
     assert written == ()
     assert tuple(zcol.partitions()) == ()
@@ -1611,7 +1706,7 @@ def test_insert_failed(
     zcol.fs.makedirs(sep.join(one_directory.split(sep)[:-1]))
     zcol.fs.touch(one_directory)
 
-    with pytest.raises((OSError, ValueError)):
+    with pytest.raises(execution.PartitionErrors):
         zcol.insert(zds, distributed=distributed)
 
     # Because the insert failed, the partition that was supposed to be created

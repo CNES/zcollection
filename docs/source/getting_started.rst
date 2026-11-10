@@ -241,7 +241,10 @@ Where to go next
 :doc:`partitioning`
     Date against sequence, the resolution and what it costs.
 
-:doc:`callbacks`
+:doc:`writing`
+    Execution, failures and retries of insert, update and update_from.
+
+:doc:`functions`
     Mapping and updating partitions, using neighbors and external Dask arrays.
 
 :doc:`auto_examples/ex_collection`

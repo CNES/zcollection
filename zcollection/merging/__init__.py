@@ -8,7 +8,7 @@ Handle merging of datasets of a partition.
 """
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 import hashlib
 import shutil
 
@@ -19,6 +19,9 @@ from zcollection import fs_utils
 
 from .. import dataset, storage, store, sync
 from .time_series import merge_time_series
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 __all__ = ('MergeCallable', 'merge_time_series', 'perform')
 
@@ -150,7 +153,7 @@ def perform(
     distributed: bool = True,
     merge_callable: MergeCallable | None,
     synchronizer: sync.Sync | None = None,
-    **kwargs,
+    merge_kwargs: Mapping[str, Any] | None = None,
 ) -> None:
     """Merges a new dataset with an existing partition.
 
@@ -169,8 +172,7 @@ def perform(
             Defaults to None.
         synchronizer: The instance handling access to critical resources.
             Defaults to None.
-        **kwargs: Additional keyword arguments are passed through to the merge
-            callable.
+        merge_kwargs: Keyword arguments passed to the merge callable.
     """
     if merge_callable is None:
         zds = ds_inserted
@@ -186,7 +188,8 @@ def perform(
         # These properties might be loss in the merge_callable depending on which
         # dataset is used.
         ds.copy_properties(ds=ds_inserted)
-        zds = merge_callable(ds, ds_inserted, axis, partitioning_dim, **kwargs)
+        zds = merge_callable(ds, ds_inserted, axis, partitioning_dim,
+                             **(merge_kwargs or {}))
     _update_fs(dirname,
                zds,
                fs,

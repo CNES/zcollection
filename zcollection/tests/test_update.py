@@ -17,6 +17,8 @@ from .. import (
     convenience,
     dask_utils,
     dataset,
+    execution,
+    fs_utils,
     meta,
     partitioning,
     storage,
@@ -26,6 +28,7 @@ from .. import (
 )
 from ..collection.detail import infer_variables
 from .cluster import dask_client, dask_cluster  # noqa: F401
+from .data import with_process_sync
 from .fixture import empty_target  # noqa: F401
 from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
 
@@ -254,51 +257,112 @@ def test_update_overlap_masked_second_axis(update_target, delayed,
 @pytest.mark.usefixtures('dask_client')
 def test_update_distributes_paths(update_target, depth, infer, monkeypatch,
                                   tmp_path):
-    """The coordinator sends paths and receives completion markers."""
+    """The coordinator sends one path per task while it holds the lock, and
+    returns the paths written."""
     client = dask.distributed.get_client()
-    map_partitions = client.map
-    gather = client.gather
-    batches = []
+    submit = client.submit
+    paths = []
     output = output_name(update_target)
-    synchronizer = sync.ProcessSync(str(tmp_path / 'update.lock'))
-    if isinstance(update_target, view.View):
-        update_target = type(update_target).from_config(
-            update_target.base_dir,
-            filesystem=update_target.fs,
-            synchronizer=synchronizer)
-    else:
-        update_target = type(update_target).from_config(
-            update_target.partition_properties.dir,
-            mode='w',
-            filesystem=update_target.fs,
-            synchronizer=synchronizer)
+    update_target = with_process_sync(update_target, tmp_path)
 
-    def observe_map(func, parameters, **kwargs):
-        for batch in parameters:
-            assert all(isinstance(path, str) for path in batch)
-        batches.extend(parameters)
-        return map_partitions(func, parameters, **kwargs)
-
-    def observe_gather(futures, **kwargs):
-        assert update_target.is_locked()
-        result = gather(futures, **kwargs)
-        assert all(item is None for item in result)
-        return result
+    def observe_submit(func, *args, **kwargs):
+        if func is execution._call:
+            assert update_target.is_locked()
+            paths.append(args[1])
+        return submit(func, *args, **kwargs)
 
     def callback(zds):
         return {output: zds['source'].values + 2}
 
     monkeypatch.setattr(dask_utils, 'get_client', lambda: client)
-    monkeypatch.setattr(client, 'map', observe_map)
-    monkeypatch.setattr(client, 'gather', observe_gather)
-    update_target.update(callback,
-                         variables=None if infer else [output],
-                         selected_variables=['source'],
-                         delayed=False,
-                         distributed=True,
-                         depth=depth)
-    assert sum(map(len, batches)) == 4
+    monkeypatch.setattr(client, 'submit', observe_submit)
+    written = update_target.update(callback,
+                                   variables=None if infer else [output],
+                                   selected_variables=['source'],
+                                   delayed=False,
+                                   distributed=True,
+                                   depth=depth)
+    assert len(paths) == 4
+    assert all(isinstance(path, str) for path in paths)
+    assert written == tuple(
+        update_target._relative_path(path) for path in paths)
     assert not update_target.is_locked()
+
+
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
+@pytest.mark.parametrize('distributed', [False, True])
+@pytest.mark.parametrize(('stop_on_error', 'written', 'not_attempted'), [
+    (True, ('key=1', 'key=2'), ('key=4', )),
+    (False, ('key=1', 'key=2', 'key=4'), ()),
+])
+@pytest.mark.usefixtures('dask_client')
+def test_update_reports_each_partition(update_target, distributed,
+                                       stop_on_error, written, not_attempted,
+                                       monkeypatch) -> None:
+    """A failed callback gives the partitions written, failed and not
+    attempted, and the cache of every selected partition is cleared."""
+    output = output_name(update_target)
+    cleared: list[str] = []
+    monkeypatch.setattr(update_target.fs, 'invalidate_cache', cleared.append)
+
+    def fail_on_three(zds):
+        if zds['key'].values[0] == 3:
+            raise ValueError('callback failed')
+        return {output: zds['source'].values}
+
+    with pytest.raises(execution.PartitionErrors) as info:
+        update_target.update(fail_on_three,
+                             variables=[output],
+                             npartitions=1,
+                             distributed=distributed,
+                             stop_on_error=stop_on_error)
+
+    assert info.value.written == written
+    assert list(info.value.failed) == ['key=3']
+    assert 'callback failed' in info.value.failed['key=3']
+    assert info.value.not_attempted == not_attempted
+    assert {'key=1', 'key=2', 'key=3', 'key=4'
+            } <= {update_target._relative_path(path)
+                  for path in cleared}
+
+
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
+def test_update_holds_the_lock_without_dask(update_target, tmp_path) -> None:
+    """Without Dask, each partition is updated while the lock is held."""
+    output = output_name(update_target)
+    update_target = with_process_sync(update_target, tmp_path)
+    held = []
+
+    def callback(zds):
+        held.append(update_target.is_locked())
+        return {output: zds['source'].values}
+
+    assert update_target.update(callback,
+                                variables=[output],
+                                distributed=False) == ('key=1', 'key=2',
+                                                       'key=3', 'key=4')
+    assert held == [True] * 4
+    assert not update_target.is_locked()
+
+
+@pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
+@pytest.mark.parametrize('distributed', [False, True])
+@pytest.mark.usefixtures('dask_client')
+def test_update_skips_an_absent_partition(update_target, distributed,
+                                          caplog) -> None:
+    """A partition the index names and the store lacks is skipped with a
+    warning, and left out of the result."""
+    output = output_name(update_target)
+    update_target.fs.rm(fs_utils.join_path(update_target._partitions_dir,
+                                           'key=2'),
+                        recursive=True)
+
+    written = update_target.update(lambda zds: {output: zds['source'].values},
+                                   variables=[output],
+                                   distributed=distributed)
+
+    assert written == ('key=1', 'key=3', 'key=4')
+    assert 'key=2' in caplog.text
 
 
 @pytest.mark.parametrize('missing_all', [False, True])

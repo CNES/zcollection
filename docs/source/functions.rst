@@ -1,9 +1,13 @@
-Mapping and updating partitions
-===============================
+Applying functions
+==================
 
-``Collection`` and ``View`` apply callbacks to partitions of a dataset. Use
-``map`` to collect a result per partition, ``map_overlap`` when the callback
-needs neighboring partitions, and ``update`` to write results to variables.
+:py:class:`~zcollection.collection.Collection` and
+:py:class:`~zcollection.view.View` apply callbacks to partitions of a dataset.
+Use :py:meth:`~zcollection.collection.Collection.map` to collect a result per
+partition, :py:meth:`~zcollection.collection.Collection.map_overlap` when the
+callback needs neighboring partitions, and
+:py:meth:`~zcollection.collection.Collection.update` to write results to
+variables.
 
 .. list-table:: Choosing an operation
    :header-rows: 1
@@ -24,7 +28,8 @@ needs neighboring partitions, and ``update`` to write results to variables.
    * - ``update``
      - One partition, with neighbors when ``depth > 0``
      - A mapping of output variable names to arrays
-     - Executes and writes before returning
+     - Writes before returning, and returns the paths of the partitions
+       written
 
 Each item in a mapping Bag is ``(partition_scheme, callback_result)``. Calling
 ``compute()`` collects these results into a Python list. Use ``update`` for
@@ -34,7 +39,7 @@ For a view, inputs can come from its reference collection and its own
 variables. An update writes only variables belonging to the view. A view with
 no variables of its own can use ``map`` and ``map_overlap``.
 
-A small collection
+Example collection
 ------------------
 
 The examples on this page use consecutive daily measurements split into
@@ -67,8 +72,8 @@ the calling process.
     collection.insert(data, distributed=False)
     list(collection.partitions(relative=True))
 
-Selecting inputs and identifying the partition
-----------------------------------------------
+Inputs and partition information
+--------------------------------
 
 Use ``selected_variables`` to load the inputs the callback needs. Arguments
 following the callback, and additional keyword arguments, are passed to it.
@@ -109,8 +114,8 @@ You can use the keys to query another source and the name to select the same
 partition in the collection. See :doc:`partitioning` for the rules defining
 these keys and names. Without overlap, ``indices`` is ``slice(None)``.
 
-Working with neighbors
-----------------------
+Neighbors
+---------
 
 ``depth`` counts neighboring partitions on each side among the selected
 partitions. Filters are applied before the windows are formed. At ``depth=1``,
@@ -166,8 +171,8 @@ slice in the callback when you want one result per original sample.
         for partition, values in smoothed
     }
 
-Writing the results
--------------------
+Writing results
+---------------
 
 Create the output variable before updating it. ``variables`` names the outputs
 of ``update``; ``selected_variables`` still controls its inputs. The output
@@ -192,6 +197,13 @@ central partition's values.
         write_smoothed, variables=('smoothed', ),
         selected_variables=('signal', ), depth=1,
         delayed=False, distributed=False)
+
+``update`` returns the paths of the partitions it wrote, relative to the
+collection or the view; ``selected_partitions`` takes the same paths. The
+smoothed values are stored:
+
+.. jupyter-execute::
+
     loaded = collection.load(
         selected_variables=('smoothed', ), delayed=False, distributed=False)
     loaded['smoothed'].values.round(2)
@@ -209,12 +221,15 @@ variables must be idempotent and account for neighbors containing values
 already written by earlier calls. Distributed callbacks can run in any order.
 
 An indexed partition missing from the store is skipped with a warning when
-it is read. A missing neighbor is excluded from the window. Errors from the
-callback stop the operation; other partitions may already have been written
-when an update fails.
+it is read. A missing neighbor is excluded from the window.
 
-Loading and execution choices
------------------------------
+If the callback raises while a partition is updated, ``update`` raises
+:py:class:`zcollection.PartitionErrors`; if it raises during the inference
+call, ``update`` raises ``RuntimeError``. :doc:`writing` describes
+``PartitionErrors`` and updating the failed partitions again.
+
+Loading and execution
+---------------------
 
 ``delayed`` controls the variables in the dataset passed to the callback.
 With ``False``, they are loaded into NumPy arrays before the call. With
@@ -233,15 +248,18 @@ With ``False``, they are loaded into NumPy arrays before the call. With
      - Choose the scheduler when computing the returned Bag.
    * - ``update``
      - ``None``, following ``distributed``
-     - ``distributed=False`` runs locally; ``True`` uses a Dask client.
+     - With ``distributed=False``, ``update`` processes the partitions one at
+       a time in the calling process; with ``distributed=True``, it updates
+       at most ``npartitions`` partitions at the same time on the Dask
+       cluster (see :doc:`writing`).
 
 ``update`` defaults to ``distributed=True``. To run NumPy callbacks on Dask
 workers, set ``delayed=False`` and ``distributed=True``. Each concurrent
 callback needs memory for its selected partition or window and its results.
 See :doc:`auto_examples/ex_without_dask` for operations in the calling process.
 
-Reading part of an external Dask array
---------------------------------------
+External Dask arrays
+--------------------
 
 Dask manages external positional and keyword arguments to ``map`` and
 ``map_overlap`` according to :py:meth:`dask.bag.Bag.map`. ``delayed`` controls

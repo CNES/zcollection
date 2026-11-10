@@ -102,7 +102,7 @@ variables are filled with `Dask arrays
 a computation asks for them. With ``delayed=False`` they are filled with
 NumPy arrays, read there and then.
 
-See :doc:`callbacks` for callback arguments, overlap windows and execution
+See :doc:`functions` for callback arguments, overlap windows and execution
 choices.
 
 File systems
@@ -120,8 +120,9 @@ tests cover a local disk and S3.
    install
    getting_started
    partitioning
+   writing
+   functions
    partition_index
-   callbacks
    auto_examples/index.rst
    migration
    api

@@ -22,6 +22,7 @@ from .convenience import (
     open_view,
 )
 from .dataset import Dataset, Expression
+from .execution import PartitionErrors
 from .meta import Attribute, DatasetSchema, Dimension, VariableSchema
 from .storage import AbsentPartition
 from .variable import Array, DelayedArray, Variable
@@ -43,6 +44,7 @@ __all__ = (
     'MapCallable',
     'ModifiedVariableError',
     'PartitionCallable',
+    'PartitionErrors',
     'PartitionFilter',
     'PartitionFilterCallback',
     'PartitionInfo',

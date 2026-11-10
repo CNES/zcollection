@@ -1,15 +1,15 @@
 .. _partition-index:
 
-The partition index
-===================
+Partition index
+===============
 
 The partition index is the list of partitions known to a collection or a
 view. ``partitions()`` returns this list, and you can select partitions
 from it for reading or updating. When zcollection adds or removes
 partitions, it updates the index.
 
-The partitions of a view
-------------------------
+Partitions of a view
+--------------------
 
 A view can cover a subset of its reference collection. Its partition
 index records that selection. Calling ``sync(filters=...)`` adds the
@@ -27,8 +27,8 @@ The check returns ``False`` if a selected partition is absent from the
 view or its reference axis has changed. This includes new reference
 partitions matching the filter.
 
-Rebuilding the index
----------------------
+Reindexing
+----------
 
 If the index no longer matches the partitions present in the store,
 use ``reindex()`` to reconstruct it:

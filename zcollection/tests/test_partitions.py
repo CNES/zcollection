@@ -23,7 +23,7 @@ import fsspec
 import numpy
 import pytest
 
-from .. import collection, meta, partitioning, partitions
+from .. import collection, execution, meta, partitioning, partitions
 from ..convenience import create_view, open_collection
 from ..fs_utils import join_path
 from ..view import ViewReference
@@ -395,15 +395,16 @@ def test_an_interrupted_insertion_keeps_written_partitions_visible(
     insert = collection._insert
     count = 0
 
-    def fail_second(**kwargs):
+    def fail_second(args, /, **kwargs):
         nonlocal count
         count += 1
         if count == 2:
             raise OSError('injected partition failure')
-        return insert(**kwargs)
+        return insert(args, **kwargs)
 
     with mock.patch.object(collection, '_insert', fail_second):
-        with pytest.raises(OSError, match='injected partition failure'):
+        with pytest.raises(execution.PartitionErrors,
+                           match='injected partition failure'):
             zcol.insert(ds, distributed=False)
 
     reopened = open_collection(str(tested_fs.collection),
@@ -420,7 +421,7 @@ def test_a_failed_reindex_after_a_failed_insertion_leaves_the_index_marked(
     datasets = create_test_dataset(delayed=False)
     next(datasets)
 
-    def fail(**kwargs):
+    def fail(args, /, **kwargs):
         raise OSError('injected partition failure')
 
     def fail_walk(index):
@@ -428,7 +429,8 @@ def test_a_failed_reindex_after_a_failed_insertion_leaves_the_index_marked(
 
     with mock.patch.object(collection, '_insert', fail), \
             mock.patch.object(partitions.PartitionIndex, 'walk', fail_walk):
-        with pytest.raises(OSError, match='injected partition failure'):
+        with pytest.raises(execution.PartitionErrors,
+                           match='injected partition failure'):
             zcol.insert(next(datasets), distributed=False)
 
     stored = json.loads(gzip.decompress(local_fs.fs.cat_file(
@@ -579,12 +581,12 @@ from zcollection.tests.data import create_test_dataset
 
 insert = collection._insert
 count = 0
-def exit_second(**kwargs):
+def exit_second(args, /, **kwargs):
     global count
     count += 1
     if count == 2:
         os._exit(9)
-    return insert(**kwargs)
+    return insert(args, **kwargs)
 
 collection._insert = exit_second
 datasets = create_test_dataset(delayed=False)

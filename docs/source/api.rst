@@ -80,6 +80,7 @@ Exceptions
 
   zcollection.AbsentPartition
   zcollection.ModifiedVariableError
+  zcollection.PartitionErrors
 
 Convenience functions
 =====================

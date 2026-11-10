@@ -658,7 +658,7 @@ class View(WritableCollection):
                            metadata=self.metadata,
                            trim=trim)
 
-    def update(
+    def update(  # noqa: PLR0913
         self,
         func: collection.UpdateCallable,
         /,
@@ -672,8 +672,9 @@ class View(WritableCollection):
         npartitions: int | None = None,
         delayed: bool | None = None,
         distributed: bool = True,
+        stop_on_error: bool = True,
         **kwargs,
-    ) -> None:
+    ) -> tuple[str, ...]:
         """Update a variable stored in the view.
 
         Args:
@@ -698,18 +699,27 @@ class View(WritableCollection):
                 the results returned by ``func`` when using overlap. Set it
                 to ``False`` if your function already returns only those
                 values.
-            npartitions: The number of partitions to update in parallel. By
-                default, it is equal to the number of Dask workers available
-                when calling this method.
+            npartitions: The largest number of partitions updated at the
+                same time. Defaults to the number of Dask workers. With
+                ``distributed=False``, the partitions are processed one at a
+                time.
             delayed: If True, load variables as Dask arrays. If False, load
                 variables directly into NumPy arrays. If None, use the value of
                 ``distributed``. Default is None.
             distributed: Whether to use dask or not. Default To True.
+            stop_on_error: If True, no partition starts after the first
+                failure, and the partitions in progress finish. Defaults
+                to True.
             kwargs: The keyword arguments to pass to the function.
 
+        Returns:
+            The path of each partition written, relative to the view.
+
         Raises:
-            ValueError: If the variable does not exist or if the variable
-                belongs to the reference collection.
+            ValueError: If the variable does not exist, if the variable
+                belongs to the reference collection, or if ``npartitions``
+                is below one.
+            PartitionErrors: If a partition failed.
 
         Notes:
             Each task loads and writes one partition or overlap window at a
@@ -720,7 +730,7 @@ class View(WritableCollection):
             invocation whose returned values are discarded. A callback
             declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
             on every call, including inference and calls without overlap.
-            See :doc:`/callbacks` for examples of overlap, trimming and
+            See :doc:`/functions` for examples of overlap, trimming and
             external arguments.
 
         Example:
@@ -737,18 +747,19 @@ class View(WritableCollection):
         """
         _assert_have_variables(self.metadata)
 
-        self._update(func,
-                     *args,
-                     depth=depth,
-                     filters=filters,
-                     variables=variables,
-                     selected_variables=selected_variables,
-                     selected_partitions=selected_partitions,
-                     trim=trim,
-                     npartitions=npartitions,
-                     delayed=delayed,
-                     distributed=distributed,
-                     **kwargs)
+        return self._update(func,
+                            *args,
+                            depth=depth,
+                            filters=filters,
+                            variables=variables,
+                            selected_variables=selected_variables,
+                            selected_partitions=selected_partitions,
+                            trim=trim,
+                            npartitions=npartitions,
+                            delayed=delayed,
+                            distributed=distributed,
+                            stop_on_error=stop_on_error,
+                            **kwargs)
 
     def _prepare_map(
         self,
