@@ -22,7 +22,7 @@ from .. import (
 )
 from ..variable.abc import read_dimensions
 from .cluster import dask_client, dask_cluster  # noqa: F401
-from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
+from .fs import local_fs  # noqa: F401
 
 TARGETS = [(kind, 'local_fs')
            for kind in ('collection', 'view', 'reference_view')]

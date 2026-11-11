@@ -25,7 +25,7 @@ from .. import (
 )
 from .cluster import dask_client, dask_cluster  # noqa: F401
 from .fixture import empty_target  # noqa: F401
-from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
+from .fs import local_fs  # noqa: F401
 
 TARGETS = [('collection', 'local_fs'), ('view', 'local_fs')]
 STORAGE_TARGETS = [*TARGETS, ('collection', 's3_fs'), ('view', 's3_fs')]

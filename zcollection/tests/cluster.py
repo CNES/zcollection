@@ -61,6 +61,7 @@ def dask_cluster(
         n_workers=n_workers,
         threads_per_worker=threads_per_worker,
         processes=processes,
+        dashboard_address=':0',
     )
 
     try:

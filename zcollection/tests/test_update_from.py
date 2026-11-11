@@ -24,7 +24,7 @@ from .. import (
 )
 from .cluster import dask_client, dask_cluster  # noqa: F401
 from .data import with_process_sync
-from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
+from .fs import local_fs  # noqa: F401
 
 
 @pytest.fixture

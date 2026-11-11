@@ -37,7 +37,7 @@ from ...tests.data import (
     make_dataset,
 )
 from ...tests.fixture import dask_arrays, numpy_arrays  # noqa: F401
-from ...tests.fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
+from ...tests.fs import local_fs  # noqa: F401
 from ...view.detail import _calculate_axis_reference
 
 

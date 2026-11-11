@@ -65,9 +65,9 @@ def local_fs(tmp_path, pytestconfig) -> Iterator[Local]:
 if S3_IMPORT_EXCEPTION is None:
 
     @pytest.fixture
-    def s3_fs(s3) -> S3:  # type: ignore[arg-type]
+    def s3_fs(s3, s3_base) -> S3:  # type: ignore[arg-type]
         """S3 filesystem."""
-        return S3(s3)
+        return S3(s3, s3_base)
 else:
 
     @pytest.fixture

@@ -53,7 +53,31 @@ from ...tests.data import (
     create_test_dataset_with_fillvalue,
 )
 from ...tests.fixture import dask_arrays, numpy_arrays  # noqa: F401
-from ...tests.fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
+from ...tests.fs import local_fs  # noqa: F401
+
+_SHORT_FILLVALUE_ROWS = slice(8, 18)
+
+
+def _update_test_dataset(create_test_data, delayed: bool,
+                         distributed: bool) -> dataset.Dataset:
+    """Return a dataset with the date span used by update tests.
+
+    Fill-value data has 61 dates when ``delayed`` and ``distributed`` are
+    both true. Other fill-value cases use ten dates across two months.
+    Data without fill values keeps its original size.
+    """
+    if create_test_data is not create_test_dataset_with_fillvalue:
+        return next(create_test_data(delayed=delayed))
+
+    full = delayed and distributed
+    rows = None if full else _SHORT_FILLVALUE_ROWS
+    zds = next(create_test_data(delayed=delayed, rows=rows))
+    dates = zds.variables['time'].values
+    assert dates.shape[0] == (61 if full else 10)
+    if not full:
+        months = dates.astype('datetime64[M]')
+        assert months[0] != months[-1]
+    return zds
 
 
 @pytest.fixture(params=['local_fs', 's3_fs'])
@@ -867,13 +891,14 @@ def test_update(
     """Test the update of a dataset."""
     tested_fs = request.getfixturevalue(fs)
     delayed = request.getfixturevalue(arrays_type)
-    zds = next(create_test_data(delayed=delayed))
+    zds = _update_test_dataset(create_test_data, delayed, distributed)
     zcol = collection.Collection('time',
                                  zds.metadata(),
                                  partitioning.Date(('time', ), 'D'),
                                  str(tested_fs.collection),
                                  filesystem=tested_fs.fs)
     zcol.insert(zds, distributed=distributed)
+    assert len(tuple(zcol.partitions())) == zds.variables['time'].shape[0]
 
     def update(zds: dataset.Dataset, shift: int = 3):
         """Update function used for this test."""
@@ -1406,7 +1431,7 @@ def test_add_update(
     """Test the adding and updating of a dataset."""
     tested_fs = request.getfixturevalue(fs)
     delayed = request.getfixturevalue(arrays_type)
-    zds = next(create_test_data(delayed=delayed))
+    zds = _update_test_dataset(create_test_data, delayed, distributed)
     zcol = collection.Collection(axis='time',
                                  ds=zds.metadata(),
                                  partition_handler=partitioning.Date(
@@ -1414,6 +1439,7 @@ def test_add_update(
                                  partition_base_dir=str(tested_fs.collection),
                                  filesystem=tested_fs.fs)
     zcol.insert(zds, distributed=distributed)
+    assert len(tuple(zcol.partitions())) == zds.variables['time'].shape[0]
 
     new1 = meta.VariableSchema(name='var3',
                                dtype=numpy.dtype('float64'),
@@ -1472,7 +1498,9 @@ def test_update_with_immutable(
     """Test the inclusion of immutable variables in the dataset provided to the
     update callback function."""
     tested_fs = request.getfixturevalue(fs)
-    zds = next(create_test_data(delayed=False))
+    zds = _update_test_dataset(create_test_data,
+                               delayed=False,
+                               distributed=False)
     zcol = collection.Collection(axis='time',
                                  ds=zds.metadata(),
                                  partition_handler=partitioning.Date(
@@ -1480,6 +1508,7 @@ def test_update_with_immutable(
                                  partition_base_dir=str(tested_fs.collection),
                                  filesystem=tested_fs.fs)
     zcol.insert(zds, distributed=False)
+    assert len(tuple(zcol.partitions())) == zds.variables['time'].shape[0]
 
     new_var = meta.VariableSchema(
         name='var4',
@@ -1538,19 +1567,29 @@ def test_fillvalue(
     """Test the management of masked values."""
     tested_fs = request.getfixturevalue(fs)
     delayed = request.getfixturevalue(arrays_type)
+    rows = None if delayed else _SHORT_FILLVALUE_ROWS
     zcol = create_test_collection(tested_fs,
                                   delayed=delayed,
-                                  with_fillvalue=True)
+                                  with_fillvalue=True,
+                                  fillvalue_rows=rows)
 
     # Load the dataset written with masked values in the collection and
     # compare it to the original dataset.
     data = zcol.load(delayed=delayed)
     assert data is not None
 
-    zds = next(create_test_dataset_with_fillvalue(delayed=delayed))
+    zds = next(create_test_dataset_with_fillvalue(delayed=delayed, rows=rows))
+    assert data.variables['time'].shape[0] == (61 if delayed else 10)
+    assert len(tuple(zcol.partitions())) == zds.variables['time'].shape[0]
+    if rows is not None:
+        months = zds.variables['time'].values.astype('datetime64[M]')
+        assert months[0] != months[-1]
 
     values = data.variables['var1'].values
     assert isinstance(values, numpy.ma.MaskedArray)
+    mask = numpy.ma.getmaskarray(values)
+    assert mask.any()
+    assert (~mask).any()
     assert numpy.ma.allclose(zds.variables['var1'].values, values)
 
     values = data.variables['var2'].values

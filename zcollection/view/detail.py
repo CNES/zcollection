@@ -590,6 +590,8 @@ def _check_partition(
     path = join_path(base_dir, partition)
     expected = {*metadata.variables, CHECKSUM_FILE}
     try:
+        # An S3 listing may be stale after a variable is removed or repaired.
+        fs.invalidate_cache(path)
         held = {os.path.basename(item['name']) for item in fs.listdir(path)}
     except FileNotFoundError:
         return partition, False

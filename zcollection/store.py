@@ -15,6 +15,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, TypeVar
 import warnings
 
+from fsspec.asyn import AsyncFileSystem
+from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
 import fsspec.implementations.local
 import numpy
 import zarr
@@ -85,7 +87,15 @@ def _store(
     """
     if isinstance(fs, fsspec.implementations.local.LocalFileSystem):
         return zarr.storage.LocalStore(path)
-    return zarr.storage.FsspecStore.from_mapper(fs.get_mapper(path))
+    mapper = fs.get_mapper(path)
+    # Zarr's from_mapper recreates synchronous async-capable filesystems,
+    # opening a separate S3 session. The wrapper lets Zarr reuse the supplied
+    # filesystem and its session.
+    if isinstance(fs, AsyncFileSystem) and not fs.asynchronous:
+        return zarr.storage.FsspecStore(fs=AsyncFileSystemWrapper(
+            fs, asynchronous=True),
+                                        path=mapper.root)
+    return zarr.storage.FsspecStore.from_mapper(mapper)
 
 
 def _open(

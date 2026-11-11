@@ -29,7 +29,7 @@ from ..fs_utils import join_path
 from ..view import ViewReference
 from .data import create_test_collection, create_test_dataset
 # pylint: disable=unused-import # Need to import for fixtures
-from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
+from .fs import local_fs  # noqa: F401
 
 # pylint: enable=unused-import
 

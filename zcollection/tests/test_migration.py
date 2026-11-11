@@ -55,7 +55,7 @@ from ..migration import (
 from ..partitions import FILENAME as PARTITION_INDEX
 from ..variable.abc import FILL_VALUE
 from .cluster import dask_client, dask_cluster  # noqa: F401
-from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
+from .fs import local_fs  # noqa: F401
 
 #: The frozen collection.
 ARCHIVE = pathlib.Path(__file__).parent / 'deprecated_collection.zip'

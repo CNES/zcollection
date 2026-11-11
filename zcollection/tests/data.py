@@ -78,12 +78,16 @@ def create_test_dataset(delayed: bool = True) -> Iterator[dataset.Dataset]:
 
 
 def create_test_dataset_with_fillvalue(
-        delayed: bool = True) -> Iterator[dataset.Dataset]:
+        delayed: bool = True,
+        rows: slice | None = None) -> Iterator[dataset.Dataset]:
     """Create a dataset with a fixed scale offset filter and fill values."""
 
     dates: NDArray = numpy.arange(START_DATE, END_DATE, DELTA)
     measures: NDArray = numpy.arange(0, len(dates), dtype=numpy.float64)
     measures[measures % 2 == 0] = FILL_VALUE
+    if rows is not None:
+        dates = dates[rows]
+        measures = measures[rows]
     measures = numpy.vstack((measures, ) * 25).T * 1e-4
 
     yield make_dataset(dates,
@@ -96,15 +100,17 @@ def create_test_dataset_with_fillvalue(
                                                            astype='i4'), ))
 
 
-def create_test_collection(tested_fs,
-                           with_fillvalue=False,
-                           delayed=True,
-                           distributed=True) -> collection.Collection:
+def create_test_collection(
+        tested_fs,
+        with_fillvalue=False,
+        delayed=True,
+        distributed=True,
+        fillvalue_rows: slice | None = None) -> collection.Collection:
     """Create a collection."""
     zds: dataset.Dataset = next(
         create_test_dataset_with_fillvalue(
-            delayed=delayed) if with_fillvalue else create_test_dataset(
-                delayed=delayed))
+            delayed=delayed, rows=fillvalue_rows
+        ) if with_fillvalue else create_test_dataset(delayed=delayed))
     zcol = collection.Collection(
         axis='time',
         ds=zds.metadata(),

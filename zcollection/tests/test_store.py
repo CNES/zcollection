@@ -76,6 +76,31 @@ def test_uninitialized_values_read_as_zero(local_fs) -> None:  # noqa: F811
     numpy.testing.assert_array_equal(array[...], numpy.zeros(4))
 
 
+def test_s3_stores_do_not_open_extra_sessions(s3_fs) -> None:
+    """Zarr operations open no S3 session on a second filesystem."""
+    fs = s3_fs.fs
+    unexpected_sessions: list[int] = []
+    set_session = type(fs).set_session
+
+    async def record_session(owner, *args, **kwargs):
+        if owner is not fs:
+            unexpected_sessions.append(id(owner))
+        return await set_session(owner, *args, **kwargs)
+
+    with mock.patch.object(type(fs), 'set_session', record_session):
+        for index in range(2):
+            path = join_path(str(s3_fs.collection), f'array{index}')
+            array = store.create_array(fs,
+                                       path,
+                                       shape=(4, ),
+                                       dtype=numpy.dtype('int32'))
+            array[...] = [1, 2, 3, 4]
+            numpy.testing.assert_array_equal(
+                store.open_array(fs, path)[...], [1, 2, 3, 4])
+
+    assert not unexpected_sessions
+
+
 def test_fill_value_is_the_one_given(local_fs) -> None:  # noqa: F811
     """An array created with a fill value reads as that value."""
     path = join_path(str(local_fs.root), 'array')

@@ -188,6 +188,17 @@ def interrupt(*args, **kwargs) -> None:
     raise KeyboardInterrupt
 
 
+def record_on_release(item: int, *, track: str, release: str) -> None:
+    """Record item zero immediately; wait for the release file for others."""
+    if item:
+        deadline = time.monotonic() + 30
+        while not os.path.exists(release):
+            if time.monotonic() > deadline:
+                raise TimeoutError('The test did not release the tasks')
+            time.sleep(0.01)
+    record(item, track=track)
+
+
 @pytest.mark.parametrize('twice', [False, True])
 def test_interruption(
         dask_client,  # noqa: F811
@@ -200,19 +211,25 @@ def test_interruption(
                         InterruptedAsCompleted)
     if twice:
         monkeypatch.setattr(execution.distributed, 'wait', interrupt)
-    with pytest.raises(KeyboardInterrupt):
-        execution.run(functools.partial(record, track=str(tmp_path),
-                                        delay=0.5),
-                      range(10),
-                      NAMES,
-                      client=dask_client,
-                      npartitions=4,
-                      stop_on_error=True)
+    release = tmp_path.parent / f'{tmp_path.name}.release'
+    callback = (functools.partial(
+        record_on_release, track=str(tmp_path), release=str(release)) if twice
+                else functools.partial(record, track=str(tmp_path), delay=0.5))
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            execution.run(callback,
+                          range(10),
+                          NAMES,
+                          client=dask_client,
+                          npartitions=4,
+                          stop_on_error=True)
 
-    if twice:
-        assert len(items(tmp_path)) < 4
-    else:
-        assert items(tmp_path) == [0, 1, 2, 3]
+        if twice:
+            assert items(tmp_path) == [0]
+        else:
+            assert items(tmp_path) == [0, 1, 2, 3]
+    finally:
+        release.touch()
 
 
 def exit_on_one(item: int) -> None:

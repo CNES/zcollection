@@ -8,6 +8,8 @@ Test setup
 ==========
 """
 
+from zcollection.tests.fs import s3, s3_base, s3_fs  # noqa: F401
+
 
 def pytest_addoption(parser) -> None:
     """Add command line options to pytest."""

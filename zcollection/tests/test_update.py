@@ -30,7 +30,7 @@ from ..collection.detail import infer_variables
 from .cluster import dask_client, dask_cluster  # noqa: F401
 from .data import with_process_sync
 from .fixture import empty_target  # noqa: F401
-from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
+from .fs import local_fs  # noqa: F401
 
 
 @pytest.fixture
@@ -375,9 +375,11 @@ def test_update_holds_the_lock_without_dask(update_target, tmp_path) -> None:
 
 @pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 @pytest.mark.parametrize('distributed', [False, True])
-@pytest.mark.usefixtures('dask_client')
-def test_update_skips_an_absent_partition(update_target, distributed,
-                                          caplog) -> None:
+def test_update_skips_an_absent_partition(
+        update_target,
+        distributed,
+        dask_client,  # noqa: F811
+        caplog) -> None:
     """A partition the index names and the store lacks is skipped with a
     warning, and left out of the result."""
     output = output_name(update_target)
@@ -385,9 +387,16 @@ def test_update_skips_an_absent_partition(update_target, distributed,
                                            'key=2'),
                         recursive=True)
 
-    written = update_target.update(lambda zds: {output: zds['source'].values},
-                                   variables=[output],
-                                   distributed=distributed)
+    if distributed:
+        dask_client.forward_logging('zcollection.storage')
+    try:
+        written = update_target.update(
+            lambda zds: {output: zds['source'].values},
+            variables=[output],
+            distributed=distributed)
+    finally:
+        if distributed:
+            dask_client.unforward_logging('zcollection.storage')
 
     assert written == ('key=1', 'key=3', 'key=4')
     assert 'key=2' in caplog.text

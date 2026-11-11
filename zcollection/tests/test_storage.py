@@ -19,7 +19,7 @@ from .. import dataset, storage, store, sync
 from ..fs_utils import join_path
 from ..variable.abc import not_equal
 from .cluster import dask_client, dask_cluster  # noqa: F401
-from .fs import local_fs, s3, s3_base, s3_fs  # noqa: F401
+from .fs import local_fs  # noqa: F401
 
 
 def test_execute_transaction(
@@ -475,9 +475,8 @@ def test_a_failed_write_names_the_variable(
 
 
 @pytest.mark.parametrize('remove_partition', [False, True])
-def test_read_partition_refreshes_cached_listings(
-        s3_fs,  # noqa: F811
-        remove_partition) -> None:
+def test_read_partition_refreshes_cached_listings(s3_fs,
+                                                  remove_partition) -> None:
     """Missing metadata is propagated; an absent partition is classified."""
     fs = s3_fs.fs
     dirname = join_path(str(s3_fs.collection), 'key=1')
