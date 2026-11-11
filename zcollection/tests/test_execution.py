@@ -102,13 +102,13 @@ def test_npartitions_below_one_is_refused(client, npartitions) -> None:
 
 
 @pytest.mark.parametrize(
-    ('stop_on_error', 'written', 'failed', 'not_attempted'), [
+    ('stop_on_error', 'completed', 'failed', 'not_attempted'), [
         (True, NAMES[:3], ['p3'], NAMES[4:]),
         (False, NAMES[:3] + NAMES[4:6] + NAMES[7:], ['p3', 'p6'], ()),
     ])
-def test_report(client, tmp_path, stop_on_error, written, failed,
+def test_report(client, tmp_path, stop_on_error, completed, failed,
                 not_attempted) -> None:
-    """The error gives the partitions written, failed and not attempted,
+    """The error gives the partitions completed, failed and not attempted,
     in the order of the operation, and the traceback of the first failure."""
     with pytest.raises(execution.PartitionErrors) as info:
         execution.run(functools.partial(record,
@@ -121,15 +121,15 @@ def test_report(client, tmp_path, stop_on_error, written, failed,
                       stop_on_error=stop_on_error)
 
     errors = info.value
-    assert errors.written == written
+    assert errors.completed == completed
     assert list(errors.failed) == failed
     assert 'ValueError: item 3 failed' in errors.failed['p3']
     assert errors.not_attempted == not_attempted
-    assert items(tmp_path) == [int(name[1:]) for name in written]
+    assert items(tmp_path) == [int(name[1:]) for name in completed]
     assert errors.failed['p3'] in str(errors)
     copy = pickle.loads(pickle.dumps(errors))
-    assert (copy.written, copy.failed,
-            copy.not_attempted) == (errors.written, errors.failed,
+    assert (copy.completed, copy.failed,
+            copy.not_attempted) == (errors.completed, errors.failed,
                                     errors.not_attempted)
 
 
@@ -254,5 +254,5 @@ def test_a_lost_worker_is_reported_on_its_partition() -> None:
                                   npartitions=1,
                                   stop_on_error=False)
 
-    assert info.value.written == ('p0', 'p2')
+    assert info.value.completed == ('p0', 'p2')
     assert list(info.value.failed) == ['p1']

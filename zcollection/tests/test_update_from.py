@@ -124,16 +124,16 @@ def test_a_variable_the_schema_does_not_define_is_refused(
 
 @pytest.mark.parametrize('update_from_target', LOCAL_TARGETS, indirect=True)
 @pytest.mark.parametrize('distributed', [False, True])
-@pytest.mark.parametrize(('stop_on_error', 'written', 'not_attempted'), [
+@pytest.mark.parametrize(('stop_on_error', 'completed', 'not_attempted'), [
     (True, [0], [2]),
     (False, [0, 2], []),
 ])
 @pytest.mark.usefixtures('dask_client')
 def test_update_from_reports_each_partition(update_from_target, distributed,
-                                            stop_on_error, written,
+                                            stop_on_error, completed,
                                             not_attempted) -> None:
     """A partition with an unmatched row is reported as failed, with the
-    partitions written and not attempted."""
+    partitions completed and not attempted."""
     names = sorted(
         update_from_target._relative_path(item)
         for item in update_from_target.partitions())
@@ -148,7 +148,7 @@ def test_update_from_reports_each_partition(update_from_target, distributed,
                                        distributed=distributed,
                                        stop_on_error=stop_on_error)
 
-    assert info.value.written == tuple(names[index] for index in written)
+    assert info.value.completed == tuple(names[index] for index in completed)
     assert list(info.value.failed) == [names[1]]
     assert 'has no match' in info.value.failed[names[1]]
     assert info.value.not_attempted == tuple(names[index]

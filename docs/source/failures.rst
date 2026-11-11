@@ -6,7 +6,7 @@ Handling failures
 :py:meth:`~zcollection.collection.Collection.update_from` process each
 partition on its own. When some partitions fail, the operation raises
 :py:class:`~zcollection.PartitionErrors`, which tells which partitions were
-written, which failed and why, and which were not attempted. Views behave the
+completed, which failed and why, and which were not attempted. Views behave the
 same way.
 
 The examples use the same daily measurements as :doc:`updating`, with a
@@ -60,7 +60,7 @@ Its attributes hold paths relative to the collection.
     except zcollection.PartitionErrors as err:
         report = err
 
-    print('written:', report.written)
+    print('completed:', report.completed)
     print('failed:', list(report.failed))
     print('not attempted:', report.not_attempted)
 
@@ -76,8 +76,8 @@ the others and gives the traceback of the first, in the order the partitions
 were selected. The exception objects do not reach the caller.
 
 ``update`` skips a partition the index lists but the store does not hold,
-with a warning. That partition appears in none of ``written``, ``failed`` and
-``not_attempted``.
+with a warning. That partition appears in none of ``completed``, ``failed``
+and ``not_attempted``.
 
 Stopping on the first failure
 -----------------------------
@@ -94,7 +94,7 @@ order, so segment 3 is not attempted:
     except zcollection.PartitionErrors as err:
         report = err
 
-    print('written:', report.written)
+    print('completed:', report.completed)
     print('failed:', list(report.failed))
     print('not attempted:', report.not_attempted)
 

@@ -71,8 +71,8 @@ Execution
   partition at a time and updated the partitions in one batch per worker.
   See :doc:`failures`.
 * If a partition fails, these operations raise ``PartitionErrors``. Its
-  ``written``, ``failed`` and ``not_attempted`` attributes give the
-  partitions written, the traceback of each failed partition and the
+  ``completed``, ``failed`` and ``not_attempted`` attributes give the
+  partitions completed, the traceback of each failed partition and the
   partitions not attempted. An ``except`` clause naming the type of an error
   raised while a partition is processed no longer catches that error.
 * With ``stop_on_error=True``, the default, an operation starts no partition

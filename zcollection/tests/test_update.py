@@ -291,15 +291,15 @@ def test_update_distributes_paths(update_target, depth, infer, monkeypatch,
 
 @pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 @pytest.mark.parametrize('distributed', [False, True])
-@pytest.mark.parametrize(('stop_on_error', 'written', 'not_attempted'), [
+@pytest.mark.parametrize(('stop_on_error', 'completed', 'not_attempted'), [
     (True, ('key=1', 'key=2'), ('key=4', )),
     (False, ('key=1', 'key=2', 'key=4'), ()),
 ])
 @pytest.mark.usefixtures('dask_client')
 def test_update_reports_each_partition(update_target, distributed,
-                                       stop_on_error, written, not_attempted,
+                                       stop_on_error, completed, not_attempted,
                                        monkeypatch) -> None:
-    """A failed callback gives the partitions written, failed and not
+    """A failed callback gives the partitions completed, failed and not
     attempted, and the cache of every selected partition is cleared."""
     output = output_name(update_target)
     cleared: list[str] = []
@@ -317,7 +317,7 @@ def test_update_reports_each_partition(update_target, distributed,
                              distributed=distributed,
                              stop_on_error=stop_on_error)
 
-    assert info.value.written == written
+    assert info.value.completed == completed
     assert list(info.value.failed) == ['key=3']
     assert 'callback failed' in info.value.failed['key=3']
     assert info.value.not_attempted == not_attempted

@@ -32,25 +32,26 @@ _NAMED_FAILURES = 10
 class PartitionErrors(Exception):
     """Error raised when partitions of an operation fail.
 
-    A failed partition can be partly written. The message names up to ten
+    A failed partition can be partly modified. The message names up to ten
     failed partitions, counts the others and gives the traceback of the
     first, in the order the operation processes the partitions.
 
     Attributes:
-        written: The paths of the partitions written, relative to the
-            collection or the view.
+        completed: The paths of the partitions processed, relative to the
+            collection or the view. Skipped partitions are left out.
         failed: The traceback of the error of each failed partition, keyed
             by path.
         not_attempted: The paths of the partitions the operation did not
             attempt.
     """
 
-    def __init__(self, written: Sequence[str], failed: Mapping[str, str],
+    def __init__(self, completed: Sequence[str], failed: Mapping[str, str],
                  not_attempted: Sequence[str]) -> None:
-        self.written = tuple(written)
+        self.completed = tuple(completed)
         self.failed = dict(failed)
         self.not_attempted = tuple(not_attempted)
-        total = len(self.written) + len(self.failed) + len(self.not_attempted)
+        total = (len(self.completed) + len(self.failed) +
+                 len(self.not_attempted))
         names = ', '.join(list(self.failed)[:_NAMED_FAILURES])
         if len(self.failed) > _NAMED_FAILURES:
             names += f' and {len(self.failed) - _NAMED_FAILURES} others'
@@ -62,15 +63,15 @@ class PartitionErrors(Exception):
     def __reduce__(self) -> tuple[Any, ...]:
         # Pickle rebuilds an exception from `args`, which holds only the
         # message here.
-        return type(self), (self.written, self.failed, self.not_attempted)
+        return type(self), (self.completed, self.failed, self.not_attempted)
 
 
 class Skipped:
-    """The result of a task that did not modify its partition."""
+    """The result of a task that skipped its partition."""
 
 
-#: The value a task returns when it does not modify its partition. `run`
-#: omits that partition from its result and from PartitionErrors.
+#: The value a task returns when it skips its partition. `run` leaves that
+#: partition out of its result and out of PartitionErrors.
 SKIPPED = Skipped()
 
 
@@ -104,7 +105,7 @@ def run(func: Callable[..., Any],
     Args:
         func: The function processing one partition, called as
             ``func(item, **kwargs)``. It returns :data:`SKIPPED` when it
-            does not modify the partition.
+            skips the partition.
         items: The argument of `func` for each partition.
         names: The name of each partition, in the order of `items`.
         client: The Dask client, or ``None`` to process the partitions one
@@ -116,7 +117,8 @@ def run(func: Callable[..., Any],
         kwargs: Keyword arguments passed to `func`.
 
     Returns:
-        The names of the partitions written, in the order of `items`.
+        The names of the partitions processed, in the order of `items`.
+        Skipped partitions are left out.
 
     Raises:
         ValueError: If `npartitions` is below one.
@@ -133,22 +135,22 @@ def run(func: Callable[..., Any],
             client, func, items, npartitions
             or dask_utils.dask_workers(client, cores_only=True), stop_on_error,
             kwargs)
-    written, failed, not_attempted = _report(outcomes, names)
+    completed, failed, not_attempted = _report(outcomes, names)
     if failed:
-        raise PartitionErrors(written, failed, not_attempted)
-    return written
+        raise PartitionErrors(completed, failed, not_attempted)
+    return completed
 
 
 def _report(
     outcomes: Mapping[int, Any], names: Sequence[str]
 ) -> tuple[tuple[str, ...], dict[str, str], tuple[str, ...]]:
-    """Return the partitions written, failed and not attempted.
+    """Return the partitions completed, failed and not attempted.
 
     Args:
         outcomes: The result of each submitted partition, by its index.
         names: The name of each partition.
     """
-    written: list[str] = []
+    completed: list[str] = []
     failed: dict[str, str] = {}
     not_attempted: list[str] = []
     for index, name in enumerate(names):
@@ -157,8 +159,8 @@ def _report(
         elif isinstance(outcomes[index], _Failure):
             failed[name] = outcomes[index].trace
         elif not isinstance(outcomes[index], Skipped):
-            written.append(name)
-    return tuple(written), failed, tuple(not_attempted)
+            completed.append(name)
+    return tuple(completed), failed, tuple(not_attempted)
 
 
 def _run_sequential(func: Callable[..., Any], items: list[Any],

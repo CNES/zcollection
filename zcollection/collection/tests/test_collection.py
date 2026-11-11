@@ -156,7 +156,7 @@ def fail_on_the_fourth_day(existing_ds: dataset.Dataset,
 
 @pytest.mark.usefixtures('dask_client')
 @pytest.mark.parametrize('distributed', [False, True])
-@pytest.mark.parametrize(('stop_on_error', 'written', 'not_attempted'), [
+@pytest.mark.parametrize(('stop_on_error', 'completed', 'not_attempted'), [
     (True, range(3), range(4, 10)),
     (False, [0, 1, 2, 4, 5, 6, 7, 8, 9], ()),
 ])
@@ -164,9 +164,9 @@ def test_insert_reports_each_partition(
         local_fs,  # noqa: F811
         distributed,
         stop_on_error,
-        written,
+        completed,
         not_attempted) -> None:
-    """A failed merge gives the partitions written, failed and not
+    """A failed merge gives the partitions completed, failed and not
     attempted, in paths relative to the collection."""
     inserted = ten_daily_partitions()
     zcol = convenience.create_collection('time',
@@ -185,7 +185,7 @@ def test_insert_reports_each_partition(
                     distributed=distributed,
                     stop_on_error=stop_on_error)
 
-    assert info.value.written == tuple(names[index] for index in written)
+    assert info.value.completed == tuple(names[index] for index in completed)
     assert list(info.value.failed) == [names[3]]
     assert 'merge failed' in info.value.failed[names[3]]
     assert info.value.not_attempted == tuple(names[index]
