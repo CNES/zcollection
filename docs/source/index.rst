@@ -128,6 +128,7 @@ tests cover a local disk and S3.
    inserting
    computing
    updating
+   managing
    failures
    partition_index
    migration

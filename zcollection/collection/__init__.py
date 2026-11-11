@@ -8,7 +8,7 @@ Collection of Zarr groups
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 import datetime
 import functools
 import json
@@ -100,6 +100,16 @@ def _copy_partition(source: str, target: str,
         if fs_source.exists(source):
             raise
         raise storage.AbsentPartition(source) from err
+
+
+def _drop_partition(path: str,
+                    fs: fsspec.AbstractFileSystem) -> execution.Skipped | None:
+    """Remove the directory of a partition, skipping an absent one."""
+    if not fs.exists(path):
+        return execution.SKIPPED
+    fs_utils.remove_tree(fs, path)
+    _LOGGER.info('Dropped partition: %s', path)
+    return None
 
 
 def _check_partition(
@@ -527,8 +537,10 @@ class Collection(ReadOnlyCollection, WritableCollection):
         *,
         filters: PartitionFilter = None,
         timedelta: datetime.timedelta | None = None,
+        npartitions: int | None = None,
         distributed: bool = True,
-    ) -> Iterable[str]:
+        stop_on_error: bool = True,
+    ) -> tuple[str, ...]:
         """Drop the selected partitions.
 
         Args:
@@ -539,60 +551,87 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 delta relative to the current time.
                 This option can only be used on filesystem supporting
                 the ``fs.created()`` method.
+            npartitions: The largest number of partitions dropped at the same
+                time. Defaults to the number of Dask workers. With
+                ``distributed=False``, the partitions are dropped one at a
+                time.
             distributed: Whether to use dask or not. Default To True.
+            stop_on_error: If True, no partition starts after the first
+                failure, and the partitions in progress finish. Defaults
+                to True.
 
         Returns:
-            A list of the dropped partitions.
+            The path of each partition dropped, relative to the collection.
+            A partition the index lists but the store does not hold is left
+            out.
+
+        Raises:
+            ValueError: If ``npartitions`` is below one and a partition is
+                selected.
+            PartitionErrors: If a partition failed. The partitions listed
+                afterwards are the ones the store holds.
 
         Example:
             >>> collection.drop_partitions(filters="year == 2019")
             >>> collection.drop_partitions(
             ...     timedelta=datetime.timedelta(days=30))
         """
-        now: datetime.datetime = datetime.datetime.now()
-        folders = list(self.partitions(filters=filters, lock=True))
+        now = datetime.datetime.now(datetime.UTC)
 
-        # No partition selected, nothing to do.
-        if not folders:
-            return folders
+        def is_created_before(path: str) -> bool:
+            """Return whether the partition was created longer than
+            `timedelta` ago."""
+            # A time without a time zone is taken as local time.
+            created = self.fs.created(path).astimezone(datetime.UTC)
+            return now - created > cast('datetime.timedelta', timedelta)
 
-        if timedelta is not None:
+        with self.synchronizer:
+            paths = list(self.partitions(filters=filters))
+            if timedelta is not None:
+                paths = [path for path in paths if is_created_before(path)]
+            return self._drop_partitions(paths,
+                                         npartitions=npartitions,
+                                         distributed=distributed,
+                                         stop_on_error=stop_on_error)
 
-            def _is_created_before(_path: str, _now: datetime.datetime,
-                                   _timedelta: datetime.timedelta) -> bool:
-                """Return whether the partition was created before the
-                timedelta."""
-                created: datetime.datetime = self.fs.created(_path)
-                if created.tzinfo is not None:
-                    created = created.replace(tzinfo=None)
-                return _now - created > _timedelta
+    def _drop_partitions(self, paths: Sequence[str], *,
+                         npartitions: int | None, distributed: bool,
+                         stop_on_error: bool) -> tuple[str, ...]:
+        """Drop partitions. The caller holds the lock of the synchronizer.
 
-            folders = list(
-                filter(
-                    lambda _folder: _is_created_before(
-                        _path=_folder, _now=now, _timedelta=timedelta),
-                    folders))
+        Args:
+            paths: The absolute path of each partition to drop.
+            npartitions: The largest number of partitions dropped at the same
+                time.
+            distributed: Whether to use dask or not.
+            stop_on_error: If True, no partition starts after the first
+                failure.
 
-        def invalidate_cache(path) -> None:
-            """Invalidate the cache."""
-            _LOGGER.info('Dropped partition: %s', path)
-            self.fs.invalidate_cache(path)
-
-        with self.synchronizer, self._index.updating():
-            if distributed:
-                client: dask.distributed.Client = dask_utils.get_client()
-                storage.execute_transaction(
-                    client, sync.NoSync(),
-                    client.map(
-                        functools.partial(fs_utils.remove_tree, self.fs),
-                        folders))
-            else:
-                for folder in folders:
-                    fs_utils.remove_tree(self.fs, folder)
-
-            tuple(map(invalidate_cache, folders))
-            self._index.remove(folders)
-        return folders
+        Returns:
+            The path of each partition dropped, relative to the collection.
+        """
+        if not paths:
+            return ()
+        client = dask_utils.get_client() if distributed else None
+        with self._index.updating(reindex_on_error=True):
+            try:
+                dropped = execution.run(
+                    _drop_partition,
+                    paths, [self._relative_path(path) for path in paths],
+                    client=client,
+                    npartitions=npartitions,
+                    stop_on_error=stop_on_error,
+                    kwargs={'fs': self.fs})
+            finally:
+                # The tasks may run in other processes, so the file system
+                # cache of this process can still list the dropped
+                # partitions.
+                for path in paths:
+                    self.fs.invalidate_cache(path)
+            # Every selected partition leaves the index, including a skipped
+            # one, which the index lists but the store does not hold.
+            self._index.remove(paths)
+        return dropped
 
     def _select_update_partitions(
         self,

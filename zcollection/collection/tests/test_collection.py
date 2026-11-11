@@ -16,6 +16,7 @@ import io
 import json
 import logging
 import multiprocessing
+import time
 from unittest import mock
 
 import dask.distributed
@@ -33,6 +34,7 @@ from ... import (
     dask_utils,
     dataset,
     execution,
+    fs_utils,
     merging,
     meta,
     partitioning,
@@ -51,6 +53,7 @@ from ...tests.data import (
     create_test_collection,
     create_test_dataset,
     create_test_dataset_with_fillvalue,
+    with_process_sync,
 )
 from ...tests.fixture import dask_arrays, numpy_arrays  # noqa: F401
 from ...tests.fs import local_fs  # noqa: F401
@@ -1129,6 +1132,136 @@ def test_drop_partitions(
     assert zcol.is_readonly()
     with pytest.raises(io.UnsupportedOperation):
         zcol.drop_partitions(distributed=distributed)
+
+
+def removing_then_failing(failed: str):
+    """Return a remove_tree that raises OSError after it removes the
+    partition `failed`."""
+    remove = fs_utils.remove_tree
+
+    def remove_tree(fs, path):
+        remove(fs, path)
+        if path.endswith(failed):
+            raise OSError('removal failed')
+
+    return remove_tree
+
+
+@pytest.mark.usefixtures('dask_client')
+@pytest.mark.parametrize('distributed', [False, True])
+@pytest.mark.parametrize('stop_on_error', [True, False])
+def test_drop_partitions_reports_each_partition(
+        local_fs,  # noqa: F811
+        monkeypatch,
+        distributed,
+        stop_on_error) -> None:
+    """After a failed removal, ``PartitionErrors`` gives the partitions
+    completed, failed and not attempted, and the partitions listed are the
+    ones the store holds."""
+    zcol = create_test_collection(local_fs, distributed=False)
+    names = tuple(zcol.partitions(relative=True))
+    monkeypatch.setattr(fs_utils, 'remove_tree',
+                        removing_then_failing(names[2]))
+
+    with pytest.raises(execution.PartitionErrors) as info:
+        zcol.drop_partitions(npartitions=1,
+                             distributed=distributed,
+                             stop_on_error=stop_on_error)
+
+    remaining = names[3:] if stop_on_error else ()
+    assert info.value.completed == names[:2] + (
+        () if stop_on_error else names[3:])
+    assert list(info.value.failed) == [names[2]]
+    assert 'removal failed' in info.value.failed[names[2]]
+    assert info.value.not_attempted == remaining
+    assert zcol._index._read() is not None
+    assert tuple(zcol.partitions(relative=True)) == remaining
+
+
+@pytest.fixture
+def five_hours_ahead_of_utc(monkeypatch):
+    """Set the local time zone five hours ahead of UTC."""
+    monkeypatch.setenv('TZ', 'Etc/GMT-5')
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+@pytest.mark.usefixtures('five_hours_ahead_of_utc')
+@pytest.mark.parametrize('aware', [True, False])
+def test_drop_partitions_measures_the_age_across_time_zones(
+        local_fs, monkeypatch, aware) -> None:  # noqa: F811
+    """The age of a partition does not depend on the local time zone, nor
+    on whether the file system gives the time in UTC or in local time."""
+    zcol = create_test_collection(local_fs, distributed=False)
+    names = tuple(zcol.partitions(relative=True))
+    created = (datetime.datetime.now(datetime.UTC) -
+               datetime.timedelta(minutes=30))
+    if not aware:
+        created = created.astimezone().replace(tzinfo=None)
+    monkeypatch.setattr(zcol.fs, 'created', lambda path: created)
+
+    assert zcol.drop_partitions(timedelta=datetime.timedelta(hours=1),
+                                distributed=False) == ()
+    assert zcol.drop_partitions(timedelta=datetime.timedelta(minutes=10),
+                                distributed=False) == names
+
+
+@pytest.mark.usefixtures('dask_client')
+@pytest.mark.parametrize('distributed', [False, True])
+def test_drop_partitions_holds_the_lock(
+        local_fs,  # noqa: F811
+        monkeypatch,
+        tmp_path,
+        distributed) -> None:
+    """Each partition is removed while the collection holds its lock."""
+    zcol = with_process_sync(
+        create_test_collection(local_fs, distributed=False), tmp_path)
+    remove = fs_utils.remove_tree
+    held: list[bool] = []
+
+    def record(fs, path):
+        held.append(zcol.is_locked())
+        remove(fs, path)
+
+    monkeypatch.setattr(fs_utils, 'remove_tree', record)
+    zcol.drop_partitions(distributed=distributed)
+
+    assert held
+    assert all(held)
+    assert not zcol.is_locked()
+
+
+def test_drop_partitions_skips_an_absent_partition(
+        local_fs) -> None:  # noqa: F811
+    """A partition the index lists but the store does not hold is left out
+    of the paths ``drop_partitions`` returns."""
+    zcol = create_test_collection(local_fs, distributed=False)
+    names = tuple(zcol.partitions(relative=True))
+    local_fs.fs.rm(next(zcol.partitions()), recursive=True)
+
+    dropped = zcol.drop_partitions(distributed=False)
+
+    assert dropped == names[1:]
+    assert tuple(zcol.partitions()) == ()
+
+
+@pytest.mark.parametrize('distributed', [False, True])
+def test_drop_partitions_without_a_selected_partition_asks_for_no_client(
+        local_fs, distributed) -> None:  # noqa: F811
+    """When the filters select no partition, ``drop_partitions`` asks for no
+    Dask client and accepts any npartitions."""
+    zcol = create_test_collection(local_fs, distributed=False)
+
+    with mock.patch.object(dask_utils,
+                           'get_client',
+                           side_effect=AssertionError):
+        dropped = zcol.drop_partitions(filters='year == 1900',
+                                       npartitions=0,
+                                       distributed=distributed)
+
+    assert dropped == ()
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])

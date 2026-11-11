@@ -2,12 +2,13 @@ Handling failures
 =================
 
 :py:meth:`~zcollection.collection.Collection.insert`,
-:py:meth:`~zcollection.collection.Collection.update` and
-:py:meth:`~zcollection.collection.Collection.update_from` process each
+:py:meth:`~zcollection.collection.Collection.update`,
+:py:meth:`~zcollection.collection.Collection.update_from` and
+:py:meth:`~zcollection.collection.Collection.drop_partitions` process each
 partition on its own. When some partitions fail, the operation raises
 :py:class:`~zcollection.PartitionErrors`, which tells which partitions were
 completed, which failed and why, and which were not attempted. Views behave the
-same way.
+same way for ``update`` and ``update_from``.
 
 The examples use the same daily measurements as :doc:`updating`, with a
 function that fails on segment 2.
@@ -76,8 +77,8 @@ the others and gives the traceback of the first, in the order the partitions
 were selected. The exception objects do not reach the caller.
 
 ``update`` skips a partition the index lists but the store does not hold,
-with a warning. That partition appears in none of ``completed``, ``failed``
-and ``not_attempted``.
+with a warning; ``drop_partitions`` skips it without one. That partition
+appears in none of ``completed``, ``failed`` and ``not_attempted``.
 
 Stopping on the first failure
 -----------------------------
@@ -132,6 +133,11 @@ writes it again into every partition, including those already written; with
 a merge callable, the result is the same only if the callable gives the same
 result when it runs twice.
 
+To retry ``drop_partitions``, call it again with the same ``filters`` and
+``timedelta``: the partitions already removed are no longer listed, and the
+others are removed. ``timedelta`` is measured from the time of the call, so
+the retry can select more partitions.
+
 Errors raised before any partition starts
 -----------------------------------------
 
@@ -161,6 +167,10 @@ example with :kbd:`Ctrl-C`, waits for the tasks it submitted before it
 releases the lock. A second interruption during that wait releases the lock
 at once, while those tasks may still be writing. With ``distributed=False``,
 an interruption stops the partition in progress.
+
+**The partition index.** When ``insert`` or ``drop_partitions`` stops on an
+error or an interruption, the partitions listed afterwards are the ones the
+store holds, including one left partly written or partly removed.
 
 **Inserted partitions.** ``insert`` writes a new partition in place and
 removes it when its writing fails. To replace an existing partition, it

@@ -80,7 +80,7 @@ def test_a_corrupt_index_cannot_drop_the_collection(fs, request) -> None:
     """Dropping partitions through a corrupt index preserves the configuration."""
     tested_fs = request.getfixturevalue(fs)
     zcol = create_test_collection(tested_fs, distributed=False)
-    expected = set(zcol.partitions())
+    expected = set(zcol.partitions(relative=True))
     tested_fs.fs.pipe_file(
         zcol._index.path,
         gzip.compress(

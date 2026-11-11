@@ -62,14 +62,15 @@ Storage
 
 Execution
 ^^^^^^^^^
-* ``insert`` and ``update`` process each partition in a task of its own,
-  and ``update_from`` follows the same rules. With ``distributed=True``, at
-  most ``npartitions`` tasks run at the same time, and a task starts when
-  another one finishes; ``npartitions`` defaults to the number of Dask
-  workers. With ``distributed=False``, the partitions are processed one at a
-  time in the calling process. By default, earlier releases inserted one
-  partition at a time and updated the partitions in one batch per worker.
-  See :doc:`failures`.
+* ``insert``, ``update`` and ``drop_partitions`` process each partition in a
+  task of its own, and ``update_from`` follows the same rules. With
+  ``distributed=True``, at most ``npartitions`` tasks run at the same time,
+  and a task starts when another one finishes; ``npartitions`` defaults to
+  the number of Dask workers. With ``distributed=False``, the partitions are
+  processed one at a time in the calling process. By default, earlier
+  releases inserted one partition at a time, updated the partitions in one
+  batch per worker, and removed all the selected partitions at once. See
+  :doc:`failures`.
 * If a partition fails, these operations raise ``PartitionErrors``. Its
   ``completed``, ``failed`` and ``not_attempted`` attributes give the
   partitions completed, the traceback of each failed partition and the
@@ -110,6 +111,11 @@ Behaviour
   NaN or NaT.
 * Variables loaded from a collection have a deterministic order.
 * ``insert`` returns partition paths relative to the collection.
+* ``drop_partitions`` returns a tuple of the paths of the partitions it
+  removed, relative to the collection. A partition the index lists but the
+  store does not hold is left out.
+* ``drop_partitions(timedelta=...)`` measures the age of a partition
+  whatever the local time zone.
 * Inserting an empty dataset with ``distributed=True`` returns an empty tuple.
 * ``Collection.copy`` without ``filesystem`` writes the copy on the file system
   of the collection.
