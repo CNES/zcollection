@@ -626,25 +626,27 @@ def _sync(
     view_ref: collection.Collection,
     metadata: meta.DatasetSchema,
     dry_run: bool = False,
-) -> str | None:
-    """Sync the partitions of a view.
+) -> Skipped | None:
+    """Synchronize a partition of a view with the reference collection,
+    skipping a partition already synchronized.
 
     Args:
-        partition: The partition to sync.
+        partition: The partition, relative to the view.
         base_dir: The base directory of the view.
-        fs: The file system used to access the variables in the view.
-        view_ref: The view reference.
-        metadata: The dataset to sync.
-        dry_run: If True, the partition is not synced.
+        fs: The file system of the view.
+        view_ref: The reference collection.
+        metadata: The schema of the variables owned by the view.
+        dry_run: If True, the partition is checked but not written.
 
     Returns:
-        The partition synced or None if the partition is already synced.
+        :data:`~zcollection.execution.SKIPPED` if the partition is already
+        synchronized, otherwise None.
     """
     partition_view = join_path(base_dir, partition)
     if not fs.exists(partition_view):
         if not dry_run:
             _sync_partition(metadata, partition, base_dir, fs, view_ref)
-        return partition
+        return None
 
     partition_ref = join_path(view_ref.partition_properties.dir, partition)
     array: zarr.Array = _load_checksum_array(partition_view, fs)
@@ -659,13 +661,13 @@ def _sync(
             # The cache is invalidated by _extend_partition.
             if not dry_run:
                 _extend_partition(partition_view, fs, axis_ref)
-            return partition
+            return None
         if not dry_run:
             fs.rm(partition_view, recursive=True)
             fs.invalidate_cache(partition_view)
             _sync_partition(metadata, partition, base_dir, fs, view_ref)
-        return partition
-    return None
+        return None
+    return SKIPPED
 
 
 def _serialize_filters(filters: collection.PartitionFilter, ) -> str:

@@ -10,10 +10,11 @@ Handling failures
 partition on its own. When some partitions fail, the operation raises
 :py:class:`~zcollection.PartitionErrors`, which tells which partitions were
 completed, which failed and why, and which were not attempted. Views behave the
-same way for ``update``, ``update_from``, ``add_variable`` and
-``drop_variable``. ``add_variable`` and ``drop_variable`` add and remove an
-immutable variable in the calling process; ``PartitionErrors`` names it
-``.immutable``.
+same way for ``update``, ``update_from``, ``add_variable``, ``drop_variable``
+and ``sync``, and so does :py:func:`~zcollection.create_view` when it writes
+the partitions of a new view. ``add_variable`` and ``drop_variable`` add and
+remove an immutable variable in the calling process; ``PartitionErrors``
+names it ``.immutable``.
 
 The examples use the same daily measurements as :doc:`updating`, with a
 function that fails on segment 2.
@@ -140,13 +141,24 @@ result when it runs twice.
 
 A failed ``add_variable`` removes what it added, unless that removal fails
 too. The ``completed`` attribute of the error names the partitions that
-received the array before the removal. A failed ``drop_variable`` is finished by calling it again. See
-:doc:`managing`.
+received the array before the removal. A failed ``drop_variable`` is
+finished by calling it again. See :doc:`managing`.
 
 To retry ``drop_partitions``, call it again with the same ``filters`` and
 ``timedelta``: the partitions already removed are no longer listed, and the
 others are removed. ``timedelta`` is measured from the time of the call, so
 the retry can select more partitions.
+
+To retry ``View.sync``, call it again with the same ``filters``: the
+partitions already synchronized are skipped. After an interruption, call
+``validate_partitions(fix=True)`` first, to write again a partition left
+partly written.
+
+A failed ``create_view`` leaves the view with the partitions it completed.
+Open it with :py:func:`~zcollection.open_view`, call
+``validate_partitions(fix=True)`` to write again a partition left partly
+written, then ``sync(filters=view.filters)``, because ``sync()`` without
+``filters`` synchronizes every partition of the reference collection.
 
 Errors raised before any partition starts
 -----------------------------------------
@@ -178,9 +190,10 @@ releases the lock. A second interruption during that wait releases the lock
 at once, while those tasks may still be writing. With ``distributed=False``,
 an interruption stops the partition in progress.
 
-**The partition index.** When ``insert`` or ``drop_partitions`` stops on an
-error or an interruption, the partitions listed afterwards are the ones the
-store holds, including one left partly written or partly removed.
+**The partition index.** When ``insert``, ``drop_partitions``,
+``View.sync`` or ``create_view`` stops on an error or an interruption, the
+partitions listed afterwards are the ones the store holds, including one
+left partly written or partly removed.
 
 **Inserted partitions.** ``insert`` writes a new partition in place and
 removes it when its writing fails. To replace an existing partition, it

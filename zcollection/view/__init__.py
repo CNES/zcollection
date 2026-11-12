@@ -71,6 +71,11 @@ class View(WritableCollection):
             not provided, all partitions are selected.
         synchronizer: The synchronizer used to synchronize the view.
         distributed: Whether to use dask or not. Default To True.
+        npartitions: The largest number of partitions written at the same
+            time when the view is created. Defaults to the number of Dask
+            workers.
+        stop_on_error: If True, the default, no partition starts after the
+            first failure when the view is created.
         _initialize: Whether to populate the partitions of a new view.
         _deprecated: Whether the view was written by an earlier release. Such
             a view can only be read: ``add_variable``, ``drop_variable``,
@@ -95,6 +100,8 @@ class View(WritableCollection):
                  filters: collection.PartitionFilter = None,
                  synchronizer: sync.Sync | None = None,
                  distributed: bool = True,
+                 npartitions: int | None = None,
+                 stop_on_error: bool = True,
                  _initialize: bool = True,
                  _deprecated: bool = False) -> None:
         self._fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
@@ -129,7 +136,12 @@ class View(WritableCollection):
             self._write_config()
             self._index.reindex()
             if _initialize:
-                self._init_partitions(filters, distributed)
+                _LOGGER.info('Populating view %s', self)
+                with self.synchronizer:
+                    self._sync_partitions(filters,
+                                          distributed=distributed,
+                                          npartitions=npartitions,
+                                          stop_on_error=stop_on_error)
         else:
             _LOGGER.info('Opening view %s', self)
 
@@ -166,35 +178,47 @@ class View(WritableCollection):
     def _reference(self) -> collection.Collection:
         return self.view_ref
 
-    def _init_partitions(self,
-                         filters: collection.PartitionFilter,
-                         distributed: bool = True) -> None:
-        """Initialize the partitions of the view."""
-        _LOGGER.info('Populating view %s', self)
-        added = tuple(self.view_ref.partitions(filters=filters, relative=True))
-        _LOGGER.info('%d partitions selected from %s', len(added),
+    def _sync_partitions(self, filters: collection.PartitionFilter, *,
+                         distributed: bool, npartitions: int | None,
+                         stop_on_error: bool) -> tuple[str, ...]:
+        """Synchronize the partitions of the reference that `filters`
+        selects. The caller holds the lock.
+
+        Args:
+            filters: The predicate selecting the partitions of the reference.
+            distributed: Whether to use Dask.
+            npartitions: The largest number of partitions processed at the
+                same time.
+            stop_on_error: If True, no partition starts after the first
+                failure.
+
+        Returns:
+            The partitions written, relative to the view.
+        """
+        partitions = tuple(
+            self.view_ref.partitions(filters=filters, relative=True))
+        _LOGGER.info('%d partitions selected from %s', len(partitions),
                      self.view_ref)
-
-        with self.synchronizer, self._index.updating():
-            if distributed:
-                client: dask.distributed.Client = dask_utils.get_client()
-                storage.execute_transaction(
-                    client, sync.NoSync(),
-                    client.map(_sync,
-                               added,
-                               base_dir=self.base_dir,
-                               view_ref=self.view_ref,
-                               fs=self.fs,
-                               metadata=self.metadata))
-            else:
-                for partition in added:
-                    _sync(partition,
-                          base_dir=self.base_dir,
-                          view_ref=self.view_ref,
-                          fs=self.fs,
-                          metadata=self.metadata)
-
-            self._index.add(added)
+        if not partitions:
+            return ()
+        client = self._client_for(partitions,
+                                  distributed=distributed,
+                                  npartitions=npartitions)
+        with self._index.updating(reindex_on_error=True):
+            written = execution.run(_sync,
+                                    partitions,
+                                    partitions,
+                                    client=client,
+                                    npartitions=npartitions,
+                                    stop_on_error=stop_on_error,
+                                    kwargs={
+                                        'base_dir': self.base_dir,
+                                        'fs': self.fs,
+                                        'view_ref': self.view_ref,
+                                        'metadata': self.metadata
+                                    })
+            self._index.add(partitions)
+        return written
 
     def _held_partitions(self) -> frozenset[str]:
         """Return the path of each partition the index names.
@@ -846,15 +870,17 @@ class View(WritableCollection):
                       dry_run=True) for partition in partitions
             ]
 
-        return len(
-            tuple(
-                filter(lambda item: item is not None,
-                       unsynchronized_partition))) == 0
+        return all(
+            isinstance(item, execution.Skipped)
+            for item in unsynchronized_partition)
 
     def sync(
-            self,
-            filters: collection.PartitionFilter = None,
-            distributed: bool = True
+        self,
+        filters: collection.PartitionFilter = None,
+        distributed: bool = True,
+        *,
+        npartitions: int | None = None,
+        stop_on_error: bool = True,
     ) -> collection.abc.PartitionFilterCallback:
         """Synchronize the view with the underlying collection.
 
@@ -865,52 +891,42 @@ class View(WritableCollection):
                 method.
                 If None, all partitions of the reference are synchronized.
                 Existing partitions are not removed, even if they are not
-                selected by the predicate.
+                selected by the predicate. The view records the predicate
+                once every selected partition is synchronized.
             distributed: Whether to use dask or not. Default To True.
+            npartitions: The largest number of partitions processed at the
+                same time. Defaults to the number of Dask workers.
+            stop_on_error: If True, the default, no partition starts after
+                the first failure.
 
         Returns:
             A function that can be used as a predicate to get the partitions
             that have been synchronized using the :meth:`View.partitions`
             method.
+
+        Raises:
+            ValueError: If ``npartitions`` is below one when there are
+                partitions to process.
+            PartitionErrors: If a partition failed.
         """
         _LOGGER.info('Synchronizing view %s', self)
 
-        if filters is not None:
-            self.filters = filters
-            self._write_config()
-
-        partitions = tuple(
-            self.view_ref.partitions(filters=filters, relative=True))
-
-        _LOGGER.info('%d partitions to synchronize', len(partitions))
-
-        with self.synchronizer, self._index.updating():
-            if distributed:
-                client: dask.distributed.Client = dask_utils.get_client()
-                synchronized_partition: list[
-                    str | None] = storage.execute_transaction(
-                        client, sync.NoSync(),
-                        client.map(_sync,
-                                   partitions,
-                                   base_dir=self.base_dir,
-                                   fs=self.fs,
-                                   view_ref=self.view_ref,
-                                   metadata=self.metadata)) or []
-            else:
-                synchronized_partition = [
-                    _sync(partition,
-                          base_dir=self.base_dir,
-                          fs=self.fs,
-                          view_ref=self.view_ref,
-                          metadata=self.metadata) for partition in partitions
-                ]
-            self._index.add(partitions)
-
-        synced: tuple[str, ...] = tuple(item for item in synchronized_partition
-                                        if item is not None)
+        with self.synchronizer:
+            written = self._sync_partitions(filters,
+                                            distributed=distributed,
+                                            npartitions=npartitions,
+                                            stop_on_error=stop_on_error)
+            if filters is not None:
+                recorded = self.filters
+                self.filters = filters
+                try:
+                    self._write_config()
+                except BaseException:
+                    self.filters = recorded
+                    raise
 
         partition_ids = tuple(
-            dict(self.view_ref.partitioning.parse(item)) for item in synced)
+            dict(self.view_ref.partitioning.parse(item)) for item in written)
         return lambda item: item in partition_ids
 
     def validate_partitions(self,

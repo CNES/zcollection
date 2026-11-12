@@ -26,7 +26,9 @@ def create_view(path: str,
                 filesystem: fsspec.AbstractFileSystem | str | None = None,
                 filters: collection.PartitionFilter = None,
                 synchronizer: sync.Sync | None = None,
-                distributed: bool = True) -> view.View:
+                distributed: bool = True,
+                npartitions: int | None = None,
+                stop_on_error: bool = True) -> view.View:
     """Create a new view.
 
     Args:
@@ -37,6 +39,10 @@ def create_view(path: str,
             view. If not provided, all partitions are selected.
         synchronizer: The synchronizer used to synchronize the view.
         distributed: Whether to use dask or not. Default To True.
+        npartitions: The largest number of partitions written at the same
+            time. Defaults to the number of Dask workers.
+        stop_on_error: If True, the default, no partition starts after the
+            first failure.
 
     Example:
         >>> view_ref = ViewReference(
@@ -47,7 +53,9 @@ def create_view(path: str,
         The created view.
 
     Raises:
-        ValueError: If the path already exists.
+        ValueError: If the path already exists, or if ``npartitions`` is
+            below one when there are partitions to write.
+        PartitionErrors: If a partition failed.
     """
     fs = fs_utils.get_fs(filesystem)
     if fs.exists(path):
@@ -58,7 +66,9 @@ def create_view(path: str,
                      filesystem=fs,
                      filters=filters,
                      synchronizer=synchronizer,
-                     distributed=distributed)
+                     distributed=distributed,
+                     npartitions=npartitions,
+                     stop_on_error=stop_on_error)
 
 
 def open_view(

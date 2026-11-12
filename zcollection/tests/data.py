@@ -15,7 +15,16 @@ import itertools
 import numcodecs
 import numpy
 
-from .. import collection, dataset, execution, partitioning, sync, view
+from .. import (
+    collection,
+    convenience,
+    dataset,
+    execution,
+    partitioning,
+    sync,
+    variable,
+    view,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -186,3 +195,28 @@ def record_lock(monkeypatch, target) -> list[bool]:
 
     monkeypatch.setattr(execution, 'run', recording_run)
     return held
+
+
+#: The partitions of the collection :func:`create_key_collection` returns.
+KEYS = ('key=1', 'key=2', 'key=3', 'key=4')
+
+
+def create_key_collection(fs, *, insert: bool = True):
+    """Return a collection partitioned by ``key``, with the partitions
+    :data:`KEYS` of two rows each, or with no partitions if `insert` is
+    false."""
+    keys = numpy.repeat(numpy.arange(1, 5), 2)
+    zds = dataset.Dataset([
+        variable.Array('key', keys, ('row', )),
+        variable.Array('source', keys + 10.0, ('row', )),
+        variable.Array('grid', numpy.arange(3.0), ('cell', )),
+    ],
+                          delayed=False)
+    zcol = convenience.create_collection('key',
+                                         zds,
+                                         partitioning.Sequence(('key', )),
+                                         str(fs.collection),
+                                         filesystem=fs.fs)
+    if insert:
+        zcol.insert(zds, distributed=False)
+    return zcol

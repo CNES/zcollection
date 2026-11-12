@@ -64,17 +64,18 @@ Storage
 
 Execution
 ^^^^^^^^^
-* ``insert``, ``update``, ``add_variable``, ``drop_variable`` and
-  ``drop_partitions`` process each partition in a task of its own, and
-  ``update_from`` follows the same rules. An immutable variable is added and
+* ``insert``, ``update``, ``add_variable``, ``drop_variable``,
+  ``drop_partitions``, ``View.sync`` and ``create_view`` process each
+  partition in a task of its own, and ``update_from`` follows the same
+  rules. An immutable variable is added and
   removed in the calling process. With ``distributed=True``, at most
   ``npartitions`` tasks run at the same time, and a task starts when another
   one finishes; ``npartitions`` defaults to the number of Dask workers. With
   ``distributed=False``, the partitions are processed one at a time in the
   calling process. By default, earlier releases inserted one partition at a
   time, updated the partitions in one batch per worker, added or removed a
-  variable in all the partitions at once, and removed all the selected
-  partitions at once. See :doc:`failures`.
+  variable or synchronized a view in all the partitions at once, and removed
+  all the selected partitions at once. See :doc:`failures`.
 * If a partition fails, these operations raise ``PartitionErrors``. Its
   ``completed``, ``failed`` and ``not_attempted`` attributes give the
   partitions completed, the traceback of each failed partition and the
@@ -82,7 +83,8 @@ Execution
   completed are the ones that received the array before the array was
   removed. An ``except`` clause naming the type of an error raised while a
   partition is processed no longer catches that error.
-* With ``stop_on_error=True``, the default, an operation starts no partition
+* These operations take ``npartitions`` and ``stop_on_error``. With
+  ``stop_on_error=True``, the default, an operation starts no partition
   after the first failure, and the partitions in progress finish; with
   ``False``, it starts all of them.
 * These operations hold the lock of the synchronizer until their tasks
@@ -130,6 +132,8 @@ Behaviour
   finishes a failed removal.
 * ``View.add_variable`` writes the variable to the configuration of the view
   before it creates the arrays, also when the view has no partitions.
+* ``View.sync(filters=...)`` records its filters once every selected
+  partition is synchronized.
 * Inserting an empty dataset with ``distributed=True`` returns an empty tuple.
 * ``Collection.copy`` without ``filesystem`` writes the copy on the file system
   of the collection.

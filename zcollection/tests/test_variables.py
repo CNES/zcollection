@@ -7,59 +7,38 @@ from __future__ import annotations
 
 from unittest import mock
 
-import numpy
 import pytest
 
 from .. import (
     collection as collection_module,
     convenience,
     dask_utils,
-    dataset,
     execution,
     fs_utils,
     meta,
-    partitioning,
     storage,
     store,
-    variable,
     view,
 )
 from ..view import detail as view_detail
 from .cluster import dask_client, dask_cluster  # noqa: F401
-from .data import fail_after, record_lock, with_process_sync
+from .data import (
+    KEYS,
+    create_key_collection,
+    fail_after,
+    record_lock,
+    with_process_sync,
+)
 from .fs import local_fs  # noqa: F401
 
 #: The variable the tests add.
 EXTRA = meta.VariableSchema('extra', 'float64', dimensions=('row', ))
 
-#: The partitions of a target.
-NAMES = ('key=1', 'key=2', 'key=3', 'key=4')
-
-
-def make_collection(fs, *, insert: bool = True):
-    """Return a collection of four partitions of two rows, or with no
-    partitions if `insert` is false."""
-    keys = numpy.repeat(numpy.arange(1, 5), 2)
-    zds = dataset.Dataset([
-        variable.Array('key', keys, ('row', )),
-        variable.Array('source', keys + 10.0, ('row', )),
-        variable.Array('grid', numpy.arange(3.0), ('cell', )),
-    ],
-                          delayed=False)
-    zcol = convenience.create_collection('key',
-                                         zds,
-                                         partitioning.Sequence(('key', )),
-                                         str(fs.collection),
-                                         filesystem=fs.fs)
-    if insert:
-        zcol.insert(zds, distributed=False)
-    return zcol
-
 
 @pytest.fixture
 def target(request, local_fs):  # noqa: F811
     """Return a collection, or a view of it, with four partitions."""
-    make_collection(local_fs)
+    create_key_collection(local_fs)
     if request.param == 'collection':
         return convenience.open_collection(str(local_fs.collection),
                                            mode='w',
@@ -108,9 +87,9 @@ def test_a_failed_addition_is_undone(target, monkeypatch, distributed) -> None:
     with pytest.raises(execution.PartitionErrors) as info:
         target.add_variable(EXTRA, distributed, npartitions=1)
 
-    assert info.value.completed == NAMES[:2]
+    assert info.value.completed == KEYS[:2]
     assert list(info.value.failed) == ['key=3']
-    assert info.value.not_attempted == NAMES[3:]
+    assert info.value.not_attempted == KEYS[3:]
     assert not getattr(info.value, '__notes__', None)
     assert 'extra' not in target.metadata.variables
     assert 'extra' not in reopened(target).metadata.variables
@@ -155,10 +134,10 @@ def test_a_failed_removal_is_finished_by_a_second_call(target, monkeypatch,
     with pytest.raises(execution.PartitionErrors) as info:
         target.drop_variable('extra', distributed, npartitions=1)
 
-    assert info.value.completed == NAMES[:2]
+    assert info.value.completed == KEYS[:2]
     assert 'extra' in target.metadata.variables
     assert 'extra' in reopened(target).metadata.variables
-    assert partitions_with(target, 'extra') == list(NAMES[3:])
+    assert partitions_with(target, 'extra') == list(KEYS[3:])
 
     monkeypatch.undo()
     target.drop_variable('extra', distributed)
@@ -173,7 +152,8 @@ def test_a_failed_removal_is_finished_by_a_second_call(target, monkeypatch,
 @pytest.mark.parametrize('distributed', [False, True])
 def test_variables_are_added_and_dropped_under_the_lock(
         target, monkeypatch, tmp_path, distributed) -> None:
-    """Each array is created and removed while the target holds its lock."""
+    """The target holds its lock while it creates and removes the
+    arrays."""
     target = with_process_sync(target, tmp_path)
     held = record_lock(monkeypatch, target)
     target.add_variable(EXTRA, distributed)
@@ -256,7 +236,7 @@ def test_a_collection_without_partitions_asks_for_no_client(
         local_fs, distributed) -> None:  # noqa: F811
     """Without partitions, the schema changes, no Dask client is asked for,
     and npartitions is not checked."""
-    zcol = make_collection(local_fs, insert=False)
+    zcol = create_key_collection(local_fs, insert=False)
 
     with mock.patch.object(dask_utils,
                            'get_client',
@@ -272,7 +252,7 @@ def test_a_failed_immutable_addition_is_undone(
         local_fs, monkeypatch) -> None:  # noqa: F811
     """An immutable variable that cannot be written is removed from the
     schema."""
-    zcol = make_collection(local_fs)
+    zcol = create_key_collection(local_fs)
     fail_after(monkeypatch, collection_module._add_array, '.immutable')
     immutable = meta.VariableSchema('mask', 'int8', dimensions=('cell', ))
 
@@ -290,7 +270,7 @@ def test_an_immutable_variable_is_processed_without_dask(
         local_fs) -> None:  # noqa: F811
     """An immutable variable is added and removed without a Dask client,
     whatever npartitions."""
-    zcol = make_collection(local_fs)
+    zcol = create_key_collection(local_fs)
     immutable = meta.VariableSchema('mask', 'int8', dimensions=('cell', ))
 
     with mock.patch.object(dask_utils,
@@ -308,7 +288,7 @@ def test_dropping_an_absent_array_consolidates_the_group(
         local_fs) -> None:  # noqa: F811
     """A removal that deleted the array but did not consolidate the group is
     finished by a second one."""
-    zcol = make_collection(local_fs)
+    zcol = create_key_collection(local_fs)
     partition = next(zcol.partitions())
     local_fs.fs.rm(fs_utils.join_path(partition, 'source'), recursive=True)
 

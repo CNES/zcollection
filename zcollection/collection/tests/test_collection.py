@@ -1202,7 +1202,7 @@ def test_drop_partitions_holds_the_lock(
         monkeypatch,
         tmp_path,
         distributed) -> None:
-    """Each partition is removed while the collection holds its lock."""
+    """The collection holds its lock while it removes the partitions."""
     zcol = with_process_sync(
         create_test_collection(local_fs, distributed=False), tmp_path)
     held = record_lock(monkeypatch, zcol)
