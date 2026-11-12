@@ -112,6 +112,32 @@ def _drop_partition(path: str,
     return None
 
 
+def _add_array(partition: str, *, variable: meta.VariableSchema,
+               dimensions: meta.DimensionType, fs: fsspec.AbstractFileSystem,
+               axis: str, chunks: dict[str, int]) -> execution.Skipped | None:
+    """Create the array of a variable in a partition, skipping an absent
+    partition."""
+    if not fs.exists(partition):
+        return execution.SKIPPED
+    storage.add_zarr_array(partition,
+                           variable,
+                           dimensions,
+                           fs,
+                           axis=axis,
+                           chunks=chunks)
+    return None
+
+
+def _drop_array(partition: str, *, variable: str,
+                fs: fsspec.AbstractFileSystem) -> execution.Skipped | None:
+    """Remove the array of a variable from a partition, skipping an absent
+    partition."""
+    if not fs.exists(partition):
+        return execution.SKIPPED
+    storage.del_zarr_array(partition, variable, fs)
+    return None
+
+
 def _check_partition(
     partition: str,
     fs: fsspec.AbstractFileSystem,
@@ -171,6 +197,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
         :py:meth:`open_collection <zcollection.open_collection>` methods of this
         library.
     """
+    _DROP_ARRAY = staticmethod(_drop_array)
 
     def __init__(
         self,
@@ -888,16 +915,37 @@ class Collection(ReadOnlyCollection, WritableCollection):
         self,
         variable: meta.VariableSchema | dataset.Variable,
         distributed: bool = True,
+        *,
+        npartitions: int | None = None,
+        stop_on_error: bool = True,
     ) -> None:
         """Add a variable to the collection.
 
+        Every value of the variable is its fill value, or the default value
+        of its data type without one, until it is written, for example by
+        :meth:`update`.
+
+        If a partition fails, the variable is removed from the collection.
+        If that removal fails as well, the variable stays, and a note on the
+        error names the partitions where its array may remain: call
+        :meth:`drop_variable` before reading the collection.
+
         Args:
             variable: The variable to add.
-            distributed: Whether to use dask or not. Default To True.
+            distributed: Whether to use Dask. Defaults to True.
+            npartitions: The largest number of partitions processed at the
+                same time. Defaults to the number of Dask workers. Ignored
+                for an immutable variable.
+            stop_on_error: If True, the default, no partition starts after
+                the first failure.
 
         Raises:
-            ValueError: if the variable is already part of the collection, it
-                uses a dimension that is not part of the dataset.
+            ValueError: If the collection already has a variable of that
+                name, if the variable uses a dimension the collection does
+                not declare, or if ``npartitions`` is below one when there
+                are partitions to process.
+            PartitionErrors: If a partition failed. ``completed`` names the
+                partitions that received the array before it was removed.
 
         Example:
             >>> import zcollection
@@ -914,66 +962,74 @@ class Collection(ReadOnlyCollection, WritableCollection):
             >>> collection.add_variable(new_variable)
         """
         variable = dataset.get_variable_metadata(variable)
-        _LOGGER.info('Adding of the %r variable in the collection',
-                     variable.name)
-        self.metadata.add_variable(variable)
-        self._write_config()
-
+        _LOGGER.info('Adding the variable %r to the collection', variable.name)
         # Attributes are not stored at variable's level
-        variable = variable.set_for_insertion()
+        stored = variable.set_for_insertion()
+        dimensions, chunks = self.dimensions_properties()
 
-        try:
-            if self.dimension not in variable.dimensions:
-                self._add_variable(variable, [self._immutable])
-            elif distributed:
-                self._add_variable_distributed(variable)
+        with self.synchronizer:
+            if self.dimension in variable.dimensions:
+                paths = list(self.partitions())
             else:
-                self._add_variable(variable, self.partitions(lock=True))
+                # An immutable variable has one array, created in the calling
+                # process.
+                paths = [self._immutable]
+                distributed, npartitions = False, None
+            client = self._client_for(paths,
+                                      distributed=distributed,
+                                      npartitions=npartitions)
+            self._declare_variable(variable)
+            if not paths:
+                return
+            try:
+                execution.run(_add_array,
+                              paths,
+                              [self._relative_path(path) for path in paths],
+                              client=client,
+                              npartitions=npartitions,
+                              stop_on_error=stop_on_error,
+                              kwargs={
+                                  'variable': stored,
+                                  'dimensions': dimensions,
+                                  'fs': self.fs,
+                                  'axis': self.axis,
+                                  'chunks': chunks,
+                              })
+            except Exception as error:
+                self._undo_addition(variable.name,
+                                    paths,
+                                    client=client,
+                                    npartitions=npartitions,
+                                    error=error)
+                raise
 
-        except Exception:
-            self.drop_variable(variable.name, distributed)
-            raise
+    def drop_variable(
+        self,
+        variable: str,
+        distributed: bool = True,
+        *,
+        npartitions: int | None = None,
+        stop_on_error: bool = True,
+    ) -> None:
+        """Remove a variable from the collection.
 
-    def _add_variable(self, variable: meta.VariableSchema,
-                      partitions: Iterable[str]):
-        """Add the provided variable to the collection."""
-        dimensions, chunks = self.dimensions_properties()
-
-        for partition in partitions:
-            storage.add_zarr_array(partition,
-                                   variable,
-                                   dimensions,
-                                   self.fs,
-                                   axis=self.axis,
-                                   chunks=chunks)
-
-    def _add_variable_distributed(self, variable: meta.VariableSchema):
-        """Add the provided variable to the collection using dask."""
-        dimensions, chunks = self.dimensions_properties()
-
-        client: dask.distributed.Client = dask_utils.get_client()
-        bag: dask.bag.core.Bag = self._bag_from_partitions(lock=True)
-
-        futures: list[dask.distributed.Future] = dask.distributed.futures_of(
-            bag.map(storage.add_zarr_array,
-                    variable,
-                    dimensions,
-                    self.fs,
-                    axis=self.axis,
-                    chunks=chunks).persist())
-
-        storage.execute_transaction(client, self.synchronizer, futures)
-
-    def drop_variable(self, variable: str, distributed: bool = True) -> None:
-        """Delete the variable from the collection.
+        If a partition fails, the variable stays in the collection; calling
+        this method again finishes the removal.
 
         Args:
-            variable: The variable to delete.
-            distributed: Whether to use dask or not. Default To True.
+            variable: The name of the variable to remove.
+            distributed: Whether to use Dask. Defaults to True.
+            npartitions: The largest number of partitions processed at the
+                same time. Defaults to the number of Dask workers. Ignored
+                for an immutable variable.
+            stop_on_error: If True, the default, no partition starts after
+                the first failure.
 
         Raises:
-            ValueError: If the variable doesn't exist in the collection or is
-                used by the partitioning.
+            ValueError: If the collection has no variable of that name, if
+                the partitioning uses it, or if ``npartitions`` is below one
+                when there are partitions to process.
+            PartitionErrors: If a partition failed.
 
         Example:
             >>> import zcollection
@@ -981,7 +1037,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
             ...     "my_collection", mode="w")
             >>> collection.drop_variable("my_variable")
         """
-        _LOGGER.info('Dropping of the %r variable in the collection', variable)
+        _LOGGER.info('Removing the variable %r from the collection', variable)
         if variable in self.partitioning.variables:
             raise ValueError(
                 f'The variable {variable!r} is part of the partitioning.')
@@ -989,23 +1045,24 @@ class Collection(ReadOnlyCollection, WritableCollection):
             raise ValueError(
                 f'The variable {variable!r} does not exist in the collection.')
 
-        if self.dimension not in self.metadata.variables[variable].dimensions:
-            # This is an immutable variable.
-            storage.del_zarr_array(self._immutable, variable, self.fs)
-        elif distributed:
-            client: dask.distributed.Client = dask_utils.get_client()
-            bag: dask.bag.core.Bag = self._bag_from_partitions(lock=True)
-            awaitables: list[
-                dask.distributed.Future] = dask.distributed.futures_of(
-                    bag.map(storage.del_zarr_array, variable,
-                            self.fs).persist())
-            storage.execute_transaction(client, self.synchronizer, awaitables)
-        else:
-            for partition in self.partitions(lock=True):
-                storage.del_zarr_array(partition, variable, self.fs)
-
-        del self.metadata.variables[variable]
-        self._write_config()
+        with self.synchronizer:
+            if self.dimension in self.metadata.variables[variable].dimensions:
+                paths = list(self.partitions())
+            else:
+                # An immutable variable has one array, removed in the calling
+                # process.
+                paths = [self._immutable]
+                distributed, npartitions = False, None
+            client = self._client_for(paths,
+                                      distributed=distributed,
+                                      npartitions=npartitions)
+            if paths:
+                self._drop_arrays(variable,
+                                  paths,
+                                  client=client,
+                                  npartitions=npartitions,
+                                  stop_on_error=stop_on_error)
+            self._undeclare_variable(variable)
 
     def copy(
         self,

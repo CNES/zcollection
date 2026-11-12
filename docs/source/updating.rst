@@ -47,9 +47,9 @@ Writing a computed variable
 
 The variable must exist before ``update`` writes it:
 :py:meth:`~zcollection.collection.Collection.add_variable` adds it to every
-partition, filled with its fill value. The function receives the dataset of
-one partition and returns a mapping of variable names to arrays.
-``variables`` names the variables it writes.
+partition, filled with its fill value; see :doc:`managing`. The function
+receives the dataset of one partition and returns a mapping of variable
+names to arrays. ``variables`` names the variables it writes.
 
 .. jupyter-execute::
 

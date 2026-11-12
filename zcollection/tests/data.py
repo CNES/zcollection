@@ -8,16 +8,17 @@ Make test datasets
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+import functools
 import itertools
 
 import numcodecs
 import numpy
 
-from .. import collection, dataset, partitioning, sync, view
+from .. import collection, dataset, execution, partitioning, sync, view
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from ..type_hints import NDArray
 
@@ -144,3 +145,44 @@ def with_process_sync(target, tmp_path):
                                     mode='w',
                                     filesystem=target.fs,
                                     synchronizer=synchronizer)
+
+
+def _process_then_fail(task: Callable[..., Any], failed: Any, item: Any,
+                       **kwargs: Any) -> Any:
+    """Call `task`, then raise OSError if `item` is `failed`."""
+    result = task(item, **kwargs)
+    if item == failed:
+        raise OSError('task failed')
+    return result
+
+
+def fail_after(monkeypatch, task: Callable[..., Any], failed: str) -> None:
+    """Make `task` raise OSError after it handles the partition named
+    `failed`, also when the Dask workers are separate processes."""
+    run = execution.run
+
+    def failing_run(func, items, names, **kwargs):
+        if func is task:
+            items, names = list(items), list(names)
+            func = functools.partial(_process_then_fail, func,
+                                     items[names.index(failed)])
+        return run(func, items, names, **kwargs)
+
+    monkeypatch.setattr(execution, 'run', failing_run)
+
+
+def record_lock(monkeypatch, target) -> list[bool]:
+    """Return a list that receives, before and after each run of tasks,
+    whether `target` holds its lock."""
+    run = execution.run
+    held: list[bool] = []
+
+    def recording_run(*args, **kwargs):
+        held.append(target.is_locked())
+        try:
+            return run(*args, **kwargs)
+        finally:
+            held.append(target.is_locked())
+
+    monkeypatch.setattr(execution, 'run', recording_run)
+    return held

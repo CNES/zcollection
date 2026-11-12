@@ -124,8 +124,7 @@ def run(func: Callable[..., Any],
         ValueError: If `npartitions` is below one.
         PartitionErrors: If a partition failed.
     """
-    if npartitions is not None and npartitions < 1:
-        raise ValueError('npartitions must be at least one')
+    check_npartitions(npartitions)
     items = list(items)
     kwargs = dict(kwargs or {})
     if client is None:
@@ -139,6 +138,16 @@ def run(func: Callable[..., Any],
     if failed:
         raise PartitionErrors(completed, failed, not_attempted)
     return completed
+
+
+def check_npartitions(npartitions: int | None) -> None:
+    """Check that `npartitions` is None or at least one.
+
+    Raises:
+        ValueError: If `npartitions` is below one.
+    """
+    if npartitions is not None and npartitions < 1:
+        raise ValueError('npartitions must be at least one')
 
 
 def _report(

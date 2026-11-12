@@ -13,7 +13,6 @@ import copy
 import functools
 import json
 import logging
-import pathlib
 import warnings
 
 import dask.distributed
@@ -23,6 +22,7 @@ from .. import (
     collection,
     dask_utils,
     dataset,
+    execution,
     expression,
     fs_utils,
     meta,
@@ -37,12 +37,12 @@ from ..partitions import PartitionIndex
 from .detail import (
     ViewReference,
     ViewUpdateCallable,
+    _add_array,
     _assert_have_variables,
     _assert_variable_handled,
     _check_partition,
-    _create_zarr_array,
     _deserialize_filters,
-    _drop_zarr_zarr,
+    _drop_array,
     _held_one_dataset,
     _load_dataset,
     _load_dataset_with_overlap,
@@ -84,6 +84,7 @@ class View(WritableCollection):
     """
     #: Configuration filename of the view.
     CONFIG: ClassVar[str] = '.view'
+    _DROP_ARRAY = staticmethod(_drop_array)
 
     def __init__(self,
                  base_dir: str,
@@ -328,15 +329,36 @@ class View(WritableCollection):
 
     def add_variable(self,
                      variable: meta.VariableSchema | dataset.Variable,
-                     distributed: bool = True) -> None:
+                     distributed: bool = True,
+                     *,
+                     npartitions: int | None = None,
+                     stop_on_error: bool = True) -> None:
         """Add a variable to the view.
 
+        Every value of the variable is its fill value, or the default value
+        of its data type without one, until it is written, for example by
+        :meth:`update`.
+
+        If a partition fails, the variable is removed from the view. If that
+        removal fails as well, the variable stays, and a note on the error
+        names the partitions where its array may remain: call
+        :meth:`drop_variable` before reading the view.
+
         Args:
-            variable: The variable to add
-            distributed: Whether to use dask or not. Default To True.
+            variable: The variable to add.
+            distributed: Whether to use Dask. Defaults to True.
+            npartitions: The largest number of partitions processed at the
+                same time. Defaults to the number of Dask workers.
+            stop_on_error: If True, the default, no partition starts after
+                the first failure.
 
         Raises:
-            ValueError: If the variable already exists
+            ValueError: If the view or its reference collection already has
+                a variable of that name, if the variable lacks the
+                partitioned dimension, or if ``npartitions`` is below one
+                when there are partitions to process.
+            PartitionErrors: If a partition failed. ``completed`` names the
+                partitions that received the array before it was removed.
 
         Example:
             >>> view.add_variable(
@@ -347,14 +369,11 @@ class View(WritableCollection):
             ...         zcollection.meta.Attribute("long_name", "temperature")),
             ...        fill_value=-9999.0))
         """
-
-        # false positive, no code duplication
-
         ref_zcol = self.view_ref
         ref_meta = ref_zcol.metadata
 
         variable = dataset.get_variable_metadata(variable)
-        _LOGGER.info('Adding variable %r in the view', variable.name)
+        _LOGGER.info('Adding the variable %r to the view', variable.name)
 
         if variable.name in ref_meta.variables:
             raise ValueError(f'Variable {variable.name} already exists')
@@ -362,114 +381,96 @@ class View(WritableCollection):
         if ref_zcol.dimension not in variable.dimensions:
             raise ValueError('Immutable variable cannot be added to views.')
 
-        self.metadata.add_variable(variable, set(ref_meta.dimensions))
+        # Attributes are not stored at the variable's level
+        stored = variable.set_for_insertion()
+        dimensions, chunks = ref_zcol.dimensions_properties()
 
-        existing_partitions = {
-            pathlib.Path(path).relative_to(self.base_dir).as_posix()
-            for path in self.partitions()
-        }
-
-        if existing_partitions:
-            args = filter(lambda item: item[0] in existing_partitions,
-                          ref_zcol.iterate_on_records())
-
-            # Attributes are not stored at the variable's level
-            variable = variable.set_for_insertion()
-
+        with self.synchronizer:
+            held = {self._relative_path(path) for path in self.partitions()}
+            records = [
+                item for item in ref_zcol.iterate_on_records()
+                if item[0] in held
+            ]
+            paths = [
+                fs_utils.join_path(self.base_dir, name) for name, _ in records
+            ]
+            client = self._client_for(paths,
+                                      distributed=distributed,
+                                      npartitions=npartitions)
+            self._declare_variable(variable, set(ref_meta.dimensions))
+            if not paths:
+                _LOGGER.info('No partitions found, skipping variable creation')
+                return
             try:
-                if distributed:
-                    self._add_variable_distributed(variable, args)
-                else:
-                    self._add_variable(variable, args)
-
-            except Exception:
-                self.drop_variable(variable.name, distributed, True)
+                execution.run(_add_array,
+                              records, [name for name, _ in records],
+                              client=client,
+                              npartitions=npartitions,
+                              stop_on_error=stop_on_error,
+                              kwargs={
+                                  'base_dir': self.base_dir,
+                                  'variable': stored,
+                                  'dimensions': dimensions,
+                                  'chunks': chunks,
+                                  'axis': ref_zcol.axis,
+                                  'fs': self.fs,
+                                  'reference_fs': ref_zcol.fs,
+                              })
+            except Exception as error:
+                self._undo_addition(variable.name,
+                                    paths,
+                                    client=client,
+                                    npartitions=npartitions,
+                                    error=error)
                 raise
-        else:
-            _LOGGER.info('No partitions found, skipping variable creation')
-
-        self._write_config()
-
-    def _add_variable(self, variable: meta.VariableSchema,
-                      partitions: Iterator[tuple[str, str]]):
-        """Add the provided variable to the collection."""
-        dimensions, chunks = self.view_ref.dimensions_properties()
-
-        for partition in partitions:
-            _create_zarr_array(
-                partition,
-                base_dir=self.base_dir,
-                variable=variable,
-                dimensions=dimensions,
-                chunks=chunks,
-                axis=self.view_ref.axis,
-                fs=self.fs,
-                reference_fs=self.view_ref.fs,
-            )
-
-    def _add_variable_distributed(self, variable: meta.VariableSchema,
-                                  partitions: Iterator[tuple[str, str]]):
-        """Add the provided variable to the collection using dask."""
-        dimensions, chunks = self.view_ref.dimensions_properties()
-        client: dask.distributed.Client = dask_utils.get_client()
-
-        storage.execute_transaction(
-            client,
-            self.synchronizer,
-            client.map(_create_zarr_array,
-                       tuple(partitions),
-                       base_dir=self.base_dir,
-                       variable=variable,
-                       dimensions=dimensions,
-                       chunks=chunks,
-                       axis=self.view_ref.axis,
-                       fs=self.fs,
-                       reference_fs=self.view_ref.fs),
-        )
 
     def drop_variable(
         self,
         variable: str,
         distributed: bool = True,
-        ignore_errors: bool = False,
+        *,
+        npartitions: int | None = None,
+        stop_on_error: bool = True,
     ) -> None:
-        """Drop a variable from the view.
+        """Remove a variable from the view.
+
+        If a partition fails, the variable stays in the view; calling this
+        method again finishes the removal.
 
         Args:
-            variable: The name of the variable to drop.
-            distributed: Whether to use dask or not. Default To True.
-            ignore_errors: Whether to ignore any errors. Default To False.
+            variable: The name of the variable to remove.
+            distributed: Whether to use Dask. Defaults to True.
+            npartitions: The largest number of partitions processed at the
+                same time. Defaults to the number of Dask workers.
+            stop_on_error: If True, the default, no partition starts after
+                the first failure.
 
-        Raise:
-            ValueError: If the variable does not exist or if the variable
-                belongs to the reference collection.
+        Raises:
+            ValueError: If the view has no variable of that name, if the
+                variable belongs to the reference collection, or if
+                ``npartitions`` is below one when there are partitions to
+                process.
+            PartitionErrors: If a partition failed.
 
         Example:
             >>> view.drop_variable("temperature")
         """
-        _LOGGER.info('Dropping variable %r', variable)
+        _LOGGER.info('Removing the variable %r from the view', variable)
         _assert_variable_handled(self.view_ref.metadata, self.metadata,
                                  variable)
 
-        del self.metadata.variables[variable]
-        self._write_config()
-
-        if distributed:
-            client: dask.distributed.Client = dask_utils.get_client()
-            storage.execute_transaction(
-                client,
-                self.synchronizer,
-                client.map(
-                    _drop_zarr_zarr,
-                    tuple(self.partitions()),
-                    fs=self.fs,
-                    variable=variable,
-                    ignore_errors=ignore_errors,
-                ),
-            )
-        else:
-            for partition in self.partitions():
-                _drop_zarr_zarr(partition, self.fs, variable, ignore_errors)
+        with self.synchronizer:
+            paths = list(self.partitions())
+            client = self._client_for(paths,
+                                      distributed=distributed,
+                                      npartitions=npartitions)
+            if paths:
+                self._drop_arrays(variable,
+                                  paths,
+                                  client=client,
+                                  npartitions=npartitions,
+                                  stop_on_error=stop_on_error)
+            self._undeclare_variable(variable)
 
     def load(
         self,

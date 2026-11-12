@@ -543,6 +543,9 @@ def del_zarr_array(
 ) -> None:
     """Delete a variable from a Zarr dataset.
 
+    If `dirname` contains a group, its metadata is consolidated, whether or not
+    the group held the variable.
+
     Args:
         dirname: The name of the dataset.
         name: The name of the variable.
@@ -552,9 +555,10 @@ def del_zarr_array(
     path = join_path(dirname, name)
     if fs.exists(path):
         fs.rm(path, recursive=True)
+    # A previous call may have deleted the array and failed to consolidate.
+    if store.contains_group(fs, dirname):
         store.consolidate(fs, dirname)
-        # Invalidate any cached directory information.
-        fs.invalidate_cache(dirname)
+    fs.invalidate_cache(dirname)
 
 
 def variable_shape(

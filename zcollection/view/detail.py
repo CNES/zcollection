@@ -8,8 +8,9 @@ Implementation details.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 import base64
+import contextlib
 import dataclasses
 import hashlib
 import io
@@ -23,6 +24,7 @@ import numpy
 
 from .. import collection, dataset, meta, store
 from ..collection.callable_objects import WrappedPartitionCallable
+from ..execution import SKIPPED, Skipped
 from ..fs_utils import get_fs, join_path
 from ..storage import (
     AbsentPartition,
@@ -143,26 +145,34 @@ def _create_zarr_array(args: tuple[str, str],
         fs.invalidate_cache(dirname)
 
 
-def _drop_zarr_zarr(partition: str,
-                    fs: fsspec.AbstractFileSystem,
-                    variable: str,
-                    ignore_errors: bool = False) -> None:
-    """Drop a Zarr array.
+def _add_array(args: tuple[str, str], *, base_dir: str,
+               fs: fsspec.AbstractFileSystem, **kwargs: Any) -> Skipped | None:
+    """Create the array of a variable in a partition of a view, skipping an
+    absent partition.
 
     Args:
-        partition: The partition that contains the array to drop.
-        fs: The filesystem used to delete the Zarr array.
-        variable: The name of the variable to drop.
-        ignore_errors: If True, ignore errors when dropping the array.
+        args: The path of the partition relative to the view, and the path
+            of the partition of the reference collection.
+        base_dir: The base directory of the view.
+        fs: The file system of the view.
+        **kwargs: The other arguments of :func:`_create_zarr_array`.
     """
-    try:
-        fs.rm(join_path(partition, variable), recursive=True)
-        fs.invalidate_cache(partition)
+    if not fs.exists(join_path(base_dir, args[0])):
+        return SKIPPED
+    _create_zarr_array(args, base_dir=base_dir, fs=fs, **kwargs)
+    return None
 
-    # We don't want to fail on errors.
-    except Exception:
-        if not ignore_errors:
-            raise
+
+def _drop_array(partition: str, *, fs: fsspec.AbstractFileSystem,
+                variable: str) -> Skipped | None:
+    """Remove the array of a variable from a partition of a view, skipping
+    an absent partition. Removing an absent array succeeds."""
+    if not fs.exists(partition):
+        return SKIPPED
+    with contextlib.suppress(FileNotFoundError):
+        fs.rm(join_path(partition, variable), recursive=True)
+    fs.invalidate_cache(partition)
+    return None
 
 
 def _held_one_dataset(

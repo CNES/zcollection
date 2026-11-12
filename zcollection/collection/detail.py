@@ -53,6 +53,9 @@ PartitionSlice = tuple[tuple[str, ...], dict[str, slice]]
 #: Maximum number of tries to remove a directory.
 MAX_TRIES: int = 10
 
+#: The largest number of partitions named in the note of a failed removal.
+_NAMED_PARTITIONS = 10
+
 
 @dataclasses.dataclass(frozen=True)
 class PartitioningProperties:
@@ -472,6 +475,26 @@ def _load_dataset_with_overlap(
                             delayed=delayed,
                             selected_variables=selected_variables))
     return zds, indices
+
+
+def note_failed_removal(error: BaseException, variable: str,
+                        failed: Iterable[str]) -> None:
+    """Add a note to `error` naming where the array of `variable` may
+    remain.
+
+    Args:
+        error: The error of the addition.
+        variable: The name of the variable added.
+        failed: The partitions where removing the array failed.
+    """
+    names = list(failed)
+    shown = ', '.join(names[:_NAMED_PARTITIONS])
+    if len(names) > _NAMED_PARTITIONS:
+        shown += f' and {len(names) - _NAMED_PARTITIONS} others'
+    error.add_note(
+        f'Removing the variable {variable!r} failed on {shown}, where its '
+        'array may remain, so the schema still declares it. Call '
+        'drop_variable to remove it.')
 
 
 def warn_empty_update() -> None:

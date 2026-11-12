@@ -34,7 +34,6 @@ from ... import (
     dask_utils,
     dataset,
     execution,
-    fs_utils,
     merging,
     meta,
     partitioning,
@@ -53,6 +52,8 @@ from ...tests.data import (
     create_test_collection,
     create_test_dataset,
     create_test_dataset_with_fillvalue,
+    fail_after,
+    record_lock,
     with_process_sync,
 )
 from ...tests.fixture import dask_arrays, numpy_arrays  # noqa: F401
@@ -1134,19 +1135,6 @@ def test_drop_partitions(
         zcol.drop_partitions(distributed=distributed)
 
 
-def removing_then_failing(failed: str):
-    """Return a remove_tree that raises OSError after it removes the
-    partition `failed`."""
-    remove = fs_utils.remove_tree
-
-    def remove_tree(fs, path):
-        remove(fs, path)
-        if path.endswith(failed):
-            raise OSError('removal failed')
-
-    return remove_tree
-
-
 @pytest.mark.usefixtures('dask_client')
 @pytest.mark.parametrize('distributed', [False, True])
 @pytest.mark.parametrize('stop_on_error', [True, False])
@@ -1160,8 +1148,7 @@ def test_drop_partitions_reports_each_partition(
     ones the store holds."""
     zcol = create_test_collection(local_fs, distributed=False)
     names = tuple(zcol.partitions(relative=True))
-    monkeypatch.setattr(fs_utils, 'remove_tree',
-                        removing_then_failing(names[2]))
+    fail_after(monkeypatch, collection._drop_partition, names[2])
 
     with pytest.raises(execution.PartitionErrors) as info:
         zcol.drop_partitions(npartitions=1,
@@ -1172,7 +1159,7 @@ def test_drop_partitions_reports_each_partition(
     assert info.value.completed == names[:2] + (
         () if stop_on_error else names[3:])
     assert list(info.value.failed) == [names[2]]
-    assert 'removal failed' in info.value.failed[names[2]]
+    assert 'task failed' in info.value.failed[names[2]]
     assert info.value.not_attempted == remaining
     assert zcol._index._read() is not None
     assert tuple(zcol.partitions(relative=True)) == remaining
@@ -1218,18 +1205,10 @@ def test_drop_partitions_holds_the_lock(
     """Each partition is removed while the collection holds its lock."""
     zcol = with_process_sync(
         create_test_collection(local_fs, distributed=False), tmp_path)
-    remove = fs_utils.remove_tree
-    held: list[bool] = []
-
-    def record(fs, path):
-        held.append(zcol.is_locked())
-        remove(fs, path)
-
-    monkeypatch.setattr(fs_utils, 'remove_tree', record)
+    held = record_lock(monkeypatch, zcol)
     zcol.drop_partitions(distributed=distributed)
 
-    assert held
-    assert all(held)
+    assert held == [True, True]
     assert not zcol.is_locked()
 
 

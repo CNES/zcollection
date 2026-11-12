@@ -3,12 +3,17 @@ Handling failures
 
 :py:meth:`~zcollection.collection.Collection.insert`,
 :py:meth:`~zcollection.collection.Collection.update`,
-:py:meth:`~zcollection.collection.Collection.update_from` and
+:py:meth:`~zcollection.collection.Collection.update_from`,
+:py:meth:`~zcollection.collection.Collection.add_variable`,
+:py:meth:`~zcollection.collection.Collection.drop_variable` and
 :py:meth:`~zcollection.collection.Collection.drop_partitions` process each
 partition on its own. When some partitions fail, the operation raises
 :py:class:`~zcollection.PartitionErrors`, which tells which partitions were
 completed, which failed and why, and which were not attempted. Views behave the
-same way for ``update`` and ``update_from``.
+same way for ``update``, ``update_from``, ``add_variable`` and
+``drop_variable``. ``add_variable`` and ``drop_variable`` add and remove an
+immutable variable in the calling process; ``PartitionErrors`` names it
+``.immutable``.
 
 The examples use the same daily measurements as :doc:`updating`, with a
 function that fails on segment 2.
@@ -132,6 +137,11 @@ in the failed and not attempted partitions. Inserting the whole dataset again
 writes it again into every partition, including those already written; with
 a merge callable, the result is the same only if the callable gives the same
 result when it runs twice.
+
+A failed ``add_variable`` removes what it added, unless that removal fails
+too. The ``completed`` attribute of the error names the partitions that
+received the array before the removal. A failed ``drop_variable`` is finished by calling it again. See
+:doc:`managing`.
 
 To retry ``drop_partitions``, call it again with the same ``filters`` and
 ``timedelta``: the partitions already removed are no longer listed, and the

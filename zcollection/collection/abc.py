@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NoReturn, Optional
 import abc
 from collections.abc import Callable, Iterable, Iterator, Sequence
+import contextlib
 import dataclasses
 import functools
 import io
@@ -43,6 +44,7 @@ from .detail import (
     _load_dataset,
     _load_dataset_with_overlap,
     map_partitions,
+    note_failed_removal,
     prepare_partition_operation,
     update_partition_from,
     warn_empty_update,
@@ -584,6 +586,129 @@ class WritableCollection(BaseCollection):
     """Share partition updates and index reconstruction."""
 
     _index: PartitionIndex
+    #: The task removing the array of a variable from a partition.
+    _DROP_ARRAY: ClassVar[Callable[..., Any]]
+
+    @abc.abstractmethod
+    def _write_config(self) -> None:
+        """Write the configuration, which contains the schema."""
+        ...
+
+    @contextlib.contextmanager
+    def _changing_schema(self) -> Iterator[meta.DatasetSchema]:
+        """Write the configuration once the ``with`` block has changed the
+        schema.
+
+        If the block or `_write_config` raises, the schema gets back the
+        variables it had before the block.
+
+        Yields:
+            The schema to change.
+        """
+        before = dict(self.metadata.variables)
+        try:
+            yield self.metadata
+            self._write_config()
+        except BaseException:
+            self.metadata.variables.clear()
+            self.metadata.variables.update(before)
+            raise
+
+    def _declare_variable(self,
+                          variable: meta.VariableSchema,
+                          dimensions: set[str] | None = None) -> None:
+        """Add a variable to the schema and write the configuration.
+
+        Args:
+            variable: The variable to add.
+            dimensions: The dimensions the variable may use. Defaults to
+                those of the schema.
+        """
+        with self._changing_schema() as schema:
+            schema.add_variable(variable, dimensions)
+
+    def _undeclare_variable(self, name: str) -> None:
+        """Remove a variable from the schema and write the configuration.
+
+        Args:
+            name: The name of the variable to remove.
+        """
+        with self._changing_schema() as schema:
+            schema.drop_variable(name)
+
+    @staticmethod
+    def _client_for(paths: Sequence[str], *, distributed: bool,
+                    npartitions: int | None) -> dask.distributed.Client | None:
+        """Return the Dask client processing `paths`, or ``None``.
+
+        Args:
+            paths: The partitions to process.
+            distributed: Whether to use Dask.
+            npartitions: The largest number of partitions processed at the
+                same time.
+
+        Raises:
+            ValueError: If `paths` is not empty and `npartitions` is below
+                one.
+        """
+        if not paths:
+            return None
+        execution.check_npartitions(npartitions)
+        return dask_utils.get_client() if distributed else None
+
+    def _drop_arrays(self, name: str, paths: Sequence[str], *,
+                     client: dask.distributed.Client | None,
+                     npartitions: int | None, stop_on_error: bool) -> None:
+        """Remove the array of a variable from partitions. The caller holds
+        the lock.
+
+        Args:
+            name: The name of the variable.
+            paths: The partitions.
+            client: The Dask client, or ``None``.
+            npartitions: The largest number of partitions processed at the
+                same time.
+            stop_on_error: If True, no partition starts after the first
+                failure.
+        """
+        execution.run(self._DROP_ARRAY,
+                      paths, [self._relative_path(path) for path in paths],
+                      client=client,
+                      npartitions=npartitions,
+                      stop_on_error=stop_on_error,
+                      kwargs={
+                          'variable': name,
+                          'fs': self.fs
+                      })
+
+    def _undo_addition(self, name: str, paths: Sequence[str], *,
+                       client: dask.distributed.Client | None,
+                       npartitions: int | None, error: BaseException) -> None:
+        """Undo the addition of a variable after `error`. The caller holds
+        the lock.
+
+        Args:
+            name: The name of the variable.
+            paths: The partitions of the failed addition.
+            client: The Dask client, or ``None``.
+            npartitions: The largest number of partitions processed at the
+                same time.
+            error: The error of the addition. It receives a note if the undo
+                fails.
+        """
+        try:
+            self._drop_arrays(name,
+                              paths,
+                              client=client,
+                              npartitions=npartitions,
+                              stop_on_error=False)
+        except Exception as removal:
+            note_failed_removal(
+                error, name, removal.failed if isinstance(
+                    removal, execution.PartitionErrors) else
+                [self._relative_path(path) for path in paths])
+            return
+        self._undeclare_variable(name)
 
     @abc.abstractmethod
     def _select_update_partitions(

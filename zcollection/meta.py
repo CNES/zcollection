@@ -424,6 +424,20 @@ class DatasetSchema:
 
         self.variables[variable.name] = variable
 
+    def drop_variable(self, name: str) -> None:
+        """Remove a variable from the dataset.
+
+        Args:
+            name: The name of the variable to remove.
+
+        Raises:
+            ValueError: If the variable does not exist in the dataset.
+        """
+        if name not in self.variables:
+            raise ValueError(
+                f'The variable {name!r} does not exist in the collection.')
+        del self.variables[name]
+
     @staticmethod
     def from_config(data: dict[str, Any]) -> DatasetSchema:
         """Create a new dataset from the given dataset configuration.

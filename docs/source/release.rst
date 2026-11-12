@@ -29,6 +29,8 @@ Features
   parameter.
 * Immutable variables are insertable and updatable, and a collection holding
   only immutable variables is readable.
+* ``Collection.add_variable`` and ``Collection.drop_variable`` accept
+  immutable variables.
 * A view holding no declared variable reads and maps the collection it
   references with ``load``, ``map`` and ``map_overlap``.
 * The metadata of a collection and of a dataset carry the dimensions, and the
@@ -62,20 +64,24 @@ Storage
 
 Execution
 ^^^^^^^^^
-* ``insert``, ``update`` and ``drop_partitions`` process each partition in a
-  task of its own, and ``update_from`` follows the same rules. With
-  ``distributed=True``, at most ``npartitions`` tasks run at the same time,
-  and a task starts when another one finishes; ``npartitions`` defaults to
-  the number of Dask workers. With ``distributed=False``, the partitions are
-  processed one at a time in the calling process. By default, earlier
-  releases inserted one partition at a time, updated the partitions in one
-  batch per worker, and removed all the selected partitions at once. See
-  :doc:`failures`.
+* ``insert``, ``update``, ``add_variable``, ``drop_variable`` and
+  ``drop_partitions`` process each partition in a task of its own, and
+  ``update_from`` follows the same rules. An immutable variable is added and
+  removed in the calling process. With ``distributed=True``, at most
+  ``npartitions`` tasks run at the same time, and a task starts when another
+  one finishes; ``npartitions`` defaults to the number of Dask workers. With
+  ``distributed=False``, the partitions are processed one at a time in the
+  calling process. By default, earlier releases inserted one partition at a
+  time, updated the partitions in one batch per worker, added or removed a
+  variable in all the partitions at once, and removed all the selected
+  partitions at once. See :doc:`failures`.
 * If a partition fails, these operations raise ``PartitionErrors``. Its
   ``completed``, ``failed`` and ``not_attempted`` attributes give the
   partitions completed, the traceback of each failed partition and the
-  partitions not attempted. An ``except`` clause naming the type of an error
-  raised while a partition is processed no longer catches that error.
+  partitions not attempted. After a failed ``add_variable``, the partitions
+  completed are the ones that received the array before the array was
+  removed. An ``except`` clause naming the type of an error raised while a
+  partition is processed no longer catches that error.
 * With ``stop_on_error=True``, the default, an operation starts no partition
   after the first failure, and the partitions in progress finish; with
   ``False``, it starts all of them.
@@ -116,6 +122,14 @@ Behaviour
   store does not hold is left out.
 * ``drop_partitions(timedelta=...)`` measures the age of a partition
   whatever the local time zone.
+* If ``add_variable`` fails and removing the added arrays fails as well,
+  the error of ``add_variable`` carries a note naming the partitions where
+  the array may remain, and the schema still declares the variable.
+* ``View.drop_variable`` removes the variable from the schema once every
+  partition succeeded. Removing an absent array succeeds, so a second call
+  finishes a failed removal.
+* ``View.add_variable`` writes the variable to the configuration of the view
+  before it creates the arrays, also when the view has no partitions.
 * Inserting an empty dataset with ``distributed=True`` returns an empty tuple.
 * ``Collection.copy`` without ``filesystem`` writes the copy on the file system
   of the collection.
@@ -166,6 +180,8 @@ Renamed
 ^^^^^^^
 * The ``npartition`` parameter of ``Collection.map_overlap`` is named
   ``npartitions``.
+* The ``varname`` parameter of ``View.drop_variable`` is named
+  ``variable``.
 * ``meta.Variable`` is named ``meta.VariableSchema``, and ``meta.Dataset`` is
   named ``meta.DatasetSchema``.
 * ``Dataset.dims_chunk`` is named ``dim_chunks``, and holds a mapping of a

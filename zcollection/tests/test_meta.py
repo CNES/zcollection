@@ -256,6 +256,25 @@ def test_missing_variables() -> None:
         ds.missing_variables(other)
 
 
+def test_drop_variable() -> None:
+    """``drop_variable`` removes the variable, keeps the order of the
+    others, and raises a ``ValueError`` for a name the schema does not
+    declare."""
+    ds = meta.DatasetSchema(dimensions=(meta.Dimension('x', 0), ),
+                            variables=[
+                                meta.VariableSchema(name,
+                                                    numpy.float64,
+                                                    dimensions=('x', ))
+                                for name in ('a', 'b', 'c')
+                            ])
+
+    ds.drop_variable('b')
+
+    assert list(ds.variables) == ['a', 'c']
+    with pytest.raises(ValueError, match='does not exist'):
+        ds.drop_variable('b')
+
+
 def test_add_variable() -> None:
     """Test adding a variable."""
     ds = meta.DatasetSchema(dimensions=(meta.Dimension('x', 0),
