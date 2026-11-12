@@ -65,9 +65,9 @@ Storage
 Execution
 ^^^^^^^^^
 * ``insert``, ``update``, ``add_variable``, ``drop_variable``,
-  ``drop_partitions``, ``View.sync`` and ``create_view`` process each
-  partition in a task of its own, and ``update_from`` follows the same
-  rules. An immutable variable is added and
+  ``drop_partitions``, ``View.sync``, ``View.is_synced`` and
+  ``create_view`` process each partition in a task of its own, and
+  ``update_from`` follows the same rules. An immutable variable is added and
   removed in the calling process. With ``distributed=True``, at most
   ``npartitions`` tasks run at the same time, and a task starts when another
   one finishes; ``npartitions`` defaults to the number of Dask workers. With
@@ -81,15 +81,17 @@ Execution
   partitions completed, the traceback of each failed partition and the
   partitions not attempted. After a failed ``add_variable``, the partitions
   completed are the ones that received the array before the array was
-  removed. An ``except`` clause naming the type of an error raised while a
-  partition is processed no longer catches that error.
+  removed. After a failed ``View.is_synced``, ``completed`` names the
+  partitions found out of sync. An ``except`` clause naming the type of an
+  error raised while a partition is processed no longer catches that error.
 * These operations take ``npartitions`` and ``stop_on_error``. With
   ``stop_on_error=True``, the default, an operation starts no partition
   after the first failure, and the partitions in progress finish; with
   ``False``, it starts all of them.
-* These operations hold the lock of the synchronizer until their tasks
-  finish, including after a failure. ``insert`` writes the immutable
-  variables under the same lock as the partitions.
+* These operations, except ``View.is_synced``, hold the lock of the
+  synchronizer until their tasks finish, including after a failure.
+  ``insert`` writes the immutable variables under the same lock as the
+  partitions.
 * ``update`` returns the paths of the partitions it wrote, relative to the
   collection or the view.
 * After a failed ``update``, the file system cache of the selected partitions
@@ -134,6 +136,8 @@ Behaviour
   before it creates the arrays, also when the view has no partitions.
 * ``View.sync(filters=...)`` records its filters once every selected
   partition is synchronized.
+* ``View.is_synced`` raises ``PartitionErrors`` for a partition without its
+  ``.checksum`` array. With no partition selected, it returns ``True``.
 * Inserting an empty dataset with ``distributed=True`` returns an empty tuple.
 * ``Collection.copy`` without ``filesystem`` writes the copy on the file system
   of the collection.

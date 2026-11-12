@@ -27,7 +27,6 @@ from .. import (
     fs_utils,
     meta,
     partitioning,
-    storage,
     sync,
 )
 from ..collection.abc import WritableCollection, warn_missing_partitions
@@ -833,46 +832,55 @@ class View(WritableCollection):
     def is_synced(self,
                   distributed: bool = True,
                   *,
-                  filters: collection.PartitionFilter = None) -> bool:
+                  filters: collection.PartitionFilter = None,
+                  npartitions: int | None = None,
+                  stop_on_error: bool = True) -> bool:
         """Check whether selected reference partitions are synchronized.
+
+        A partition can fail to be checked, for example because its checksum
+        array is missing; :meth:`validate_partitions` with ``fix=True``
+        writes such a partition again.
 
         Args:
             distributed: Whether to use dask or not. Default To True.
             filters: The predicate used to select reference partitions, as
                 in :meth:`zcollection.Collection.partitions`. If None, all
                 reference partitions are checked.
+            npartitions: The largest number of partitions checked at the
+                same time. Defaults to the number of Dask workers.
+            stop_on_error: If True, the default, no partition starts after
+                the first failure.
 
         Returns:
             True if all selected partitions are present in the view and their
             reference axes match, False otherwise.
+
+        Raises:
+            ValueError: If ``npartitions`` is below one when there are
+                partitions to check.
+            PartitionErrors: If a partition could not be checked.
+                ``completed`` names the partitions found out of sync.
         """
         partitions = tuple(
             self.view_ref.partitions(filters=filters, relative=True))
-
-        if distributed:
-            client: dask.distributed.Client = dask_utils.get_client()
-            unsynchronized_partition = storage.execute_transaction(
-                client, self.synchronizer,
-                client.map(_sync,
-                           partitions,
-                           base_dir=self.base_dir,
-                           fs=self.fs,
-                           view_ref=self.view_ref,
-                           metadata=self.metadata,
-                           dry_run=True))
-        else:
-            unsynchronized_partition = [
-                _sync(partition,
-                      base_dir=self.base_dir,
-                      fs=self.fs,
-                      view_ref=self.view_ref,
-                      metadata=self.metadata,
-                      dry_run=True) for partition in partitions
-            ]
-
-        return all(
-            isinstance(item, execution.Skipped)
-            for item in unsynchronized_partition)
+        if not partitions:
+            return True
+        client = self._client_for(partitions,
+                                  distributed=distributed,
+                                  npartitions=npartitions)
+        return not execution.run(_sync,
+                                 partitions,
+                                 partitions,
+                                 client=client,
+                                 npartitions=npartitions,
+                                 stop_on_error=stop_on_error,
+                                 kwargs={
+                                     'base_dir': self.base_dir,
+                                     'fs': self.fs,
+                                     'view_ref': self.view_ref,
+                                     'metadata': self.metadata,
+                                     'dry_run': True
+                                 })
 
     def sync(
         self,

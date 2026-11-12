@@ -10,11 +10,13 @@ Handling failures
 partition on its own. When some partitions fail, the operation raises
 :py:class:`~zcollection.PartitionErrors`, which tells which partitions were
 completed, which failed and why, and which were not attempted. Views behave the
-same way for ``update``, ``update_from``, ``add_variable``, ``drop_variable``
-and ``sync``, and so does :py:func:`~zcollection.create_view` when it writes
-the partitions of a new view. ``add_variable`` and ``drop_variable`` add and
-remove an immutable variable in the calling process; ``PartitionErrors``
-names it ``.immutable``.
+same way for ``update``, ``update_from``, ``add_variable``,
+``drop_variable``, ``sync`` and ``is_synced``, and so does
+:py:func:`~zcollection.create_view` when it writes the partitions of a new
+view. ``add_variable`` and ``drop_variable`` add and remove an immutable
+variable in the calling process; ``PartitionErrors`` names it
+``.immutable``. After a failed ``is_synced``, ``completed`` names the
+partitions found out of sync.
 
 The examples use the same daily measurements as :doc:`updating`, with a
 function that fails on segment 2.
@@ -153,6 +155,11 @@ To retry ``View.sync``, call it again with the same ``filters``: the
 partitions already synchronized are skipped. After an interruption, call
 ``validate_partitions(fix=True)`` first, to write again a partition left
 partly written.
+
+``View.is_synced`` raises ``PartitionErrors`` for a partition it cannot
+check. ``validate_partitions(fix=True)`` writes again a partition without
+its ``.checksum`` array, which holds the reference axis the partition was
+written from.
 
 A failed ``create_view`` leaves the view with the partitions it completed.
 Open it with :py:func:`~zcollection.open_view`, call

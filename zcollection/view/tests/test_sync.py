@@ -10,6 +10,7 @@ from unittest import mock
 import pytest
 
 from ... import convenience, dask_utils, execution, sync, view
+from ...fs_utils import join_path
 from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
 from ...tests.data import (
     KEYS,
@@ -19,7 +20,7 @@ from ...tests.data import (
     with_process_sync,
 )
 from ...tests.fs import local_fs  # noqa: F401
-from ..detail import _sync
+from ..detail import CHECKSUM_FILE, _sync
 
 
 def create(fs, **kwargs) -> view.View:
@@ -174,8 +175,8 @@ def test_a_failed_creation_is_resumed(
 
 
 def test_no_partition_asks_for_no_client(local_fs) -> None:  # noqa: F811
-    """Creating or synchronizing a view whose filters select no partition
-    asks for no Dask client, whatever npartitions."""
+    """Creating, synchronizing or checking a view whose filters select no
+    partition asks for no Dask client, whatever npartitions."""
     create_key_collection(local_fs)
 
     with mock.patch.object(dask_utils,
@@ -186,6 +187,9 @@ def test_no_partition_asks_for_no_client(local_fs) -> None:  # noqa: F811
                        distributed=True,
                        npartitions=0)
         zview.sync(filters='key == 9', distributed=True, npartitions=0)
+        assert zview.is_synced(filters='key == 9',
+                               distributed=True,
+                               npartitions=0)
 
     assert tuple(zview.partitions()) == ()
 
@@ -199,3 +203,45 @@ def test_creation_refuses_an_invalid_npartitions(
 
     with pytest.raises(ValueError, match='npartitions'):
         create(local_fs, distributed=True, npartitions=0)
+
+
+@pytest.mark.usefixtures('dask_client')
+@pytest.mark.parametrize('distributed', [False, True])
+def test_is_synced_reports_a_partition_it_cannot_check(
+        local_fs,  # noqa: F811
+        distributed) -> None:
+    """A partition without its checksum array makes is_synced raise
+    PartitionErrors, whose completed names the partitions found out of sync,
+    and validate_partitions(fix=True) writes that partition again."""
+    create_key_collection(local_fs)
+    zview = create(local_fs, filters='key <= 3', distributed=False)
+    local_fs.fs.rm(join_path(zview.base_dir, 'key=2', CHECKSUM_FILE),
+                   recursive=True)
+
+    with pytest.raises(execution.PartitionErrors) as info:
+        zview.is_synced(distributed=distributed,
+                        npartitions=1,
+                        stop_on_error=False)
+
+    assert list(info.value.failed) == ['key=2']
+    assert info.value.completed == ('key=4', )
+
+    zview.validate_partitions(fix=True, distributed=False)
+    assert zview.is_synced(filters='key <= 3', distributed=distributed)
+
+
+@pytest.mark.usefixtures('dask_client')
+@pytest.mark.parametrize('distributed', [False, True])
+def test_is_synced_takes_no_lock(
+        local_fs,  # noqa: F811
+        monkeypatch,
+        tmp_path,
+        distributed) -> None:
+    """The view does not hold its lock while is_synced checks the
+    partitions."""
+    create_key_collection(local_fs)
+    zview = with_process_sync(create(local_fs, distributed=False), tmp_path)
+    held = record_lock(monkeypatch, zview)
+
+    assert zview.is_synced(distributed=distributed)
+    assert held == [False, False]
