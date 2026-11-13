@@ -157,21 +157,38 @@ def test_keyword_arguments_reach_the_function(client) -> None:
 
 def test_returns_once_the_tasks_in_flight_finish(
         dask_client,  # noqa: F811
-        tmp_path) -> None:
+        tmp_path,
+        monkeypatch) -> None:
     """After a failure, the tasks already running finish before the error
     reaches the caller."""
-    with pytest.raises(execution.PartitionErrors) as info:
-        execution.run(functools.partial(record,
-                                        track=str(tmp_path),
-                                        fail=(0, ),
-                                        delay=0.5),
-                      range(10),
-                      NAMES,
-                      client=dask_client,
-                      npartitions=4,
-                      stop_on_error=True)
+    release = tmp_path.parent / f'{tmp_path.name}.release'
 
-    assert items(tmp_path) == [1, 2, 3]
+    class ReleasingAsCompleted(dask.distributed.as_completed):
+        """Release the waiting tasks once run receives a finished
+        task."""
+
+        def __next__(self):
+            future = super().__next__()
+            release.touch()
+            return future
+
+    monkeypatch.setattr(execution.distributed, 'as_completed',
+                        ReleasingAsCompleted)
+    try:
+        with pytest.raises(execution.PartitionErrors) as info:
+            execution.run(functools.partial(record_on_release,
+                                            track=str(tmp_path),
+                                            release=str(release),
+                                            fail=(0, )),
+                          range(10),
+                          NAMES,
+                          client=dask_client,
+                          npartitions=4,
+                          stop_on_error=True)
+    finally:
+        release.touch()
+
+    assert info.value.completed == NAMES[1:4]
     assert info.value.not_attempted == NAMES[4:]
 
 
@@ -188,15 +205,20 @@ def interrupt(*args, **kwargs) -> None:
     raise KeyboardInterrupt
 
 
-def record_on_release(item: int, *, track: str, release: str) -> None:
-    """Record item zero immediately; wait for the release file for others."""
+def record_on_release(item: int,
+                      *,
+                      track: str,
+                      release: str,
+                      fail: tuple[int, ...] = ()) -> None:
+    """Pass item zero to `record` at once, and the other items once the
+    release file exists."""
     if item:
         deadline = time.monotonic() + 30
         while not os.path.exists(release):
             if time.monotonic() > deadline:
                 raise TimeoutError('The test did not release the tasks')
             time.sleep(0.01)
-    record(item, track=track)
+    record(item, track=track, fail=fail)
 
 
 @pytest.mark.parametrize('twice', [False, True])
