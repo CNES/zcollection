@@ -105,7 +105,8 @@ Inserting with Dask
 With ``distributed=True``, the default, ``insert`` runs on the Dask cluster
 of the current client. Each partition is written in a task of its own:
 ``insert`` submits ``npartitions`` tasks, then one more each time a task
-finishes. ``npartitions`` defaults to the number of Dask workers.
+finishes. ``npartitions`` defaults to 1; with ``None``, it is the number of
+Dask workers.
 
 .. code-block:: python
 

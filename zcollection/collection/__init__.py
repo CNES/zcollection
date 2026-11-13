@@ -365,7 +365,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
         ds: xarray.Dataset | dataset.Dataset,
         *,
         merge_callable: merging.MergeCallable | None = None,
-        npartitions: int | None = None,
+        npartitions: int | None = 1,
         delayed: bool | None = None,
         distributed: bool = True,
         stop_on_error: bool = True,
@@ -381,10 +381,9 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 None, the new partitioned data overwrites the existing
                 partitioned data.
             npartitions: The largest number of partitions written at the
-                same time. Defaults to the number of Dask workers. Each
-                partition is written by one worker, which writes its
-                variables in parallel. With ``distributed=False``, the
-                partitions are processed one at a time.
+                same time. Defaults to 1. With ``None``, it is the number of
+                Dask workers. With ``distributed=False``, the partitions are
+                processed one at a time.
             delayed: Whether the merge callable receives the stored
                 partition and the inserted one as Dask arrays. Defaults to
                 ``None``, which gives it Dask arrays when ``ds`` holds them.

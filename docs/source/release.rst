@@ -70,12 +70,14 @@ Execution
   its own, and ``update_from`` follows the same rules. An immutable variable is
   added and removed in the calling process. With ``distributed=True``, at most
   ``npartitions`` tasks run at the same time, and a task starts when another
-  one finishes; ``npartitions`` defaults to the number of Dask workers. With
+  one finishes; ``npartitions`` defaults to ``None``, the number of Dask
+  workers, except for ``insert``, where it defaults to 1. With
   ``distributed=False``, the partitions are processed one at a time in the
-  calling process. By default, earlier releases inserted one partition at a
-  time, updated the partitions in one batch per worker, added or removed a
-  variable or synchronized a view in all the partitions at once, and removed
-  all the selected partitions at once. See :doc:`failures`.
+  calling process. By default, earlier releases updated the partitions in one
+  batch per worker, added or removed a variable or synchronized a view in all
+  the partitions at once, and removed all the selected partitions at once.
+  With ``npartitions=None``, earlier releases inserted one partition at a
+  time. See :doc:`failures`.
 * If a partition fails, these operations raise ``PartitionErrors``. Its
   ``completed``, ``failed`` and ``not_attempted`` attributes give the
   partitions completed, the traceback of each failed partition and the
