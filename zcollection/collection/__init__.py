@@ -90,17 +90,19 @@ if TYPE_CHECKING:
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-@storage.skip_absent_partition
-def _copy_partition(source: str, target: str,
-                    fs_source: fsspec.AbstractFileSystem,
-                    fs_target: fsspec.AbstractFileSystem) -> None:
-    """Copy a partition, skipping an absent source."""
+def _copy_partition(
+        paths: tuple[str, str], *, fs_source: fsspec.AbstractFileSystem,
+        fs_target: fsspec.AbstractFileSystem) -> execution.Skipped | None:
+    """Copy a partition, skipping an absent source with a warning."""
+    source, target = paths
     try:
         fs_utils.copy_tree(source, target, fs_source, fs_target)
-    except FileNotFoundError as err:
+    except FileNotFoundError:
         if fs_source.exists(source):
             raise
-        raise storage.AbsentPartition(source) from err
+        storage.warn_absent_partition(source)
+        return execution.SKIPPED
+    return None
 
 
 def _drop_partition(path: str,
@@ -1071,23 +1073,40 @@ class Collection(ReadOnlyCollection, WritableCollection):
         npartitions: int | None = None,
         synchronizer: sync.Sync | None = None,
         distributed: bool = True,
+        stop_on_error: bool = True,
     ) -> Collection:
         """Copy the collection to a new location.
 
+        ``copy`` writes the immutable variables and the files of the root
+        directory, then the configuration, then the selected partitions. If
+        it stops after writing the configuration, the new collection opens
+        with the partitions its store holds.
+
         Args:
-            target: The target location.
+            target: The target location. It must be absent or empty.
             filters: The predicate used to filter the partitions to copy.
             filesystem: The file system to use. If None, the file system of the
                 collection is used.
-            mode: The mode used to open the collection copied. Default is 'w'.
-            npartitions: The number of partitions top copy in parallel. Default
-                is number of cores.
-            synchronizer: The synchronizer used to synchronize the collection
-                copied. Default is None.
+            mode: The mode used to open the new collection. Default is 'w'.
+            npartitions: The largest number of partitions copied at the same
+                time. Defaults to the number of Dask workers. With
+                ``distributed=False``, the partitions are copied one at a
+                time.
+            synchronizer: The synchronizer of the new collection. Its lock is
+                held while ``copy`` writes the new collection. Default is None.
             distributed: Whether to use dask or not. Default To True.
+            stop_on_error: If True, no partition starts after the first
+                failure, and the partitions in progress finish. Defaults
+                to True.
 
         Returns:
             The new collection.
+
+        Raises:
+            ValueError: If the target is not empty, or if ``npartitions`` is
+                below one and a partition is selected.
+            PartitionErrors: If a partition failed. The partitions the new
+                collection lists afterwards are the ones its store holds.
 
         Example:
             >>> import zcollection
@@ -1097,62 +1116,51 @@ class Collection(ReadOnlyCollection, WritableCollection):
         """
         _LOGGER.info('Copying of the collection to %r', target)
         filesystem = filesystem or self.fs
-        filesystem.makedirs(target, exist_ok=True)
-
-        index = PartitionIndex(filesystem,
-                               fs_utils.normalize_path(filesystem, target),
-                               self.partitioning,
-                               writable=True)
+        target = fs_utils.normalize_path(filesystem, target)
+        paths = tuple(self.partitions(filters=filters))
+        client = self._client_for(paths,
+                                  distributed=distributed,
+                                  npartitions=npartitions)
         with synchronizer or sync.NoSync():
-            index.write((), updating=True)
-            selected = self.partitions(filters=filters)
-
-            if distributed:
-                client: dask.distributed.Client = dask_utils.get_client()
-                npartitions = npartitions or dask_utils.dask_workers(
-                    client, cores_only=True)
-
-                # Sequence of (source, target) to copy split in npartitions
-                args = tuple(
-                    dask_utils.split_sequence(
-                        [(item,
-                          fs_utils.join_path(
-                              target,
-                              os.path.relpath(item,
-                                              self.partition_properties.dir)))
-                         for item in selected], npartitions))
-                # Copy the selected partitions
-                partial = functools.partial(_copy_partition,
-                                            fs_source=self.fs,
-                                            fs_target=filesystem)
-
-                def worker_task(args: Sequence[tuple[str, str]]) -> None:
-                    """Function call on each worker to copy the partitions."""
-                    tuple(partial(*arg) for arg in args)
-
-                client.gather(client.map(worker_task, args))
-            else:
-                for source_path in selected:
-                    target_path = fs_utils.join_path(
-                        target,
-                        os.path.relpath(source_path,
-                                        self.partition_properties.dir))
-                    _copy_partition(source_path,
-                                    target_path,
-                                    fs_source=self.fs,
-                                    fs_target=filesystem)
-
-            # Then the files of the root directory other than the index,
-            # which is rebuilt at the end.
+            if filesystem.exists(target) and filesystem.ls(target):
+                raise ValueError(f'The target {target!r} is not empty')
+            filesystem.makedirs(target, exist_ok=True)
+            if self.fs.exists(self._immutable):
+                fs_utils.copy_tree(self._immutable,
+                                   fs_utils.join_path(target, IMMUTABLE),
+                                   self.fs, filesystem)
+            # The files of the root directory, except the index, written
+            # below, and the configuration, written next.
+            root = self.partition_properties.dir
             fs_utils.copy_files([
-                item['name']
-                for item in self.fs.listdir(self.partition_properties.dir,
-                                            detail=True)
-                if item['type'] == 'file'
-                and os.path.basename(item['name']) != INDEX_FILENAME
+                item['name'] for item in self.fs.ls(root, detail=True)
+                if item['type'] == 'file' and os.path.basename(item['name'])
+                not in (INDEX_FILENAME, self.CONFIG)
             ], target, self.fs, filesystem)
+            fs_utils.replace_file(filesystem, self._config(target),
+                                  self.fs.cat_file(self._config(root)))
 
-            index.reindex()
+            index = PartitionIndex(filesystem,
+                                   target,
+                                   self.partitioning,
+                                   writable=True)
+            index.write(())
+            if paths:
+                names = [self._relative_path(path) for path in paths]
+                pairs = [(path, fs_utils.join_path(target, name))
+                         for path, name in zip(paths, names, strict=True)]
+                with index.updating(reindex_on_error=True):
+                    copied = execution.run(_copy_partition,
+                                           pairs,
+                                           names,
+                                           client=client,
+                                           npartitions=npartitions,
+                                           stop_on_error=stop_on_error,
+                                           kwargs={
+                                               'fs_source': self.fs,
+                                               'fs_target': filesystem
+                                           })
+                    index.add(copied)
 
         return Collection.from_config(target,
                                       mode=mode,

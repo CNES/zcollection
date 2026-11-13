@@ -65,7 +65,7 @@ Storage
 Execution
 ^^^^^^^^^
 * ``insert``, ``update``, ``add_variable``, ``drop_variable``,
-  ``drop_partitions``, ``validate_partitions``, ``View.sync``,
+  ``drop_partitions``, ``validate_partitions``, ``copy``, ``View.sync``,
   ``View.is_synced`` and ``create_view`` process each partition in a task of
   its own, and ``update_from`` follows the same rules. An immutable variable is
   added and removed in the calling process. With ``distributed=True``, at most
@@ -73,11 +73,11 @@ Execution
   one finishes; ``npartitions`` defaults to ``None``, the number of Dask
   workers, except for ``insert``, where it defaults to 1. With
   ``distributed=False``, the partitions are processed one at a time in the
-  calling process. By default, earlier releases updated the partitions in one
-  batch per worker, added or removed a variable or synchronized a view in all
-  the partitions at once, and removed all the selected partitions at once.
-  With ``npartitions=None``, earlier releases inserted one partition at a
-  time. See :doc:`failures`.
+  calling process. By default, earlier releases updated and copied the
+  partitions in one batch per worker, added or removed a variable or
+  synchronized a view in all the partitions at once, and removed all the
+  selected partitions at once. With ``npartitions=None``,
+  earlier releases inserted one partition at a time. See :doc:`failures`.
 * If a partition fails, these operations raise ``PartitionErrors``. Its
   ``completed``, ``failed`` and ``not_attempted`` attributes give the
   partitions completed, the traceback of each failed partition and the
@@ -149,6 +149,10 @@ Behaviour
 * Inserting an empty dataset with ``distributed=True`` returns an empty tuple.
 * ``Collection.copy`` without ``filesystem`` writes the copy on the file system
   of the collection.
+* ``Collection.copy`` refuses a target that is not empty and copies the
+  immutable variables. It writes the configuration before the partitions:
+  if it stops afterwards, the new collection opens with the partitions its
+  store holds.
 * ``insert`` hands its merge callable the representation of the dataset it
   receives. A dataset of Dask arrays stays lazy through an insertion made
   without a Dask cluster.

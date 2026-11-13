@@ -6,8 +6,9 @@ Handling failures
 :py:meth:`~zcollection.collection.Collection.update_from`,
 :py:meth:`~zcollection.collection.Collection.add_variable`,
 :py:meth:`~zcollection.collection.Collection.drop_variable`,
-:py:meth:`~zcollection.collection.Collection.drop_partitions` and
-:py:meth:`~zcollection.collection.Collection.validate_partitions` process each
+:py:meth:`~zcollection.collection.Collection.drop_partitions`,
+:py:meth:`~zcollection.collection.Collection.validate_partitions` and
+:py:meth:`~zcollection.collection.Collection.copy` process each
 partition on its own. When some partitions fail, the operation raises
 :py:class:`~zcollection.PartitionErrors`, which tells which partitions were
 completed, which failed and why, and which were not attempted. Views behave the
@@ -86,9 +87,10 @@ The message of ``PartitionErrors`` names up to ten failed partitions, counts
 the others and gives the traceback of the first, in the order the partitions
 were selected. The exception objects do not reach the caller.
 
-``update`` skips a partition the index lists but the store does not hold,
-with a warning; ``drop_partitions`` skips it without one. That partition
-appears in none of ``completed``, ``failed`` and ``not_attempted``.
+``update`` and ``copy`` skip a partition the index lists but the store does
+not hold, with a warning; ``drop_partitions`` skips it without one. That
+partition appears in none of ``completed``, ``failed`` and
+``not_attempted``.
 
 Stopping on the first failure
 -----------------------------
@@ -153,6 +155,8 @@ To retry ``drop_partitions``, call it again with the same ``filters`` and
 others are removed. ``timedelta`` is measured from the time of the call, so
 the retry can select more partitions.
 
+To retry ``copy``, remove its target, or copy to another location.
+
 To retry ``View.sync``, call it again with the same ``filters``: the
 partitions already synchronized are skipped. After an interruption, call
 ``validate_partitions(fix=True)`` first, to write again a partition left
@@ -174,8 +178,9 @@ Errors raised before any partition starts
 
 An error found before the operation processes any partition is raised
 directly, without ``PartitionErrors``: a dataset that does not match the
-collection, a value of ``npartitions`` below one, or a partition that
-``update_from`` cannot find raises ``ValueError``. An error raised by the
+collection, a value of ``npartitions`` below one, a partition that
+``update_from`` cannot find, or a ``copy`` to a target that is not empty
+raises ``ValueError``. An error raised by the
 function of ``update`` while it infers its output variables arrives as a
 ``RuntimeError``.
 
@@ -197,12 +202,14 @@ after a failure. With ``distributed=True``, an interrupted operation, for
 example with :kbd:`Ctrl-C`, waits for the tasks it submitted before it
 releases the lock. A second interruption during that wait releases the lock
 at once, while those tasks may still be writing. With ``distributed=False``,
-an interruption stops the partition in progress.
+an interruption stops the partition in progress. ``copy`` takes only the
+lock of its ``synchronizer`` argument, which the new collection receives.
 
-**The partition index.** When ``insert``, ``drop_partitions``,
+**The partition index.** When ``insert``, ``drop_partitions``, ``copy``,
 ``View.sync`` or ``create_view`` stops on an error or an interruption, the
 partitions listed afterwards are the ones the store holds, including one
-left partly written or partly removed.
+left partly written or partly removed. For ``copy``, these are the
+partitions of the new collection.
 
 **Inserted partitions.** ``insert`` writes a new partition in place and
 removes it when its writing fails. To replace an existing partition, it
