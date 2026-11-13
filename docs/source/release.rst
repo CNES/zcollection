@@ -69,7 +69,7 @@ Execution
   ``View.is_synced`` and ``create_view`` process each partition in a task of
   its own, and ``update_from`` follows the same rules. An immutable variable is
   added and removed in the calling process. With ``distributed=True``, at most
-  ``npartitions`` tasks run at the same time, and a task starts when another
+  ``npartitions`` tasks run at the same time, and a task is submitted when
   one finishes; ``npartitions`` defaults to ``None``, the number of Dask
   workers, except for ``insert``, where it defaults to 1. With
   ``distributed=False``, the partitions are processed one at a time in the
@@ -88,9 +88,9 @@ Execution
   names the invalid partitions found. An ``except`` clause naming the type of an error raised
   while a partition is processed no longer catches that error.
 * These operations take ``npartitions`` and ``stop_on_error``. With
-  ``stop_on_error=True``, the default, an operation starts no partition
-  after the first failure, and the partitions in progress finish; with
-  ``False``, it starts all of them.
+  ``stop_on_error=True``, the default, no partition starts after the first
+  failure, except the ones already submitted to Dask, which finish; with
+  ``False``, the operation attempts every partition.
 * These operations, except ``View.is_synced`` and ``validate_partitions``
   without ``fix``, hold the lock of the synchronizer until their tasks
   finish, including after a failure.

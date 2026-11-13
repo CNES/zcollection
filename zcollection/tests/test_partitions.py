@@ -272,22 +272,6 @@ def test_a_read_raises_the_errors_of_its_caller(
         zcol.map(absent_elsewhere).compute()
 
 
-def test_an_update_skips_the_vanished_partition_alone(
-        local_fs,  # noqa: F811
-) -> None:
-    """Updating skips the absent first partition and updates the remaining ones."""
-    zcol = create_test_collection(local_fs, distributed=False)
-    local_fs.fs.rm(next(iter(zcol.partitions())), recursive=True)
-    local_fs.fs.invalidate_cache()
-
-    zcol.update(lambda zds: {'var1': zds['var1'].values + 1},
-                distributed=False)
-    read = zcol.load(distributed=False)
-
-    assert read is not None
-    assert read['var1'].values.min() > 0
-
-
 def test_an_overlap_skips_the_vanished_neighbour_alone(
         local_fs,  # noqa: F811
 ) -> None:

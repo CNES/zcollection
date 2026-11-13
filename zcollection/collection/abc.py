@@ -669,7 +669,8 @@ class WritableCollection(BaseCollection):
             npartitions: The largest number of partitions processed at the
                 same time.
             stop_on_error: If True, no partition starts after the first
-                failure.
+                failure, except the ones already submitted to Dask, which
+                finish.
         """
         execution.run(self._DROP_ARRAY,
                       paths, [self._relative_path(path) for path in paths],
@@ -894,8 +895,8 @@ class WritableCollection(BaseCollection):
                 time.
             distributed: Whether to use Dask. Defaults to True.
             stop_on_error: If True, no partition starts after the first
-                failure, and the partitions in progress finish. Defaults
-                to True.
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Returns:
             The path of each partition written, relative to the collection or
@@ -987,8 +988,9 @@ class WritableCollection(BaseCollection):
             fix: Whether to repair the invalid partitions.
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers.
-            stop_on_error: If True, the default, no partition starts after
-                the first failure.
+            stop_on_error: If True, no partition starts after the first
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Returns:
             The path of each invalid partition, relative to the collection or

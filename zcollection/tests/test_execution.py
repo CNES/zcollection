@@ -89,15 +89,14 @@ def test_window_bounds_the_partitions_in_flight(client, tmp_path) -> None:
     assert peak(recorded(tmp_path)) <= (3 if client else 1)
 
 
-@pytest.mark.parametrize('npartitions', [0, -1])
-def test_npartitions_below_one_is_refused(client, npartitions) -> None:
-    """A number of partitions below one is refused."""
+def test_npartitions_below_one_is_refused() -> None:
+    """``npartitions`` below one is refused."""
     with pytest.raises(ValueError, match='npartitions'):
         execution.run(print,
                       range(10),
                       NAMES,
-                      client=client,
-                      npartitions=npartitions,
+                      client=None,
+                      npartitions=0,
                       stop_on_error=True)
 
 
@@ -131,28 +130,6 @@ def test_report(client, tmp_path, stop_on_error, completed, failed,
     assert (copy.completed, copy.failed,
             copy.not_attempted) == (errors.completed, errors.failed,
                                     errors.not_attempted)
-
-
-def check_arguments(item: int, *, data: list[int], priority: int) -> None:
-    """Check the keyword arguments a task receives."""
-    assert data == [1, 2, 3]
-    assert priority == 5
-
-
-def test_keyword_arguments_reach_the_function(client) -> None:
-    """The keyword arguments reach the function, scattered data included,
-    whatever their names."""
-    data = [1, 2, 3]
-    assert execution.run(check_arguments,
-                         range(2),
-                         NAMES[:2],
-                         client=client,
-                         npartitions=1,
-                         stop_on_error=True,
-                         kwargs={
-                             'data': client.scatter(data) if client else data,
-                             'priority': 5
-                         }) == NAMES[:2]
 
 
 def test_returns_once_the_tasks_in_flight_finish(

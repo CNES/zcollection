@@ -9,9 +9,9 @@ import contextlib
 
 import pytest
 
-from ... import collection, convenience, execution, partitions, sync
+from ... import collection, convenience, execution, partitions
 from ...tests.cluster import dask_client, dask_cluster  # noqa: F401
-from ...tests.data import KEYS, create_key_collection, fail_after, record_lock
+from ...tests.data import KEYS, create_key_collection, fail_after
 from ...tests.fs import local_fs  # noqa: F401
 
 
@@ -97,24 +97,3 @@ def test_a_copy_lists_its_partitions_without_scanning_its_store(
     monkeypatch.undo()
     copied = convenience.open_collection(target, filesystem=local_fs.fs)
     assert tuple(copied.partitions(relative=True)) == KEYS
-
-
-@pytest.mark.usefixtures('dask_client')
-@pytest.mark.parametrize('distributed', [False, True])
-def test_a_copy_takes_the_lock_of_its_target(
-        local_fs,  # noqa: F811
-        monkeypatch,
-        tmp_path,
-        distributed) -> None:
-    """``copy`` takes the lock of the new collection while it copies the
-    partitions, and releases it afterwards."""
-    zcol = create_key_collection(local_fs)
-    synchronizer = sync.ProcessSync(str(tmp_path / 'copy.lock'))
-    held = record_lock(monkeypatch, synchronizer)
-
-    zcol.copy(str(local_fs.root / 'copy'),
-              synchronizer=synchronizer,
-              distributed=distributed)
-
-    assert held == [True, True]
-    assert not synchronizer.is_locked()

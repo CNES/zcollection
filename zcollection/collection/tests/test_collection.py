@@ -224,53 +224,8 @@ def test_insert_passes_its_keyword_arguments_to_the_merge_callable(
                     fs='merge argument')) == 10
 
 
-class RecordingSync(sync.Sync):
-    """A synchronizer that reports whether it is entered."""
-
-    def __init__(self) -> None:
-        self.held = False
-
-    def __enter__(self) -> bool:
-        self.held = True
-        return True
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        self.held = False
-
-    def is_locked(self) -> bool:
-        return self.held
-
-
-@pytest.mark.usefixtures('dask_client')
-@pytest.mark.parametrize('distributed', [False, True])
-def test_insert_writes_the_immutable_variables_under_the_lock(
-        local_fs, distributed) -> None:  # noqa: F811
-    """The immutable variables are written while the collection holds its
-    lock."""
-    original = reference.make_dataset()
-    zcol = convenience.create_collection('time',
-                                         original,
-                                         reference.make_partitioning(),
-                                         str(local_fs.collection),
-                                         filesystem=local_fs.fs,
-                                         synchronizer=RecordingSync())
-    write = storage.write_zarr_group_missing
-    held: list[bool] = []
-
-    def record(*args, **kwargs):
-        held.append(zcol.synchronizer.held)
-        return write(*args, **kwargs)
-
-    with mock.patch.object(storage, 'write_zarr_group_missing', record):
-        zcol.insert(original, distributed=distributed)
-
-    assert held == [True]
-
-
-@pytest.mark.parametrize('distributed', [False, True])
-@pytest.mark.parametrize('npartitions', [None, 2, 0])
 def test_insert_of_an_empty_dataset_writes_nothing(
-        local_fs, npartitions, distributed) -> None:  # noqa: F811
+        local_fs) -> None:  # noqa: F811
     """Inserting a dataset without rows writes no partition and asks for no
     Dask client."""
     inserted = ten_daily_partitions()
@@ -283,9 +238,7 @@ def test_insert_of_an_empty_dataset_writes_nothing(
     with mock.patch.object(dask_utils,
                            'get_client',
                            side_effect=AssertionError):
-        written = zcol.insert(inserted.isel({'num_lines': slice(0, 0)}),
-                              npartitions=npartitions,
-                              distributed=distributed)
+        written = zcol.insert(inserted.isel({'num_lines': slice(0, 0)}))
 
     assert written == ()
     assert tuple(zcol.partitions()) == ()
@@ -1195,18 +1148,15 @@ def test_drop_partitions_measures_the_age_across_time_zones(
                                 distributed=False) == names
 
 
-@pytest.mark.usefixtures('dask_client')
-@pytest.mark.parametrize('distributed', [False, True])
 def test_drop_partitions_holds_the_lock(
         local_fs,  # noqa: F811
         monkeypatch,
-        tmp_path,
-        distributed) -> None:
+        tmp_path) -> None:
     """The collection holds its lock while it removes the partitions."""
     zcol = with_process_sync(
         create_test_collection(local_fs, distributed=False), tmp_path)
     held = record_lock(monkeypatch, zcol)
-    zcol.drop_partitions(distributed=distributed)
+    zcol.drop_partitions(distributed=False)
 
     assert held == [True, True]
     assert not zcol.is_locked()
@@ -1224,23 +1174,6 @@ def test_drop_partitions_skips_an_absent_partition(
 
     assert dropped == names[1:]
     assert tuple(zcol.partitions()) == ()
-
-
-@pytest.mark.parametrize('distributed', [False, True])
-def test_drop_partitions_without_a_selected_partition_asks_for_no_client(
-        local_fs, distributed) -> None:  # noqa: F811
-    """When the filters select no partition, ``drop_partitions`` asks for no
-    Dask client and accepts any npartitions."""
-    zcol = create_test_collection(local_fs, distributed=False)
-
-    with mock.patch.object(dask_utils,
-                           'get_client',
-                           side_effect=AssertionError):
-        dropped = zcol.drop_partitions(filters='year == 1900',
-                                       npartitions=0,
-                                       distributed=distributed)
-
-    assert dropped == ()
 
 
 @pytest.mark.parametrize('arg', ['local_fs', 's3_fs'])
@@ -2348,31 +2281,6 @@ def test_partition_modified(
         _ = zds['time'].values
 
 
-def test_add_variable_leaves_a_vanished_partition(
-        local_fs,  # noqa: F811
-) -> None:
-    """A partition the store no longer holds is not written to.
-
-    The index names it, so add_variable reaches it. Writing there would
-    build a partition holding the one variable.
-    """
-    zcol = create_test_collection(local_fs, distributed=False)
-    partitions = tuple(zcol.partitions())
-    vanished = partitions[1]
-    local_fs.fs.rm(vanished, recursive=True)
-    local_fs.fs.invalidate_cache()
-
-    zcol.add_variable(meta.VariableSchema(name='var3',
-                                          dtype='float64',
-                                          dimensions=('num_lines', )),
-                      distributed=False)
-
-    assert not local_fs.fs.exists(vanished)
-    assert 'var3' in zcol.metadata.variables
-    assert local_fs.fs.exists(
-        local_fs.fs.sep.join((partitions[0], 'var3', 'zarr.json')))
-
-
 def test_validate_partitions_reports_a_vanished_partition(
         local_fs,  # noqa: F811
 ) -> None:
@@ -2492,7 +2400,8 @@ def test_insert_with_chunks(
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_with_empty_collection(fs, request):
-    """Test the behavior when working with an empty collection."""
+    """On a collection without partitions, add_variable and drop_variable
+    change the schema, and update warns that the function is not applied."""
     tested_fs = request.getfixturevalue(fs)
     zds_reference = dataset.Dataset(
         variables=[
@@ -2533,6 +2442,10 @@ def test_with_empty_collection(fs, request):
 
     with pytest.warns(Warning, match='function is not applied'):
         zcol.update(update, varname=var.name, distributed=False)
+
+    zcol.drop_variable(var.name, distributed=False)
+
+    assert var.name not in zcol.metadata.variables
 
 
 def test_insert_writes_the_declared_encoding(

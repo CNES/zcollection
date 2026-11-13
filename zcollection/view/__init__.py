@@ -76,8 +76,9 @@ class View(WritableCollection):
         npartitions: The largest number of partitions written at the same
             time when the view is created. Defaults to the number of Dask
             workers.
-        stop_on_error: If True, the default, no partition starts after the
-            first failure when the view is created.
+        stop_on_error: When the view is created: if True, no partition starts
+            after the first failure, except the ones already submitted to
+            Dask, which finish. Defaults to True.
         _initialize: Whether to populate the partitions of a new view.
         _deprecated: Whether the view was written by an earlier release. Such
             a view can only be read: ``add_variable``, ``drop_variable``,
@@ -192,7 +193,8 @@ class View(WritableCollection):
             npartitions: The largest number of partitions processed at the
                 same time.
             stop_on_error: If True, no partition starts after the first
-                failure.
+                failure, except the ones already submitted to Dask, which
+                finish.
 
         Returns:
             The partitions written, relative to the view.
@@ -370,8 +372,9 @@ class View(WritableCollection):
             distributed: Whether to use Dask. Defaults to True.
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers.
-            stop_on_error: If True, the default, no partition starts after
-                the first failure.
+            stop_on_error: If True, no partition starts after the first
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Raises:
             ValueError: If the view or its reference collection already has
@@ -463,8 +466,9 @@ class View(WritableCollection):
             distributed: Whether to use Dask. Defaults to True.
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers.
-            stop_on_error: If True, the default, no partition starts after
-                the first failure.
+            stop_on_error: If True, no partition starts after the first
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Raises:
             ValueError: If the view has no variable of that name, if the
@@ -744,8 +748,8 @@ class View(WritableCollection):
                 ``distributed``. Default is None.
             distributed: Whether to use dask or not. Default To True.
             stop_on_error: If True, no partition starts after the first
-                failure, and the partitions in progress finish. Defaults
-                to True.
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
             kwargs: The keyword arguments to pass to the function.
 
         Returns:
@@ -846,8 +850,9 @@ class View(WritableCollection):
                 reference partitions are checked.
             npartitions: The largest number of partitions checked at the
                 same time. Defaults to the number of Dask workers.
-            stop_on_error: If True, the default, no partition starts after
-                the first failure.
+            stop_on_error: If True, no partition starts after the first
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Returns:
             True if all selected partitions are present in the view and their
@@ -897,8 +902,9 @@ class View(WritableCollection):
             distributed: Whether to use dask or not. Default To True.
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers.
-            stop_on_error: If True, the default, no partition starts after
-                the first failure.
+            stop_on_error: If True, no partition starts after the first
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Returns:
             A function that can be used as a predicate to get the partitions
@@ -958,8 +964,9 @@ class View(WritableCollection):
                 deletes the partition and removes it from the index.
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers.
-            stop_on_error: If True, the default, no partition starts after
-                the first failure.
+            stop_on_error: If True, no partition starts after the first
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Returns:
             The path of each invalid partition, relative to the view.
@@ -1028,7 +1035,8 @@ class View(WritableCollection):
             npartitions: The largest number of partitions processed at the
                 same time.
             stop_on_error: If True, no partition starts after the first
-                failure.
+                failure, except the ones already submitted to Dask, which
+                finish.
         """
         records = [
             (name,

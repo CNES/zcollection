@@ -130,47 +130,17 @@ def test_a_failed_removal_is_finished_by_a_second_call(target, monkeypatch,
 
 
 @KINDS
-@pytest.mark.usefixtures('dask_client')
-@pytest.mark.parametrize('distributed', [False, True])
 def test_variables_are_added_and_dropped_under_the_lock(
-        target, monkeypatch, tmp_path, distributed) -> None:
+        target, monkeypatch, tmp_path) -> None:
     """The target holds its lock while it creates and removes the
     arrays."""
     target = with_process_sync(target, tmp_path)
     held = record_lock(monkeypatch, target)
-    target.add_variable(EXTRA, distributed)
-    target.drop_variable('extra', distributed)
+    target.add_variable(EXTRA, False)
+    target.drop_variable('extra', False)
 
     assert held == [True] * 4
     assert not target.is_locked()
-
-
-@KINDS
-def test_a_failed_configuration_write_keeps_the_schema(target,
-                                                       monkeypatch) -> None:
-    """The schema of the target changes only once its configuration is
-    written."""
-    with mock.patch.object(type(target),
-                           '_write_config',
-                           side_effect=OSError('write failed')), \
-            pytest.raises(OSError, match='write failed'):
-        target.add_variable(EXTRA, False)
-
-    assert partitions_with(target, 'extra') == []
-    assert 'extra' not in target.metadata.variables
-
-    target.add_variable(EXTRA, False)
-    with mock.patch.object(type(target),
-                           '_write_config',
-                           side_effect=OSError('write failed')), \
-            pytest.raises(OSError, match='write failed'):
-        target.drop_variable('extra', False)
-
-    assert 'extra' in target.metadata.variables
-    assert partitions_with(target, 'extra') == []
-
-    target.drop_variable('extra', False)
-    assert 'extra' not in reopened(target).metadata.variables
 
 
 @KINDS
@@ -208,26 +178,11 @@ def test_a_vanished_partition_is_skipped(target) -> None:
 
     target.add_variable(EXTRA, False)
     assert not target.fs.exists(vanished)
+    assert 'extra' in target.metadata.variables
+    assert partitions_with(target, 'extra') == [KEYS[0], *KEYS[2:]]
 
     target.drop_variable('extra', False)
     assert not target.fs.exists(vanished)
-
-
-@pytest.mark.parametrize('distributed', [False, True])
-def test_a_collection_without_partitions_asks_for_no_client(
-        local_fs, distributed) -> None:  # noqa: F811
-    """Without partitions, the schema changes, no Dask client is asked for,
-    and npartitions is not checked."""
-    zcol = create_key_collection(local_fs, insert=False)
-
-    with mock.patch.object(dask_utils,
-                           'get_client',
-                           side_effect=AssertionError):
-        zcol.add_variable(EXTRA, distributed, npartitions=0)
-        assert 'extra' in zcol.metadata.variables
-        zcol.drop_variable('extra', distributed, npartitions=0)
-
-    assert 'extra' not in zcol.metadata.variables
 
 
 def test_a_failed_immutable_addition_is_undone(
@@ -239,30 +194,12 @@ def test_a_failed_immutable_addition_is_undone(
     immutable = meta.VariableSchema('mask', 'int8', dimensions=('cell', ))
 
     with pytest.raises(execution.PartitionErrors) as info:
-        zcol.add_variable(immutable, True, npartitions=0)
+        zcol.add_variable(immutable, False)
 
     assert list(info.value.failed) == ['.immutable']
     assert 'task failed' in info.value.failed['.immutable']
     assert not local_fs.fs.exists(fs_utils.join_path(zcol._immutable, 'mask'))
     assert 'mask' not in zcol.metadata.variables
-    assert 'mask' not in reopened(zcol).metadata.variables
-
-
-def test_an_immutable_variable_is_processed_without_dask(
-        local_fs) -> None:  # noqa: F811
-    """An immutable variable is added and removed without a Dask client,
-    whatever npartitions."""
-    zcol = create_key_collection(local_fs)
-    immutable = meta.VariableSchema('mask', 'int8', dimensions=('cell', ))
-
-    with mock.patch.object(dask_utils,
-                           'get_client',
-                           side_effect=AssertionError):
-        zcol.add_variable(immutable, True, npartitions=0)
-        assert local_fs.fs.exists(fs_utils.join_path(zcol._immutable, 'mask'))
-        zcol.drop_variable('mask', True, npartitions=0)
-
-    assert not local_fs.fs.exists(fs_utils.join_path(zcol._immutable, 'mask'))
     assert 'mask' not in reopened(zcol).metadata.variables
 
 

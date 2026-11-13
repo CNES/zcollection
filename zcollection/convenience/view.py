@@ -41,8 +41,9 @@ def create_view(path: str,
         distributed: Whether to use dask or not. Default To True.
         npartitions: The largest number of partitions written at the same
             time. Defaults to the number of Dask workers.
-        stop_on_error: If True, the default, no partition starts after the
-            first failure.
+        stop_on_error: If True, no partition starts after the first failure,
+            except the ones already submitted to Dask, which finish. Defaults
+            to True.
 
     Example:
         >>> view_ref = ViewReference(

@@ -112,8 +112,8 @@ def run(func: Callable[..., Any],
             after the other in this process.
         npartitions: The largest number of partitions processed at the same
             time with Dask. Defaults to the number of workers.
-        stop_on_error: If True, no partition starts after the first
-            failure, and the partitions in progress finish.
+        stop_on_error: If True, no partition starts after the first failure,
+            except the ones already submitted to Dask, which finish.
         kwargs: Keyword arguments passed to `func`.
 
     Returns:

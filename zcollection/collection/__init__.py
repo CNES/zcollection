@@ -391,8 +391,8 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 ``None``, which gives it Dask arrays when ``ds`` holds them.
             distributed: Whether to use dask or not. Default To True.
             stop_on_error: If True, no partition starts after the first
-                failure, and the partitions in progress finish. Defaults
-                to True.
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
             kwargs: Additional keyword arguments passed to the merge callable.
 
         Returns:
@@ -583,8 +583,8 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 time.
             distributed: Whether to use dask or not. Default To True.
             stop_on_error: If True, no partition starts after the first
-                failure, and the partitions in progress finish. Defaults
-                to True.
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Returns:
             The path of each partition dropped, relative to the collection.
@@ -631,7 +631,8 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 time.
             distributed: Whether to use dask or not.
             stop_on_error: If True, no partition starts after the first
-                failure.
+                failure, except the ones already submitted to Dask, which
+                finish.
 
         Returns:
             The path of each partition dropped, relative to the collection.
@@ -786,8 +787,8 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 ``distributed``. Default is None.
             distributed: Whether to use dask or not. Default To True.
             stop_on_error: If True, no partition starts after the first
-                failure, and the partitions in progress finish. Defaults
-                to True.
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
@@ -935,8 +936,9 @@ class Collection(ReadOnlyCollection, WritableCollection):
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers. Ignored
                 for an immutable variable.
-            stop_on_error: If True, the default, no partition starts after
-                the first failure.
+            stop_on_error: If True, no partition starts after the first
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Raises:
             ValueError: If the collection already has a variable of that
@@ -1021,8 +1023,9 @@ class Collection(ReadOnlyCollection, WritableCollection):
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers. Ignored
                 for an immutable variable.
-            stop_on_error: If True, the default, no partition starts after
-                the first failure.
+            stop_on_error: If True, no partition starts after the first
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Raises:
             ValueError: If the collection has no variable of that name, if
@@ -1096,8 +1099,8 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 held while ``copy`` writes the new collection. Default is None.
             distributed: Whether to use dask or not. Default To True.
             stop_on_error: If True, no partition starts after the first
-                failure, and the partitions in progress finish. Defaults
-                to True.
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Returns:
             The new collection.
@@ -1192,8 +1195,9 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 from the index.
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers.
-            stop_on_error: If True, the default, no partition starts after
-                the first failure.
+            stop_on_error: If True, no partition starts after the first
+                failure, except the ones already submitted to Dask, which
+                finish. Defaults to True.
 
         Returns:
             The path of each invalid partition, relative to the collection.

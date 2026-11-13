@@ -381,10 +381,11 @@ def test_update_skips_an_absent_partition(
         dask_client,  # noqa: F811
         caplog) -> None:
     """A partition the index names and the store lacks is skipped with a
-    warning, and left out of the result."""
+    warning, also when update infers the output variables, and is left out
+    of the result; the other partitions are updated."""
     output = output_name(update_target)
     update_target.fs.rm(fs_utils.join_path(update_target._partitions_dir,
-                                           'key=2'),
+                                           'key=1'),
                         recursive=True)
 
     if distributed:
@@ -392,14 +393,16 @@ def test_update_skips_an_absent_partition(
     try:
         written = update_target.update(
             lambda zds: {output: zds['source'].values},
-            variables=[output],
             distributed=distributed)
     finally:
         if distributed:
             dask_client.unforward_logging('zcollection.storage')
 
-    assert written == ('key=1', 'key=3', 'key=4')
-    assert 'key=2' in caplog.text
+    assert written == ('key=2', 'key=3', 'key=4')
+    assert 'key=1' in caplog.text
+    loaded = update_target.load(distributed=False)
+    assert loaded is not None
+    assert (loaded[output].values == loaded['source'].values).all()
 
 
 @pytest.mark.parametrize('missing_all', [False, True])
