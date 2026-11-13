@@ -9,6 +9,7 @@ Collection of Zarr groups
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal, cast
+import contextlib
 import datetime
 import functools
 import json
@@ -138,21 +139,18 @@ def _drop_array(partition: str, *, variable: str,
     return None
 
 
-def _check_partition(
-    partition: str,
-    fs: fsspec.AbstractFileSystem,
-) -> tuple[str, bool]:
-    """Check if a given partition is a valid Zarr group.
+def _check_partition(partition: str, *, fs: fsspec.AbstractFileSystem,
+                     variables: tuple[str, ...]) -> execution.Skipped | None:
+    """Check a partition. Return SKIPPED if it is valid, None otherwise.
 
     Args:
         partition: The partition to check.
-        fs: The file system to use.
-
-    Returns:
-        A tuple containing the partition and a boolean indicating whether it is
-        a valid Zarr group.
+        fs: The file system holding the partition.
+        variables: The arrays the partition must hold.
     """
-    return partition, storage.check_zarr_group(partition, fs)
+    if storage.check_zarr_group(partition, fs, variables):
+        return execution.SKIPPED
+    return None
 
 
 class Collection(ReadOnlyCollection, WritableCollection):
@@ -1162,13 +1160,22 @@ class Collection(ReadOnlyCollection, WritableCollection):
                                       filesystem=filesystem,
                                       synchronizer=synchronizer)
 
-    def validate_partitions(self,
-                            filters: PartitionFilter = None,
-                            distributed: bool = True,
-                            fix: bool = False) -> list[str]:
+    def validate_partitions(
+        self,
+        filters: PartitionFilter = None,
+        distributed: bool = True,
+        fix: bool = False,
+        *,
+        npartitions: int | None = None,
+        stop_on_error: bool = True,
+    ) -> tuple[str, ...]:
         """List the invalid partitions of the collection.
 
-        A partition is invalid when it cannot be read.
+        A partition is invalid when it cannot be read, or when it lacks an
+        array of a variable the collection declares with the partitioned
+        dimension. A failed :meth:`add_variable` can leave declared a
+        variable that some partitions lack. Call :meth:`drop_variable` before
+        validating with ``fix``, which otherwise deletes those partitions.
 
         Args:
             filters: The predicate selecting the partitions to check. By
@@ -1176,39 +1183,51 @@ class Collection(ReadOnlyCollection, WritableCollection):
             distributed: Whether to use dask or not. Default To True.
             fix: Whether to delete the invalid partitions and remove them
                 from the index.
+            npartitions: The largest number of partitions processed at the
+                same time. Defaults to the number of Dask workers.
+            stop_on_error: If True, the default, no partition starts after
+                the first failure.
 
         Returns:
-            The path of each invalid partition.
+            The path of each invalid partition, relative to the collection.
+
+        Raises:
+            ValueError: If ``npartitions`` is below one when there are
+                partitions to check.
+            PartitionErrors: If a partition could not be checked or deleted.
+                After a failed check, nothing is deleted, and ``completed``
+                names the invalid partitions found.
         """
-        partitions = tuple(self.partitions(filters=filters))
-        if not partitions:
-            return []
-
-        invalid_partitions: list[str] = []
-
-        def _validity_check(partition: str, valid: bool) -> None:
-            """Warn about the partition and keep its path when it is not
-            valid."""
-            if not valid:
-                warnings.warn(f'Invalid partition: {partition}',
+        with self.synchronizer if fix else contextlib.nullcontext():
+            paths = {
+                self._relative_path(path): path
+                for path in self.partitions(filters=filters)
+            }
+            if not paths:
+                return ()
+            client = self._client_for(list(paths),
+                                      distributed=distributed,
+                                      npartitions=npartitions)
+            variables = tuple(
+                name for name, item in self.metadata.variables.items()
+                if self.dimension in item.dimensions)
+            invalid = execution.run(_check_partition,
+                                    list(paths.values()),
+                                    list(paths),
+                                    client=client,
+                                    npartitions=npartitions,
+                                    stop_on_error=stop_on_error,
+                                    kwargs={
+                                        'fs': self.fs,
+                                        'variables': variables
+                                    })
+            for name in invalid:
+                warnings.warn(f'Invalid partition: {name}',
                               category=RuntimeWarning,
                               stacklevel=2)
-                invalid_partitions.append(partition)
-
-        check = functools.partial(_check_partition, fs=self.fs)
-        if distributed:
-            client = dask_utils.get_client()
-            for item in dask.distributed.as_completed(
-                    client.map(check, partitions)):
-                _validity_check(*item.result())
-        else:
-            for item in partitions:
-                _validity_check(*check(item))
-
-        if fix and invalid_partitions:
-            with self.synchronizer, self._index.updating():
-                for item in invalid_partitions:
-                    _LOGGER.info('Removing invalid partition: %s', item)
-                    fs_utils.remove_tree(self.fs, item)
-                self._index.remove(invalid_partitions)
-        return invalid_partitions
+            if fix and invalid:
+                self._drop_partitions([paths[name] for name in invalid],
+                                      npartitions=npartitions,
+                                      distributed=distributed,
+                                      stop_on_error=stop_on_error)
+        return invalid

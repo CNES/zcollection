@@ -5,18 +5,20 @@ Handling failures
 :py:meth:`~zcollection.collection.Collection.update`,
 :py:meth:`~zcollection.collection.Collection.update_from`,
 :py:meth:`~zcollection.collection.Collection.add_variable`,
-:py:meth:`~zcollection.collection.Collection.drop_variable` and
-:py:meth:`~zcollection.collection.Collection.drop_partitions` process each
+:py:meth:`~zcollection.collection.Collection.drop_variable`,
+:py:meth:`~zcollection.collection.Collection.drop_partitions` and
+:py:meth:`~zcollection.collection.Collection.validate_partitions` process each
 partition on its own. When some partitions fail, the operation raises
 :py:class:`~zcollection.PartitionErrors`, which tells which partitions were
 completed, which failed and why, and which were not attempted. Views behave the
-same way for ``update``, ``update_from``, ``add_variable``,
-``drop_variable``, ``sync`` and ``is_synced``, and so does
+same way for ``update``, ``update_from``, ``add_variable``, ``drop_variable``,
+``sync``, ``is_synced`` and ``validate_partitions``, and so does
 :py:func:`~zcollection.create_view` when it writes the partitions of a new
 view. ``add_variable`` and ``drop_variable`` add and remove an immutable
-variable in the calling process; ``PartitionErrors`` names it
-``.immutable``. After a failed ``is_synced``, ``completed`` names the
-partitions found out of sync.
+variable in the calling process; ``PartitionErrors`` names it ``.immutable``.
+After a failed ``is_synced``, ``completed`` names the partitions found out of
+sync. After a failed check of ``validate_partitions``, ``completed`` names the
+invalid partitions found, and none of them is repaired.
 
 The examples use the same daily measurements as :doc:`updating`, with a
 function that fails on segment 2.

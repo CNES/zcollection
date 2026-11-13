@@ -1643,7 +1643,8 @@ def test_a_deprecated_view_repairs_no_partition(deprecated,
     zview.fs.invalidate_cache()
 
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
-        assert zview.validate_partitions(distributed=False) == [partition]
+        assert zview.validate_partitions(
+            distributed=False) == (PARTITIONS[1], )
 
     with pytest.warns(RuntimeWarning, match='Invalid partition'), \
             pytest.raises(PermissionError, match='read only'):

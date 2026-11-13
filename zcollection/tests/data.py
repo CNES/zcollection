@@ -14,6 +14,7 @@ import itertools
 
 import numcodecs
 import numpy
+import pytest
 
 from .. import (
     collection,
@@ -220,3 +221,30 @@ def create_key_collection(fs, *, insert: bool = True):
     if insert:
         zcol.insert(zds, distributed=False)
     return zcol
+
+
+def create_target(kind: str, fs):
+    """Return the collection of :func:`create_key_collection`, or a view of
+    it, according to `kind`."""
+    create_key_collection(fs)
+    if kind == 'collection':
+        return convenience.open_collection(str(fs.collection),
+                                           mode='w',
+                                           filesystem=fs.fs)
+    return convenience.create_view(str(fs.view),
+                                   view.ViewReference(str(fs.collection),
+                                                      fs.fs),
+                                   filesystem=fs.fs,
+                                   distributed=False)
+
+
+#: Run a test on a collection and on a view, through a ``target`` fixture
+#: that calls :func:`create_target`.
+KINDS = pytest.mark.parametrize('target', ['collection', 'view'],
+                                indirect=True)
+
+
+def tasks(target):
+    """Return the module defining the tasks that process the partitions of
+    `target`."""
+    return view.detail if isinstance(target, view.View) else collection

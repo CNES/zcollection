@@ -1007,12 +1007,12 @@ def test_validate_partitions_reports_a_missing_variable(
 
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         invalid = zview.validate_partitions(distributed=distributed)
-    assert invalid == [partitions[1]]
+    assert invalid == (zview._relative_path(partitions[1]), )
 
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         zview.validate_partitions(distributed=distributed, fix=True)
 
-    assert zview.validate_partitions(distributed=distributed) == []
+    assert zview.validate_partitions(distributed=distributed) == ()
     assert tuple(zview.partitions()) == partitions
 
 
@@ -1028,8 +1028,8 @@ def test_validate_partitions_reports_a_missing_checksum(fs, request) -> None:
 
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         invalid = zview.validate_partitions(distributed=False, fix=True)
-    assert invalid == [partitions[0]]
-    assert zview.validate_partitions(distributed=False) == []
+    assert invalid == (zview._relative_path(partitions[0]), )
+    assert zview.validate_partitions(distributed=False) == ()
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
@@ -1043,13 +1043,13 @@ def test_validate_partitions_reports_an_orphan(fs, request) -> None:
 
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         invalid = zview.validate_partitions(distributed=False)
-    assert invalid == [partitions[0]]
+    assert invalid == (zview._relative_path(partitions[0]), )
 
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         zview.validate_partitions(distributed=False, fix=True)
 
     assert not zview.fs.exists(partitions[0])
-    assert zview.validate_partitions(distributed=False) == []
+    assert zview.validate_partitions(distributed=False) == ()
     assert len(zview._held_partitions()) == 5
 
 
@@ -1072,8 +1072,8 @@ def test_validate_partitions_reports_an_unreadable_array(fs, request) -> None:
 
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         invalid = zview.validate_partitions(distributed=False, fix=True)
-    assert invalid == [partitions[2]]
-    assert zview.validate_partitions(distributed=False) == []
+    assert invalid == (zview._relative_path(partitions[2]), )
+    assert zview.validate_partitions(distributed=False) == ()
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
@@ -1087,10 +1087,11 @@ def test_validate_partitions_checks_the_selected_partitions(fs,
     zview.fs.invalidate_cache()
 
     assert zview.validate_partitions(filters='day == 1',
-                                     distributed=False) == []
+                                     distributed=False) == ()
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
-        assert zview.validate_partitions(filters='day == 4',
-                                         distributed=False) == [partitions[1]]
+        assert zview.validate_partitions(
+            filters='day == 4',
+            distributed=False) == (zview._relative_path(partitions[1]), )
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])

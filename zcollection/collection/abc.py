@@ -967,10 +967,15 @@ class WritableCollection(BaseCollection):
                                  self))
 
     @abc.abstractmethod
-    def validate_partitions(self,
-                            filters: PartitionFilter = None,
-                            distributed: bool = True,
-                            fix: bool = False) -> list[str]:
+    def validate_partitions(
+        self,
+        filters: PartitionFilter = None,
+        distributed: bool = True,
+        fix: bool = False,
+        *,
+        npartitions: int | None = None,
+        stop_on_error: bool = True,
+    ) -> tuple[str, ...]:
         """List the invalid partitions.
 
         A partition is invalid when it cannot be read.
@@ -980,9 +985,14 @@ class WritableCollection(BaseCollection):
                 default, every partition is checked.
             distributed: Whether to use dask or not. Default To True.
             fix: Whether to repair the invalid partitions.
+            npartitions: The largest number of partitions processed at the
+                same time. Defaults to the number of Dask workers.
+            stop_on_error: If True, the default, no partition starts after
+                the first failure.
 
         Returns:
-            The path of each invalid partition.
+            The path of each invalid partition, relative to the collection or
+            the view.
         """
         ...
 

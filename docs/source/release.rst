@@ -65,10 +65,10 @@ Storage
 Execution
 ^^^^^^^^^
 * ``insert``, ``update``, ``add_variable``, ``drop_variable``,
-  ``drop_partitions``, ``View.sync``, ``View.is_synced`` and
-  ``create_view`` process each partition in a task of its own, and
-  ``update_from`` follows the same rules. An immutable variable is added and
-  removed in the calling process. With ``distributed=True``, at most
+  ``drop_partitions``, ``validate_partitions``, ``View.sync``,
+  ``View.is_synced`` and ``create_view`` process each partition in a task of
+  its own, and ``update_from`` follows the same rules. An immutable variable is
+  added and removed in the calling process. With ``distributed=True``, at most
   ``npartitions`` tasks run at the same time, and a task starts when another
   one finishes; ``npartitions`` defaults to the number of Dask workers. With
   ``distributed=False``, the partitions are processed one at a time in the
@@ -80,16 +80,18 @@ Execution
   ``completed``, ``failed`` and ``not_attempted`` attributes give the
   partitions completed, the traceback of each failed partition and the
   partitions not attempted. After a failed ``add_variable``, the partitions
-  completed are the ones that received the array before the array was
-  removed. After a failed ``View.is_synced``, ``completed`` names the
-  partitions found out of sync. An ``except`` clause naming the type of an
-  error raised while a partition is processed no longer catches that error.
+  completed are the ones that received the array before the array was removed.
+  After a failed ``View.is_synced``, ``completed`` names the partitions found
+  out of sync. After a failed check of ``validate_partitions``, ``completed``
+  names the invalid partitions found. An ``except`` clause naming the type of an error raised
+  while a partition is processed no longer catches that error.
 * These operations take ``npartitions`` and ``stop_on_error``. With
   ``stop_on_error=True``, the default, an operation starts no partition
   after the first failure, and the partitions in progress finish; with
   ``False``, it starts all of them.
-* These operations, except ``View.is_synced``, hold the lock of the
-  synchronizer until their tasks finish, including after a failure.
+* These operations, except ``View.is_synced`` and ``validate_partitions``
+  without ``fix``, hold the lock of the synchronizer until their tasks
+  finish, including after a failure.
   ``insert`` writes the immutable variables under the same lock as the
   partitions.
 * ``update`` returns the paths of the partitions it wrote, relative to the
@@ -124,6 +126,10 @@ Behaviour
 * ``drop_partitions`` returns a tuple of the paths of the partitions it
   removed, relative to the collection. A partition the index lists but the
   store does not hold is left out.
+* ``Collection.validate_partitions`` returns a tuple of the paths of the
+  invalid partitions, relative to the collection.
+* ``Collection.validate_partitions`` reports a partition that lacks an array
+  of a variable the collection declares with the partitioned dimension.
 * ``drop_partitions(timedelta=...)`` measures the age of a partition
   whatever the local time zone.
 * If ``add_variable`` fails and removing the added arrays fails as well,

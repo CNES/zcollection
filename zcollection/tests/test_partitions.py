@@ -542,7 +542,7 @@ def test_a_copy_skips_a_missing_partition(fs, missing_all, request) -> None:
         assert loaded is not None
         assert len(loaded['time'].array) == 5
     assert len(tuple(copied.partitions())) == (0 if missing_all else 5)
-    assert copied.validate_partitions(distributed=False) == []
+    assert copied.validate_partitions(distributed=False) == ()
 
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])

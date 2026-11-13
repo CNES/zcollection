@@ -9,13 +9,13 @@ View on a reference collection.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
+import contextlib
 import copy
 import functools
 import json
 import logging
 import warnings
 
-import dask.distributed
 import fsspec
 
 from .. import (
@@ -45,12 +45,15 @@ from .detail import (
     _held_one_dataset,
     _load_dataset,
     _load_dataset_with_overlap,
+    _repair_partition,
     _serialize_filters,
     _sync,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
+
+    import dask.distributed
 
 __all__ = ('View', 'ViewReference')
 
@@ -210,12 +213,7 @@ class View(WritableCollection):
                                     client=client,
                                     npartitions=npartitions,
                                     stop_on_error=stop_on_error,
-                                    kwargs={
-                                        'base_dir': self.base_dir,
-                                        'fs': self.fs,
-                                        'view_ref': self.view_ref,
-                                        'metadata': self.metadata
-                                    })
+                                    kwargs=self._partition_kwargs())
             self._index.add(partitions)
         return written
 
@@ -874,13 +872,8 @@ class View(WritableCollection):
                                  client=client,
                                  npartitions=npartitions,
                                  stop_on_error=stop_on_error,
-                                 kwargs={
-                                     'base_dir': self.base_dir,
-                                     'fs': self.fs,
-                                     'view_ref': self.view_ref,
-                                     'metadata': self.metadata,
-                                     'dry_run': True
-                                 })
+                                 kwargs=self._partition_kwargs()
+                                 | {'dry_run': True})
 
     def sync(
         self,
@@ -937,26 +930,46 @@ class View(WritableCollection):
             dict(self.view_ref.partitioning.parse(item)) for item in written)
         return lambda item: item in partition_ids
 
-    def validate_partitions(self,
-                            filters: collection.PartitionFilter = None,
-                            distributed: bool = True,
-                            fix: bool = False) -> list[str]:
+    def validate_partitions(
+        self,
+        filters: collection.PartitionFilter = None,
+        distributed: bool = True,
+        fix: bool = False,
+        *,
+        npartitions: int | None = None,
+        stop_on_error: bool = True,
+    ) -> tuple[str, ...]:
         """List the invalid partitions of the view.
 
-        A partition is invalid when it cannot be read, or when the reference
-        collection no longer has it.
+        A partition is invalid when it cannot be read, when it lacks the
+        array of a variable the view declares or its ``.checksum`` array, or
+        when the reference collection no longer has it. A failed
+        :meth:`add_variable` can leave declared a variable that some
+        partitions lack. Call :meth:`drop_variable` before validating with
+        ``fix``, which otherwise writes those partitions again.
 
         Args:
             filters: The predicate selecting the partitions to check. By
                 default, every partition is checked.
             distributed: Whether to use dask or not. Default To True.
             fix: Whether to repair the invalid partitions. When the reference
-                collection still has the partition, the view writes it again.
-                Otherwise the view deletes the partition and removes it from
-                the index.
+                collection still has the partition, the view writes it again,
+                and its variables hold their fill value. Otherwise the view
+                deletes the partition and removes it from the index.
+            npartitions: The largest number of partitions processed at the
+                same time. Defaults to the number of Dask workers.
+            stop_on_error: If True, the default, no partition starts after
+                the first failure.
 
         Returns:
-            The path of each invalid partition.
+            The path of each invalid partition, relative to the view.
+
+        Raises:
+            ValueError: If ``npartitions`` is below one when there are
+                partitions to check.
+            PartitionErrors: If a partition could not be checked or repaired.
+                After a failed check, nothing is repaired, and ``completed``
+                names the invalid partitions found.
         """
         if isinstance(filters, str):
             expr: Any = expression.Expression(filters)
@@ -965,69 +978,71 @@ class View(WritableCollection):
         else:
             expr = None
 
-        sep = self.fs.sep
-        partitions = tuple(item for item in self._held_partitions()
-                           if self._is_selected(item.split(sep), expr))
-        if not partitions:
-            return []
-
-        invalid_partitions: list[str] = []
-
-        def _validity_check(partition: str, valid: bool) -> None:
-            """Warn about the partition and keep its path when it is not
-            valid."""
-            if not valid:
-                warnings.warn(f'Invalid partition: {partition}',
+        with self.synchronizer if fix else contextlib.nullcontext():
+            sep = self.fs.sep
+            partitions = tuple(item for item in self._held_partitions()
+                               if self._is_selected(item.split(sep), expr))
+            if not partitions:
+                return ()
+            client = self._client_for(partitions,
+                                      distributed=distributed,
+                                      npartitions=npartitions)
+            invalid = execution.run(_check_partition,
+                                    partitions,
+                                    partitions,
+                                    client=client,
+                                    npartitions=npartitions,
+                                    stop_on_error=stop_on_error,
+                                    kwargs=self._partition_kwargs())
+            for name in invalid:
+                warnings.warn(f'Invalid partition: {name}',
                               category=RuntimeWarning,
                               stacklevel=2)
-                invalid_partitions.append(partition)
+            if fix and invalid:
+                self._repair_partitions(invalid,
+                                        client=client,
+                                        npartitions=npartitions,
+                                        stop_on_error=stop_on_error)
+        return invalid
 
-        check = functools.partial(_check_partition,
-                                  base_dir=self.base_dir,
-                                  fs=self.fs,
-                                  view_ref=self.view_ref,
-                                  metadata=self.metadata)
-        if distributed:
-            client = dask_utils.get_client()
-            for item in dask.distributed.as_completed(
-                    client.map(check, partitions)):
-                _validity_check(*item.result())
-        else:
-            for item in partitions:
-                _validity_check(*check(item))
+    def _partition_kwargs(self) -> dict[str, Any]:
+        """Return the keyword arguments shared by the tasks that process the
+        partitions of the view."""
+        return {
+            'base_dir': self.base_dir,
+            'fs': self.fs,
+            'view_ref': self.view_ref,
+            'metadata': self.metadata
+        }
 
-        if fix and invalid_partitions:
-            self._fix_partitions(invalid_partitions)
-        return [
-            fs_utils.join_path(self.base_dir, item)
-            for item in invalid_partitions
-        ]
-
-    def _fix_partitions(self, partitions: Sequence[str]) -> None:
-        """Write the invalid partitions again, or delete them.
+    def _repair_partitions(self, partitions: Sequence[str], *,
+                           client: dask.distributed.Client | None,
+                           npartitions: int | None,
+                           stop_on_error: bool) -> None:
+        """Write the invalid partitions again, or delete those the reference
+        collection no longer has. The caller holds the lock.
 
         Args:
-            partitions: The path of each invalid partition, relative to the
-                view.
+            partitions: The invalid partitions, relative to the view.
+            client: The Dask client, or ``None``.
+            npartitions: The largest number of partitions processed at the
+                same time.
+            stop_on_error: If True, no partition starts after the first
+                failure.
         """
-        orphans: list[str] = []
-        with self.synchronizer, self._index.updating():
-            for item in partitions:
-                path = fs_utils.join_path(self.base_dir, item)
-                if self.fs.exists(path):
-                    self.fs.rm(path, recursive=True)
-                    self.fs.invalidate_cache(path)
-                if self.view_ref.fs.exists(
-                        fs_utils.join_path(
-                            self.view_ref.partition_properties.dir, item)):
-                    _LOGGER.info('Writing partition again: %s', item)
-                    _sync(item,
-                          base_dir=self.base_dir,
-                          fs=self.fs,
-                          view_ref=self.view_ref,
-                          metadata=self.metadata)
-                else:
-                    _LOGGER.info('Removing invalid partition: %s', item)
-                    orphans.append(item)
-            if orphans:
-                self._index.remove(orphans)
+        records = [
+            (name,
+             self.view_ref.fs.exists(
+                 fs_utils.join_path(self.view_ref.partition_properties.dir,
+                                    name))) for name in partitions
+        ]
+        with self._index.updating(reindex_on_error=True):
+            execution.run(_repair_partition,
+                          records,
+                          partitions,
+                          client=client,
+                          npartitions=npartitions,
+                          stop_on_error=stop_on_error,
+                          kwargs=self._partition_kwargs())
+            self._index.remove(
+                [name for name, rewrite in records if not rewrite])

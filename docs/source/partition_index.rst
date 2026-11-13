@@ -58,13 +58,18 @@ Checking partitions
 --------------------
 
 To find partitions that cannot be opened or read, use
-``validate_partitions()``. It reads every array and returns the paths of
-the invalid partitions:
+``validate_partitions()``. It reads every array, checks that each partition
+holds an array for every variable the collection declares with the
+partitioned dimension, and returns the paths of the invalid partitions,
+relative to the collection:
 
 .. code-block:: python
 
     invalid = collection.validate_partitions(distributed=False)
 
 With ``fix=True``, it deletes invalid partition directories still present
-in the store and removes their index entries. Use ``reindex()`` to rebuild
-the partition list when the index needs repair.
+in the store and removes their index entries. A failed ``add_variable`` can
+leave declared a variable that some partitions lack. Call ``drop_variable``
+before ``validate_partitions(fix=True)``, which otherwise deletes those
+partitions. Use ``reindex()`` to rebuild the partition list when the index
+needs repair.

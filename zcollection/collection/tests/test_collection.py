@@ -2386,7 +2386,7 @@ def test_validate_partitions_reports_a_vanished_partition(
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         invalid = zcol.validate_partitions(distributed=False, fix=True)
 
-    assert invalid == [vanished]
+    assert invalid == (zcol._relative_path(vanished), )
     assert tuple(zcol.partitions()) == tuple(item for item in partitions
                                              if item != vanished)
 
@@ -2429,8 +2429,8 @@ def test_invalid_partitions(
         invalid_partitions = zcol.validate_partitions(distributed=distributed)
 
     assert len(invalid_partitions) == 2
-    assert sorted(invalid_partitions) == sorted(partitions[ix]
-                                                for ix in choices)
+    assert sorted(invalid_partitions) == sorted(
+        zcol._relative_path(partitions[ix]) for ix in choices)
     with pytest.warns(RuntimeWarning, match='Invalid partition'):
         zcol.validate_partitions(fix=True, distributed=distributed)
 

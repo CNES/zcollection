@@ -11,7 +11,6 @@ import pytest
 
 from .. import (
     collection as collection_module,
-    convenience,
     dask_utils,
     execution,
     fs_utils,
@@ -20,13 +19,15 @@ from .. import (
     store,
     view,
 )
-from ..view import detail as view_detail
 from .cluster import dask_client, dask_cluster  # noqa: F401
 from .data import (
     KEYS,
+    KINDS,
     create_key_collection,
+    create_target,
     fail_after,
     record_lock,
+    tasks,
     with_process_sync,
 )
 from .fs import local_fs  # noqa: F401
@@ -38,20 +39,7 @@ EXTRA = meta.VariableSchema('extra', 'float64', dimensions=('row', ))
 @pytest.fixture
 def target(request, local_fs):  # noqa: F811
     """Return a collection, or a view of it, with four partitions."""
-    create_key_collection(local_fs)
-    if request.param == 'collection':
-        return convenience.open_collection(str(local_fs.collection),
-                                           mode='w',
-                                           filesystem=local_fs.fs)
-    return convenience.create_view(str(local_fs.view),
-                                   view.ViewReference(str(local_fs.collection),
-                                                      local_fs.fs),
-                                   filesystem=local_fs.fs,
-                                   distributed=False)
-
-
-KINDS = pytest.mark.parametrize('target', ['collection', 'view'],
-                                indirect=True)
+    return create_target(request.param, local_fs)
 
 
 def reopened(target):
@@ -68,12 +56,6 @@ def partitions_with(target, name: str) -> list[str]:
         target._relative_path(path) for path in target.partitions()
         if target.fs.exists(fs_utils.join_path(path, name))
     ]
-
-
-def tasks(target):
-    """Return the module defining the tasks that add and drop the arrays of
-    `target`."""
-    return view_detail if isinstance(target, view.View) else collection_module
 
 
 @KINDS

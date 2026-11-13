@@ -578,8 +578,13 @@ def _check_partition(
     fs: fsspec.AbstractFileSystem,
     view_ref: collection.Collection,
     metadata: meta.DatasetSchema,
-) -> tuple[str, bool]:
-    """Check whether a partition of a view is valid.
+) -> Skipped | None:
+    """Check a partition of a view. Return SKIPPED if it is valid, None
+    otherwise.
+
+    A partition is valid when the reference collection still has it, it
+    holds the array of every variable the view declares and the checksum
+    array, and each of those arrays can be read.
 
     Args:
         partition: The partition to check, relative to the view.
@@ -587,15 +592,10 @@ def _check_partition(
         fs: The file system used to access the variables in the view.
         view_ref: The view reference.
         metadata: The schema of the variables owned by the view.
-
-    Returns:
-        The partition, and whether the reference collection still holds it,
-        the partition contains every variable the view declares and the
-        checksum array, and each of those arrays is readable.
     """
     partition_ref = join_path(view_ref.partition_properties.dir, partition)
     if not view_ref.fs.exists(partition_ref):
-        return partition, False
+        return None
 
     path = join_path(base_dir, partition)
     expected = {*metadata.variables, CHECKSUM_FILE}
@@ -604,9 +604,9 @@ def _check_partition(
         fs.invalidate_cache(path)
         held = {os.path.basename(item['name']) for item in fs.listdir(path)}
     except FileNotFoundError:
-        return partition, False
+        return None
     if not expected.issubset(held):
-        return partition, False
+        return None
 
     try:
         for name in expected:
@@ -614,8 +614,32 @@ def _check_partition(
             data = array[...]
             del data
     except (FileNotFoundError, ValueError, TypeError, RuntimeError):
-        return partition, False
-    return partition, True
+        return None
+    return SKIPPED
+
+
+def _repair_partition(record: tuple[str, bool], *, base_dir: str,
+                      fs: fsspec.AbstractFileSystem,
+                      view_ref: collection.Collection,
+                      metadata: meta.DatasetSchema) -> None:
+    """Delete a partition of a view, then write it again if the reference
+    collection still has it.
+
+    Args:
+        record: The partition, relative to the view, and whether the
+            reference collection still has it.
+        base_dir: The base directory of the view.
+        fs: The file system of the view.
+        view_ref: The reference collection.
+        metadata: The schema of the variables owned by the view.
+    """
+    partition, rewrite = record
+    path = join_path(base_dir, partition)
+    with contextlib.suppress(FileNotFoundError):
+        fs.rm(path, recursive=True)
+    fs.invalidate_cache(path)
+    if rewrite:
+        _sync_partition(metadata, partition, base_dir, fs, view_ref)
 
 
 def _sync(

@@ -653,23 +653,32 @@ def add_zarr_array(
 
 
 def check_zarr_group(
-    dirname: str,
-    fs: fsspec.AbstractFileSystem,
+        dirname: str,
+        fs: fsspec.AbstractFileSystem,
+        variables: Iterable[str] = (),
 ) -> bool:
     """Check if a directory contains a valid Zarr group.
 
     Args:
         dirname: The name of the directory containing the Zarr group to check.
         fs: The file system to use.
+        variables: The arrays the group must hold.
 
     Returns:
-        True if the directory contains a valid Zarr group, False otherwise.
+        True if the group opens, holds each array of `variables`, and each of
+        its arrays can be read, False otherwise.
     """
+    required = set(variables)
     try:
         group: zarr.Group = store.open_group(fs, dirname)
-        for _, array in group.arrays():
-            data = array[...]
+        for name in required:
+            data = store.open_array(fs, join_path(dirname, name),
+                                    mode='r')[...]
             del data
+        for name, array in group.arrays():
+            if name not in required:
+                data = array[...]
+                del data
     except (FileNotFoundError, ValueError, TypeError, RuntimeError):
         return False
     return True
