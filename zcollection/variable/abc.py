@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from ..meta import Attribute
     from ..type_hints import ArrayLike, NDArray, NDMaskedArray
 
+__all__ = ('Variable', )
+
 #: Name of the attribute holding the value that marks a missing measure.
 #: Only variables that have one carry it.
 FILL_VALUE = '_FillValue'
@@ -258,7 +260,7 @@ class IVariable(abc.ABC):
 
         .. seealso::
 
-            :meth:`Variable.array`
+            :attr:`Variable.array <zcollection.variable.abc.Variable.array>`
         """
 
     @property

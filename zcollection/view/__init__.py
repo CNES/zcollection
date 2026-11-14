@@ -846,7 +846,8 @@ class View(WritableCollection):
         Args:
             distributed: Whether to use dask or not. Default To True.
             filters: The predicate used to select reference partitions, as
-                in :meth:`zcollection.Collection.partitions`. If None, all
+                in :meth:`Collection.partitions
+                <zcollection.collection.Collection.partitions>`. If None, all
                 reference partitions are checked.
             npartitions: The largest number of partitions checked at the
                 same time. Defaults to the number of Dask workers.
@@ -893,8 +894,8 @@ class View(WritableCollection):
         Args:
             filters: The predicate used to select the partitions to
                 synchronize. To get more information on the predicate, see the
-                documentation of the :meth:`zcollection.Collection.partitions`
-                method.
+                documentation of the :meth:`Collection.partitions
+                <zcollection.collection.Collection.partitions>` method.
                 If None, all partitions of the reference are synchronized.
                 Existing partitions are not removed, even if they are not
                 selected by the predicate. The view records the predicate

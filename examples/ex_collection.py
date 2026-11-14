@@ -1,9 +1,10 @@
 """
-Overview of a Collection.
+Working with a collection
 =========================
 
-This section outlines the steps required to get started with the main features
-of a ``Collection``.
+This example walks through the main features of ZCollection: creating a
+collection, inserting and reading data, managing variables, and applying
+computations to partitions.
 """
 from __future__ import annotations
 
@@ -23,10 +24,10 @@ if TYPE_CHECKING:
 
 
 # %%
-# Initialization of the environment
-# ---------------------------------
+# Setting up the environment
+# --------------------------
 #
-# Before we create our first collection, we will create a dataset to record.
+# Start by creating a sample dataset that will be used throughout the example.
 def create_dataset() -> zcollection.Dataset:
     """Create a dataset to record."""
     generator: Iterator[zcollection.Dataset] = \
@@ -39,146 +40,145 @@ assert zds is not None
 zds.to_xarray()
 
 # %%
-# We will create the file system that we will use. In this example, a file
-# system in memory.
+# Use an in-memory file system to store the collection without writing
+# anything to disk.
 fs: fsspec.AbstractFileSystem = fsspec.filesystem('memory')
 
 # %%
-# Finally we create a local dask cluster using only threads in order to work
-# with the file system stored in memory.
+# Create a local Dask cluster using threads. This allows the workers to
+# share the same in-memory file system.
 cluster = dask.distributed.LocalCluster(processes=False)
 client = dask.distributed.Client(cluster)
 
 # %%
-# Creation of the partitioning
-# ----------------------------
+# Creating the collection
+# -----------------------
 #
-# Before creating our collection, we define the partitioning of our dataset. In
-# this example, we will partition the data by ``month`` using the variable
-# ``time``.
+# Before creating a collection, define how its data will be partitioned.
+# Here, measurements are grouped by month using the ``time`` variable.
 partition_handler = zcollection.partitioning.Date(('time', ), resolution='M')
 
 # %%
-# Finally, we create our collection:
+# Create the collection using the dataset's schema, the partitioning scheme,
+# and the in-memory file system.
 collection: zcollection.Collection = zcollection.create_collection(
     'time', zds, partition_handler, '/my_collection', filesystem=fs)
 
 # %%
+# The collection's configuration records its variables, dimensions, and
+# storage settings. ZCollection uses this metadata to ensure that future
+# insertions remain compatible with the collection.
+#
 # .. note::
 #
-#    The collection created can be accessed using the following command ::
+#    You can reopen an existing collection using:
 #
-#        >>> collection = zcollection.open_collection("/my_collection",
-#        >>>                                          filesystem=fs)
+#    .. code-block:: python
 #
-# When the collection has been created, a configuration file is created. This
-# file contains all the metadata to ensure that all future inserted data will
-# have the same features as the existing data (data consistency).
+#        collection = zcollection.open_collection(
+#            "/my_collection", filesystem=fs)
+#
+# Inspect the configuration:
 pprint.pprint(collection.metadata.get_config())
 
 # %%
-# Now that the collection has been created, we can insert new records.
+# Inserting data
+# --------------
+#
+# The collection is now initialized and ready to receive data.
+# ``insert`` splits the dataset according to the partitioning scheme
+# and writes each monthly partition.
 collection.insert(zds)
 
 # %%
-# .. note::
+# By default, inserting data into an existing partition replaces its
+# contents. See :doc:`/inserting` for details on merging new data with
+# existing measurements.
 #
-#     When inserting it's possible to specify the :ref:`merge strategy of a
-#     partition <merging_datasets>`. By default, the last inserted data
-#     overwrite the existing ones. Others strategy can be defined, for example,
-#     to update existing data (overwrite the updated data, while keeping the
-#     existing ones). This last strategy allows updating incrementally an
-#     existing partition. ::
-#
-#         >>> import zcollection.merging
-#         >>> collection.insert(
-#         ...     ds, merge_callable=zcollection.merging.merge_time_series)
-#
-#     If the time series has data gaps, it is possible to specify a tolerance
-#     level for detecting data gaps in the inserted axis dataset in order to
-#     keep the existing data. ::
-#
-#         >>> collection.insert(
-#         ...     ds, merge_callable=zcollection.merging.merge_time_series,
-#         ...     tolerance=numpy.timedelta64(1, 'h'))
-#
-#
-# Let's look at the different partitions thus created.
+# Inspect the directories created for the year 2000:
 pprint.pprint(fs.listdir('/my_collection/year=2000'))
 
 # %%
-# This collection is composed of several partitions, but it is always handled
-# as a single data set.
-#
 # Loading data
 # ------------
-# To load the dataset call the method
-# :py:meth:`load<zcollection.collection.Collection.load>` on the instance.  By
-# default, the method loads all partitions stored in the collection.
+#
+# Although the data is stored in separate partitions, ``load`` returns
+# a single dataset.
+#
+# By default, :py:meth:`~zcollection.collection.Collection.load` reads
+# all partitions. With ``delayed=True``, the returned variables contain
+# Dask arrays, whose values are loaded when needed.
 collection.load(delayed=True)
 
 # %%
-# .. note::
+# You can select specific partitions using ``filters``. The expression
+# refers to the keys defined by the partitioning scheme, here ``year``
+# and ``month``.
 #
-#   By default, the data is loaded as a :py:class:`dask.array<da.Array>`. It is
-#   possible to load the data as a :py:class:`numpy.ndarray` by specifying the
-#   parameter ``delayed=False``.
-#
-# You can also filter the partitions to be considered by filtering the
-# partitions using keywords used for partitioning in a valid Python expression.
+# For example, load only February 2000:
 collection.load(filters='year == 2000 and month == 2')
 
 # %%
-# You can also used a callback function to filter partitions with a complex
-# condition.
+# For more complex selections, ``filters`` also accepts a callable
+# receiving the partition keys.
+#
+# This example selects months whose first day falls between the
+# specified dates.
 collection.load(
     filters=lambda keys: datetime.date(2000, 2, 15) <= datetime.date(
         keys['year'], keys['month'], 1) <= datetime.date(2000, 3, 15))
 
 # %%
-# Note that the :py:meth:`load<zcollection.collection.Collection.load>`
-# function may return None if no partition has been selected.
+# If no partition matches the selection, ``load`` returns ``None``.
 assert collection.load(filters='year == 2002 and month == 2') is None
 
 # %%
-# Editing variables
-# -----------------
+# Managing variables
+# ------------------
 #
-# .. note::
+# Variables can be added to or removed from an existing collection.
+# These operations require write access and are not available when
+# the collection is opened in read-only mode.
 #
-#     The functions for modifying collections are not usable if the collection
-#     is :py:meth:`open<zcollection.open_collection>` in read-only mode.
-#
-# It's possible to delete a variable from a collection.
+# First, remove ``var2`` and load the collection to inspect the result:
 collection.drop_variable('var2')
 collection.load()
 
 # %%
-# The variable used for partitioning cannot be deleted.
+# Variables used by the partitioning scheme cannot be removed.
+# Attempting to remove ``time`` raises ``ValueError``:
 try:
     collection.drop_variable('time')
 except ValueError as exc:
     print(exc)
 
 # %%
-# The :py:meth:`add_variable<zcollection.collection.Collection.add_variable>`
-# method allows you to add a new variable to the collection.
+# Use :py:meth:`~zcollection.collection.Collection.add_variable` to
+# declare a new variable and create its arrays in the collection.
+#
+# Here, restore ``var2`` using its original schema:
 collection.add_variable(zds.metadata().variables['var2'])
 
 # %%
-# The newly created variable is initialized with its default value.
+# The new variable is initialized with its fill value. Values equal
+# to this fill value are masked when the collection is read.
 zds = collection.load()
 assert zds is not None
 zds.variables['var2'].values
 
 
 # %%
-# Finally it's possible to
-# :py:meth:`update<zcollection.collection.Collection.update>` the existing
-# variables.
+# Updating variables
+# ------------------
 #
-# In this example, we will alter the variable ``var2`` by setting it to 1
-# anywhere the variable ``var1`` is defined.
+# :py:meth:`~zcollection.collection.Collection.update` computes new
+# variable values by applying a function to each partition.
+#
+# The function receives a partition dataset and returns a dictionary
+# mapping variable names to their computed arrays.
+#
+# In this example, ``var2`` is set to 1 wherever ``var1`` has defined
+# values.
 def ones(zds) -> dict[str, numpy.ndarray]:
     """Returns a variable with ones everywhere."""
     return {'var2': zds.variables['var1'].values * 0 + 1}
@@ -192,30 +192,28 @@ zds.variables['var2'].values
 
 
 # %%
-# .. note::
+# Using neighboring partitions
+# ----------------------------
 #
-#   The method :py:meth:`update<zcollection.collection.Collection.update>`
-#   supports the ``delayed`` parameter. With ``delayed=False``, the callback
-#   receives variables stored as NumPy arrays. With ``delayed=True``, their
-#   arrays are Dask arrays. The default, ``None``, follows ``distributed``:
-#   ``True`` uses Dask arrays and ``False`` uses NumPy arrays.
+# Some computations require information from neighboring partitions.
+# With ``depth=1``, ``update`` loads one neighboring partition on each
+# side of the partition being processed.
 #
-# Sometime is it important to know the values of the neighboring partitions.
-# This can be done using the
-# :py:meth:`update<zcollection.collection.Collection.update>` method with the
-# ``depth`` argument. In this example, we will set the variable ``var2`` to 2
-# wherever the processed partition has a neighbor on each side, -1
-# if the left partition is missing and -2 if the right partition is missing.
+# A function declaring ``partition_info`` receives information about
+# the processed partition, including its position within the window.
 #
-# .. note::
+# Here, set ``var2`` to:
 #
-#   ``partition_info.partition`` contains the target partition's keys.
-#   Access a key with ``partition_info.partition['month']`` and the relative
-#   partition name with ``partition_info.name``.
-#   ``partition_info.indices`` selects it along ``partition_info.dimension``.
-#   With depth=1, a slice starting at 0 indicates that the left neighbor is
-#   missing. A slice ending at the dataset's length indicates that the right
-#   neighbor is missing. See :doc:`/computing` for overlap and trimming examples.
+# - 2 when the partition has neighbors on both sides.
+# - -1 when its left neighbor is missing.
+# - -2 when its right neighbor is missing.
+#
+# ``partition_info.indices`` identifies the processed partition within
+# the loaded window. A slice starting at 0 indicates that no left
+# neighbor was loaded. Similarly, a slice ending at the window's length
+# indicates that no right neighbor was loaded.
+#
+# See :doc:`/computing` for more information about ``PartitionInfo``.
 def twos(
         ds,
         partition_info: zcollection.PartitionInfo) -> dict[str, numpy.ndarray]:
@@ -241,24 +239,29 @@ assert zds is not None
 zds.variables['var2'].values
 
 # %%
-# Map a function over the collection
-# ----------------------------------
-# It's possible to map a function over the partitions of the collection.
+# Mapping over partitions
+# -----------------------
+#
+# :py:meth:`~zcollection.collection.Collection.map` applies a function
+# to each partition without modifying the collection.
+#
+# It returns a Dask bag containing the partition keys and the results
+# of the function. Call ``compute()`` to execute the computation.
+#
+# For example, calculate the mean of ``var1 + var2`` in each partition:
 for partition, array in collection.map(lambda ds: (  # type: ignore[arg-type]
         ds['var1'].values + ds['var2'].values)).compute():
     print(f' * partition = {partition}: mean = {array.mean()}')
 
 # %%
-# .. note::
+# :py:meth:`~zcollection.collection.Collection.map_overlap` works
+# similarly, but loads neighboring partitions along with the one being
+# processed.
 #
-#     The :py:meth:`map<zcollection.collection.Collection.map>` method is
-#     lazy. To compute the result, you need to call the method ``compute``
-#     on the returned object.
+# With ``depth=1``, each function call receives a window containing
+# the partition and up to one neighbor on either side.
 #
-# It's also possible to map a function over the partitions with a a number of
-# neighboring partitions, like the
-# :py:meth:`update<zcollection.collection.Collection.update>`. To do so, use the
-# :py:meth:`map_overlap<zcollection.collection.Collection.map_overlap>` method.
+# The example below computes ``var1 + var2`` over each window:
 for partition, array in collection.map_overlap(
         lambda ds: (  # type: ignore[arg-type]
             ds['var1'].values + ds['var2'].values),
@@ -266,7 +269,7 @@ for partition, array in collection.map_overlap(
     print(f' * partition = {partition}: mean = {array.mean()}')
 
 # %%
-# Close the local cluster to avoid printing warning messages in the other
-# examples.
+# Close the Dask client and cluster to release their resources and
+# avoid warnings when running other examples.
 client.close()
 cluster.close()

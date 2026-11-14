@@ -172,7 +172,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
             the collection.
         partition_handler: The partitioning strategy for the collection. This
             is an instance of a subclass of
-            :py:class:`zarr_partitioning.PartitionHandler`.
+            :py:class:`~zcollection.partitioning.abc.Partitioning`.
         partition_base_dir: The base directory for the collection. This is the
             directory where the subdirectories containing the partitioned data
             are stored.
@@ -184,7 +184,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
             instance of a subclass of :py:class:`fsspec.AbstractFileSystem`.
         synchronizer: The synchronizer to use for the collection. This is an
             instance of a subclass of
-            :py:class:`zarr_synchronizer.Synchronizer`.
+            :py:class:`~zcollection.sync.Sync`.
 
     Raises:
         ValueError:
@@ -305,7 +305,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 :py:class:`fsspec.AbstractFileSystem`.
             synchronizer: The synchronizer to use for the collection. This is
                 an instance of a subclass of
-                :py:class:`zarr_synchronizer.Synchronizer`.
+                :py:class:`~zcollection.sync.Sync`.
 
         Returns:
             The collection.

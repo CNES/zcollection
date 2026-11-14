@@ -6,41 +6,13 @@
    :show-inheritance:
    {% block methods %}
 
-   {%- set attr = [] -%}
    {%- set meth = [] -%}
-   {%- set private = [] -%}
-   {%- set protected = [] -%}
-   {%- set special = [] -%}
    {%- set inherited_meth = [] -%}
-   {%- set skip = ['__abstractmethods__',
-                   '__annotations__',
-                   '__dict__',
-                   '__doc__',
-                   '__entries__',
-                   '__hash__',
-                   '__init__',
-                   '__members__',
-                   '__module__',
-                   '__slots__',
-                   '__slotnames__',
-                   '__weakref__'] -%}
-
-   {%- for item in methods if not item in skip -%}
+   {%- for item in methods if not item.startswith('_') -%}
       {%- if item in inherited_members -%}
          {{ inherited_meth.append(item) or "" }}
       {%- else -%}
          {{ meth.append(item) or "" }}
-      {%- endif -%}
-   {%- endfor -%}
-
-   {%- for item in members
-         if not item in inherited_members and not item in skip -%}
-      {%- if item.startswith('__') and item.endswith('__') -%}
-         {{ special.append(item) or "" }}
-      {%- elif item.startswith('__') -%}
-         {{ private.append(item) or "" }}
-      {%- elif item.startswith('_') -%}
-         {{ protected.append(item) or "" }}
       {%- endif -%}
    {%- endfor %}
 
@@ -48,7 +20,7 @@
    .. rubric:: {{ _('Attributes') }}
    .. autosummary::
       :toctree:
-   {% for item in attributes %}
+   {% for item in attributes if not item.startswith('_') %}
       ~{{ name }}.{{ item }}
    {%- endfor %}
    {% endif -%}
@@ -61,34 +33,6 @@
       ~{{ name }}.{{ item }}
    {%- endfor %}
    {% endif -%}
-
-   {%- if protected %}
-   .. rubric:: {{ _('Protected Methods') }}
-   .. autosummary::
-      :toctree:
-   {% for item in protected %}
-      ~{{ name }}.{{ item }}
-   {%- endfor %}
-   {% endif -%}
-
-   {%- if private %}
-   .. rubric:: {{ _('Private Methods') }}
-   .. autosummary::
-      :toctree:
-   {% for item in private %}
-      ~{{ name }}.{{ item }}
-   {%- endfor %}
-   {% endif -%}
-
-   {%- if special %}
-
-   .. rubric:: {{ _('Special Methods') }}
-   .. autosummary::
-      :toctree:
-   {% for item in special %}
-      ~{{ name }}.{{ item }}
-   {%- endfor %}
-   {%- endif -%}
 
    {%- if inherited_meth %}
 

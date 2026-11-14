@@ -5,6 +5,7 @@ channels:
 dependencies:
   - dask-core
   - distributed
+  - fasteners
   - furo
   - jupyter-sphinx
   - matplotlib-base
@@ -13,6 +14,7 @@ dependencies:
   - requests
   - s3fs
   - setuptools-scm
+  - sphinx
   - sphinx-gallery
   - sphinx-inline-tabs
   - xarray

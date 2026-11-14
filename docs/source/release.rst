@@ -4,349 +4,397 @@ Release notes
 2026.x.0
 --------
 
-Features
-^^^^^^^^
-* A collection is usable without a Dask cluster (PR #16).
-* ``partitions``, ``load``, ``update``, ``map`` and ``map_overlap`` take a
-  ``selected_partitions`` parameter. A path that follows the partitioning
-  but names no existing partition is left out, and the collection or the
-  view logs a warning naming it.
-* ``insert`` takes a ``delayed`` parameter setting the representation its
-  merge callable receives the partitions in.
-* ``Collection.update_from`` and ``View.update_from`` write the variables of a
-  dataset into existing partitions. Each row of the dataset is written to the
-  row of its partition that has the same value of ``align_on``; a view reads
-  ``align_on`` from its reference collection. The other rows and variables
-  keep their values. ``update_from`` returns the paths of the partitions it
-  wrote, relative to the collection or the view.
-* ``View.validate_partitions`` lists the invalid partitions of a view. With
-  ``fix``, the view writes again the ones the reference collection still has,
-  and deletes the others.
-* ``View.update`` takes a ``variables`` parameter (PR #14, issue #13).
-* ``View.is_synced`` takes a ``filters`` parameter to check selected reference
+New features
+^^^^^^^^^^^^
+
+* Collections can be read and written without a Dask cluster (PR #16).
+* ``partitions``, ``load``, ``update``, ``map``, and ``map_overlap`` accept
+  ``selected_partitions`` to select partitions by path. A path that matches
+  the partitioning scheme but does not exist is skipped with a warning naming
+  it, for both collections and views.
+* ``Collection.update_from`` and ``View.update_from`` update existing
+  partitions using values from a dataset. Rows are matched by ``align_on``;
+  views read this variable from their reference collection. Other rows and
+  variables remain unchanged. The methods return the paths of the updated
+  partitions, relative to the collection or view.
+* ``View.validate_partitions`` identifies invalid view partitions. With
+  ``fix=True``, it rewrites partitions still present in the reference
+  collection and removes the others.
+* ``View.update`` accepts a ``variables`` parameter (PR #14, issue #13).
+* ``View.is_synced`` accepts ``filters`` to check selected reference
   partitions. By default, it checks all reference partitions.
-* ``GroupedSequence`` partitioning, with the starting value of the group as a
-  parameter.
-* Immutable variables are insertable and updatable, and a collection holding
-  only immutable variables is readable.
-* ``Collection.add_variable`` and ``Collection.drop_variable`` accept
+* The new ``GroupedSequence`` partitioning groups sequence values into bins
+  with a configurable starting value.
+* Collections support inserting and updating immutable variables, as well
+  as reading collections that contain only immutable variables.
+  ``Collection.add_variable`` and ``Collection.drop_variable`` also support
   immutable variables.
-* A view holding no declared variable reads and maps the collection it
-  references with ``load``, ``map`` and ``map_overlap``.
-* The metadata of a collection and of a dataset carry the dimensions, and the
-  configuration of a partitioning carries the data types.
-* ``VariableSchema``, ``DatasetSchema`` and ``Dimension`` are reachable from
-  the package.
-* ``AbsentPartition``, ``ModifiedVariableError`` and ``PartitionErrors`` are
-  reachable from the package.
+* Views with no declared variables can use ``load``, ``map``, and
+  ``map_overlap`` to access variables from their reference collection.
+* Dataset and collection metadata include dimension definitions, and
+  partitioning configurations include data types.
+* ``VariableSchema``, ``DatasetSchema``, ``Dimension``,
+  ``AbsentPartition``, ``ModifiedVariableError``, and ``PartitionErrors``
+  are available directly from the package.
 
-Storage
-^^^^^^^
-* Collections and views use Zarr 3. Existing Zarr 2 collections and views
+Storage and migration
+^^^^^^^^^^^^^^^^^^^^^
+
+* Collections and views now use Zarr 3. Existing Zarr 2 collections and views
   remain readable; migration creates a writable copy. See :doc:`migration`.
-* ``.zcollection`` carries the version of the layout it is written in. A
-  collection written in a newer one is refused.
-* ``zcollection.migration`` supports selective migration of collections
-  and views, progress reporting, data comparison and pruning.
-  Interrupted migrations can be resumed.
-* Collections and views maintain a partition index. If the index lists
-  missing partitions, ``load``, ``map``, ``map_overlap`` and ``update`` skip
-  them with a warning. ``Collection.copy`` also skips such missing source
-  partitions. ``Collection.reindex`` and ``View.reindex`` rebuild the index
-  from the store when it needs to be repaired. See :doc:`partition_index`.
-* The fill value of a variable is held in the ``_FillValue`` attribute of an
-  array, beside the fill value Zarr 3 requires of every array.
-* Variable schemas accept native Zarr 3 codecs and supported numcodecs codecs.
-  The numcodecs codecs are translated into their Zarr 3 equivalents.
-* Opening a group or an array of a Zarr 3 collection costs one request for its
-  metadata. Reading a collection, updating it and reading a view send fewer
-  requests to the store.
+* The ``.zcollection`` configuration records the storage layout version.
+  Collections written with a newer layout version cannot be opened.
+* ``zcollection.migration`` supports selective migration of collections and
+  views, progress reporting, data comparison, and pruning. Interrupted
+  migrations can be resumed.
+* Collections and views maintain a partition index. When the index contains
+  partitions missing from storage, ``load``, ``map``, ``map_overlap``, and
+  ``update`` skip them with a warning. ``Collection.copy`` also skips
+  missing source partitions. ``Collection.reindex`` and ``View.reindex``
+  rebuild the index from storage. See :doc:`partition_index`.
+* Variable fill values are recorded in the ``_FillValue`` array attribute,
+  alongside the fill value required by Zarr 3 for every array.
+* Variable schemas support native Zarr 3 codecs and compatible numcodecs
+  codecs. Supported numcodecs codecs are translated to their Zarr 3
+  equivalents.
+* Opening a Zarr 3 group or array requires one metadata request. Reading
+  and updating collections, and reading views, now require fewer requests
+  to storage.
 
-Execution
-^^^^^^^^^
-* ``insert``, ``update``, ``add_variable``, ``drop_variable``,
-  ``drop_partitions``, ``validate_partitions``, ``copy``, ``View.sync``,
-  ``View.is_synced`` and ``create_view`` process each partition in a task of
-  its own, and ``update_from`` follows the same rules. An immutable variable is
-  added and removed in the calling process. With ``distributed=True``, at most
-  ``npartitions`` tasks run at the same time, and a task is submitted when
-  one finishes; ``npartitions`` defaults to ``None``, the number of Dask
-  workers, except for ``insert``, where it defaults to 1. With
-  ``distributed=False``, the partitions are processed one at a time in the
-  calling process. By default, earlier releases updated and copied the
-  partitions in one batch per worker, added or removed a variable or
-  synchronized a view in all the partitions at once, and removed all the
-  selected partitions at once. With ``npartitions=None``,
-  earlier releases inserted one partition at a time. See :doc:`failures`.
-* If a partition fails, these operations raise ``PartitionErrors``. Its
-  ``completed``, ``failed`` and ``not_attempted`` attributes give the
-  partitions completed, the traceback of each failed partition and the
-  partitions not attempted. After a failed ``add_variable``, the partitions
-  completed are the ones that received the array before the array was removed.
-  After a failed ``View.is_synced``, ``completed`` names the partitions found
-  out of sync. After a failed check of ``validate_partitions``, ``completed``
-  names the invalid partitions found. An ``except`` clause naming the type of an error raised
-  while a partition is processed no longer catches that error.
-* These operations take ``npartitions`` and ``stop_on_error``. With
-  ``stop_on_error=True``, the default, no partition starts after the first
-  failure, except the ones already submitted to Dask, which finish; with
-  ``False``, the operation attempts every partition.
-* These operations, except ``View.is_synced`` and ``validate_partitions``
-  without ``fix``, hold the lock of the synchronizer until their tasks
-  finish, including after a failure.
-  ``insert`` writes the immutable variables under the same lock as the
-  partitions.
-* ``update`` returns the paths of the partitions it wrote, relative to the
-  collection or the view.
-* After a failed ``update``, the file system cache of the selected partitions
-  is cleared.
-* ``merging.perform`` takes the arguments of the merge callable in
-  ``merge_kwargs``. Every extra keyword argument of ``insert`` reaches the
-  merge callable. One named after a positional parameter of the merge
-  callable makes each partition fail with ``TypeError``.
+Execution and failure handling
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Behaviour
-^^^^^^^^^
-* With ``depth``, ``map_overlap`` and ``update`` load the neighbors of a
-  partition whether ``filters`` and ``selected_partitions`` select them or
-  not, so a partial update
-  writes the values a full one does (issue #27). Earlier releases formed the
-  windows among the filtered partitions only.
-* A keyword argument named ``selected_partitions`` given to ``update``,
-  ``map`` or ``map_overlap`` no longer reaches the function.
-* With ``ProcessSync``, ``Collection.is_locked()`` reports whether its
-  synchronizer holds the lock. It returns ``False`` after release and
-  when the lock is held by another process.
-* A partition is written with the compressor, the filters and the fill value
-  the collection declares for each of its variables.
+* ``insert``, ``update``, ``update_from``, ``add_variable``,
+  ``drop_variable``, ``drop_partitions``, ``validate_partitions``, ``copy``,
+  ``View.sync``, ``View.is_synced``, and ``create_view`` process partitions
+  independently.
+
+  With ``distributed=True``, each partition runs in a separate Dask task.
+  At most ``npartitions`` tasks are in flight, with another submitted as
+  each task finishes. The default ``npartitions=None`` uses the number of
+  Dask workers, except for ``insert``, which defaults to 1. With
+  ``distributed=False``, partitions are processed sequentially in the
+  calling process. Immutable variables are added and removed in the
+  calling process.
+
+  By default, earlier releases updated and copied partitions in one batch
+  per worker, added or removed variables and synchronized views across
+  all partitions at once, and removed all selected partitions at once.
+  With ``npartitions=None``, insertion previously processed one partition
+  at a time. See :doc:`failures`.
+
+* Partition failures raise ``PartitionErrors``, which provides:
+
+  - ``completed``: paths of completed partitions.
+  - ``failed``: paths mapped to error tracebacks.
+  - ``not_attempted``: paths of partitions not processed.
+
+  After a failed ``add_variable``, ``completed`` names the partitions that
+  received the array before cleanup. After a failed ``View.is_synced``, it
+  names partitions found out of sync. After a failed check with
+  ``validate_partitions``, it names invalid partitions found. Errors raised
+  while processing a partition are reported through ``PartitionErrors``;
+  catching their original exception type directly no longer handles them.
+
+* These operations accept ``npartitions`` and ``stop_on_error``. With
+  ``stop_on_error=True`` (the default), no new tasks are submitted after a
+  failure; tasks already submitted to Dask finish. With ``False``, every
+  partition is attempted.
+* Operations hold their synchronizer lock until their tasks finish, even
+  after a failure. ``View.is_synced`` and ``validate_partitions`` without
+  ``fix`` are exceptions. ``insert`` writes immutable variables under the
+  same lock as its partitions.
+* ``update`` returns paths of written partitions relative to the collection
+  or view. After a failed update, the filesystem cache of the selected
+  partitions is cleared.
+* ``merging.perform`` accepts merge-callback arguments through
+  ``merge_kwargs``. Extra keyword arguments passed to ``insert`` are
+  forwarded to the merge callable. Passing a keyword already supplied as
+  one of the callable's positional parameters causes each affected
+  partition to fail with ``TypeError``.
+
+Behavior changes and fixes
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Partition selection and processing
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* With ``depth``, ``map_overlap`` and ``update`` load neighboring partitions
+  even when ``filters`` or ``selected_partitions`` exclude them. Partial
+  updates therefore use the same windows as full updates. Earlier releases
+  formed overlap windows only from selected partitions (issue #27).
+* The ``selected_partitions`` argument to ``update``, ``map``, and
+  ``map_overlap`` is no longer passed to the user callback.
+* Operations with overlap accept variable selections that omit the
+  partitioned dimension, including selections containing only immutable
+  variables.
+* ``insert`` returns partition paths relative to the collection and returns
+  an empty tuple when inserting an empty dataset with
+  ``distributed=True``.
+* ``drop_partitions`` returns a tuple of removed partition paths relative
+  to the collection, excluding entries that exist in the index but not in
+  storage. Its ``timedelta`` selection measures partition age independently
+  of the local time zone.
+* ``Collection.validate_partitions`` returns a tuple of invalid partition
+  paths relative to the collection. It also detects partitions missing an
+  array for a declared variable spanning the partitioned dimension.
+
+Variables and datasets
+~~~~~~~~~~~~~~~~~~~~~~
+
+* Partitions use the compressor, filters, and fill value declared for each
+  variable in the collection.
 * Dimensions other than the partitioned dimension must declare a size.
-* A variable's fill value must be compatible with its data type and encoding.
-* Missing values are masked correctly when a variable's fill value is
-  NaN or NaT.
+* Fill values must be compatible with the variable's data type and encoding.
+  NaN and NaT fill values are now masked correctly.
 * Variables loaded from a collection have a deterministic order.
-* ``insert`` returns partition paths relative to the collection.
-* ``drop_partitions`` returns a tuple of the paths of the partitions it
-  removed, relative to the collection. A partition the index lists but the
-  store does not hold is left out.
-* ``Collection.validate_partitions`` returns a tuple of the paths of the
-  invalid partitions, relative to the collection.
-* ``Collection.validate_partitions`` reports a partition that lacks an array
-  of a variable the collection declares with the partitioned dimension.
-* ``drop_partitions(timedelta=...)`` measures the age of a partition
-  whatever the local time zone.
-* If ``add_variable`` fails and removing the added arrays fails as well,
-  the error of ``add_variable`` carries a note naming the partitions where
-  the array may remain, and the schema still declares the variable.
-* ``View.drop_variable`` removes the variable from the schema once every
-  partition succeeded. Removing an absent array succeeds, so a second call
-  finishes a failed removal.
-* ``View.add_variable`` writes the variable to the configuration of the view
-  before it creates the arrays, also when the view has no partitions.
-* ``View.sync(filters=...)`` records its filters once every selected
-  partition is synchronized.
-* ``View.is_synced`` raises ``PartitionErrors`` for a partition without its
-  ``.checksum`` array. With no partition selected, it returns ``True``.
-* Inserting an empty dataset with ``distributed=True`` returns an empty tuple.
-* ``Collection.copy`` without ``filesystem`` writes the copy on the file system
-  of the collection.
-* ``Collection.copy`` refuses a target that is not empty and copies the
-  immutable variables. It writes the configuration before the partitions:
-  if it stops afterwards, the new collection opens with the partitions its
-  store holds.
-* ``insert`` hands its merge callable the representation of the dataset it
-  receives. A dataset of Dask arrays stays lazy through an insertion made
-  without a Dask cluster.
-* When ``data`` is omitted, ``Dataset.add_variable`` uses the variable's
-  existing data, if available.
-* ``Dataset.add_variable`` raises ``ValueError`` when the number of data
-  dimensions differs from the variable's declared dimensions.
-* ``Sequence.decode`` raises ``ValueError`` when the number of values differs
-  from the number of partitioning variables.
-* Writing a partition stops with an error naming the variables the store does
-  not list under it.
-* Concatenating datasets that do not hold the same variables stops with an
-  error naming the variables in disagreement.
-* ``update`` forwards positional and keyword arguments to the user callback
-  (PR #15, issue #12).
+* ``insert`` preserves the representation of its input dataset when passing
+  it to the merge callable. Dask arrays remain lazy when inserting without
+  a Dask cluster. The new ``delayed`` parameter lets callers control the
+  representation passed to the merge callable.
+* ``Dataset.add_variable`` uses a variable's existing data, when available,
+  if ``data`` is omitted. It raises ``ValueError`` if the number of data
+  dimensions differs from the declared dimensions.
+* ``Sequence.decode`` raises ``ValueError`` if the number of values does not
+  match the number of partitioning variables.
+* Errors when writing a partition identify variables missing from its
+  storage directory. Errors when concatenating datasets identify variables
+  that differ between the datasets.
+
+Callbacks and synchronization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ``update`` forwards additional positional and keyword arguments to the
+  user callback (PR #15, issue #12).
 * Callbacks declaring ``partition_info`` receive a
   :py:class:`zcollection.PartitionInfo` object with ``partition``, ``name``,
-  ``dimension`` and ``indices`` attributes. Callbacks that unpacked the former
-  tuple must access ``dimension`` and ``indices`` through these attributes.
-  The object is available in ``map``, ``map_overlap`` and ``update``, including
-  calls without overlap and the inference call of ``update``.
-* ``Collection.update`` and ``View.update`` default ``delayed`` to ``None``.
-  Variables load as NumPy arrays with ``distributed=False`` and as Dask
-  arrays with ``distributed=True``. An explicit ``delayed`` value overrides
-  this choice.
-* Operations with overlap accept selections that omit the partitioned
-  dimension, including selections containing only immutable variables.
-* Views support reference collections on a different filesystem when adding
-  variables, synchronizing partitions and running callbacks.
-* ``View.load`` returns ``None`` when an explicit partition selection retains
-  no data, including when the reference holds immutable variables.
-* ``view.sync()`` honours ``filters`` (issue #24).
+  ``dimension``, and ``indices`` attributes. Code that unpacked the former
+  tuple must now access ``dimension`` and ``indices`` as attributes. The
+  object is available in ``map``, ``map_overlap``, and ``update``, including
+  calls without overlap and the output-inference call of ``update``.
+* ``Collection.update`` and ``View.update`` default to ``delayed=None``.
+  With ``distributed=False``, variables load as NumPy arrays; with
+  ``distributed=True``, they load as Dask arrays. Explicit ``delayed``
+  values override this behavior.
+* ``Collection.is_locked()`` reports whether its ``ProcessSync``
+  synchronizer holds the lock. It returns ``False`` after the lock is
+  released and when another process holds it.
 
-Removed
-^^^^^^^
+Views and recovery
+~~~~~~~~~~~~~~~~~~
+
+* If ``add_variable`` fails and its cleanup also fails, the variable
+  remains declared in the schema. The error includes a note naming
+  partitions where its array may remain.
+* ``View.drop_variable`` removes the schema entry only after all
+  partitions have succeeded. Removing an already absent array succeeds,
+  allowing a second call to complete a failed removal.
+* ``View.add_variable`` records the variable in the view configuration
+  before creating its arrays, including when the view has no partitions.
+* ``View.sync(filters=...)`` records its filters after all selected
+  partitions have been synchronized. ``view.sync()`` honors ``filters``
+  (issue #24).
+* ``View.is_synced`` raises ``PartitionErrors`` when a partition lacks its
+  ``.checksum`` array and returns ``True`` when no partitions are selected.
+* Views can use reference collections on a different file system when
+  adding variables, synchronizing partitions, and running callbacks.
+* ``View.load`` returns ``None`` when an explicit partition selection
+  contains no data, including when the reference collection has immutable
+  variables.
+* ``Collection.copy`` uses the source collection's file system when
+  ``filesystem`` is omitted. It rejects non-empty targets and copies
+  immutable variables. The configuration is written before the partitions,
+  so a partially completed copy can be opened with the partitions present
+  in its target storage.
+
+Removed APIs
+^^^^^^^^^^^^
+
 * The ``Dataset`` constructor no longer accepts ``chunks`` or
-  ``block_size_limit``. Configure chunk sizes in ``Dimension`` and the
-  block-size limit in ``DatasetSchema``.
-* The ``validate`` parameter has been removed from ``Collection.insert``.
-  Compatibility checks for partitioned data can no longer be disabled.
-* ``new_variable``. ``Variable.duplicate`` builds a variable from another
-  one, with the data and the properties it is given.
+  ``block_size_limit``. Configure chunk sizes through ``Dimension`` and
+  the block-size limit through ``DatasetSchema``.
+* ``Collection.insert`` no longer accepts ``validate``. Compatibility
+  checks for partitioned data can no longer be disabled.
+* ``new_variable`` has been removed. Use ``Variable.duplicate`` to create
+  a variable from another, supplying the data and properties required.
 
-Renamed
-^^^^^^^
-* The ``npartition`` parameter of ``Collection.map_overlap`` is named
-  ``npartitions``.
-* The ``varname`` parameter of ``View.drop_variable`` is named
-  ``variable``.
-* ``meta.Variable`` is named ``meta.VariableSchema``, and ``meta.Dataset`` is
-  named ``meta.DatasetSchema``.
-* ``Dataset.dims_chunk`` is named ``dim_chunks``, and holds a mapping of a
-  dimension name to the size of its chunks. It was a property returning a
-  sequence of ``Dimension``.
+Renamed APIs
+^^^^^^^^^^^^
+
+* ``Collection.map_overlap``: ``npartition`` is now ``npartitions``.
+* ``View.drop_variable``: ``varname`` is now ``variable``.
+* ``meta.Variable`` and ``meta.Dataset`` are now ``meta.VariableSchema``
+  and ``meta.DatasetSchema``.
+* ``Dataset.dims_chunk`` is now ``dim_chunks``, a mapping from dimension
+  names to chunk sizes. Previously, it was a property returning a sequence
+  of ``Dimension`` objects.
 
 Requirements
 ^^^^^^^^^^^^
+
 * Python 3.12 or later.
-* Zarr 3.4 or later. The bounds on ``fsspec``, ``s3fs`` and ``numcodecs`` are
-  lifted.
+* Zarr 3.4 or later, and fsspec 2024.12.0 or later. The upper bounds on
+  ``fsspec`` and ``numcodecs`` have been removed, and ``pandas`` is no
+  longer required.
+
 
 2026.6.0
 --------
-* A directory that does not match the partitioning scheme is skipped when the
-  partitions of a collection are listed.
-* Masked arrays are written with the versions of Dask that follow NumPy 2.
-* The package publishes from a checkout that carries its tags.
+
+* Ignore directories that do not match the partitioning scheme when listing
+  a collection's partitions.
+* Fix writing masked arrays with Dask versions following NumPy 2.
+* Support publishing the package from a checkout containing its tags.
+
 
 2024.2.0
 --------
-* Refactor merging module and improve temporary directory handling.
-* Bug fix: Add cache invalidation for updated partitions.
+
+* Refactor the merging module and improve temporary directory handling.
+* Invalidate the cache after updating partitions.
+
 
 2024.1.0
 --------
-* Bug fix: Partitions must not be sorted lexicographically.
+
+* Fix partition ordering: partitions must not be sorted lexicographically.
+
 
 2023.11.2
 ---------
-* Returns a list of added/deleted partitions.
+
+* Return a list of added and removed partitions.
+
 
 2023.11.1
 ---------
-* Skip filesystem scans: Queries utilizing an indexer reuse known partitions for
-  efficiency.
+
+* Avoid filesystem scans for indexer queries by reusing known partitions.
+
 
 2023.11.0
 ---------
-* Evaluate an expression from a dataset.
-* Fix linter warning.
-* Validate partitions.
+
+* Support evaluating expressions from a dataset.
+* Fix a linter warning.
+* Add partition validation.
+
 
 2023.10.0
 ---------
-* Merge time series with data gaps.
-* Fix Linux fork startup blocking test.
-* Correction of issues related to CI executions.
-* Added an option to specify the list of variables used by the callback
-  function for updating a partition.
-* Classmethods removed from indexers.
+
+* Support merging time series containing gaps.
+* Fix a test blocked by Linux process forking.
+* Fix issues with CI execution.
+* Allow callers to select the variables loaded for a partition update
+  callback.
+* Remove class methods from indexers.
+
 
 2023.5.0
 --------
-* Add missing copyrights.
-* Modularise code to reduce the number of lines per module.
-* Writing variables is limited to the worker being used.
+
+* Add missing copyright notices.
+* Reorganize modules to reduce their size.
+* Limit variable writes to the worker processing them.
 * Improve test coverage.
-* #9: Read the version attribute directly from the ``version.py`` module.
-* #8: Incomplete overlaps with more than one worker.
-* #7: Fix bug, in the update method, if the user has selected multiple
-  partitions the selected variables must contain the updated variables.
-* #6: the parameter name for specifying the number of concurrent inserts is
-  incorrect.
-* #3: Add a trim argument to the ``update`` method, like Dask's Dask's
-  ``map_overlap``.
-* Update the documentation.
-* Refactor the code.
-* Loading data using Dask or Numpy.
-* Variable adds attributes to partitions.
+* Read the version attribute directly from ``version.py`` (issue #9).
+* Fix incomplete overlaps when using more than one worker (issue #8).
+* Fix updates with multiple selected partitions when the selected variables
+  must contain the variables being updated (issue #7).
+* Correct the name of the parameter controlling concurrent inserts
+  (issue #6).
+* Add ``trim`` to ``update``, following Dask's ``map_overlap`` (issue #3).
+* Update the documentation and refactor the code.
+* Support loading data with Dask or NumPy.
+* Add variable attributes to partitions.
+
 
 2023.3.2
 --------
-* Writing a partition with many variables is slow.
-* Writing metadata only in the collection's configuration.
-* Adding an inter-process lock
-* If a variable has been modified since its initialization, the library throws a
-  specific exception to warn the user.
+
+* Improve performance when writing partitions with many variables.
+* Store metadata only in the collection configuration.
+* Add an inter-process lock.
+* Raise a dedicated exception when a variable has changed since its
+  initialization.
+
 
 2023.3.1
 --------
-* Fixed a compatibility issue with fspec 2023.3.0.
+
+* Fix compatibility with ``fsspec`` 2023.3.0.
+
 
 2023.3.0
 --------
-* Apply an optional mask before querying an indexer.
+
+* Support applying an optional mask before querying an indexer.
+
 
 2023.2.0
 --------
-* Synchronize the view with the reference collection.
-* Support for Python 3.11.
-* Bug fixes.
-* Optimization of the insertion of new partitions.
-* Copy collection over different file systems.
-* Export Dataset to Zarr group.
 
-2022.12.0/2022.12.1
--------------------
+* Support synchronizing views with their reference collections.
+* Add Python 3.11 support.
+* Fix bugs and optimize insertion of new partitions.
+* Support copying collections across file systems.
+* Support exporting a dataset to a Zarr group.
 
-Release on December 2, 2022
 
-* Write immutable variables of a dataset into a single group.
-* Possibility to update partitions using neighbor partitions (useful for
-  filtering, for example).
-* Refactor methods overlapping partitions.
-* Update documentation.
+2022.12.0 / 2022.12.1
+---------------------
 
-2022.10.2/2022.10.1
--------------------
+Released December 2, 2022.
 
-Release on October 13, 20212
+* Store immutable dataset variables in a single group.
+* Support updating partitions using neighboring partitions, for example
+  when filtering data.
+* Refactor the methods that handle overlapping partitions.
+* Update the documentation.
 
-* Add compatibility with Python 3.8.
+
+2022.10.2 / 2022.10.1
+---------------------
+
+Released October 13, 2022.
+
+* Add Python 3.8 compatibility.
+
 
 2022.10.0
 ---------
 
-Release on October 7, 20212
+Released October 7, 2022.
 
-* Added an option to the method ``drop_partitions`` to drop partitions
-  older than a specified time delta relative to the current time.
+* Allow ``drop_partitions`` to remove partitions older than a specified
+  duration relative to the current time.
+
 
 2022.8.0
 --------
 
-Release on August 14, 2022
+Released August 14, 2022.
 
-* Support Python starting 3.9.
-* Refactor convenience functions.
-* Refactor dataset & variables modules.
-* The indexer can return only the partition keys.
-* Optimization of dataset handling.
-* Bug fixes.
+* Support Python 3.9 and later.
+* Refactor convenience functions and the dataset and variable modules.
+* Allow indexers to return only partition keys.
+* Optimize dataset handling.
+* Fix bugs.
 
-0.2 / 2020-04-04
+
+0.2 / 2022-04-04
 ----------------
 
-Release on April 4, 2020
+Released April 4, 2022.
 
-* Installation from PyPi.
-* Unsigned integers are not handled.
+* Support installation from PyPI.
+* Unsigned integers are not supported.
 
-0.1 / 2022-08-30
------------------
 
-Release on March 30, 2020
+0.1 / 2022-03-30
+----------------
 
-* First public version.
+Released March 30, 2022.
+
+* First public release.

@@ -1,18 +1,19 @@
 Getting started
 ===============
 
-On this page you declare a collection, insert two batches of measurements into
-it, read them back and add a variable.
+This guide walks you through the basics of ZCollection: defining a collection,
+inserting data, reading it back, and adding a new variable.
 
-The collection holds a swath: a line of measurements per date, a longitude
-across it, and the sea surface height at each point.
+You'll use a swath dataset containing one line of measurements per day.
+Each line has five pixels, with a longitude and a sea surface height
+measurement at each pixel.
 
-The schema
-----------
 
-You declare a collection before it holds anything. The schema describes the
-variables, their data types, the dimensions they span, and the way each one
-is stored.
+Defining the schema
+-------------------
+
+Before creating a collection, you need to define its schema. This describes
+the variables, their data types, dimensions, and how their values are stored.
 
 .. jupyter-execute::
 
@@ -47,40 +48,45 @@ is stored.
 
     sorted(schema.variables)
 
-The dimensions and the encoding of each variable apply for the life of the
-collection.
+The dimensions and encoding of each variable remain fixed throughout the
+collection's lifetime:
 
 Dimensions
-    ``num_lines`` is the dimension the data is partitioned along: it grows
-    as measurements arrive, and the collection records its size as ``-1``. Every
-    other dimension has the size declared here, and a dataset inserted with
-    another size is refused.
+    ``num_lines`` is the dimension along which the collection is partitioned.
+    Its size is set to ``-1`` because it grows as new measurements are added.
+    All other dimensions have fixed sizes, and inserted datasets must
+    respect them.
 
-    ``lon`` spans ``num_pixels`` alone, so its values are the same in every
-    partition and the collection stores them once. :doc:`index` shows the
-    layout that follows.
+    The ``lon`` variable depends only on ``num_pixels``. Its values are
+    therefore identical across partitions and are stored only once.
+    See :doc:`index` for an example of the resulting storage layout.
 
 ``fill_value``
-    The value that stands for an absent measurement, written in the unit of the
-    variable. A read masks the elements equal to it.
+    Represents missing measurements, expressed in the variable's units.
+    Values equal to ``fill_value`` are masked when the data is read.
 
 ``filters`` and ``compressor``
-    The encoding that turns the values into bytes.
+    Control how values are encoded and compressed before storage.
+
     :py:class:`FixedScaleOffset <numcodecs.fixedscaleoffset.FixedScaleOffset>`
-    encodes ``ssh`` to the millimetre as a 16-bit integer, and
-    :py:class:`Blosc <numcodecs.blosc.Blosc>` compresses the result. The
-    collection applies both to every partition.
+    encodes ``ssh`` values with millimetre precision as 16-bit integers.
+    :py:class:`Blosc <numcodecs.blosc.Blosc>` then compresses the encoded
+    data. Both are applied to every partition.
 
 ``attrs``
-    The information the variable carries, its unit here. The metadata holds
-    it, and a read returns it.
+    Stores additional information about a variable, such as its units.
+    These attributes are preserved in the collection's metadata and
+    restored when the data is read.
+
 
 Creating the collection
 -----------------------
 
-A collection needs four things: its schema, the name of the partitioning
-variable, the :py:mod:`partitioning <zcollection.partitioning>` itself, and
-the directory that holds the partitions.
+Creating a collection requires a schema, a partitioning variable, a
+:py:mod:`partitioning scheme <zcollection.partitioning>`, and a directory
+where the data will be stored.
+
+Here, the collection is partitioned by month using the ``time`` variable.
 
 .. jupyter-execute::
 
@@ -98,15 +104,20 @@ the directory that holds the partitions.
 
     list(collection.partitions(relative=True))
 
-No partition exists yet. The schema is now in the ``.zcollection`` file of
-that directory, and
-:py:func:`open_collection <zcollection.open_collection>` reads it back.
+The collection is now initialized, but contains no partitions. Its schema
+is stored in the ``.zcollection`` file and can be read later using
+:py:func:`open_collection <zcollection.open_collection>`.
+
 
 Inserting data
 --------------
 
-The data carries the values, the names and the dimensions; the collection
-supplies the fill value, the encoding and the attributes.
+To insert data, provide a dataset containing the variable names, dimensions,
+and values. The collection uses its schema to determine the fill values,
+encoding, and attributes.
+
+First, create a function that generates a swath with five measurements
+per day.
 
 .. jupyter-execute::
 
@@ -126,30 +137,35 @@ supplies the fill value, the encoding and the attributes.
                               ('num_lines', 'num_pixels')),
         ])
 
+Insert 59 days of measurements, covering January and February 2022:
+
+.. jupyter-execute::
+
     collection.insert(swath('2022-01-01', 59), distributed=False)
     list(collection.partitions(relative=True))
 
-:py:meth:`insert <zcollection.collection.Collection.insert>` splits the
-dataset on the partitioning variable and writes one partition per month. Pass
-``distributed=False`` to keep the work in the calling process, as every
-example here does.
+:py:meth:`insert <zcollection.collection.Collection.insert>` uses the
+partitioning scheme to split the dataset into monthly partitions.
 
-If partition listings are inconsistent, see :doc:`partition_index` for
-instructions on rebuilding the index.
+``distributed=False`` runs the operation without a Dask cluster, as in
+every example in this guide.
 
-A second insertion adds the partition its dates fall in.
+Now insert another batch of measurements for April:
 
 .. jupyter-execute::
 
     collection.insert(swath('2022-04-01', 30), distributed=False)
     list(collection.partitions(relative=True))
 
-Reading
--------
+The collection now contains three monthly partitions.
 
-:py:meth:`load <zcollection.collection.Collection.load>` concatenates the
-partitions along ``num_lines``, the dimension of the partitioning variable,
-and returns one dataset.
+
+Reading data
+------------
+
+:py:meth:`load <zcollection.collection.Collection.load>` reads the
+partitions and combines them into a single dataset, concatenating their
+data along ``num_lines``.
 
 .. jupyter-execute::
 
@@ -157,25 +173,32 @@ and returns one dataset.
     print(loaded.variables['time'].values[[0, -1]])
     loaded
 
-The result holds ``lon`` with its 5 values, and ``ssh`` carries the unit
-declared for it.
+The resulting dataset includes the five longitude values stored in
+``lon``, along with the attributes defined for ``ssh``.
 
 .. jupyter-execute::
 
     print(loaded.variables['lon'].values)
     [(item.name, item.value) for item in loaded.variables['ssh'].attrs]
 
-The filter declared on ``ssh`` encodes it to the millimetre, so a read gives
-back a rounded height.
+The encoding defined in the schema is also applied transparently.
+Because ``ssh`` is stored with millimetre precision, the values read
+back may differ slightly from the originals.
 
 .. jupyter-execute::
 
     print(swath('2022-01-01', 59).variables['ssh'].values[0, :3])
     loaded.variables['ssh'].values[0, :3]
 
-:py:meth:`load <zcollection.collection.Collection.load>` reads the
-partitions whose keys satisfy its ``filters`` argument. The keys are those of
-the partitioning: ``year`` and ``month`` here.
+Selecting partitions
+^^^^^^^^^^^^^^^^^^^^
+
+You can load only part of a collection by selecting its partitions.
+
+The ``filters`` argument selects partitions using their keys. With the
+monthly partitioning used here, these are ``year`` and ``month``.
+
+For example, to load only April 2022:
 
 .. jupyter-execute::
 
@@ -183,8 +206,8 @@ the partitioning: ``year`` and ``month`` here.
                              distributed=False)
     loaded.variables['ssh'].shape
 
-Its ``selected_partitions`` argument takes the path of each partition
-instead, relative to ``base_dir``.
+Alternatively, ``selected_partitions`` accepts a list of partition paths
+relative to ``base_dir``:
 
 .. jupyter-execute::
 
@@ -192,17 +215,23 @@ instead, relative to ``base_dir``.
                              distributed=False)
     loaded.variables['ssh'].shape
 
-A selection that matches no partition loads nothing.
+If no partition matches the selection, ``load`` returns ``None``:
 
 .. jupyter-execute::
 
     print(collection.load(filters='year == 1999', distributed=False))
 
+
 Adding and updating a variable
 ------------------------------
 
+You can add variables to an existing collection without recreating it.
+
 :py:meth:`add_variable <zcollection.collection.Collection.add_variable>`
-adds the variable to every partition and fills it with its fill value.
+adds a variable to every partition, initially filling it with the
+specified fill value.
+
+Here, add an ``anomaly`` variable with the same dimensions as ``ssh``:
 
 .. jupyter-execute::
 
@@ -218,9 +247,13 @@ adds the variable to every partition and fills it with its fill value.
                              distributed=False)
     loaded.variables['anomaly'].values[0, :3]
 
-:py:meth:`update <zcollection.collection.Collection.update>` computes those
-values. The callable receives one partition and returns the values for it, so
-the mean below is the mean of one month.
+To populate the variable, use
+:py:meth:`update <zcollection.collection.Collection.update>` with a
+function that computes its values.
+
+The function is called separately for each partition. In this example,
+the difference between each sea surface height measurement and the mean
+of its partition is calculated.
 
 .. jupyter-execute::
 
@@ -235,33 +268,44 @@ the mean below is the mean of one month.
                              distributed=False)
     loaded.variables['anomaly'].values[0, :3]
 
+Because each partition represents one month, the mean is calculated
+independently for each month.
+
+
 Where to go next
 ----------------
 
 :doc:`partitioning`
-    Date against sequence, the resolution and what it costs.
+    Explore date and sequence partitioning, resolution choices, and their
+    implications.
 
 :doc:`inserting`
-    Replacing or merging the data of existing partitions, and inserting with
-    Dask.
+    Learn how to replace or merge data in existing partitions and perform
+    insertions using Dask.
 
 :doc:`computing`
-    Functions called on each partition, with or without its neighbors.
+    Apply functions to partitions, with or without data from neighboring
+    partitions.
 
 :doc:`updating`
-    Variables computed by a function or copied from a dataset.
+    Update variables using computed values or data from another dataset.
+
+:doc:`managing`
+    Add and remove variables, and remove partitions.
 
 :doc:`failures`
-    The report of the partitions that failed, and how to retry them.
+    Understand how partition failures are reported and how to retry
+    failed operations.
 
 :doc:`auto_examples/ex_collection`
-    Dropping partitions and variables.
+    Follow a collection from creation to mapping: loading, filtering,
+    adding, updating and removing variables.
 
 :doc:`auto_examples/ex_view`
-    Holding variables of your own beside a collection you read.
+    Create views to store variables derived from an existing collection.
 
 :doc:`auto_examples/ex_indexing`
-    Building an index to read a part of a collection without opening it.
+    Build an index to access part of a collection without opening it.
 
 :doc:`auto_examples/ex_without_dask`
-    Reading and writing with no Dask cluster.
+    Read and write collections without a Dask cluster.

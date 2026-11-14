@@ -16,6 +16,9 @@ if TYPE_CHECKING:
     from .. import dataset
     from ..type_hints import ArrayLike
 
+__all__ = ('MapCallable', 'PartitionCallable', 'PartitionInfo',
+           'UpdateCallable')
+
 #: Function type to load a partition or its overlap window, call an
 #: :class:`UpdateCallable` on it and write the partition. It returns
 #: :data:`zcollection.execution.SKIPPED` for an absent partition.
@@ -66,7 +69,8 @@ class PartitionCallable(Protocol):
         """
 
 
-#: Alias for :class:`PartitionCallable`.
+#: Alias for
+#: :class:`~zcollection.collection.callable_objects.PartitionCallable`.
 MapCallable = PartitionCallable
 
 

@@ -168,7 +168,8 @@ class Dataset:
         variables (DelayedArray | Array): A dictionary of variables in the
             dataset, with variable names as keys and :py:class:`Array
             <zcollection.variable.array.Array>` or :py:class:`DelayedArray
-            <zcollection.variable.delayed.DelayedArray>` objects as values.
+            <zcollection.variable.delayed_array.DelayedArray>` objects as
+            values.
         attrs: A tuple of global attributes on this dataset.
         delayed: A boolean indicating whether the dataset contains delayed
             variables (numpy arrays wrapped in dask arrays).
@@ -206,9 +207,10 @@ class Dataset:
         #: The list of global attributes on this dataset
         self.attrs = tuple(attrs or ())
 
-        #: Dataset contents as dict of :py:class:`Variable
-        #: <zcollection.variable.abc.Variable>` objects. If the dataset
-        #: contains delayed variables, the values are :py:class:`DelayedArray
+        #: Dataset contents as dict of
+        #: :py:class:`Variable <zcollection.variable.abc.Variable>` objects.
+        #: If the dataset contains delayed variables, the values are
+        #: :py:class:`DelayedArray
         #: <zcollection.variable.delayed_array.DelayedArray>` objects.
         #: Otherwise, the values are :py:class:`Array
         #: <zcollection.variable.array.Array>` objects.
@@ -534,7 +536,7 @@ class Dataset:
 
         Args:
             **kwargs: Additional parameters are passed through to
-                :py:func:`dask.array.compute`.
+                :py:func:`dask.compute`.
 
         Returns:
             New dataset.
@@ -566,7 +568,7 @@ class Dataset:
 
         Args:
             **kwargs: Keyword arguments are passed through to
-                :py:func:`dask.array.rechunk.rechunk`.
+                :py:func:`dask.array.rechunk`.
 
         Returns:
             New dataset.
@@ -593,7 +595,7 @@ class Dataset:
         Args:
             compress: If true, compress the data loaded into memory.
             **kwargs: Additional parameters are passed to the function
-                :py:func:`dask.array.Array.persist`.
+                :py:meth:`dask.array.Array.persist`.
 
         Returns:
             The dataset with the variables persisted into memory.

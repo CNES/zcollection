@@ -110,7 +110,7 @@ class Array(Variable):
 
         .. seealso::
 
-            :meth:`Variable.array`
+            :attr:`Variable.array <zcollection.variable.abc.Variable.array>`
         """
         if self.fill_value is None:
             return dask.array.core.from_array(self.array)

@@ -1,9 +1,10 @@
 """
-Overview of a View.
+Working with a view
 ===================
 
-This section outlines the steps required to get started with the main features
-of a ``View``.
+This example shows how to create a view from an existing collection,
+add and update its own variables, synchronize it with its reference
+collection, and perform computations on its partitions.
 """
 from __future__ import annotations
 
@@ -22,12 +23,14 @@ if TYPE_CHECKING:
 
 
 # %%
-# Initialization of the environment
-# ---------------------------------
+# Setting up the environment
+# --------------------------
 #
-# As in the example of handling
-# :ref:`collections <sphx_glr_auto_examples_ex_collection.py>`, we will create
-# the test environment and a collection.
+# Start by creating a collection using the same approach as in
+# :ref:`Working with a collection <sphx_glr_auto_examples_ex_collection.py>`.
+#
+# The example uses an in-memory file system and a local Dask cluster
+# with threads, allowing workers to share the same storage.
 def create_dataset() -> zcollection.Dataset:
     """Create a dataset to record."""
     generator: Iterator[zcollection.Dataset] = \
@@ -50,45 +53,53 @@ collection: zcollection.Collection = zcollection.create_collection(
 collection.insert(zds, merge_callable=zcollection.merging.merge_time_series)
 
 # %%
-# Creation of views
-# -----------------
+# Creating a view
+# ---------------
 #
-# A :py:class:`view<zcollection.view.View>` allows you to extend a collection
-# (:py:class:`a view reference<zcollection.view.ViewReference>`) that you are
-# not allowed to modify.
+# A :py:class:`view <zcollection.view.View>` lets you store additional
+# variables derived from a collection without modifying that collection.
+#
+# The view references its source collection through a
+# :py:class:`ViewReference <zcollection.view.ViewReference>` and accesses
+# its variables in read-only mode.
+#
+# Create a view in a separate directory:
 view: zcollection.View = zcollection.create_view(
     '/my_view',
     zcollection.view.ViewReference('/view_reference', fs),
     filesystem=fs)
 
 # %%
-# .. note::
+# By default, a view includes all partitions of its reference collection.
+# You can select a subset using the ``filters`` argument when creating it.
 #
-#     The created view can be accessed using the following command ::
-#
-#         >>> view = zcollection.open_view("/my_view", filesystem=fs)
-#
-# Editing variables
-# -----------------
-# When the view is created, it has no data of its own, it uses all the
-# partitions defined in the reference view. You can select the partitions used
-# from the reference collection by specifying the keyword argument ``filters``
-# during the creation of the view.
+# The new view has no variables of its own yet. Inspect its directory:
 pprint.pprint(fs.listdir('/my_view'))
 
 # %%
-# It's not yet possible to read data from the view, as it does not yet have any
-# data. To minimize the risk of mismatches with the reference view, the data
-# present in the view drives the range of data that can be read.
-try:
-    view.load()
-except ValueError as err:
-    print(err)
+# Until variables are added to the view, loading it returns the variables
+# of the reference collection.
+#
+# .. note::
+#
+#    You can reopen an existing view using:
+#
+#    .. code-block:: python
+#
+#        view = zcollection.open_view("/my_view", filesystem=fs)
+#
+zds = view.load()
+assert zds is not None
+print(sorted(zds.variables))
 
 # %%
-# Such a state of the view is not very interesting. But it is possible to
-# :py:meth:`add<zcollection.view.View.add_variable>` and modify variables in
-# order to enhance the view.
+# Adding and updating variables
+# -----------------------------
+#
+# Use :py:meth:`~zcollection.view.View.add_variable` to add variables
+# to the view without changing its reference collection.
+#
+# Here, create ``var3`` using the schema of ``var2``, with a different name:
 var3_template: zcollection.meta.VariableSchema = zds.metadata(
 ).variables['var2']
 var3_template.name = 'var3'
@@ -96,34 +107,43 @@ view.add_variable(var3_template)
 del var3_template
 
 # %%
-# This step creates all necessary partitions for the new variable.
-pprint.pprint(fs.listdir('/my_view/year=2000'))
+# Adding a variable creates its array in each partition of the view.
+# Inspect the first partition to see the stored files:
+pprint.pprint(fs.listdir('/my_view/year=2000/month=01'))
 
 # %%
-# The new variable is not initialized.
+# The new variable is initialized with its fill value, which is masked
+# when the data is read.
 zds = view.load()
 assert zds is not None
 zds.variables['var3'].values
 
 # %%
-# The same principle used by the collection allows to
-# :py:meth:`update<zcollection.view.View.update>` the variables.
+# Use :py:meth:`~zcollection.view.View.update` to compute values for
+# the view's variables, following the same principle as updating a
+# collection.
+#
+# The function can read variables from both the view and its reference
+# collection, but writes only to the view.
+#
+# For example, set ``var3`` to 1 wherever ``var1`` has defined values:
 view.update(
     lambda ds: {'var3': ds['var1'].values * 0 + 1})  # type: ignore[arg-type]
 
 # %%
-# Like the :py:meth:`update<zcollection.collection.Collection.update>` method
-# of the collection, the update method of view allows to selecting the
-# neighboring partitions with the keyword argument ``depth``.
-
-# %%
+# As with collection updates, ``depth`` can be used to include
+# neighboring partitions in the computation. See :doc:`/computing`
+# for details on working with overlapping partitions.
+#
+# Load the view to inspect the updated values:
 zds = view.load()
 assert zds is not None
 var3: numpy.ndarray = zds['var3'].values
 print(var3)
 
 # %%
-# **Warning**: The variables of the reference collection cannot be edited.
+# Variables belonging to the reference collection are read-only.
+# Attempting to update ``var2`` through the view raises ``ValueError``:
 try:
     view.update(
         lambda ds: {'var2': ds['var2'].values * 0})  # type: ignore[arg-type]
@@ -132,22 +152,34 @@ except ValueError as exc:
 
 
 # %%
-# Sync the view with the reference
-# --------------------------------
-# The view may not be read anymore if the number of elements in the reference
-# collection and in the view is not identical. To avoid this problem, the view
-# is automatically synchronized when it is opened. But only if the reference
-# collection has been completed (adding new data after the existing data), the
-# data already present in the view are kept. The existing tables in the view are
-# resized and filled with the defined fill values. If you want to know which
-# partitions are synchronized, you have to use the following data flow: open the
-# view and ask not to synchronize it (``resync=False``), then call the ``sync``
-# method of view class to obtain a filter allowing selecting all the partitions
-# that have been modified.
+# Synchronizing with the reference collection
+# -------------------------------------------
 #
-# Let's illustrate this data flow with an example.
+# When a partition changes in the reference collection, its corresponding
+# partition in the view may become inconsistent.
 #
-# First, we create an utility function to resize a dataset.
+# For example, if the number of measurements changes, the arrays in the
+# view may no longer have the expected dimensions, preventing the view
+# from being loaded.
+#
+# :py:meth:`~zcollection.view.View.sync` synchronizes the view with its
+# reference collection.
+#
+# When a reference partition is extended with new measurements after
+# the existing ones, the view preserves its existing values and extends
+# its arrays with their fill values.
+#
+# Other changes cause the affected partition to be rebuilt, so its
+# previously computed values must be calculated again.
+#
+# The following example changes the last partition of the reference
+# collection. Its new timestamps start before the first stored one, so
+# they do not extend the existing partition.
+#
+# As a result, ``sync`` rebuilds the partition, and ``var3`` contains
+# only its fill value until it is computed again.
+#
+# First, define a helper function to resize a dataset.
 def resize(ds: zcollection.Dataset, dim: str,
            size: int) -> zcollection.Dataset:
     """Resize a dataset."""
@@ -175,8 +207,8 @@ def resize(ds: zcollection.Dataset, dim: str,
 
 
 # %%
-# We then modify the last partition of the reference collection. We start by
-# opening the reference collection and loading the last partition.
+# Open the reference collection in write mode and load its last partition,
+# corresponding to June 2000.
 collection = zcollection.open_collection('/view_reference',
                                          filesystem=fs,
                                          mode='w')
@@ -185,8 +217,8 @@ zds = collection.load(
 assert zds is not None
 
 # %%
-# We create a new time variable, resize the dataset and insert the new time
-# values.
+# Generate hourly timestamps for June, then resize the dataset and replace
+# its ``time`` values.
 time: numpy.ndarray = numpy.arange(
     numpy.datetime64('2000-06-01T00:00:00', 'ns'),
     numpy.datetime64('2000-06-30T23:59:59', 'ns'),
@@ -196,43 +228,58 @@ zds = resize(zds, 'num_lines', len(time))
 zds['time'].values = time
 
 # %%
-# Finally, we update the partition in the reference collection.
+# Insert the modified dataset into the reference collection, replacing
+# its existing June partition.
 collection.insert(zds)
 
 # %%
-# Now we cannot load the view, because the shape of the last partition is no
-# longer consistent between the reference collection and the view.
+# The view still contains arrays corresponding to the previous version
+# of that partition. Their dimensions no longer match the reference,
+# so attempting to load the view raises ``ValueError``:
 try:
-    view.load()
+    view.load(distributed=False)
 except ValueError as err:
     print(err)
 
 # %%
-# We call the ``sync`` method to resynchronize the view.
+# Synchronize the view to update the affected partition:
 filters = view.sync()
 
 # %%
-# The method returns a callable that can be used to filter the partitions that
-# have been synchronized. You can use this information to perform a
-# :py:meth:`update<zcollection.view.View.update>` of the view on the
-# synchronized partitions: ::
+# ``sync`` returns a callable that selects the partitions it synchronized.
+# Use it to identify which partitions need their computed values updated.
 #
-#     view.update(
-#         lambda ds: dict(var3=ds['var1'].values * 0 + 1),
-#         filters=filters)
+# For example, the following call would recompute ``var3`` only in those
+# partitions:
 #
+# .. code-block:: python
+#
+#    view.update(
+#        lambda ds: dict(var3=ds['var1'].values * 0 + 1),
+#        filters=filters)
+#
+# Inspect the partitions selected by the returned callable:
 print(tuple(view.partitions(filters=filters)))
 
 # %%
-# The view is now synchronized and can be loaded.
+# The view is now synchronized and can be loaded again.
+# ``var3`` retains its computed values in the other partitions, but
+# its values in June are masked because that partition was rebuilt.
 zds = view.load()
 assert zds is not None
 zds.variables['var3'].values
 
 # %%
-# Map a function over the view
-# ----------------------------
-# It's possible to map a function over the partitions of the view.
+# Mapping over a view
+# -------------------
+#
+# :py:meth:`~zcollection.view.View.map` applies a function to each
+# partition without modifying the view.
+#
+# Like ``Collection.map``, it returns a Dask bag. Call ``compute()``
+# to obtain the results.
+#
+# For example, calculate the mean of ``var1 + var2`` in each partition:
 for partition, array in view.map(lambda ds: (  # type: ignore[arg-type]
         ds['var1'].values + ds['var2'].values)).compute():
     print(f' * partition = {partition}: mean = {array.mean()}')
@@ -240,31 +287,34 @@ for partition, array in view.map(lambda ds: (  # type: ignore[arg-type]
 # %%
 # .. seealso::
 #
-#     See the :py:meth:`map_overlap<zcollection.view.View.map_overlap>` method
-#     apply a function over the partitions of the view of selecting the
-#     neighboring partitions.
+#    :py:meth:`~zcollection.view.View.map_overlap` also supports
+#    computations using neighboring partitions.
 #
-# Drop a variable
-# ----------------
-# A method allows you to
-# :py:meth:`drop_variable<zcollection.view.View.drop_variable>` variables from
-# the view.
+# Removing a variable
+# -------------------
+#
+# Use :py:meth:`~zcollection.view.View.drop_variable` to remove a
+# variable belonging to the view.
+#
+# Here, remove ``var3``:
 view.drop_variable('var3')
-try:
-    view.load()
-except ValueError as err:
-    # The view no longer has a variable.
-    print(err)
 
 # %%
-# **Warning**: The variables of the reference collection cannot be dropped.
+# The view now exposes only the variables of its reference collection:
+zds = view.load()
+assert zds is not None
+print(sorted(zds.variables))
+
+# %%
+# Variables belonging to the reference collection cannot be removed
+# through the view. Attempting to remove ``var2`` raises ``ValueError``:
 try:
     view.drop_variable('var2')
 except ValueError as exc:
     print(str(exc))
 
 # %%
-# Close the local cluster to avoid printing warning messages in the other
-# examples.
+# Close the Dask client and cluster to release their resources and
+# avoid warnings when running other examples.
 client.close()
 cluster.close()

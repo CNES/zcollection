@@ -14,6 +14,8 @@ import importlib.metadata
 import pathlib
 import sys
 
+from sphinx_gallery.sorting import FunctionSortKey
+
 HERE = pathlib.Path(__file__).absolute().parent
 
 # Insert the project root dir as the first element in the PYTHONPATH.
@@ -89,6 +91,7 @@ html_title = 'ZCollection'
 intersphinx_mapping = {
     'dask': ('https://docs.dask.org/en/latest/', None),
     'fsspec': ('https://filesystem-spec.readthedocs.io/en/latest/', None),
+    'numcodecs': ('https://numcodecs.readthedocs.io/en/stable/', None),
     'numpy': ('https://numpy.org/doc/stable/', None),
     'python': ('https://docs.python.org/3/', None),
     'xarray': ('https://docs.xarray.dev/en/stable/', None),
@@ -96,8 +99,18 @@ intersphinx_mapping = {
 }
 
 # -- Extension configuration -------------------------------------------------
+#: The order of the examples in the gallery.
+EXAMPLES = (
+    'ex_collection.py',
+    'ex_view.py',
+    'ex_indexing.py',
+    'ex_without_dask.py',
+)
+EXAMPLE_ORDER = FunctionSortKey(EXAMPLES.index, 'explicit example order')
+
 sphinx_gallery_conf = {
     'examples_dirs': [HERE.parent.parent.joinpath('examples')],
     'filename_pattern': r'[\\\/]ex_',
     'pypandoc': False,
+    'within_subsection_order': EXAMPLE_ORDER,
 }

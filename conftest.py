@@ -30,15 +30,15 @@ def pytest_addoption(parser) -> None:
         action='store',
         default=None,
         type=int,
-        help='Number of threads for each worker Dask. (default: the number of '
-        'logical cores of the target platform).')
+        help='Number of threads per Dask worker. (default: chosen by Dask '
+        'based on the available CPU cores).')
     parser.addoption(
         '--n_workers',
         action='store',
         default=None,
         type=int,
-        help='Number of core for each worker Dask. (default: the number of '
-        'cores of the target platform).')
+        help='Number of Dask workers. (default: chosen by Dask based on the '
+        'available CPU cores).')
     parser.addoption(
         '--processes',
         action='store_true',

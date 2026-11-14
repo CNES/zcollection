@@ -1,28 +1,31 @@
 Handling failures
 =================
 
+ZCollection processes partitions independently for operations such as
 :py:meth:`~zcollection.collection.Collection.insert`,
 :py:meth:`~zcollection.collection.Collection.update`,
 :py:meth:`~zcollection.collection.Collection.update_from`,
 :py:meth:`~zcollection.collection.Collection.add_variable`,
 :py:meth:`~zcollection.collection.Collection.drop_variable`,
 :py:meth:`~zcollection.collection.Collection.drop_partitions`,
-:py:meth:`~zcollection.collection.Collection.validate_partitions` and
-:py:meth:`~zcollection.collection.Collection.copy` process each
-partition on its own. When some partitions fail, the operation raises
-:py:class:`~zcollection.PartitionErrors`, which tells which partitions were
-completed, which failed and why, and which were not attempted. Views behave the
-same way for ``update``, ``update_from``, ``add_variable``, ``drop_variable``,
-``sync``, ``is_synced`` and ``validate_partitions``, and so does
-:py:func:`~zcollection.create_view` when it writes the partitions of a new
-view. ``add_variable`` and ``drop_variable`` add and remove an immutable
-variable in the calling process; ``PartitionErrors`` names it ``.immutable``.
-After a failed ``is_synced``, ``completed`` names the partitions found out of
-sync. After a failed check of ``validate_partitions``, ``completed`` names the
-invalid partitions found, and none of them is repaired.
+:py:meth:`~zcollection.collection.Collection.validate_partitions`, and
+:py:meth:`~zcollection.collection.Collection.copy`.
 
-The examples use the same daily measurements as :doc:`updating`, with a
-function that fails on segment 2.
+If one or more partitions fail, the operation raises
+:py:class:`~zcollection.PartitionErrors`. This exception reports which
+partitions completed, which failed and why, and which were not attempted.
+
+The same behavior applies to the ``update``, ``update_from``,
+``add_variable``, ``drop_variable``, ``sync``, ``is_synced``, and
+``validate_partitions`` methods of views, as well as
+:py:func:`~zcollection.create_view` when creating a view's partitions.
+
+``add_variable`` and ``drop_variable`` handle immutable variables in the
+calling process. In ``PartitionErrors``, these variables are identified
+by ``.immutable``.
+
+The following examples use the same daily measurements as :doc:`updating`,
+with a function that deliberately fails on segment 2.
 
 .. jupyter-execute::
 
@@ -57,12 +60,16 @@ function that fails on segment 2.
             raise ValueError('segment 2 cannot be doubled')
         return {'doubled': ds['signal'].values * 2}
 
-Reading the report
-------------------
 
-``stop_on_error=False`` makes ``update`` attempt every partition. Segment 2
-fails, the two others are written, and ``update`` raises ``PartitionErrors``.
-Its attributes hold paths relative to the collection.
+Reading the failure report
+--------------------------
+
+By setting ``stop_on_error=False``, an operation attempts every partition,
+even if some fail.
+
+In the following example, segment 2 raises an error while segments 1
+and 3 are updated successfully. The operation then raises
+``PartitionErrors``.
 
 .. jupyter-execute::
 
@@ -76,28 +83,46 @@ Its attributes hold paths relative to the collection.
     print('failed:', list(report.failed))
     print('not attempted:', report.not_attempted)
 
-``failed`` maps the path of each failed partition to the traceback of its
-error, as text. Its last line gives the type and the message of the error:
+The exception provides three attributes containing partition paths
+relative to the collection:
+
+- ``completed`` lists the partitions that completed successfully.
+- ``failed`` maps each failed partition to its error traceback, as text.
+- ``not_attempted`` lists the partitions that were not processed.
+
+The last line of each traceback contains the error type and message:
 
 .. jupyter-execute::
 
     report.failed['segment=2'].splitlines()[-1]
 
-The message of ``PartitionErrors`` names up to ten failed partitions, counts
-the others and gives the traceback of the first, in the order the partitions
-were selected. The exception objects do not reach the caller.
+The ``PartitionErrors`` message includes the names of up to ten failed
+partitions, the number of additional failures, and the traceback of the
+first failure in partition selection order.
 
-``update`` and ``copy`` skip a partition the index lists but the store does
-not hold, with a warning; ``drop_partitions`` skips it without one. That
-partition appears in none of ``completed``, ``failed`` and
-``not_attempted``.
+The original exception objects are not returned to the caller.
+
+Some operations give ``completed`` a specific meaning:
+
+- After a failed ``View.is_synced``, it lists partitions found out of sync.
+- After a failed ``validate_partitions`` check, it lists invalid
+  partitions found during the check. None of these partitions is repaired.
+
+Missing partitions are handled separately. If a partition is listed in
+the index but absent from storage, ``update`` and ``copy`` skip it with
+a warning, while ``drop_partitions`` skips it silently.
+
+Such partitions appear in none of the three report attributes.
+
 
 Stopping on the first failure
 -----------------------------
 
-With ``stop_on_error=True``, the default, no partition is submitted after the
-first failure. With ``distributed=False``, the partitions are processed in
-order, so segment 3 is not attempted:
+By default, ``stop_on_error=True`` prevents new partitions from being
+submitted after the first failure.
+
+With ``distributed=False``, partitions are processed sequentially.
+In this example, segment 2 fails, so segment 3 is never attempted:
 
 .. jupyter-execute::
 
@@ -111,16 +136,27 @@ order, so segment 3 is not attempted:
     print('failed:', list(report.failed))
     print('not attempted:', report.not_attempted)
 
-With ``distributed=True``, up to ``npartitions`` partitions are submitted at
-the same time. The partitions submitted before the first failure finish, so
-some partitions after the failed one may already be written.
+With ``distributed=True``, up to ``npartitions`` tasks can be in
+progress at once. Tasks already submitted when the first failure
+occurs are allowed to finish.
 
-Retrying the failed partitions
-------------------------------
+Consequently, some partitions following the failed one may already
+have been written, even with ``stop_on_error=True``.
 
-Once the cause is fixed, pass the paths of the report to
-``selected_partitions`` to process the failed partitions again and the not
-attempted ones for the first time:
+
+Retrying failed operations
+--------------------------
+
+Once the cause of a failure has been resolved, the recovery procedure
+depends on the operation.
+
+Updating variables
+~~~~~~~~~~~~~~~~~~
+
+For ``update``, use the paths in ``failed`` and ``not_attempted`` to
+retry failed partitions and process those that were skipped.
+
+For example, after fixing the function that failed on segment 2:
 
 .. jupyter-execute::
 
@@ -132,57 +168,99 @@ attempted ones for the first time:
                       selected_partitions=[*report.failed,
                                            *report.not_attempted])
 
-A partition that ``update`` or ``update_from`` failed to write can be partly
-written: an error while its variables are written leaves the ones already
-written with their new values. Updating it again writes all its variables
-again. If the function reads a variable it also writes, the second run reads
-the values the failed run wrote, so the function must give the same result
-when it runs twice.
+A failed ``update`` or ``update_from`` can leave a partition partially
+updated. If an error occurs while writing its variables, those written
+before the failure retain their new values.
 
-To retry an insertion, insert the dataset again, or only its rows that fall
-in the failed and not attempted partitions. Inserting the whole dataset again
-writes it again into every partition, including those already written; with
-a merge callable, the result is the same only if the callable gives the same
-result when it runs twice.
+Retrying the operation writes all the variables again.
 
-A failed ``add_variable`` removes what it added, unless that removal fails
-too. The ``completed`` attribute of the error names the partitions that
-received the array before the removal. A failed ``drop_variable`` is
-finished by calling it again. See :doc:`managing`.
+If the function reads a variable that it also writes, the retry may
+use values already modified by the failed attempt. Such functions must
+therefore produce the same result when executed more than once.
 
-To retry ``drop_partitions``, call it again with the same ``filters`` and
-``timedelta``: the partitions already removed are no longer listed, and the
-others are removed. ``timedelta`` is measured from the time of the call, so
-the retry can select more partitions.
+Inserting data
+~~~~~~~~~~~~~~
 
-To retry ``copy``, remove its target, or copy to another location.
+To retry ``insert``, insert the original dataset again, or select only
+the rows belonging to failed and not attempted partitions.
 
-To retry ``View.sync``, call it again with the same ``filters``: the
-partitions already synchronized are skipped. After an interruption, call
-``validate_partitions(fix=True)`` first, to write again a partition left
-partly written.
+Reinserting the entire dataset also rewrites partitions that completed
+successfully.
 
-``View.is_synced`` raises ``PartitionErrors`` for a partition it cannot
-check. ``validate_partitions(fix=True)`` writes again a partition without
-its ``.checksum`` array, which holds the reference axis the partition was
-written from.
+When using a merge callable, this produces the same result only if
+applying the callable more than once does not change the result.
 
-A failed ``create_view`` leaves the view with the partitions it completed.
-Open it with :py:func:`~zcollection.open_view`, call
-``validate_partitions(fix=True)`` to write again a partition left partly
-written, then ``sync(filters=view.filters)``, because ``sync()`` without
-``filters`` synchronizes every partition of the reference collection.
+Managing variables and partitions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Errors raised before any partition starts
------------------------------------------
+A failed ``add_variable`` attempts to remove the arrays it created.
+If this cleanup also fails, the variable remains declared in the schema.
 
-An error found before the operation processes any partition is raised
-directly, without ``PartitionErrors``: a dataset that does not match the
-collection, a value of ``npartitions`` below one, a partition that
-``update_from`` cannot find, or a ``copy`` to a target that is not empty
-raises ``ValueError``. An error raised by the
-function of ``update`` while it infers its output variables arrives as a
-``RuntimeError``.
+The ``completed`` attribute identifies the partitions that received
+the array before the cleanup attempt. See :doc:`managing` for details
+on recovery.
+
+A failed ``drop_variable`` can be completed by calling it again.
+
+To retry ``drop_partitions``, call it again with the same ``filters``
+and ``timedelta`` parameters. Partitions already removed are no longer
+listed, so the operation processes those that remain.
+
+Keep in mind that ``timedelta`` is evaluated relative to the time of
+each call. A retry may therefore select additional partitions.
+
+To retry ``copy``, remove the target collection or choose another
+destination.
+
+Recovering views
+~~~~~~~~~~~~~~~~
+
+To retry ``View.sync``, call it again with the same ``filters``.
+Partitions already synchronized are skipped.
+
+After an interruption, first call ``validate_partitions(fix=True)``
+to rewrite any partition left partially written.
+
+The ``.checksum`` array records the reference axis from which a
+partition was written. If this array is missing,
+``validate_partitions(fix=True)`` rewrites the partition.
+
+``View.is_synced`` raises ``PartitionErrors`` when it cannot check
+a partition.
+
+If ``create_view`` fails, the new view remains with the partitions
+that were successfully created.
+
+To recover it:
+
+1. Open the view using :py:func:`~zcollection.open_view`.
+2. Call ``validate_partitions(fix=True)`` to repair partitions left
+   partially written.
+3. Call ``sync(filters=view.filters)`` to synchronize the remaining
+   partitions.
+
+The ``filters`` argument is important here: calling ``sync()``
+without it synchronizes every partition of the reference collection.
+
+
+Errors raised before processing partitions
+------------------------------------------
+
+Not every error is reported through ``PartitionErrors``.
+
+Errors detected before partition processing begins are raised directly.
+For example, ``ValueError`` is raised when:
+
+- An input dataset does not match the collection.
+- ``npartitions`` is less than 1.
+- ``update_from`` cannot find a required partition.
+- ``copy`` targets a non-empty location.
+
+If the function passed to ``update`` fails while its output variables
+are being inferred, the error is reported as a ``RuntimeError``.
+
+For example, an invalid ``npartitions`` value raises ``ValueError``
+directly:
 
 .. jupyter-execute::
 
@@ -192,37 +270,74 @@ function of ``update`` while it infers its output variables arrives as a
     except ValueError as err:
         print(err)
 
-What the operations guarantee
------------------------------
 
-**The lock.** When a collection or a view has a synchronizer, such as
-:py:class:`~zcollection.sync.ProcessSync`, the operation takes the lock while
-it writes partitions, and releases it once they have finished, including
-after a failure. With ``distributed=True``, an interrupted operation, for
-example with :kbd:`Ctrl-C`, waits for the tasks it submitted before it
-releases the lock. A second interruption during that wait releases the lock
-at once, while those tasks may still be writing. With ``distributed=False``,
-an interruption stops the partition in progress. ``copy`` takes only the
-lock of its ``synchronizer`` argument, which the new collection receives.
+What happens after a failure
+----------------------------
 
-**The partition index.** When ``insert``, ``drop_partitions``, ``copy``,
-``View.sync`` or ``create_view`` stops on an error or an interruption, the
-partitions listed afterwards are the ones the store holds, including one
-left partly written or partly removed. For ``copy``, these are the
-partitions of the new collection.
+Understanding how operations modify storage is important when
+recovering from failures or interruptions.
 
-**Inserted partitions.** ``insert`` writes a new partition in place and
-removes it when its writing fails. To replace an existing partition, it
-writes the merged partition to a temporary directory, removes the stored one
-and moves the new one in its place. An error before the move leaves the
-stored partition unchanged; an error during the move can leave it incomplete
-or absent.
+Locks
+~~~~~
 
-**Lost workers.** If a Dask worker is lost, Dask runs its task again on
-another worker, up to the number of times
-``distributed.scheduler.allowed-failures`` sets. A partition can then be
-processed more than once. It is listed as failed when its task has lost its
-worker more times than that. A worker lost while writing can leave the
-partition in an unknown state;
-:py:meth:`~zcollection.collection.Collection.validate_partitions` lists the
-partitions that cannot be read.
+When a collection or view has a synchronizer, such as
+:py:class:`~zcollection.sync.ProcessSync`, write operations hold its
+lock while processing partitions.
+
+The lock is released once the submitted work has finished, including
+after a failure.
+
+With ``distributed=True``, an interruption such as :kbd:`Ctrl-C`
+waits for already submitted tasks to finish before releasing the lock.
+
+A second interruption during that wait releases the lock immediately,
+even if some tasks are still writing.
+
+With ``distributed=False``, an interruption stops the partition
+currently being processed.
+
+The ``copy`` operation only acquires the lock provided through its
+``synchronizer`` argument. This synchronizer is also assigned to the
+new collection.
+
+Partition index
+~~~~~~~~~~~~~~~
+
+If ``insert``, ``drop_partitions``, ``copy``, ``View.sync``, or
+``create_view`` stops because of an error or interruption, the
+partitions listed afterwards are those present in storage.
+
+This includes partitions that may have been left partially written
+or partially removed.
+
+For ``copy``, this refers to the partitions of the new collection.
+
+Inserting and replacing partitions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When inserting a new partition, ``insert`` writes it directly to its
+destination. If writing fails, the new partition is removed.
+
+Replacing an existing partition follows a different process:
+
+1. The new or merged partition is written to a temporary directory.
+2. The existing partition is removed.
+3. The temporary partition is moved into its place.
+
+An error before the move leaves the existing partition unchanged.
+An error during the move can leave the partition incomplete or absent.
+
+Lost Dask workers
+~~~~~~~~~~~~~~~~~
+
+If a Dask worker is lost, Dask can retry its task on another worker,
+up to the limit set by ``distributed.scheduler.allowed-failures``.
+
+A partition may therefore be processed more than once. Its task is
+reported as failed when worker losses exceed the configured limit.
+
+If a worker is lost while writing, the partition may be left in an
+unknown state.
+
+Use :py:meth:`~zcollection.collection.Collection.validate_partitions`
+to identify partitions that can no longer be read.

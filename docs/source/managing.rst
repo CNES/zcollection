@@ -1,14 +1,15 @@
 Managing variables and partitions
 =================================
 
-:py:meth:`~zcollection.collection.Collection.add_variable` and
-:py:meth:`~zcollection.collection.Collection.drop_variable` add and remove
-variables, and
-:py:meth:`~zcollection.collection.Collection.drop_partitions` removes
-partitions from a collection.
+ZCollection provides methods to manage variables and partitions in an
+existing collection:
 
-The examples use daily measurements split into segments of three, two and
-four samples.
+- :py:meth:`~zcollection.collection.Collection.add_variable` adds a variable.
+- :py:meth:`~zcollection.collection.Collection.drop_variable` removes a variable.
+- :py:meth:`~zcollection.collection.Collection.drop_partitions` removes partitions.
+
+The following examples use nine daily measurements divided into three
+segments containing three, two, and four samples.
 
 .. jupyter-execute::
 
@@ -36,19 +37,23 @@ four samples.
     collection.insert(data, distributed=False)
     list(collection.partitions(relative=True))
 
+
 Adding a variable
 -----------------
 
-``add_variable`` declares a variable in the schema of the collection and
-creates its array, filled with its fill value. Where the array is created
-depends on its dimensions:
+:py:meth:`~zcollection.collection.Collection.add_variable` adds a variable
+to the collection's schema and creates its array, initialized with its
+fill value.
 
-- A variable with the partitioned dimension gets an array in every
-  partition.
-- A variable without it, an immutable variable, gets a single array, in
-  ``.immutable``.
+Where the array is stored depends on the variable's dimensions:
 
-For example, to add a quality flag to every sample:
+- Variables spanning the partitioned dimension are stored separately
+  in each partition.
+- Variables without the partitioned dimension are immutable and stored
+  only once, in the ``.immutable`` directory.
+
+For example, add a ``quality`` flag to every sample, initially set
+to ``-1``:
 
 .. jupyter-execute::
 
@@ -60,92 +65,138 @@ For example, to add a quality flag to every sample:
                              distributed=False)
     loaded['quality'].values
 
-With a ``fill_value``, every value is masked until the variable is written,
-for example with :py:meth:`~zcollection.collection.Collection.update`; see
-:doc:`updating`. Without one, every value is the default value of its data
-type in Zarr: zero for a number, ``False`` for a boolean, ``NaT`` for a date
-or a duration, and an empty string for a string.
+When a ``fill_value`` is specified, all values are initially masked
+until data is written to the variable, for example using
+:py:meth:`~zcollection.collection.Collection.update`. See :doc:`updating`
+for details.
 
-The collection must not already have a variable of that name, and the
-variable must use only dimensions the collection declares; otherwise
-``add_variable`` raises ``ValueError``.
+Without a ``fill_value``, Zarr initializes the array with the default
+value for its data type: zero for numbers, ``False`` for booleans,
+``NaT`` for dates and durations, and an empty string for strings.
+
+The new variable must have a unique name and use only dimensions
+declared by the collection. Otherwise, ``add_variable`` raises
+``ValueError``.
+
 
 Removing a variable
 -------------------
 
-``drop_variable`` removes the array of a variable, then the variable from the
-schema:
+:py:meth:`~zcollection.collection.Collection.drop_variable` removes
+a variable's stored arrays and its declaration from the collection's
+schema.
+
+For example, remove the ``quality`` variable:
 
 .. jupyter-execute::
 
     collection.drop_variable('quality', distributed=False)
     list(collection.metadata.variables)
 
-A variable used by the partitioning cannot be removed.
+Variables used by the partitioning scheme cannot be removed.
 
-Views
------
 
-A view provides ``add_variable`` and ``drop_variable`` for its own
-variables. It refuses a variable without the partitioned dimension, and
-cannot remove a variable of the collection it references.
+Managing variables in views
+---------------------------
 
-When adding or removing a variable fails
-----------------------------------------
+Views also provide ``add_variable`` and ``drop_variable`` to manage
+their own variables.
 
-If a partition fails, ``add_variable`` removes the arrays it created and
-the variable from the schema, then raises
-:py:class:`~zcollection.PartitionErrors`. If that removal fails as well, the
-schema still declares the variable, and the error carries a note naming the
-partitions where its array may remain. Call ``drop_variable`` before reading
-the collection or the view: until then, some partitions lack an array the
-schema declares.
+Views cannot contain immutable variables: every variable of a view
+must span the partitioned dimension.
 
-If a partition fails, ``drop_variable`` raises ``PartitionErrors`` and the
-schema still declares the variable. Calling ``drop_variable`` again removes
-the arrays that remain.
+A view also cannot remove variables belonging to its source collection,
+which it references in read-only mode.
+
+
+Handling variable management failures
+-------------------------------------
+
+Adding or removing a variable may fail while processing individual
+partitions. The recovery behavior depends on the operation.
+
+**Adding a variable**
+
+If a partition fails during ``add_variable``, ZCollection attempts to
+remove the arrays already created and revert the schema change before
+raising :py:class:`~zcollection.PartitionErrors`.
+
+If this cleanup also fails, the variable remains declared in the schema.
+The exception includes a note identifying the partitions where its
+array may still exist.
+
+In this situation, call ``drop_variable`` before reading the collection
+or view. Until cleanup is complete, some partitions may be missing an
+array declared by the schema.
+
+**Removing a variable**
+
+If a partition fails during ``drop_variable``, the method raises
+:py:class:`~zcollection.PartitionErrors` and leaves the variable
+declared in the schema.
+
+Call ``drop_variable`` again to remove the remaining arrays and
+complete the operation.
+
 
 Removing partitions
 -------------------
 
-Partitions can be selected using ``filters``, ``timedelta``, or both:
+:py:meth:`~zcollection.collection.Collection.drop_partitions` removes
+partitions from a collection. Partitions can be selected using
+``filters``, ``timedelta``, or both:
 
 - ``filters`` selects partitions based on their partition keys.
-- ``timedelta`` selects partitions older than the specified duration, based
-  on timestamps reported by the file system.
+- ``timedelta`` selects partitions older than the specified duration,
+  based on timestamps reported by the file system.
 
-When both parameters are provided, only partitions matching both conditions
-are removed. If neither is specified, all partitions are removed, while the
-configuration of the collection and its immutable variables are preserved.
+When both parameters are provided, only partitions matching both
+conditions are removed. If neither is specified, all partitions are
+removed, while the collection's configuration and immutable variables
+are preserved.
 
-For example, to remove the partition where ``segment == 2``:
+For example, remove the partition where ``segment == 2``:
 
 .. jupyter-execute::
 
     collection.drop_partitions(filters='segment == 2', distributed=False)
+
+The remaining partitions can be listed with:
 
 .. jupyter-execute::
 
     list(collection.partitions(relative=True))
 
 The method returns the paths of the removed partitions, relative to the
-collection. Partitions listed in the index but missing from the store are
-excluded from the returned paths. See :doc:`failures` for how to retry a
-failed ``drop_partitions``.
+collection. Partitions listed in the index but missing from the store
+are excluded from the returned paths.
 
-Timestamps of the file system
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+See :doc:`failures` for details on how to retry a failed
+``drop_partitions`` operation.
 
-- **S3:** creation timestamps are not available, so using ``timedelta``
+
+File system timestamps
+^^^^^^^^^^^^^^^^^^^^^^
+
+The ``timedelta`` parameter relies on timestamps provided by the
+underlying file system.
+
+- **S3:** Creation timestamps are not available, so using ``timedelta``
   raises ``NotImplementedError``.
-- **Local file systems on Linux:** the reported timestamp reflects the last
-  change to the partition directory rather than its actual creation time.
-  Inserting data into a partition, for example, resets its age.
+- **Local file systems on Linux:** The reported timestamp reflects the
+  last change to the partition directory rather than its actual
+  creation time. Inserting data into a partition, for example, resets
+  its age.
+
 
 Distributed execution
 ---------------------
 
-With ``distributed=True``, the default, ``add_variable``, ``drop_variable``
-and ``drop_partitions`` process each partition in a Dask task of its own,
-and at most ``npartitions`` tasks run at the same time. An immutable
-variable is added and removed in the calling process.
+By default, ``add_variable``, ``drop_variable``, and
+``drop_partitions`` use Dask (``distributed=True``).
+
+Each partition is processed in a separate task, with at most
+``npartitions`` tasks in progress at once.
+
+Immutable variables are handled differently: they are added and removed
+directly in the calling process, without a Dask task.

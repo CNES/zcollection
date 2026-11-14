@@ -1,10 +1,13 @@
 Inserting data
 ==============
 
-:py:meth:`~zcollection.collection.Collection.insert` splits a dataset on the
-partitioning variables and writes each slice to its partition. The examples
-use a collection partitioned by ``segment`` and run each operation in the
-calling process.
+:py:meth:`~zcollection.collection.Collection.insert` splits a dataset
+according to the collection's partitioning scheme and writes the data
+to the corresponding partitions.
+
+The following examples use a collection partitioned by ``segment``.
+Unless otherwise specified, operations run in the calling process with
+``distributed=False``.
 
 .. jupyter-execute::
 
@@ -34,35 +37,43 @@ calling process.
         zcollection.partitioning.Sequence(('segment', )),
         str(root / 'collection'))
 
+
 Inserting a dataset
 -------------------
 
-Insert a dataset holding four measurements of segment 1 and two of segment 2.
-``insert`` writes one partition per segment and returns their paths,
-relative to the collection.
+First, insert a dataset containing four measurements for segment 1 and
+two for segment 2.
 
 .. jupyter-execute::
 
     first = measures(0, 4, 1, 1).concat(measures(4, 2, 2, 1), 'sample')
     collection.insert(first, distributed=False)
 
-:py:meth:`~zcollection.collection.Collection.partitions` lists the same
-paths, and ``selected_partitions`` takes them, for example in ``load`` and
-``update``.
+The insertion creates one partition per segment and returns their paths
+relative to the collection.
+
+You can retrieve these paths using
+:py:meth:`~zcollection.collection.Collection.partitions`:
 
 .. jupyter-execute::
 
     list(collection.partitions(relative=True))
 
-If a partition fails, ``insert`` raises
-:py:class:`~zcollection.PartitionErrors`; see :doc:`failures`.
+Partition paths can also be passed to ``selected_partitions`` in
+operations such as ``load`` and ``update``.
+
+If one or more partitions fail during insertion, ``insert`` raises
+:py:class:`~zcollection.PartitionErrors`. See :doc:`failures` for details.
+
 
 Inserting into existing partitions
 ----------------------------------
 
-By default, the data inserted into a partition replaces the data it holds.
-Insert a dataset covering hours 2 to 5 of segment 1, with the value 2: segment
-1 then holds these four measurements only.
+By default, inserting data into an existing partition replaces its
+entire contents.
+
+For example, insert four measurements for segment 1, covering hours
+2 to 5, all with the value 2:
 
 .. jupyter-execute::
 
@@ -78,12 +89,24 @@ Insert a dataset covering hours 2 to 5 of segment 1, with the value 2: segment
 
     show(1)
 
-A merge callable combines the stored data with the inserted data instead.
-:py:func:`~zcollection.merging.time_series.merge_time_series` replaces the
-stored measurements that fall within the time span of the inserted ones and
-keeps the others. The cell below inserts the first dataset again, then the
-second one with this callable; segment 1 keeps hours 0 and 1 from the
-first:
+Segment 1 now contains only the four new measurements. The original
+measurements at hours 0 and 1 have also been removed, even though they
+do not overlap with the inserted data.
+
+
+Merging with existing data
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To preserve existing data, provide a merge function through the
+``merge_callable`` parameter.
+
+ZCollection provides
+:py:func:`~zcollection.merging.time_series.merge_time_series`, which
+replaces existing measurements within the time span of the inserted
+data while keeping those outside it.
+
+To illustrate this behavior, insert the first dataset again, then
+insert the second one using the merge function:
 
 .. jupyter-execute::
 
@@ -93,20 +116,35 @@ first:
                       distributed=False)
     show(1)
 
-The keyword arguments of ``insert`` that are not its own parameters reach the
-merge callable, such as the ``tolerance`` of ``merge_time_series``. An
-argument named after a positional parameter of the merge callable, such as
-``axis``, makes each partition that already holds data fail with
-``TypeError``.
+Segment 1 now retains hours 0 and 1 from the original data, while
+hours 2 to 5 contain the new measurements.
+
+Additional keyword arguments passed to ``insert`` are forwarded to the
+merge function, provided they are not parameters of ``insert`` itself.
+For example, ``merge_time_series`` accepts a ``tolerance`` argument.
+
+Be careful with arguments already supplied positionally to the merge
+function. Passing one of them as a keyword, such as ``axis``, causes
+each affected partition to fail with a ``TypeError``, reported through
+:py:class:`~zcollection.PartitionErrors`.
+
 
 Inserting with Dask
 -------------------
 
-With ``distributed=True``, the default, ``insert`` runs on the Dask cluster
-of the current client. Each partition is written in a task of its own:
-``insert`` submits ``npartitions`` tasks, then one more each time a task
-finishes. ``npartitions`` defaults to 1; with ``None``, it is the number of
-Dask workers.
+By default, ``insert`` uses a Dask cluster (``distributed=True``).
+Each partition is written in a separate task on the cluster associated
+with the current Dask client.
+
+The ``npartitions`` parameter controls how many partition tasks can run
+concurrently. Initially, ``insert`` submits up to ``npartitions`` tasks,
+then submits another whenever one finishes.
+
+The default is ``npartitions=1``. Setting it to ``None`` uses the number
+of Dask workers instead.
+
+For example, to insert data using a cluster with four workers and up
+to eight concurrent partition tasks:
 
 .. code-block:: python
 
@@ -115,5 +153,5 @@ Dask workers.
     with Client(n_workers=4):
         collection.insert(first, npartitions=8)
 
-A task writes the variables of its partition in parallel, using the threads
-of its worker.
+Within each task, the variables of a partition are written in parallel
+using the threads of its Dask worker.

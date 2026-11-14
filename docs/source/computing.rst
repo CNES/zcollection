@@ -1,15 +1,19 @@
 Computing on partitions
 =======================
 
-:py:meth:`~zcollection.collection.Collection.map` calls a function on each
-partition and returns a Dask bag of the results.
-:py:meth:`~zcollection.collection.Collection.map_overlap` does the same with
-the neighboring partitions loaded around each one. Both read the collection
-and write nothing; :doc:`updating` writes the results of a function to a
-variable. Views provide the same methods.
+:py:meth:`~zcollection.collection.Collection.map` applies a function to
+each partition and returns a Dask bag containing the results.
 
-The examples use consecutive daily measurements split into segments of three,
-two and four samples.
+:py:meth:`~zcollection.collection.Collection.map_overlap` works similarly,
+but also loads neighboring partitions to provide additional context for
+the computation.
+
+Both methods read data without modifying the collection. To write
+computed results back to variables, see :doc:`updating`. The same methods
+are also available on views.
+
+The following examples use nine consecutive days of measurements,
+divided into three segments containing three, two, and four samples.
 
 .. jupyter-execute::
 
@@ -36,12 +40,14 @@ two and four samples.
     collection.insert(data, distributed=False)
     list(collection.partitions(relative=True))
 
+
 Computing one value per partition
 ---------------------------------
 
-The function receives the dataset of one partition. Computing the bag gives
-one pair per partition: the keys of the partition and the result of the
-function.
+With ``map``, the function receives the dataset of one partition.
+The returned Dask bag can then be computed to obtain the results.
+
+For example, calculate the mean of ``signal`` in each partition:
 
 .. jupyter-execute::
 
@@ -51,25 +57,40 @@ function.
     bag = collection.map(mean, delayed=False)
     bag.compute(scheduler='synchronous')
 
-With ``delayed=False``, the variables are loaded into NumPy arrays before the
-call; see `Choosing NumPy or Dask arrays`_. The bag is computed by the
-scheduler given to ``compute``, here the calling process. Without one, it uses
-the cluster of the current client, if there is one, or the default scheduler
-of Dask bags.
+Each result contains the partition keys and the value returned by
+the function.
+
+Here, ``delayed=False`` loads the variables into NumPy arrays before
+calling the function. See `Choosing NumPy or Dask arrays`_ for details.
+
+The ``compute`` method determines how the bag is executed. In this
+example, ``scheduler='synchronous'`` runs the computation in the calling
+process. Without an explicit scheduler, Dask uses the current client's
+cluster if one is available, or the default scheduler for Dask bags.
+
 
 Choosing the inputs
 -------------------
 
-``selected_variables`` lists the variables to load: the ones the function
-reads. ``filters`` selects the partitions by their keys, and
-``selected_partitions`` selects them by their paths. Given both, only the
-partitions they both select are kept.
+You can control which variables and partitions are passed to the function:
+
+- ``selected_variables`` specifies which variables to load.
+- ``filters`` selects partitions based on their partition keys.
+- ``selected_partitions`` selects partitions by their paths.
+
+If both ``filters`` and ``selected_partitions`` are provided, only
+partitions matching both selections are processed.
+
+For example, compute the mean using only ``signal`` and selecting
+segments 2 and 3:
 
 .. jupyter-execute::
 
     bag = collection.map(mean, selected_variables=('signal', ),
                          filters='segment >= 2', delayed=False)
     bag.compute(scheduler='synchronous')
+
+You can also select partitions explicitly by their paths:
 
 .. jupyter-execute::
 
@@ -78,8 +99,8 @@ partitions they both select are kept.
                          delayed=False)
     bag.compute(scheduler='synchronous')
 
-The arguments following the function, and the extra keyword arguments, are
-passed to it:
+Additional positional and keyword arguments are forwarded to the
+function. For example, to multiply each mean by a given factor:
 
 .. jupyter-execute::
 
@@ -89,11 +110,17 @@ passed to it:
     collection.map(scaled_mean, 2.0, selected_variables=('signal', ),
                    delayed=False).compute(scheduler='synchronous')
 
+
 Knowing which partition is processed
 ------------------------------------
 
-A function declaring a ``partition_info`` keyword parameter receives a
-:py:class:`~zcollection.PartitionInfo` for the partition it processes.
+A function can access information about the partition being processed
+by declaring a ``partition_info`` keyword parameter.
+
+ZCollection then passes a :py:class:`~zcollection.PartitionInfo` object
+containing the partition's keys, path, dimension, and indices.
+
+For example, retrieve the name and keys of each partition:
 
 .. jupyter-execute::
 
@@ -102,6 +129,8 @@ A function declaring a ``partition_info`` keyword parameter receives a
 
     collection.map(describe, selected_variables=('signal', ),
                    delayed=False).compute(scheduler='synchronous')
+
+The ``PartitionInfo`` object provides the following attributes:
 
 .. list-table:: Attributes of PartitionInfo
    :header-rows: 1
@@ -121,17 +150,30 @@ A function declaring a ``partition_info`` keyword parameter receives a
      - Slice selecting the partition within the data the function receives:
        ``slice(None)`` without neighbors.
 
-See :doc:`partitioning` for the rules defining the keys and names.
+See :doc:`partitioning` for details on how partition keys and names
+are defined.
+
 
 Using neighboring partitions
 ----------------------------
 
-``map_overlap`` loads each partition with ``depth`` neighboring partitions on
-each side, concatenated along the partitioned dimension. ``filters`` and
-``selected_partitions`` select the partitions to process; the neighbors of
-each are loaded whether these parameters select them or not.
-``partition_info.indices`` locates the partition in its window. At
-``depth=1``:
+Some computations require data from neighboring partitions, such as
+calculating a moving average across partition boundaries.
+
+``map_overlap`` provides this context by loading each partition together
+with up to ``depth`` neighboring partitions on either side. Their data
+is concatenated along the partitioned dimension before being passed
+to the function.
+
+The ``filters`` and ``selected_partitions`` parameters determine which
+partitions are processed. However, neighboring partitions are still
+loaded when needed, even if they are not part of the selection.
+
+The function receives the entire window, while
+``partition_info.indices`` identifies the samples belonging to the
+partition being processed.
+
+For the example collection, ``depth=1`` produces these windows:
 
 .. list-table:: Windows and central slices
    :header-rows: 1
@@ -154,9 +196,13 @@ each are loaded whether these parameters select them or not.
      - 6
      - ``slice(2, 6)``
 
-The three-point average below reads samples of the neighboring segments,
-then keeps the values of the processed partition with
-``partition_info.indices``. It pads the two ends of the signal with zeros.
+The following example computes a three-point moving average. Each
+partition can use samples from its neighbors, allowing the smoothing
+operation to cross partition boundaries.
+
+The function then uses ``partition_info.indices`` to return only the
+values belonging to the partition being processed. At the ends of
+the signal, missing samples are treated as zeros.
 
 .. jupyter-execute::
 
@@ -169,18 +215,28 @@ then keeps the values of the processed partition with
     collection.map_overlap(smooth, depth=1, selected_variables=('signal', ),
                            delayed=False).compute(scheduler='synchronous')
 
-``indices`` keeps this meaning when the selected variables omit ``sample``,
-for example when only an immutable variable is selected.
+The meaning of ``partition_info.indices`` remains the same even when
+``selected_variables`` excludes variables spanning the partitioned
+dimension, for example when selecting only an immutable variable.
+
 
 Reading an external Dask array
 ------------------------------
 
-Dask handles the arguments passed to the function as
-:py:meth:`dask.bag.Bag.map` does: a Dask array passed as an argument reaches
-each call as the same lazy array. The function below selects the weights of
-its days from an array with one value per day, and computes only that slice.
-``partition_info.indices`` is relative to the data zcollection loads; an
-external source needs its own alignment, here from ``time``.
+Functions passed to ``map`` can also receive external Dask arrays.
+
+As with :py:meth:`dask.bag.Bag.map`, a Dask array passed as an argument
+remains the same lazy array in each call. The function can then select
+and compute only the data it needs.
+
+For example, suppose an external array contains one weight for each
+day of the collection. To calculate a weighted mean for each partition,
+the function must select the weights corresponding to its measurements.
+
+The ``partition_info.indices`` attribute refers to the data loaded
+from ZCollection, not to positions in an external array. The two
+datasets therefore need to be aligned separately, using ``time``
+in this example.
 
 .. jupyter-execute::
 
@@ -202,17 +258,25 @@ external source needs its own alignment, here from ``time``.
                    selected_variables=('time', 'signal'),
                    delayed=False).compute(scheduler='synchronous')
 
-Only the chunks a slice intersects are read: for segment 3, the function
-selects ``weights[5:9]``, which intersects two chunks of this array. For
-persisted Dask collections and scattered objects, see
+Only the chunks intersecting the selected slice are read. For segment 3,
+the function selects ``weights[5:9]``, which spans two chunks of the
+external array.
+
+For working with persisted Dask collections or scattered objects, see
 :py:meth:`distributed.Client.persist` and
 :py:meth:`distributed.Client.scatter`.
+
 
 Choosing NumPy or Dask arrays
 -----------------------------
 
-``delayed`` sets what the function receives. With ``True``, the default for
-``map`` and ``map_overlap``, ``ds['signal'].array`` is a Dask array and
-``ds['signal'].values`` computes it. With ``False``, the variables are NumPy
-arrays loaded before the call, and each call needs memory for the partition
-or window and for its result.
+The ``delayed`` parameter controls how variables are loaded before
+being passed to the function.
+
+- ``delayed=True`` (the default for ``map`` and ``map_overlap``) provides
+  Dask arrays. Accessing ``ds['signal'].array`` returns a lazy array,
+  while ``ds['signal'].values`` computes its values.
+
+- ``delayed=False`` loads the variables into NumPy arrays before the
+  function is called. Each call therefore requires enough memory to
+  hold the partition or overlap window, along with the computed result.

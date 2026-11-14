@@ -1,16 +1,24 @@
 Migrating a collection to Zarr 3
 ================================
 
-On this page you take a collection written by an earlier release of
-zcollection and migrate it into one this release writes, some partitions at
-a time, checking each one before you free the space the old collection
-takes.
+ZCollection provides tools to migrate collections created by earlier
+releases from Zarr 2 to Zarr 3.
 
-What an old collection allows
------------------------------
+Migration creates a new collection without modifying the original.
+You can migrate partitions in batches, verify their contents, and
+remove the source partitions once they have been migrated successfully.
 
-An earlier release wrote its collections in the Zarr 2 format. Opening one
-succeeds, with a warning:
+This allows large collections to be migrated progressively, without
+requiring enough additional storage to hold both collections in full.
+
+
+Reading an older collection
+---------------------------
+
+Collections created by earlier releases use the Zarr 2 format. They
+remain readable, but cannot be modified with the current release.
+
+Opening an older collection succeeds with a warning:
 
 .. code-block:: python
 
@@ -24,20 +32,31 @@ succeeds, with a warning:
     only be read. Use the 'zcollection.migration.migrate' function to copy it into a
     collection this release writes.
 
-Every read works: the partitions keep their values, their masks and their
-attributes. Writing is what is refused. Opening the collection for writing
-stops with a ``ValueError`` naming the same release, and inserting a dataset
-into it or adding a variable to it stops with an
-:py:class:`io.UnsupportedOperation`.
+The collection retains its data, masks, and attributes, and all read
+operations remain available.
 
-Migrating it
-------------
+Writing is not supported:
 
-:py:func:`zcollection.migration.migrate` reads the source and writes a second
-collection. The source is never written.
+- Opening the collection for writing raises ``ValueError``.
+- Operations such as inserting data or adding a variable raise
+  :py:class:`io.UnsupportedOperation`.
 
-The functions are named by ``zcollection.migration``, which a program that
-only reads a collection never imports:
+To modify the collection with the current release, migrate it to
+Zarr 3 first.
+
+
+Migrating a collection
+----------------------
+
+:py:func:`zcollection.migration.migrate` reads an existing collection
+and writes its contents to a new location. The source collection is
+never modified by the migration.
+
+The migration utilities are available through ``zcollection.migration``
+and do not need to be imported by applications that only read
+collections.
+
+To migrate a collection:
 
 .. code-block:: python
 
@@ -46,37 +65,111 @@ only reads a collection never imports:
     outcome = migration.migrate("/data/mycollection",
                                 "/data/mycollection.v3")
 
-The first call creates the target and gives it the configuration the source
-describes. Each partition is read, decoded and written again, so the
-migration carries over the compressor, the filters, the fill value, the dimensions and
-the attributes of every variable, and the chunking of the source. The immutable variables are
-migrated once, under the name ``.immutable``.
+The first call creates the target collection using the configuration
+of the source.
 
-The two collections may live on different file systems, which
-``source_filesystem`` and ``target_filesystem`` name:
+Each partition is read, decoded, and written again in Zarr 3 format.
+The migration preserves:
+
+- Variable dimensions, attributes, and fill values.
+- Compressors and filters.
+- The original chunking.
+- The values and masks returned when reading each variable.
+
+Immutable variables are migrated once, under ``.immutable``.
+
+The source and target can use different file systems, specified through
+``source_filesystem`` and ``target_filesystem``.
+
+For example, to migrate a local collection to S3:
 
 .. code-block:: python
 
     outcome = migration.migrate("/data/mycollection",
-                                  "bucket/mycollection",
-                                  target_filesystem="s3")
+                                "bucket/mycollection",
+                                target_filesystem="s3")
 
-**The migration carries the data.** A file you keep at the
-root of the collection — an index, a catalogue, anything the collection
-model does not describe — is left where it is. Copy those yourself.
 
-The values and the masks a variable reads are the ones the source holds.
-The bytes on disk are not the same: the chunks are compressed again, a chunk
-holding nothing but the fill value of its array is left out, and an array
-names the file of a chunk with the ``c`` prefix and the indices joined
-with a dot. Nothing downstream that reads through zcollection sees a
-difference; anything that reads the files themselves does.
+What changes on disk
+~~~~~~~~~~~~~~~~~~~~
 
-Knowing where the migration has got to
---------------------------------------
+Although the data and metadata exposed by ZCollection are preserved,
+the physical representation changes during migration:
 
-:py:func:`zcollection.migration.status` compares the partitions of the two collections
-and groups the counts by the first key of the partitioning:
+- Chunks are compressed again.
+- Chunks containing only the array's fill value are omitted.
+- Chunk filenames use a ``c`` prefix followed by dot-separated indices.
+
+Applications reading through ZCollection continue to see the same
+values and masks. Applications accessing the stored files directly
+must account for the new Zarr 3 layout.
+
+The migration only copies data described by the collection model.
+Additional files stored at the collection's root, such as custom
+indexes or catalogues, are not copied.
+
+These files must be transferred separately.
+
+
+Migrating in batches
+--------------------
+
+Large collections can be migrated a few partitions at a time. The
+source collection does not need to remain frozen throughout the
+entire migration.
+
+The ``migrate``, ``check``, and ``prune`` functions support the same
+partition selection parameters:
+
+- ``filters`` selects partitions using their partition keys, either
+  through an expression or a callable.
+- ``selected_partitions`` selects partitions by their relative paths.
+
+When both are provided, only partitions matching both selections
+are processed.
+
+For example:
+
+.. code-block:: python
+
+    migration.migrate(source, target, filters="year == 2014 and month == 5")
+    migration.migrate(source, target, filters=lambda keys: keys["year"] < 2016)
+    migration.migrate(source, target,
+                      selected_partitions=["year=2014/month=05/day=24"])
+
+Without either parameter, ``migrate`` processes every partition
+not already present and complete in the target.
+
+
+Resuming an interrupted migration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Migration can be safely resumed by calling ``migrate`` again with the
+same source and target.
+
+Partitions already complete in the target are skipped. To identify them,
+a subsequent call lists the source partitions and reads the metadata of
+their corresponding partitions in the target.
+
+A partition left partially written has no consolidated metadata.
+It is therefore considered missing and is rewritten in full by the
+next migration attempt.
+
+No special recovery procedure is required after an interruption:
+simply run ``migrate`` again.
+
+You can migrate, check, and prune successive batches independently.
+Processing a batch through all three steps before moving to the next
+keeps the additional storage requirements close to the size of the
+batch rather than the entire collection.
+
+
+Monitoring progress
+-------------------
+
+:py:func:`zcollection.migration.status` compares the partitions of
+the source and target collections. It groups the results by the first
+key of the partitioning scheme.
 
 .. code-block:: python
 
@@ -88,165 +181,251 @@ and groups the counts by the first key of the partitioning:
     year=2015 : 212 migrated, 153 missing
     year=2016 : 0 migrated, 366 missing
 
-A partition both collections hold counts as *migrated* when the target holds
-it complete, and as *missing* when it does not. Two counts appear once they are not
-empty: *pruned*, the partitions you have already pruned from the source, and
-*lost*, the partitions the source no longer holds and the target does not
-hold complete. Nothing can rebuild those.
+The status distinguishes four states:
 
-Checking the migration
-----------------------
+- **migrated:** The partition exists in the source and is complete
+  in the target.
+- **missing:** The partition exists in the source but is not complete
+  in the target.
+- **pruned:** The partition has been removed from the source and
+  remains in the target.
+- **lost:** The partition is no longer present in the source and is
+  not complete in the target.
 
-:py:func:`zcollection.migration.check` reads every value of every variable on both
-sides and compares them, masks included, along with the attributes, the fill
-value, the dimensions and the chunking. It is never called for you, and you
-may call it as often as you like.
+The ``pruned`` and ``lost`` counts are displayed only when nonzero.
+
+A lost partition cannot be recovered from either collection. This
+makes it important to verify migrated data before removing the source.
+
+
+Verifying migrated data
+-----------------------
+
+:py:func:`zcollection.migration.check` compares the source and target
+collections to verify that the migration preserved their contents.
+
+It reads every value of every selected variable on both sides and
+compares:
+
+- Data values and masks.
+- Variable attributes and fill values.
+- Dimensions and chunking.
+
+The check must be called explicitly; migration does not run it
+automatically.
+
+For example, to verify the partitions of 2014:
 
 .. code-block:: python
 
     outcome = migration.check("/data/mycollection",
-                                "/data/mycollection.v3",
-                                filters="year == 2014")
+                              "/data/mycollection.v3",
+                              filters="year == 2014")
 
     assert not outcome.failed
 
-``outcome.done`` names the partitions whose values are equal,
-``outcome.skipped`` those the target does not hold complete, and
-``outcome.failed`` those that differ, each with the names of the variables
-that do.
+The result contains three attributes:
 
-The check reads the whole of both collections, so it costs about as much as
-the migration itself. Running it on the partitions you are about to
-prune, rather than on everything, is what keeps that cost in hand.
+- ``outcome.done`` lists partitions whose values match.
+- ``outcome.skipped`` lists partitions that are not complete in the
+  target.
+- ``outcome.failed`` identifies partitions that differ, along with
+  the names of the variables containing differences.
 
-While it reads the source, the check also logs a warning naming any array whose
-metadata calls for more chunks than the source holds.
-Zarr reads a chunk it cannot find as the fill value, on both sides, so
-comparing the values cannot see such a loss.
+You can run the check as often as needed.
 
-Pruning the source
-------------------
+Verification reads the selected data from both collections, making
+it comparable in cost to the migration itself. Checking individual
+batches before pruning them avoids repeatedly reading the entire
+collection.
 
-:py:func:`zcollection.migration.prune` removes from the source the partitions the
-target holds complete. It is the only function that removes anything from
-the source, and it removes nothing else there: the configuration of the collection, its immutable
-variables and the files you keep beside them all stay.
+
+Detecting missing chunks
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+During verification, ``check`` also examines the source arrays for
+missing chunks.
+
+If an array's metadata indicates more chunks than are physically
+present, it logs a warning identifying the affected array.
+
+.. warning::
+
+   Zarr reads missing chunks as fill values. If a chunk is already
+   missing from the source, reading both collections may therefore
+   produce identical values even though data has been lost.
+
+   Comparing values alone cannot detect this situation. Pay attention
+   to warnings about missing source chunks when verifying a migration.
+
+
+Removing migrated partitions
+----------------------------
+
+Once a batch has been migrated and verified, use
+:py:func:`zcollection.migration.prune` to remove its partitions from
+the source collection.
 
 .. code-block:: python
 
     outcome = migration.prune("/data/mycollection",
-                                "/data/mycollection.v3",
-                                filters="year == 2014")
+                              "/data/mycollection.v3",
+                              filters="year == 2014")
 
-A partition the target does not hold complete is refused and named in
-``outcome.failed``. The call stops with a ``ValueError`` when the target is
-not the copy of this source — another collection, or a mistyped path that
-happens to name one.
+``prune`` only removes source partitions that are complete in the
+target.
 
-Selecting the partitions to migrate
------------------------------------
+Partitions that are not complete in the target are preserved in the
+source and reported in ``outcome.failed``.
 
-A collection of hundreds of terabytes does not have to be migrated in one
-call, and the source does not have to be frozen for the whole of it.
-:py:func:`zcollection.migration.migrate`, :py:func:`zcollection.migration.check` and
-:py:func:`zcollection.migration.prune` take the same two ways of naming the partitions
-to act on, which bound each other:
+The operation also verifies that the target corresponds to the source.
+If the target refers to another collection, ``prune`` raises
+``ValueError``.
 
-.. code-block:: python
+Only ``prune`` removes data from the source collection. It preserves
+the collection's configuration, its immutable variables, and any
+additional files stored alongside them.
 
-    migration.migrate(source, target, filters="year == 2014 and month == 5")
-    migration.migrate(source, target, filters=lambda keys: keys["year"] < 2016)
-    migration.migrate(source, target,
-                        selected_partitions=["year=2014/month=05/day=24"])
 
-Naming neither migrates every partition the target does not already hold.
+Distributed execution
+---------------------
 
-A partition the target holds complete is skipped, so calling
-:py:func:`zcollection.migration.migrate` again costs a listing of the source and one
-metadata read per partition. That
-is also what makes an interrupted migration safe to resume: a partition written
-only in part carries no consolidated metadata, counts as missing, and is written
-again whole by the next call. Stopping a migration needs no precaution —
-stop it, and call it again.
+By default, migration processes partitions using a Dask cluster,
+with one task per partition.
 
-Nothing requires you to migrate, check and prune one set of partitions
-before starting the next. Running them in that order, a few partitions at a
-time, is what keeps the space the two collections need together to a
-fraction more than the source.
-
-With or without Dask
---------------------
-
-The partitions are independent, so they are spread over a Dask cluster by
-default, one partition per task. Passing ``distributed=False`` runs them in
-the calling process instead:
+Set ``distributed=False`` to execute the operation in the calling
+process instead:
 
 .. code-block:: python
 
     outcome = migration.migrate(source, target, distributed=False)
 
-A partition the migration stops on does not stop the run: it is named in
-``outcome.failed`` with its error as text, and the others are written. Call
-:py:func:`zcollection.migration.migrate` again to take them up.
+A failure in one partition does not stop the migration of the others.
+The failed partition is recorded in ``outcome.failed``, together with
+its error as text.
 
-The three fields of an outcome record what each task decided, not what the
-two collections hold once the call returns. Dask runs a task again when the
-worker holding its result dies, so a partition one call wrote can come back
-under ``skipped``. :py:func:`zcollection.migration.status` and
-:py:func:`zcollection.migration.check` are what read the storage.
+Call ``migrate`` again to retry partitions that did not complete.
 
-Views
------
+An outcome records the results reported by individual tasks, which
+may not always reflect the final state of storage.
 
-A view written by an earlier release opens with a warning naming
-``migrate_view``, and reads. A view on a collection that release also wrote
-warns twice, once for each.
+For example, Dask can rerun a task when the worker holding its result
+is lost. A partition successfully written by an earlier attempt may
+then appear under ``skipped`` in the outcome of the retry.
 
-Calling ``add_variable``, ``drop_variable``, ``reindex``, ``sync`` or
-``update`` on it stops with an :py:class:`io.UnsupportedOperation`.
-``validate_partitions`` lists its invalid partitions; with ``fix=True`` it
-stops with a :py:class:`PermissionError` on the first one and changes
-nothing.
+Use :py:func:`zcollection.migration.status` to inspect the partitions
+present in storage and :py:func:`zcollection.migration.check` to verify
+their contents.
 
-Migrate the collection a view references before the view itself, then point
-the copy of the view at the copy of the collection:
+
+Migrating views
+---------------
+
+Views created by earlier releases also remain readable but cannot be
+modified with the current release.
+
+Opening an older view produces a warning referring to ``migrate_view``.
+If its reference collection also uses the old format, opening the
+view produces two warnings, one for each.
+
+The following operations are unavailable on an older view:
+
+- ``add_variable``
+- ``drop_variable``
+- ``reindex``
+- ``sync``
+- ``update``
+
+They raise :py:class:`io.UnsupportedOperation`.
+
+``validate_partitions`` can still identify invalid partitions.
+However, calling it with ``fix=True`` raises
+:py:class:`PermissionError` on the first invalid partition without
+modifying the view.
+
+
+Migrating a view
+~~~~~~~~~~~~~~~~
+
+Migrate the reference collection before migrating its views.
+
+When migrating a view, use the ``reference`` parameter to point the
+new view to the migrated collection:
 
 .. code-block:: python
 
     outcome = migration.migrate_view("/data/myview",
-                                       "/data/myview.v3",
-                                       reference="/data/mycollection.v3")
+                                     "/data/myview.v3",
+                                     reference="/data/mycollection.v3")
 
-Leaving ``reference`` unset keeps the collection the source view references.
-A view is selected the way a collection is:
-:py:func:`zcollection.migration.migrate_view` and :py:func:`zcollection.migration.check_view`
-take the same ``filters`` and ``selected_partitions``, read against the
-partitioning of the collection the view references.
+The ``reference`` path is a path on the target's file system. If
+omitted, the migrated view retains the reference collection used by
+the original view.
 
-:py:func:`zcollection.migration.view_status`, :py:func:`zcollection.migration.check_view` and
-:py:func:`zcollection.migration.prune_view` answer for a view what
-:py:func:`zcollection.migration.status`, :py:func:`zcollection.migration.check` and
-:py:func:`zcollection.migration.prune` answer for a collection. A partition the copy
-keeps and the source view no longer holds is counted under *pruned*.
+:py:func:`zcollection.migration.migrate_view`,
+:py:func:`zcollection.migration.check_view`, and
+:py:func:`zcollection.migration.prune_view` support ``filters`` and
+``selected_partitions``, using the partitioning scheme of the referenced
+collection.
 
-Switching over
---------------
+The view migration API also provides the equivalent operations for
+tracking, checking, and pruning:
 
-Once every partition is migrated and checked, the two collections hold the
-same data and the readers are still on the source. The way you finish
-depends on where the collection lives.
+- :py:func:`zcollection.migration.view_status` reports migration progress.
+- :py:func:`zcollection.migration.check_view` verifies migrated data.
+- :py:func:`zcollection.migration.prune_view` removes migrated source
+  partitions.
 
-On a file system that renames a directory, swapping the two paths is two
-renames, and nothing that reads the collection has to be told:
+These correspond to :py:func:`zcollection.migration.status`,
+:py:func:`zcollection.migration.check`, and
+:py:func:`zcollection.migration.prune` for collections.
+
+A partition that remains in the migrated view but has been removed
+from the source view is counted as *pruned*.
+
+
+Switching to the migrated collection
+------------------------------------
+
+Once all partitions have been migrated and verified, the new collection
+is ready to replace the original.
+
+The final step depends on the storage system.
+
+
+Local file systems
+~~~~~~~~~~~~~~~~~~
+
+On a file system that supports directory renaming, you can move the
+original collection aside and rename the migrated collection to its
+original path:
 
 .. code-block:: text
 
     mv /data/mycollection /data/mycollection.v2
     mv /data/mycollection.v3 /data/mycollection
 
-On an object store there is no rename: moving the copy onto the old path
-means writing every key a second time. Pointing the readers at the new path
-costs nothing instead, and is the usual choice there.
+Readers can then continue using the original collection path.
 
-Either way, the files you keep at the root are yours to move: the migration does
-not carry them, and a rename carries them off with the old collection.
+
+Object stores
+~~~~~~~~~~~~~
+
+Object stores do not support directory renaming in the same way.
+Replacing the original path would require copying all the objects
+again.
+
+Instead, point readers directly to the migrated collection's new
+location. This avoids another complete transfer of the data.
+
+
+Additional files
+~~~~~~~~~~~~~~~~
+
+Remember that migration does not copy files outside the collection
+model, such as custom indexes or catalogues stored at its root.
+
+These files must be handled separately.
+
+When renaming a local collection, any such files remain with the
+original directory, now moved to the backup path.

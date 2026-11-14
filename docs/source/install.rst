@@ -5,84 +5,111 @@ Required dependencies
 ---------------------
 
 - Python (3.12 or later)
-- setuptools
-- `dask <https://dask.pydata.org/>`_
+- `dask <https://dask.pydata.org/>`_ (2022.8.0 or later)
 - `distributed <https://distributed.dask.org/en/stable/>`_
-- `fsspec <https://filesystem-spec.readthedocs.io/en/latest/>`_
+- `fasteners <https://fasteners.readthedocs.io/en/latest/>`_
+- `fsspec <https://filesystem-spec.readthedocs.io/en/latest/>`_ (2024.12.0 or
+  later)
 - `numcodecs <https://numcodecs.readthedocs.io/en/stable/>`_
-- `numpy <https://numpy.org/>`_
-- `pyarrow <https://arrow.apache.org/docs/python/>`_
+- `numpy <https://numpy.org/>`_ (1.20 or later)
 - `xarray <http://xarray.pydata.org/en/stable/>`_
 - `zarr <https://zarr.readthedocs.io/en/stable/>`_ (3.4 or later)
 
-.. note::
+Optional dependencies
+---------------------
 
-    `pyarrow` is optional, but required if you want to use the indexing API.
+- `pyarrow <https://arrow.apache.org/docs/python/>`_, required for the
+  indexing API.
 
-Instructions
-------------
 
-Installation via conda
-######################
+Installing ZCollection
+----------------------
 
-The easiest way to install the library is to use conda. First, install the
-dependencies::
+Using conda
+^^^^^^^^^^^
+
+The simplest way to install ZCollection is through conda-forge::
 
     $ conda install -c conda-forge zcollection
 
-Installation via conda and sources
-##################################
+Using pip
+^^^^^^^^^
 
-It is possible to install the latest version from source. First, install the
-dependencies using conda::
+ZCollection is also available on PyPI::
 
-    $ conda install dask distributed fsspec numcodecs numpy pandas pyarrow xarray zarr
+    $ pip install zcollection
 
-Then, clone the repository::
+From source
+^^^^^^^^^^^
+
+To install ZCollection from source, first install its dependencies using
+conda::
+
+    $ conda install -c conda-forge dask distributed fasteners fsspec numcodecs numpy xarray zarr
+
+Include ``pyarrow`` if you plan to use the indexing API.
+
+Clone the repository and navigate to its directory::
 
     $ git clone git@github.com:CNES/zcollection.git
     $ cd zcollection
 
-Finally, install the library using pip (it is possible to checkout a different
-branch before installing)::
+Check out a different branch first if needed, then install the library::
 
     $ pip install .
 
-Installation via pip
-####################
-
-    $ pip install zcollection
 
 Testing
 -------
 
-To run the test suite after installing the library, install (via pypi or
-conda) `pytest <https://pytest.org>`__ and run ``pytest`` in the root
-directory of the cloned repository.
+ZCollection uses `pytest <https://pytest.org>`_ for testing. To run the test
+suite, install the test dependencies::
 
-The unit test process can be modified using options implemented for this
-project, in addition to the options provided by ``pytest``. The available user
-options are:
+    $ pip install '.[test]'
 
-- **s3**: Enable tests on the local S3 server driven by minio. (default: False)
-- **memory**: Use a file system in memory instead of the local file system.
-  (default: False)
-- **threads_per_worker**: Number of threads for each worker Dask.
-  (default: the number of logical cores of the target platform).
-- **n_workers**: Number of core for each worker Dask.
-  (default: the number of cores of the target platform).
+This installs ``pytest`` and ``pytest-cov``. Alternatively, you can install
+``pytest`` separately using pip or conda.
 
-To run the tests using a local S3 server, driven by the ``minio`` software,
-it's necessary to install the following optional requirements:
+From the root of the cloned repository, run::
+
+    $ pytest
+
+The test suite supports the following options in addition to the standard
+pytest options:
+
+- ``--s3``: Run tests against a local S3 server using MinIO
+  (default: ``False``).
+- ``--memory``: Use an in-memory file system instead of the local file system
+  (default: ``False``).
+- ``--threads_per_worker``: Number of threads per Dask worker
+  (default: chosen by Dask based on the available CPU cores).
+- ``--n_workers``: Number of Dask workers
+  (default: chosen by Dask based on the available CPU cores).
+- ``--processes``: Run Dask workers in separate processes instead of threads
+  (default: ``False``).
+
+To run tests against a local S3 server, install the following additional
+dependencies:
 
 - `s3fs <https://github.com/fsspec/s3fs/>`_
 - `requests <https://docs.python-requests.org/en/latest/>`_
 
-You will need to install the ``minio`` program. You can find more information
-on this web `page <https://min.io/download>`_.
+You also need the ``minio`` command. See the
+`MinIO download page <https://min.io/download>`_ for installation instructions.
+
 
 Documentation
 -------------
 
-The documentation use sphinx and Google-style docstrings. To build the
-documentation, run ``make html`` in the ``docs`` directory.
+ZCollection's documentation is built with Sphinx and uses Google-style
+docstrings.
+
+The ``conda/environment.yml`` file defines the environment needed to build
+the documentation, including Sphinx and its extensions. Create the
+environment with::
+
+    $ conda env create -f conda/environment.yml
+
+Then, from the ``docs`` directory, build the HTML documentation::
+
+    $ make html

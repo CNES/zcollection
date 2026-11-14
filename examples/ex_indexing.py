@@ -1,8 +1,13 @@
 """
-Indexing a Collection.
-======================
+Indexing a collection
+=====================
 
-In this example, we will see how to index a collection.
+This example shows how to create a custom index for a collection and use
+it to retrieve selected measurements without reading the entire dataset.
+
+The collection contains satellite measurements partitioned by month.
+The index provides another way to access the data, using satellite cycle
+and pass numbers to locate individual half-orbits.
 """
 from __future__ import annotations
 
@@ -22,26 +27,31 @@ if TYPE_CHECKING:
     import pathlib
 
 # %%
-# Initialization of the environment
-# ---------------------------------
+# Setting up the environment
+# --------------------------
+#
+# Use an in-memory file system and a local Dask cluster with threads,
+# allowing workers to share the same storage.
 fs = fsspec.filesystem('memory')
 cluster = dask.distributed.LocalCluster(processes=False)
 client = dask.distributed.Client(cluster)
 
 # %%
-# A collection can be indexed. This allows quick access to the data without
-# having to browse the entire dataset.
+# Creating a collection to index
+# ------------------------------
 #
-# Creating the test collection.
-# -----------------------------
+# Start with a dataset containing measurements from a fictitious
+# satellite, organized into several half-orbits.
 #
-# For this latest example, we will index another data set. This one contains
-# measurements of a fictitious satellite on several half-orbits.
+# Each half-orbit is identified by a cycle number and a pass number.
+# These values will later be used to build the index.
 zds: zcollection.Dataset = zcollection.Dataset.from_xarray(
     zcollection.partitioning.tests.data.create_test_sequence(5, 20, 10))
 print(zds)
 
 # %%
+# Create a collection partitioned by month using the ``time`` variable,
+# then insert the measurements.
 collection: zcollection.Collection = zcollection.create_collection(
     'time',
     zds,
@@ -51,19 +61,24 @@ collection: zcollection.Collection = zcollection.create_collection(
 collection.insert(zds, merge_callable=zcollection.merging.merge_time_series)
 
 # %%
-# Here we have created a collection partitioned by month.
+# The collection is organized into monthly partitions. Inspect the
+# directories created for the year 2000:
 pprint.pprint(fs.listdir('/one_other_collection/year=2000'))
 
 
 # %%
-# Class to implement
-# ------------------
+# Identifying half-orbits
+# -----------------------
 #
-# The idea of the implementation is to calculate for each visited partition, the
-# slice of data that has a constant quantity. In our example, we will rely on
-# the cycle and pass number information. The first method we will implement is
-# the detection of these constant parts of two vectors containing the cycle and
-# pass number.
+# The index will identify consecutive measurements belonging to the
+# same half-orbit, even though the collection itself is partitioned
+# by month.
+#
+# A half-orbit corresponds to a sequence of measurements with constant
+# cycle and pass numbers.
+#
+# First, define a function that finds where either value changes.
+# It returns the start and stop indices of each consecutive sequence.
 def split_half_orbit(
     cycle_number: numpy.ndarray,
     pass_number: numpy.ndarray,
@@ -77,21 +92,25 @@ def split_half_orbit(
         Iterator of start and stop indexes.
     """
     assert pass_number.shape == cycle_number.shape
-    pass_idx = numpy.where(numpy.roll(pass_number, 1) != pass_number)[0]
-    cycle_idx = numpy.where(numpy.roll(cycle_number, 1) != cycle_number)[0]
+    changes = numpy.flatnonzero((numpy.diff(pass_number) != 0)
+                                | (numpy.diff(cycle_number) != 0)) + 1
+    half_orbit = numpy.concatenate(([0], changes, [pass_number.size]))
 
-    half_orbit = numpy.unique(
-        numpy.concatenate(
-            (pass_idx, cycle_idx, numpy.array([pass_number.size],
-                                              dtype='int64'))))
-    del pass_idx, cycle_idx
-
-    yield from tuple(zip(half_orbit[:-1], half_orbit[1:]))
+    yield from zip(half_orbit[:-1], half_orbit[1:])
 
 
 # %%
-# Now we will compute these constant parts from a dataset contained in a
-# partition.
+# Building index records
+# ----------------------
+#
+# The next function applies this detection to a dataset loaded from
+# one partition.
+#
+# For each half-orbit, it creates an index record containing its start
+# and stop positions, cycle number, and pass number.
+#
+# The records are returned as a structured NumPy array, using the
+# data types defined by the indexer.
 def _half_orbit(
     zds: zcollection.Dataset,
     *args,
@@ -103,7 +122,8 @@ def _half_orbit(
     Args:
         zds: Datasets stored in a partition to be indexed.
     Returns:
-        Dictionary of start and stop indexes for each half-orbit.
+        Structured array holding the start and stop indexes, the cycle
+        number and the pass number of each half-orbit.
     """
     pass_number_varname = kwargs.pop('pass_number', 'pass_number')
     cycle_number_varname = kwargs.pop('cycle_number', 'cycle_number')
@@ -121,11 +141,26 @@ def _half_orbit(
 
 
 # %%
-# Finally, we implement our indexing class. The base class
-# (:py:class:`zcollection.indexing.Indexer<zcollection.indexing.abc.Indexer>`)
-# implements the index update and the associated queries.
+# Defining the indexer
+# --------------------
+#
+# Create a custom indexer by extending
+# :py:class:`~zcollection.indexing.abc.Indexer`.
+#
+# The base class provides the mechanisms for storing, updating, and
+# querying the index. The subclass defines the additional information
+# to store and how to extract it from the collection.
+#
+# Three methods are implemented:
+#
+# - ``dtype`` defines the columns of the index, including the cycle
+#   and pass numbers.
+# - ``create`` initializes the index at a given location.
+# - ``update`` processes the collection's partitions using
+#   ``_half_orbit`` to generate the index records.
 class HalfOrbitIndexer(zcollection.indexing.Indexer):
     """Index collection by half-orbit."""
+
     #: Column name of the cycle number.
     CYCLE_NUMBER = 'cycle_number'
 
@@ -136,7 +171,7 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
         """Return the columns of the index.
 
         Returns:
-            A tuple of (name, type) pairs.
+            A list of (name, type) pairs.
         """
         return [
             *super().dtype(), (self.CYCLE_NUMBER, 'uint16'),
@@ -194,22 +229,29 @@ class HalfOrbitIndexer(zcollection.indexing.Indexer):
 
 
 # %%
-# Using the index
-# ---------------
+# Creating and querying the index
+# -------------------------------
 #
-# Now we can create our index and fill it.
+# Create the index in a separate file, then populate it using the
+# measurements stored in the collection.
 indexer: HalfOrbitIndexer = HalfOrbitIndexer.create('/index.parquet',
                                                     collection,
                                                     filesystem=fs)
 indexer.update(collection)
 
-# The following command allows us to view the information stored in our index:
-# the first and last indexes of the partition associated with the registered
-# half-orbit number and the identifier of the indexed partition.
+# The resulting table contains the start and stop positions of each
+# half-orbit, its cycle and pass numbers, and the partition containing it.
+#
+# Inspect the index as a pandas DataFrame:
 indexer.table.to_pandas()
 
 # %%
-# This index can now be used to load a part of a collection.
+# The index can now be queried to locate measurements without scanning
+# the entire collection.
+#
+# For example, select the half-orbits whose pass number is 1 or 2.
+# The query returns the information needed by ``load`` to retrieve
+# the corresponding measurements.
 selection: zcollection.Dataset | None = collection.load(
     indexer=indexer.query({'pass_number': [1, 2]}),
     delayed=False,
@@ -218,7 +260,7 @@ assert selection is not None
 selection.to_xarray()
 
 # %%
-# Close the local cluster to avoid printing warning messages in the other
-# examples.
+# Close the Dask client and cluster to release their resources and
+# avoid warnings when running other examples.
 client.close()
 cluster.close()

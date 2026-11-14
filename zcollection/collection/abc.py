@@ -1018,7 +1018,7 @@ class ReadOnlyCollection(BaseCollection):
     datasets.
 
     The arguments of the constructor are detailed in the documentation
-    of the parent class :py:class:`zarr_collection.Collection`.
+    of :py:class:`~zcollection.collection.Collection`.
     """
     #: Configuration filename of the collection.
     CONFIG: ClassVar[str] = '.zcollection'

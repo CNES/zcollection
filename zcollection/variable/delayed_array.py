@@ -197,7 +197,7 @@ class DelayedArray(Variable):
 
         .. seealso::
 
-            :meth:`Variable.array`
+            :attr:`Variable.array <zcollection.variable.abc.Variable.array>`
         """
         # If the fill value is None, or if the dask array already holds a
         # masked array, return the underlying array.

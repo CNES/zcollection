@@ -1,111 +1,110 @@
 :tocdepth: 2
 
-API Documentation
-#################
+API reference
+#############
+
+Collections and views
+=====================
+
+.. autosummary::
+   :toctree: _generated/
+
+   zcollection.collection
+   zcollection.collection.abc
+   zcollection.collection.callable_objects.MapCallable
+   zcollection.collection.callable_objects.PartitionCallable
+   zcollection.collection.callable_objects.UpdateCallable
+   zcollection.PartitionInfo
+   zcollection.view
+   zcollection.view.ViewReference
+
+Creating and opening collections and views
+==========================================
+
+.. autosummary::
+   :toctree: _generated/
+
+   zcollection.create_collection
+   zcollection.create_view
+   zcollection.open_collection
+   zcollection.open_view
+
+Datasets and variables
+======================
+
+.. autosummary::
+   :toctree: _generated/
+
+   zcollection.dataset
+   zcollection.meta
+   zcollection.expression
+   zcollection.variable.abc.Variable
+   zcollection.variable.array
+   zcollection.variable.delayed_array
 
 Partitioning
 ============
 
-Handles the partitioning of the collection.
-
 .. autosummary::
-  :toctree: _generated/
+   :toctree: _generated/
 
-  zcollection.partitioning
-  zcollection.partitioning.abc
-  zcollection.partitioning.date
-  zcollection.partitioning.registry
-  zcollection.partitioning.sequence
+   zcollection.partitioning
+   zcollection.partitioning.abc
+   zcollection.partitioning.date
+   zcollection.partitioning.sequence
 
 .. _merging_datasets:
 
-Merging of datasets
-===================
-
-Merging of existing datasets in a partition.
+Merging datasets
+================
 
 .. autosummary::
-  :toctree: _generated/
+   :toctree: _generated/
 
-  zcollection.merging
-  zcollection.merging.time_series
-  zcollection.merging.period
-
-Variable
-========
-
-Variables handled by the datasets. These objects manage access to the data
-stored in the collection.
-
-.. autosummary::
-  :toctree: _generated/
-
-  zcollection.variable.abc
-  zcollection.variable.array
-  zcollection.variable.delayed_array
-
-Collection
-==========
-
-.. autosummary::
-  :toctree: _generated/
-
-  zcollection.collection
-  zcollection.PartitionInfo
-  zcollection.dask_utils
-  zcollection.dataset
-  zcollection.expression
-  zcollection.fs_utils
-  zcollection.meta
-  zcollection.migration
-  zcollection.partitions
-  zcollection.sync
-  zcollection.type_hints
-  zcollection.view
+   zcollection.merging
+   zcollection.merging.time_series
+   zcollection.merging.period
 
 Indexing
 ========
 
 .. autosummary::
-  :toctree: _generated/
+   :toctree: _generated/
 
-  zcollection.indexing
-  zcollection.indexing.abc
+   zcollection.indexing
+   zcollection.indexing.abc
 
-Exceptions
-==========
-
-.. autosummary::
-  :toctree: _generated/
-
-  zcollection.AbsentPartition
-  zcollection.ModifiedVariableError
-  zcollection.PartitionErrors
-
-Convenience functions
-=====================
+Synchronization
+===============
 
 .. autosummary::
-  :toctree: _generated/
+   :toctree: _generated/
 
-  zcollection.create_collection
-  zcollection.create_view
-  zcollection.open_collection
-  zcollection.open_view
+   zcollection.sync
 
 Migration
 =========
 
 .. autosummary::
-  :toctree: _generated/
+   :toctree: _generated/
 
-  zcollection.migration.Outcome
-  zcollection.migration.Status
-  zcollection.migration.check
-  zcollection.migration.check_view
-  zcollection.migration.migrate
-  zcollection.migration.migrate_view
-  zcollection.migration.prune
-  zcollection.migration.prune_view
-  zcollection.migration.status
-  zcollection.migration.view_status
+   zcollection.migration.Outcome
+   zcollection.migration.Status
+   zcollection.migration.check
+   zcollection.migration.check_view
+   zcollection.migration.migrate
+   zcollection.migration.migrate_view
+   zcollection.migration.prune
+   zcollection.migration.prune_view
+   zcollection.migration.status
+   zcollection.migration.view_status
+
+Exceptions
+==========
+
+.. autosummary::
+   :toctree: _generated/
+
+   zcollection.AbsentPartition
+   zcollection.ModifiedVariableError
+   zcollection.PartitionErrors
