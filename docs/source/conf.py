@@ -10,7 +10,9 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
+import datetime
 import importlib.metadata
+import os
 import pathlib
 import sys
 
@@ -21,10 +23,15 @@ HERE = pathlib.Path(__file__).absolute().parent
 # Insert the project root dir as the first element in the PYTHONPATH.
 sys.path.insert(0, str(HERE.parent.parent))
 
+# The Jupyter kernels that run the code of the pages import the project from
+# the same directory.
+os.environ['PYTHONPATH'] = os.pathsep.join(
+    filter(None, (str(HERE.parent.parent), os.environ.get('PYTHONPATH'))))
+
 # -- Project information -----------------------------------------------------
 
 project = 'zcollection'
-copyright = '(2022, CNES/CLS)'
+copyright = f'2022-{datetime.date.today().year}, CNES/CLS'
 author = 'CLS'
 
 # The full version, including alpha/beta/rc tags
@@ -41,17 +48,27 @@ version = '.'.join(release.split('.')[:2])
 # ones.
 extensions = [
     'jupyter_sphinx',
-    'sphinx_inline_tabs',
+    'sphinx_copybutton',
+    'sphinx_design',
     'sphinx_gallery.gen_gallery',
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
+    'sphinx.ext.extlinks',
     'sphinx.ext.intersphinx',
-    'sphinx.ext.mathjax',
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
 ]
 
 autosummary_generate = True
+
+#: Roles linking to the pull requests and issues of the GitHub repository.
+extlinks = {
+    'issue': ('https://github.com/CNES/zcollection/issues/%s', 'issue #%s'),
+    'pr': ('https://github.com/CNES/zcollection/pull/%s', 'PR #%s'),
+}
+
+#: The copy button leaves out the shell prompt of the commands.
+copybutton_prompt_text = '$ '
 
 #: A cell that raises stops the build.
 jupyter_execute_kwargs = {'timeout': -1, 'allow_errors': False}
@@ -69,9 +86,6 @@ autodoc_type_aliases = dict(
     Scalar='Scalar',
 )
 
-numpydoc_class_members_toctree = True
-numpydoc_show_class_members = False
-
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
@@ -85,8 +99,25 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'furo'
+html_theme = 'pydata_sphinx_theme'
 html_title = 'ZCollection'
+#: The icons of the navigation bar.
+ICON_LINKS = [{
+    'name': 'GitHub',
+    'url': 'https://github.com/CNES/zcollection',
+    'icon': 'fa-brands fa-github',
+}]
+
+html_theme_options = {
+    'logo': {
+        'text': 'ZCollection',
+    },
+    'navigation_depth': 2,
+    'icon_links': ICON_LINKS,
+}
+html_sidebars = {
+    'release': [],
+}
 
 intersphinx_mapping = {
     'dask': ('https://docs.dask.org/en/latest/', None),

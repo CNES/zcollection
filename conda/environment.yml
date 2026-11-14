@@ -6,16 +6,17 @@ dependencies:
   - dask-core
   - distributed
   - fasteners
-  - furo
   - jupyter-sphinx
   - matplotlib-base
   - pyarrow
+  - pydata-sphinx-theme
   - pytest
   - requests
   - s3fs
   - setuptools-scm
   - sphinx
+  - sphinx-copybutton
+  - sphinx-design
   - sphinx-gallery
-  - sphinx-inline-tabs
   - xarray
   - zarr>=3.4

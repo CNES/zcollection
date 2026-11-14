@@ -12,6 +12,54 @@ the entire collection. For example, in a collection partitioned by month,
 adding a month of measurements to ten years of data requires writing only
 one or two of the 120 partitions.
 
+.. grid:: 1 1 2 2
+   :gutter: 3
+
+   .. grid-item-card::
+      :link: user_guide
+      :link-type: doc
+      :padding: 2
+
+      .. card-header::
+
+         **User guide**
+
+      Learn how to create, manage, and work with collections, step by step.
+
+   .. grid-item-card::
+      :link: auto_examples/index
+      :link-type: doc
+      :padding: 2
+
+      .. card-header::
+
+         **Examples**
+
+      Explore complete examples covering collections, views, indexing, and
+      working without a Dask cluster.
+
+   .. grid-item-card::
+      :link: api
+      :link-type: doc
+      :padding: 2
+
+      .. card-header::
+
+         **API reference**
+
+      Explore the library's classes, functions, and their parameters.
+
+   .. grid-item-card::
+      :link: release
+      :link-type: doc
+      :padding: 2
+
+      .. card-header::
+
+         **Release notes**
+
+      See what's new, improved, and changed in each release.
+
 
 Concepts
 --------
@@ -143,33 +191,8 @@ The test suite covers both local file systems and S3.
 
 .. toctree::
    :hidden:
-   :caption: First steps
 
-   install
-   getting_started
-
-.. toctree::
-   :hidden:
-   :caption: User guide
-
-   partitioning
-   inserting
-   computing
-   updating
-   managing
-   failures
-   partition_index
-   migration
-
-.. toctree::
-   :hidden:
-   :caption: Examples
-
+   user_guide
    auto_examples/index.rst
-
-.. toctree::
-   :hidden:
-   :caption: Reference
-
    api
    release

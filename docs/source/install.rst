@@ -25,38 +25,38 @@ Optional dependencies
 Installing ZCollection
 ----------------------
 
-Using conda
-^^^^^^^^^^^
+.. tab-set::
 
-The simplest way to install ZCollection is through conda-forge::
+   .. tab-item:: conda
 
-    $ conda install -c conda-forge zcollection
+      The simplest way to install ZCollection is through conda-forge::
 
-Using pip
-^^^^^^^^^
+          $ conda install -c conda-forge zcollection
 
-ZCollection is also available on PyPI::
+   .. tab-item:: pip
 
-    $ pip install zcollection
+      ZCollection is available on PyPI::
 
-From source
-^^^^^^^^^^^
+          $ pip install zcollection
 
-To install ZCollection from source, first install its dependencies using
-conda::
+   .. tab-item:: From source
 
-    $ conda install -c conda-forge dask distributed fasteners fsspec numcodecs numpy xarray zarr
+      To install ZCollection from source, first install its dependencies
+      using conda::
 
-Include ``pyarrow`` if you plan to use the indexing API.
+          $ conda install -c conda-forge dask distributed fasteners fsspec numcodecs numpy xarray zarr
 
-Clone the repository and navigate to its directory::
+      Include ``pyarrow`` if you plan to use the indexing API.
 
-    $ git clone git@github.com:CNES/zcollection.git
-    $ cd zcollection
+      Clone the repository and navigate to its directory::
 
-Check out a different branch first if needed, then install the library::
+          $ git clone git@github.com:CNES/zcollection.git
+          $ cd zcollection
 
-    $ pip install .
+      Check out a different branch first if needed, then install the
+      library::
+
+          $ pip install .
 
 
 Testing

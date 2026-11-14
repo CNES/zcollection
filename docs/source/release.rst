@@ -7,35 +7,41 @@ Release notes
 New features
 ^^^^^^^^^^^^
 
-* Collections can be read and written without a Dask cluster (PR #16).
+* Collections can be read and written without a Dask cluster (:pr:`16`).
 * ``partitions``, ``load``, ``update``, ``map``, and ``map_overlap`` accept
   ``selected_partitions`` to select partitions by path. A path that matches
   the partitioning scheme but does not exist is skipped with a warning naming
   it, for both collections and views.
-* ``Collection.update_from`` and ``View.update_from`` update existing
-  partitions using values from a dataset. Rows are matched by ``align_on``;
-  views read this variable from their reference collection. Other rows and
-  variables remain unchanged. The methods return the paths of the updated
-  partitions, relative to the collection or view.
-* ``View.validate_partitions`` identifies invalid view partitions. With
+* :py:meth:`.Collection.update_from` and :py:meth:`.View.update_from` update
+  existing partitions using values from a dataset. Rows are matched by
+  ``align_on``; views read this variable from their reference collection. Other
+  rows and variables remain unchanged. The methods return the paths of the
+  updated partitions, relative to the collection or view.
+* :py:meth:`.View.validate_partitions` identifies invalid view partitions. With
   ``fix=True``, it rewrites partitions still present in the reference
   collection and removes the others.
-* ``View.update`` accepts a ``variables`` parameter (PR #14, issue #13).
-* ``View.is_synced`` accepts ``filters`` to check selected reference
+* :py:meth:`.View.update` accepts a ``variables`` parameter (:pr:`14`,
+  :issue:`13`).
+* :py:meth:`.View.is_synced` accepts ``filters`` to check selected reference
   partitions. By default, it checks all reference partitions.
-* The new ``GroupedSequence`` partitioning groups sequence values into bins
-  with a configurable starting value.
+* The new :py:class:`.GroupedSequence` partitioning groups sequence values into
+  bins with a configurable starting value.
 * Collections support inserting and updating immutable variables, as well
   as reading collections that contain only immutable variables.
-  ``Collection.add_variable`` and ``Collection.drop_variable`` also support
-  immutable variables.
+  :py:meth:`.Collection.add_variable` and :py:meth:`.Collection.drop_variable`
+  also support immutable variables.
+* :py:meth:`.Collection.add_dimension` declares a new dimension in the
+  collection's configuration, while :py:meth:`.Collection.drop_dimension`
+  removes one that no variable uses. Dimensions must be declared before
+  they can be used with :py:meth:`.Collection.add_variable` (:pr:`23`).
 * Views with no declared variables can use ``load``, ``map``, and
   ``map_overlap`` to access variables from their reference collection.
 * Dataset and collection metadata include dimension definitions, and
-  partitioning configurations include data types.
-* ``VariableSchema``, ``DatasetSchema``, ``Dimension``,
-  ``AbsentPartition``, ``ModifiedVariableError``, and ``PartitionErrors``
-  are available directly from the package.
+  partitioning configurations include data types (:pr:`23`, :pr:`17`).
+* :py:class:`.VariableSchema`, :py:class:`.DatasetSchema`,
+  :py:class:`.Dimension`, :py:exc:`.AbsentPartition`,
+  :py:exc:`~zcollection.ModifiedVariableError`, and
+  :py:exc:`.PartitionErrors` are available directly from the package.
 
 Storage and migration
 ^^^^^^^^^^^^^^^^^^^^^
@@ -49,9 +55,10 @@ Storage and migration
   migrations can be resumed.
 * Collections and views maintain a partition index. When the index contains
   partitions missing from storage, ``load``, ``map``, ``map_overlap``, and
-  ``update`` skip them with a warning. ``Collection.copy`` also skips
-  missing source partitions. ``Collection.reindex`` and ``View.reindex``
-  rebuild the index from storage. See :doc:`partition_index`.
+  ``update`` skip them with a warning. :py:meth:`.Collection.copy` also skips
+  missing source partitions. :py:meth:`.Collection.reindex` and
+  :py:meth:`.View.reindex` rebuild the index from storage. See
+  :doc:`partition_index`.
 * Variable fill values are recorded in the ``_FillValue`` array attribute,
   alongside the fill value required by Zarr 3 for every array.
 * Variable schemas support native Zarr 3 codecs and compatible numcodecs
@@ -83,7 +90,7 @@ Execution and failure handling
   With ``npartitions=None``, insertion previously processed one partition
   at a time. See :doc:`failures`.
 
-* Partition failures raise ``PartitionErrors``, which provides:
+* Partition failures raise :py:exc:`.PartitionErrors`, which provides:
 
   - ``completed``: paths of completed partitions.
   - ``failed``: paths mapped to error tracebacks.
@@ -107,7 +114,7 @@ Execution and failure handling
 * ``update`` returns paths of written partitions relative to the collection
   or view. After a failed update, the filesystem cache of the selected
   partitions is cleared.
-* ``merging.perform`` accepts merge-callback arguments through
+* :py:func:`.merging.perform` accepts merge-callback arguments through
   ``merge_kwargs``. Extra keyword arguments passed to ``insert`` are
   forwarded to the merge callable. Passing a keyword already supplied as
   one of the callable's positional parameters causes each affected
@@ -122,7 +129,7 @@ Partition selection and processing
 * With ``depth``, ``map_overlap`` and ``update`` load neighboring partitions
   even when ``filters`` or ``selected_partitions`` exclude them. Partial
   updates therefore use the same windows as full updates. Earlier releases
-  formed overlap windows only from selected partitions (issue #27).
+  formed overlap windows only from selected partitions (:issue:`27`).
 * The ``selected_partitions`` argument to ``update``, ``map``, and
   ``map_overlap`` is no longer passed to the user callback.
 * Operations with overlap accept variable selections that omit the
@@ -135,9 +142,9 @@ Partition selection and processing
   to the collection, excluding entries that exist in the index but not in
   storage. Its ``timedelta`` selection measures partition age independently
   of the local time zone.
-* ``Collection.validate_partitions`` returns a tuple of invalid partition
-  paths relative to the collection. It also detects partitions missing an
-  array for a declared variable spanning the partitioned dimension.
+* :py:meth:`.Collection.validate_partitions` returns a tuple of invalid
+  partition paths relative to the collection. It also detects partitions
+  missing an array for a declared variable spanning the partitioned dimension.
 
 Variables and datasets
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -152,11 +159,11 @@ Variables and datasets
   it to the merge callable. Dask arrays remain lazy when inserting without
   a Dask cluster. The new ``delayed`` parameter lets callers control the
   representation passed to the merge callable.
-* ``Dataset.add_variable`` uses a variable's existing data, when available,
-  if ``data`` is omitted. It raises ``ValueError`` if the number of data
-  dimensions differs from the declared dimensions.
-* ``Sequence.decode`` raises ``ValueError`` if the number of values does not
-  match the number of partitioning variables.
+* :py:meth:`.Dataset.add_variable` uses a variable's existing data, when
+  available, if ``data`` is omitted. It raises ``ValueError`` if the number of
+  data dimensions differs from the declared dimensions.
+* :py:meth:`.Sequence.decode` raises ``ValueError`` if the number of values
+  does not match the number of partitioning variables.
 * Errors when writing a partition identify variables missing from its
   storage directory. Errors when concatenating datasets identify variables
   that differ between the datasets.
@@ -165,20 +172,20 @@ Callbacks and synchronization
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 * ``update`` forwards additional positional and keyword arguments to the
-  user callback (PR #15, issue #12).
+  user callback (:pr:`15`, :issue:`12`).
 * Callbacks declaring ``partition_info`` receive a
   :py:class:`zcollection.PartitionInfo` object with ``partition``, ``name``,
   ``dimension``, and ``indices`` attributes. Code that unpacked the former
   tuple must now access ``dimension`` and ``indices`` as attributes. The
   object is available in ``map``, ``map_overlap``, and ``update``, including
   calls without overlap and the output-inference call of ``update``.
-* ``Collection.update`` and ``View.update`` default to ``delayed=None``.
-  With ``distributed=False``, variables load as NumPy arrays; with
-  ``distributed=True``, they load as Dask arrays. Explicit ``delayed``
-  values override this behavior.
-* ``Collection.is_locked()`` reports whether its ``ProcessSync``
-  synchronizer holds the lock. It returns ``False`` after the lock is
-  released and when another process holds it.
+* :py:meth:`.Collection.update` and :py:meth:`.View.update` default to
+  ``delayed=None``. With ``distributed=False``, variables load as NumPy
+  arrays; with ``distributed=True``, they load as Dask arrays. Explicit
+  ``delayed`` values override this behavior.
+* :py:meth:`.Collection.is_locked` reports whether its :py:class:`.ProcessSync`
+  synchronizer holds the lock. It returns ``False`` after the lock is released
+  and when another process holds it.
 
 Views and recovery
 ~~~~~~~~~~~~~~~~~~
@@ -186,22 +193,23 @@ Views and recovery
 * If ``add_variable`` fails and its cleanup also fails, the variable
   remains declared in the schema. The error includes a note naming
   partitions where its array may remain.
-* ``View.drop_variable`` removes the schema entry only after all
+* :py:meth:`.View.drop_variable` removes the schema entry only after all
   partitions have succeeded. Removing an already absent array succeeds,
   allowing a second call to complete a failed removal.
-* ``View.add_variable`` records the variable in the view configuration
+* :py:meth:`.View.add_variable` records the variable in the view configuration
   before creating its arrays, including when the view has no partitions.
 * ``View.sync(filters=...)`` records its filters after all selected
   partitions have been synchronized. ``view.sync()`` honors ``filters``
-  (issue #24).
-* ``View.is_synced`` raises ``PartitionErrors`` when a partition lacks its
-  ``.checksum`` array and returns ``True`` when no partitions are selected.
+  (:issue:`24`).
+* :py:meth:`.View.is_synced` raises :py:exc:`.PartitionErrors` when a partition
+  lacks its ``.checksum`` array and returns ``True`` when no partitions are
+  selected.
 * Views can use reference collections on a different file system when
   adding variables, synchronizing partitions, and running callbacks.
-* ``View.load`` returns ``None`` when an explicit partition selection
+* :py:meth:`.View.load` returns ``None`` when an explicit partition selection
   contains no data, including when the reference collection has immutable
   variables.
-* ``Collection.copy`` uses the source collection's file system when
+* :py:meth:`.Collection.copy` uses the source collection's file system when
   ``filesystem`` is omitted. It rejects non-empty targets and copies
   immutable variables. The configuration is written before the partitions,
   so a partially completed copy can be opened with the partitions present
@@ -210,24 +218,24 @@ Views and recovery
 Removed APIs
 ^^^^^^^^^^^^
 
-* The ``Dataset`` constructor no longer accepts ``chunks`` or
-  ``block_size_limit``. Configure chunk sizes through ``Dimension`` and
-  the block-size limit through ``DatasetSchema``.
-* ``Collection.insert`` no longer accepts ``validate``. Compatibility
+* The :py:class:`.Dataset` constructor no longer accepts ``chunks`` or
+  ``block_size_limit``. Configure chunk sizes through :py:class:`.Dimension`
+  and the block-size limit through :py:class:`.DatasetSchema`.
+* :py:meth:`.Collection.insert` no longer accepts ``validate``. Compatibility
   checks for partitioned data can no longer be disabled.
-* ``new_variable`` has been removed. Use ``Variable.duplicate`` to create
-  a variable from another, supplying the data and properties required.
+* ``new_variable`` has been removed. Use :py:meth:`.Variable.duplicate` to
+  create a variable from another, supplying the data and properties required.
 
 Renamed APIs
 ^^^^^^^^^^^^
 
-* ``Collection.map_overlap``: ``npartition`` is now ``npartitions``.
-* ``View.drop_variable``: ``varname`` is now ``variable``.
-* ``meta.Variable`` and ``meta.Dataset`` are now ``meta.VariableSchema``
-  and ``meta.DatasetSchema``.
-* ``Dataset.dims_chunk`` is now ``dim_chunks``, a mapping from dimension
-  names to chunk sizes. Previously, it was a property returning a sequence
-  of ``Dimension`` objects.
+* :py:meth:`.Collection.map_overlap`: ``npartition`` is now ``npartitions``.
+* :py:meth:`.View.drop_variable`: ``varname`` is now ``variable``.
+* ``meta.Variable`` and ``meta.Dataset`` are now
+  :py:class:`.meta.VariableSchema` and :py:class:`.meta.DatasetSchema`.
+* ``Dataset.dims_chunk`` is now :py:attr:`~.Dataset.dim_chunks`, a mapping from
+  dimension names to chunk sizes. Previously, it was a property returning a
+  sequence of ``Dimension`` objects.
 
 Requirements
 ^^^^^^^^^^^^
@@ -298,13 +306,14 @@ Requirements
 * Reorganize modules to reduce their size.
 * Limit variable writes to the worker processing them.
 * Improve test coverage.
-* Read the version attribute directly from ``version.py`` (issue #9).
-* Fix incomplete overlaps when using more than one worker (issue #8).
+* Read the version attribute directly from ``version.py`` (:issue:`9`).
+* Fix incomplete overlaps when using more than one worker (:issue:`8`).
 * Fix updates with multiple selected partitions when the selected variables
-  must contain the variables being updated (issue #7).
+  must contain the variables being updated (:issue:`7`).
 * Correct the name of the parameter controlling concurrent inserts
-  (issue #6).
-* Add ``trim`` to ``update``, following Dask's ``map_overlap`` (issue #3).
+  (:issue:`6`).
+* Add ``trim`` to :py:meth:`~.Collection.update`, following Dask's
+  ``map_overlap`` (:issue:`3`).
 * Update the documentation and refactor the code.
 * Support loading data with Dask or NumPy.
 * Add variable attributes to partitions.
@@ -367,8 +376,8 @@ Released October 13, 2022.
 
 Released October 7, 2022.
 
-* Allow ``drop_partitions`` to remove partitions older than a specified
-  duration relative to the current time.
+* Allow :py:meth:`~.Collection.drop_partitions` to remove partitions older than
+  a specified duration relative to the current time.
 
 
 2022.8.0

@@ -872,10 +872,9 @@ class Collection(ReadOnlyCollection, WritableCollection):
 
         Example:
             >>> import zcollection
-            >>> import numpy
             >>> collection = zcollection.open_collection(
             ...     "my_collection", mode="w")
-            >>> new_dimension = meta.Dimension(
+            >>> new_dimension = zcollection.Dimension(
             ...     name="t",
             ...     value=5,
             ... )
