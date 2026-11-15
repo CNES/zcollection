@@ -2,7 +2,7 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""Callback arguments, selected data and error boundaries of partition mappings."""
+"""Test callback arguments, selections and errors in partition mapping."""
 from __future__ import annotations
 
 import dask.array
@@ -73,7 +73,7 @@ def mapping_target(request):
 @pytest.mark.parametrize('method', METHODS)
 @pytest.mark.parametrize('delayed', [False, True])
 def test_mapping_arguments(mapping_target, method, delayed):
-    """Mappings stay lazy and forward positional and keyword callback arguments."""
+    """Mappings stay lazy and pass positional and keyword callback arguments."""
     calls = []
 
     def callback(zds, factor, shift, *, offset, partition_info):
@@ -200,7 +200,7 @@ def test_a_selected_partition_the_view_does_not_hold_is_reported(
 @pytest.mark.parametrize('mapping_target', TARGETS, indirect=True)
 @pytest.mark.usefixtures('dask_client')
 def test_mapping_scattered_argument(mapping_target):
-    """A scattered argument reaches the callback as usable data."""
+    """A scattered argument is usable inside the callback."""
     coefficients = dask.distributed.get_client().scatter(numpy.array([2, 3]))
 
     def callback(zds, external):
@@ -238,7 +238,7 @@ def test_mapping_persisted_array_argument(mapping_target):
 @pytest.mark.parametrize('mapping_target', TARGETS, indirect=True)
 @pytest.mark.usefixtures('dask_client')
 def test_mapping_keyword_array_matches_bag(mapping_target):
-    """A named Dask argument follows the caller's native Bag.map semantics."""
+    """Named Dask arrays follow the caller's ``Bag.map`` semantics."""
     external = dask.array.from_array(numpy.array([2, 3]), chunks=1)
 
     def describe(external):
@@ -302,7 +302,7 @@ def test_mapping_lazy_array_reads_requested_chunk(mapping_target, monkeypatch):
 @pytest.mark.parametrize('mapping_target', STORAGE_TARGETS, indirect=True)
 @pytest.mark.parametrize('delayed', [False, True])
 def test_mapping_masks_and_immutable(mapping_target, delayed):
-    """Overlap loaders preserve masks, immutable inputs and a view's own inputs."""
+    """Overlap loading preserves masks, immutable inputs and view variables."""
     selected = ['masked', 'constant']
     if isinstance(mapping_target, view.View):
         selected.append('derived')
@@ -329,7 +329,7 @@ def test_mapping_masks_and_immutable(mapping_target, delayed):
 @pytest.mark.parametrize(
     'error', [storage.AbsentPartition, FileNotFoundError, ValueError])
 def test_mapping_callback_errors(mapping_target, method, error):
-    """Errors from the callback propagate, including AbsentPartition."""
+    """Callback exceptions propagate, including ``AbsentPartition``."""
 
     def callback(zds):
         raise error('callback failure')
@@ -344,7 +344,7 @@ def test_mapping_callback_errors(mapping_target, method, error):
 @pytest.mark.parametrize('mapping_target', STORAGE_TARGETS, indirect=True)
 @pytest.mark.parametrize('method', METHODS)
 def test_mapping_skips_absent_source(mapping_target, method, caplog):
-    """An absent source partition is skipped while its neighbors remain usable."""
+    """An absent source partition is skipped; its neighbors remain usable."""
     partitions = tuple(mapping_target.partitions())
     mapping_target.fs.rm(partitions[1], recursive=True)
     mapping_target.fs.invalidate_cache()
@@ -417,7 +417,8 @@ def test_mapping_reuses_variable_selection(mapping_target, method):
                                                ('map_overlap', 1)])
 @pytest.mark.usefixtures('dask_client')
 def test_mapping_partition_info(mapping_target, method, depth):
-    """Callbacks receive the identity and central slice of the mapped partition."""
+    """Callbacks receive the identity and central slice of the mapped
+    partition."""
     reference = mapping_target.view_ref if isinstance(
         mapping_target, view.View) else mapping_target
     names = tuple(reference.partitions(relative=True))
@@ -450,7 +451,7 @@ def test_mapping_partition_info(mapping_target, method, depth):
 @pytest.mark.parametrize('mapping_target', TARGETS, indirect=True)
 @pytest.mark.parametrize('method', METHODS)
 def test_mapping_npartitions(mapping_target, method):
-    """The plural option is forwarded to the bag constructor."""
+    """``npartitions`` is passed to the Dask bag constructor."""
     bag = getattr(mapping_target, method)(lambda zds: None, npartitions=2)
     assert bag.npartitions == 2
 

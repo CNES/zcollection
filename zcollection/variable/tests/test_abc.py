@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Testing interface for the variable module
-=========================================
+Variable interface tests
+========================
 """
 import dask
 import numcodecs
@@ -30,13 +30,13 @@ def test_variable_not_equal() -> None:
     assert not_equal(numpy.datetime64('NaT'), 1) is True
 
 
-#: Name of the attribute a Zarr 2 array holds its dimensions in.
+#: Name of the Zarr 2 attribute storing dimension names.
 DIMENSIONS = '_ARRAY_DIMENSIONS'
 
-#: The variable implementations the rules hold for.
+#: Variable implementations covered by these tests.
 IMPLEMENTATIONS = [Array, DelayedArray]
 
-#: The versions of Zarr a collection is read from.
+#: Zarr versions covered by these tests.
 FORMATS = [2, 3]
 
 #: Fill values whose encoded form differs from the value itself.
@@ -50,7 +50,7 @@ ENCODED_FILL_VALUES = [
 
 
 def make_zarr_array(fill_value, attributes, zarr_format=3, dtype='float64'):
-    """Create a Zarr array carrying the given attributes."""
+    """Create a Zarr array with the given attributes."""
     named = {'dimension_names': ('num_lines', )} if zarr_format == 3 else {}
     array = zarr.create_array(store={},
                               shape=(4, ),
@@ -68,8 +68,9 @@ def make_zarr_array(fill_value, attributes, zarr_format=3, dtype='float64'):
 @pytest.mark.parametrize('cls', IMPLEMENTATIONS)
 @pytest.mark.parametrize('zarr_format', FORMATS)
 def test_from_zarr_reads_the_dimensions(cls, zarr_format) -> None:
-    """A Zarr 2 array names its dimensions in an attribute, a Zarr 3 array
-    in a field of its own."""
+    """Zarr 2 stores dimension names in an attribute; Zarr 3 stores them
+    in its metadata.
+    """
     array = make_zarr_array(None, {'units': 'm'}, zarr_format)
 
     variable = cls.from_zarr(array, 'var')
@@ -110,8 +111,7 @@ def test_from_zarr_reads_no_fill_value_when_none_is_declared(
 
 @pytest.mark.parametrize('cls', IMPLEMENTATIONS)
 def test_from_zarr_falls_back_to_the_fill_value_of_a_zarr_2_array(cls) -> None:
-    """A Zarr 2 array carrying no attribute takes the fill value of the
-    array."""
+    """Without the attribute, a Zarr 2 array uses its array-level fill value."""
     array = make_zarr_array(-999.0, {'units': 'm'}, zarr_format=2)
 
     variable = cls.from_zarr(array, 'var')
@@ -142,13 +142,13 @@ def test_from_zarr_prefers_the_attribute_over_the_array(cls,
     assert variable.fill_value == -999.0
 
 
-#: The properties a variable carries from one rebuild to the next.
+#: Variable properties preserved when a variable is rebuilt.
 PROPERTIES = ('name', 'dimensions', 'attrs', 'compressor', 'fill_value',
               'filler', 'filters')
 
 
 def make_variable(cls):
-    """Create a variable whose every property holds a distinctive value."""
+    """Create a variable with a distinct value for each property."""
     return cls(name='var',
                data=numpy.arange(8.0).reshape(2, 4),
                dimensions=('num_lines', 'num_pixels'),
@@ -201,7 +201,7 @@ def test_concat_keeps_the_properties(cls) -> None:
 
 @pytest.mark.parametrize('cls', IMPLEMENTATIONS)
 def test_concat_outside_the_dimensions_keeps_the_properties(cls) -> None:
-    """A dimension the variable does not span leaves it as it is."""
+    """Concatenating along an absent dimension preserves the variable."""
     variable = make_variable(cls)
 
     other = variable.concat(variable, 'elsewhere')
@@ -231,7 +231,7 @@ def test_rechunk_keeps_the_properties() -> None:
 
 @pytest.mark.parametrize('cls', IMPLEMENTATIONS)
 def test_concat_marks_what_holds_a_filled_variable(cls) -> None:
-    """A concatenation is filled when one of its variables is."""
+    """Concatenation retains the filler flag if any input is a filler."""
     filled = make_variable(cls)
     measured = filled.duplicate(filler=False)
 
@@ -244,7 +244,7 @@ def test_concat_marks_what_holds_a_filled_variable(cls) -> None:
 @pytest.mark.parametrize(('dtype', 'encoded', 'expected'), ENCODED_FILL_VALUES)
 def test_from_zarr_decodes_the_declared_fill_value(cls, dtype, encoded,
                                                    expected) -> None:
-    """The attribute holds the encoded form of the fill value."""
+    """Read and decode the fill value stored in the attribute."""
     array = make_zarr_array(None, {FILL_VALUE: encoded}, dtype=dtype)
 
     variable = cls.from_zarr(array, 'var')
@@ -252,7 +252,7 @@ def test_from_zarr_decodes_the_declared_fill_value(cls, dtype, encoded,
     assert not_equal(variable.fill_value, expected) is False
 
 
-#: A value marking an absence, and the values a variable holding it reads.
+#: Fill values and the corresponding masked variable values.
 ABSENCES = [
     pytest.param(numpy.float64('nan'),
                  'float64', [numpy.nan, 1.0, 2.0],
@@ -274,10 +274,10 @@ ABSENCES = [
 @pytest.mark.parametrize(('fill_value', 'dtype', 'values'), ABSENCES)
 def test_values_mask_the_value_marking_an_absence(cls, fill_value, dtype,
                                                   values) -> None:
-    """A NaN and a NaT mark an absence as any other value does.
+    """Values matching a fill value are masked, including NaN and NaT.
 
-    Neither equals itself, so a comparison by equality leaves them
-    unmasked, and the measurements a variable never took read as numbers.
+    NaN and NaT do not compare equal to themselves, so masking handles
+    them separately from ordinary values.
     """
     variable = cls('var',
                    numpy.array(values, dtype=dtype), ('num_lines', ),

@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Testing variables
-=================
+Variable tests
+==============
 """
 from typing import TYPE_CHECKING, Any
 import pickle
@@ -26,16 +26,16 @@ if TYPE_CHECKING:
 
 # pylint enable=unused-import
 
-#: Create an Array for testing
+#: Factory for NumPy-backed test variables.
 ARRAY = array
 
-#: Create a DelayedArray for testing
+#: Factory for Dask-backed test variables.
 DELAYED_ARRAY = delayed_array
 
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
 def test_masked_array(factory) -> None:
-    """Test masked array."""
+    """Renaming a variable preserves its data and other properties."""
     var1: Variable = factory()
     var2: Variable = var1.rename('var2')
     assert var2.array is var1.array
@@ -116,7 +116,7 @@ def test_constructor(factory) -> None:
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
 def test_duplicate(factory) -> None:
-    """Test of the duplication of variables."""
+    """Test duplicating variables."""
     var1: Variable = factory()
     var2: Variable = var1.duplicate(var1.array * 2)
     assert var2.name == 'var1'
@@ -160,7 +160,7 @@ def test_concatenate(factory) -> None:
 
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
 def test_getitem(factory) -> None:
-    """Test getting of variables."""
+    """Test indexing variables."""
     var: Variable = factory()
     values: numpy.ndarray = var.values
     result: numpy.ndarray = var[0]
@@ -176,7 +176,7 @@ def test_getitem(factory) -> None:
 # typedef: Variable = ARRAY | DELAYED_ARRAY  # type: ignore[misc]
 @pytest.mark.parametrize('factory', [ARRAY, DELAYED_ARRAY])
 def test_fill(factory) -> None:
-    """Test filling of variables."""
+    """Test filling variables."""
     var: Variable = factory()
     assert var.values.all() is not numpy.ma.masked
     var.fill()
@@ -194,7 +194,11 @@ def test_rechunk(factory) -> None:
 
 @pytest.mark.parametrize('factory', [Array, DelayedArray])
 def test_dimension_less(factory) -> None:
-    """Concatenate two dimensionless variables."""
+    """Concatenating along a dimension absent from the variables leaves
+    them unchanged.
+
+    A missing fill value also stays ``None`` after a configuration round-trip.
+    """
     data: numpy.ndarray = numpy.array([0, 1], dtype=numpy.int32)
     var1: Variable = factory('nv',
                              data, ('nv', ),
@@ -217,7 +221,7 @@ def test_dimension_less(factory) -> None:
 
 @pytest.mark.parametrize('factory', [Array, DelayedArray])
 def test_timedelta64_to_xarray(factory) -> None:
-    """Test conversion to xarray."""
+    """Test converting a timedelta64 variable to xarray."""
     delta: numpy.ndarray = numpy.diff(
         numpy.arange(
             numpy.datetime64('2000-01-01', 'ns'),
@@ -241,7 +245,7 @@ def test_timedelta64_to_xarray(factory) -> None:
 
 @pytest.mark.parametrize('factory', [Array, DelayedArray])
 def test_datetime64_to_xarray(factory) -> None:
-    """Test conversion to xarray."""
+    """Test converting a datetime64 variable to xarray."""
     dates: numpy.ndarray = numpy.arange(
         numpy.datetime64('2000-01-01', 'ns'),
         numpy.datetime64('2000-02-01', 'ns'),

@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Test of the collections
-=======================
+Collection tests
+================
 """
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ def test_insert_hands_the_merge_callable_the_representation_asked_for(
 
 
 def ten_daily_partitions() -> dataset.Dataset:
-    """Return a dataset spreading over ten daily partitions."""
+    """Return a dataset spanning ten daily partitions."""
     time = numpy.datetime64(
         '2000-01-01', 'ns') + numpy.arange(40) * numpy.timedelta64(6, 'h')
     return dataset.Dataset([
@@ -743,7 +743,7 @@ def test_insert(  # noqa: PLR0915
     values = data.variables['time'].values
     assert numpy.all(values == numpy.arange(START_DATE, END_DATE, DELTA))
 
-    # Adding same datasets once more (should not change anything)
+    # Inserting the same dataset again should change nothing.
     for idx in indices[:5]:
         zcol.insert(datasets[idx], distributed=distributed)
 
@@ -886,8 +886,7 @@ def test_update(
                           data.variables['var1'].values * -1 + 5,
                           rtol=0)
 
-    # Test case if the selected variables do not contain the variable
-    # to update.
+    # Test updating a variable excluded from the selected inputs.
     zcol.update(
         update,  # type: ignore[arg-type]
         delayed=delayed,
@@ -942,8 +941,7 @@ def test_update(
                           rtol=0)
 
     def invalid_var_name(zds: dataset.Dataset):
-        """Update function used to test if the user wants to update a non-
-        existent variable name."""
+        """Attempt to update a variable that does not exist."""
         return {'var99': zds.variables['var1'].values * -1 + 3}
 
     with pytest.raises(ValueError, match='Unknown variables'):
@@ -958,7 +956,7 @@ def test_list_partitions(
     arg,
     request,
 ) -> None:
-    """Test the dropping of a dataset."""
+    """Test listing partitions with and without an explicit selection."""
     tested_fs = request.getfixturevalue(arg)
     zcol = create_test_collection(tested_fs, delayed=False)
 
@@ -1042,7 +1040,7 @@ def test_drop_partitions(
     distributed,
     request,
 ) -> None:
-    """Test the dropping of a dataset."""
+    """Test dropping partitions by filter and age."""
     tested_fs = request.getfixturevalue(arg)
     zcol = create_test_collection(tested_fs,
                                   delayed=False,
@@ -1064,7 +1062,7 @@ def test_drop_partitions(
     npartitions = len(partitions)
 
     if arg == 's3_fs':
-        # Partitions cannot be dropped using a timedelta with S3
+        # S3 does not support dropping partitions based on their age.
         with pytest.raises(NotImplementedError):
             zcol.drop_partitions(timedelta=datetime.timedelta(days=1),
                                  distributed=distributed)
@@ -1246,14 +1244,14 @@ def test_add_variable(
                                   delayed=False,
                                   distributed=distributed)
 
-    # Variable already exists
+    # Reject a variable that already exists.
     new = meta.VariableSchema(name='time',
                               dtype=numpy.dtype('float64'),
                               dimensions=('num_lines', ))
     with pytest.raises(ValueError, match='already exists'):
         zcol.add_variable(new, distributed=distributed)
 
-    # Variable have unknown dimension.
+    # Reject a variable with an unknown dimension.
     new = meta.VariableSchema(name='x',
                               dtype=numpy.dtype('float64'),
                               dimensions=('num_lines', 'x'))
@@ -1271,7 +1269,7 @@ def test_add_variable(
 
     assert new.name in zcol.metadata.variables
 
-    # Testing the configuration update by reopening the collection
+    # Reopen the collection to verify its configuration.
     zcol = collection.Collection.from_config(path=str(tested_fs.collection),
                                              filesystem=tested_fs.fs)
 
@@ -1289,7 +1287,7 @@ def test_variable_immutable(  # noqa: PLR0915
         dask_client,  # noqa: F811
         arg,
         request) -> None:
-    """Test the adding of a variable."""
+    """Test operations on immutable variables."""
     tested_fs = request.getfixturevalue(arg)
     zcol = create_test_collection(tested_fs, delayed=False)
 
@@ -1363,7 +1361,7 @@ def test_variable_immutable(  # noqa: PLR0915
     assert data[new_arr.name].attrs == new_arr.attrs
     assert data[new_arr.name].fill_value == new_arr.fill_value
 
-    # Adding missing dimension
+    # Add the missing dimension.
     new_dim = meta.Dimension(name='x', value=2, chunks=1)
     zcol.add_dimension(dimension=new_dim)
 
@@ -1396,7 +1394,7 @@ def test_variable_immutable(  # noqa: PLR0915
     assert new_data_r.fill_value == new_x.fill_value
     assert new_data_r.data.chunksize[1] == new_dim.chunks
 
-    # Updating immutable with the update function
+    # Attempt to update an immutable variable through update().
     with pytest.raises(ValueError, match='Immutable variables'):
         zcol.update(
             lambda zds: {new_x.name: 5},  # type: ignore[arg-type]
@@ -1431,7 +1429,7 @@ def test_dimension_add_drop(
         dask_client,  # noqa: F811
         arg,
         request) -> None:
-    """Test the adding of a variable."""
+    """Test adding and dropping a dimension."""
     tested_fs = request.getfixturevalue(arg)
     zcol = create_test_collection(tested_fs, delayed=False)
 
@@ -1586,7 +1584,7 @@ def test_update_with_immutable(
         distributed=False,
     )
 
-    # Immutable variables are not included if excluded
+    # Immutable variables are omitted when excluded from the selection.
     def update_2(_zds):
         """Update function used for this test."""
         assert new_im.name not in _zds.variables
@@ -1670,10 +1668,10 @@ def test_insert_with_missing_variable(
     distributed,
     request,
 ) -> None:
-    """Test of the insertion of a dataset in which a variable is missing.
+    """Insert a dataset missing a variable declared by the collection.
 
-    This happens, for example, when a variable is not acquired, but
-    created by an algorithm.
+    This can happen when a variable is generated by an algorithm rather than
+    acquired directly.
     """
     tested_fs = request.getfixturevalue(arg)
     zds = next(create_test_dataset_with_fillvalue())
@@ -1735,8 +1733,7 @@ def test_insert_missing_dimensions(fs, request) -> None:
                                  partition_base_dir=str(tested_fs.collection),
                                  filesystem=tested_fs.fs)
 
-    # Adding a new dimension and a variable with this dimension so we
-    # can test the insertion of a dataset not containing all dimensions
+    # Add a dimension and a variable that the inserted dataset omits.
     new_dim = meta.Dimension(name='x', value=2, chunks=1)
     new_var = meta.VariableSchema(name='new_var',
                                   dtype=numpy.dtype('int8'),
@@ -1770,7 +1767,7 @@ def test_insert_failed(
     distributed,
     request,
 ) -> None:
-    """Test the insertion of a dataset in which the insertion failed."""
+    """Test cleanup after a failed partition insertion."""
     tested_fs = request.getfixturevalue(fs)
     delayed = request.getfixturevalue(arrays_type)
     zds = next(create_test_dataset(delayed=delayed))
@@ -1793,14 +1790,13 @@ def test_insert_failed(
     with pytest.raises(execution.PartitionErrors):
         zcol.insert(zds, distributed=distributed)
 
-    # Because the insert failed, the partition that was supposed to be created
-    # was deleted.
+    # The failed insertion leaves no partially created partition.
     assert not zcol.fs.exists(one_directory)
     zcol.insert(zds, distributed=distributed)
 
 
 def test_insert_invalid_dimensions(request, ) -> None:
-    """Test the insertion of a dataset with invalid dimensions properties."""
+    """Reject inserted data with invalid dimension properties."""
     tested_fs = request.getfixturevalue('local_fs')
     delayed = False
     zds = next(create_test_dataset(delayed=delayed))
@@ -1810,7 +1806,7 @@ def test_insert_invalid_dimensions(request, ) -> None:
                                  str(tested_fs.collection),
                                  filesystem=tested_fs.fs)
 
-    # Swapping dimensions names to create invalid ones
+    # Swap dimension names to make the inserted dataset invalid.
     ds = zds.to_xarray().rename({
         'num_lines': 'num_pixels',
         'num_pixels': 'num_lines'
@@ -1828,7 +1824,7 @@ def test_insert_invalid_variable(request, ) -> None:
     zds = next(create_test_dataset(delayed=delayed))
     zds_x = copy.deepcopy(zds)
 
-    # Changing variable dtype and fill value
+    # Change the variable's dtype and fill value.
     zds_x['var1'].fill_value = 10
     zds_x['var1'].array = zds_x['var1'].array.astype('int8')
 
@@ -1842,7 +1838,7 @@ def test_insert_invalid_variable(request, ) -> None:
     with pytest.raises(ValueError, match='has invalid dtype'):
         zcol.insert(zds)
 
-    # Fixing dtype
+    # Restore the expected dtype.
     zds['var1'].array = zds['var1'].array.astype('int8')
 
     # A variable naming a value the collection does not declare is refused.
@@ -1860,7 +1856,7 @@ def test_map_partition(
     arrays_type,
     request,
 ) -> None:
-    """Test the update of a dataset."""
+    """Test mapping a function over collection partitions."""
     tested_fs = request.getfixturevalue(fs)
     delayed = request.getfixturevalue(arrays_type)
     zcol = create_test_collection(tested_fs, delayed=delayed)
@@ -1886,7 +1882,7 @@ def test_indexer(
     distributed,
     request,
 ) -> None:
-    """Test the update of a dataset."""
+    """Test loading selected data using an indexer."""
     tested_fs = request.getfixturevalue(fs)
     delayed = request.getfixturevalue(arrays_type)
     zcol = create_test_collection(tested_fs,
@@ -2075,7 +2071,7 @@ def test_insert_immutable(
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_insert_immutable_only(fs, request, caplog) -> None:
-    """Test insertion of data only containing immutable variables."""
+    """Test inserting a dataset containing only immutable variables."""
     tested_fs = request.getfixturevalue(fs)
     zds_reference = dataset.Dataset(
         variables=[
@@ -2142,7 +2138,7 @@ def test_copy_collection(
         distributed,
         request,
         tmp_path) -> None:
-    """Test the dropping of a dataset."""
+    """Test copying a collection and comparing its data with the source."""
     tested_fs = request.getfixturevalue(arg)
     zcol = create_test_collection(tested_fs, distributed=distributed)
 
@@ -2176,7 +2172,7 @@ def test_concurrent_insert(
     dask_client,  # noqa: F811
     tmp_path,
 ) -> None:
-    """Test the insertion of a dataset."""
+    """Test concurrent insertion into a collection."""
     fs = fsspec.filesystem('file')
     datasets = list(create_test_dataset(delayed=False))
     zds = datasets[0]
@@ -2344,7 +2340,7 @@ def test_invalid_partitions(
 
     assert zcol.load() is not None
 
-    # Filters excludes all partitions
+    # Exclude all partitions using a filter.
     assert not zcol.validate_partitions(filters='day==36',
                                         distributed=distributed)
 
@@ -2358,7 +2354,7 @@ def test_insert_with_chunks(
     request,
     tmp_path,
 ) -> None:
-    """Test the insertion of a dataset."""
+    """Test insertion with explicit chunk sizes."""
     tested_fs = request.getfixturevalue(fs)
     datasets = list(create_test_dataset(delayed=False))[:2]
 
@@ -2379,7 +2375,7 @@ def test_insert_with_chunks(
                 merge_callable=merging.merge_time_series,
                 distributed=distributed)
 
-    # Not setting distributed to False when loading otherwise we won't have any chunk
+    # Load lazily to inspect the Dask array chunk sizes.
     data = zcol.load()
 
     assert data is not None
@@ -2510,9 +2506,9 @@ def test_load_a_selection_that_matches_no_partition(
     dask_client,  # noqa: F811
     request,
 ) -> None:
-    """Naming the partitions to read and matching none of them reads nothing.
+    """An explicit selection matching no partition loads no data.
 
-    The collection holds an immutable variable.
+    The collection also contains an immutable variable.
     """
     tested_fs = request.getfixturevalue('local_fs')
     reference = next(create_test_dataset(delayed=False))
@@ -2541,10 +2537,8 @@ def test_load_a_selection_that_matches_no_partition(
 
 
 def test_insert_returns_the_paths_a_selection_takes(request) -> None:
-    """What an insertion wrote names the partitions it wrote.
-
-    A reader of the result feeds it back to ``selected_partitions``, which
-    reads paths relative to the collection.
+    """Return partition paths from insertion that can be passed back to
+    ``selected_partitions``.
     """
     tested_fs = request.getfixturevalue('local_fs')
     zds = next(create_test_dataset(delayed=False))

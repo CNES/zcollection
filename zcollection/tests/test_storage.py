@@ -78,10 +78,10 @@ def create_dataset(shape) -> dataset.Dataset:
 
 
 def test_variable_attributes() -> None:
-    """The attributes of a variable are the ones it declares.
+    """A variable has the attributes it declares.
 
-    The names of its dimensions are not among them: an array holds them in
-    a field of its own.
+    Dimension names are stored in a separate array metadata field, not
+    among the variable attributes.
     """
     var = create_variable((10, 2))
 
@@ -160,17 +160,17 @@ def test_write_variable(
     [
         # Everything fit in one block
         (1048756, None, 1),
-        # x and y are 'locked', only one block
+        # Keep dimensions ``x`` and ``y`` together in one block.
         (1048756 // 20, {
             'x': -1,
             'y': -1
         }, 1),
-        # Half block size, 2 blocks split along x
+        # Halve the block size and split into two blocks along ``x``.
         (1048756 // 2, {
             'x': 512,
             'y': 'auto'
         }, 2),
-        # Half block size, 2 blocks split along y
+        # Halve the block size and split into two blocks along ``y``.
         (1048756 // 2, {
             'x': 1024,
             'y': 'auto'
@@ -203,7 +203,7 @@ def test_write_zarr_group(
 ) -> None:
     """Test the write_zarr_group function."""
     zds = create_dataset((1024, 1024))
-    # memory fs does not support multi-processes
+    # The memory file system does not support multiprocessing.
     future = dask_client.submit(storage.write_zarr_group,
                                 dask_client.scatter(zds), str(local_fs.root),
                                 local_fs.fs, sync.NoSync())
@@ -384,7 +384,7 @@ def test_variable_attributes_fill_value(
     fill_value,
     expected,
 ) -> None:
-    """The fill value is held, encoded, when declared."""
+    """The declared fill value is stored in encoded form."""
     var = dataset.DelayedArray(name='var',
                                data=numpy.ones((4, ), dtype=dtype),
                                dimensions=('x', ),
@@ -409,10 +409,10 @@ def test_a_written_variable_reads_back_its_fill_value(
     dtype,
     fill_value,
 ) -> None:
-    """A variable declares the value it was written with.
+    """A written variable retains its declared fill value.
 
-    The attribute holding it is written encoded, and the encoding of a NaN,
-    of an infinity and of a date is not the value itself.
+    The fill-value attribute stores an encoded representation. For NaN,
+    infinity and dates, that representation differs from the value itself.
     """
     data = numpy.zeros((4, ), dtype=dtype)
     data[0] = fill_value
@@ -433,10 +433,10 @@ def test_a_group_reads_its_variables_in_order(
         local_fs,  # noqa: F811
         dask_client,  # noqa: F811
 ) -> None:
-    """The variables of a group are read in the order of their names.
+    """Group variables are read in name order.
 
-    They are selected through a set, whose iteration order changes from one
-    process to the next.
+    Their names are selected from a set, which may iterate in different
+    orders in different processes.
     """
     zds = dataset.Dataset([
         dataset.DelayedArray(name=name,
@@ -457,10 +457,9 @@ def test_a_group_reads_its_variables_in_order(
 def test_a_failed_write_names_the_variable(
         local_fs,  # noqa: F811
 ) -> None:
-    """A failed write raises with a note naming the variable.
+    """A failed write reports the name of the variable.
 
-    A value marking an absence stops the write when the encoding cannot
-    convert it.
+    The write fails when its fill value cannot be encoded for its data type.
     """
     var = dataset.DelayedArray(name='ssh',
                                data=numpy.zeros((4, ), dtype='float32'),
@@ -506,7 +505,7 @@ def test_read_partition_refreshes_cached_listings(s3_fs,
 def test_an_absent_group_is_not_valid(
         local_fs,  # noqa: F811
 ) -> None:
-    """A directory the file system does not hold is no valid Zarr group."""
+    """An absent directory is not a valid Zarr group."""
     assert not storage.check_zarr_group(
         join_path(str(local_fs.root), 'absent'), local_fs.fs)
 
@@ -514,7 +513,7 @@ def test_an_absent_group_is_not_valid(
 def test_an_absent_group_takes_no_variable(
         local_fs,  # noqa: F811
 ) -> None:
-    """A variable is not added to a group the file system does not hold."""
+    """A variable cannot be added to a group that does not exist."""
     dirname = join_path(str(local_fs.root), 'absent')
     var = create_variable((4, 4), fill_value=10)
     var.name = 'var1'

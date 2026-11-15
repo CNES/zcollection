@@ -14,15 +14,14 @@ from ... import meta
 
 
 def array(name='var1', fill_value=0) -> Array:
-    """Creates a test variable with the given name, fill value, dimensions, and
-    attributes.
+    """Create a NumPy-backed test variable with fixed data and metadata.
 
     Args:
         name: The name of the variable.
-        fill_value: The fill value for uninitialized parts of the array.
+        fill_value: The fill value for uninitialized elements.
 
     Returns:
-        An Array object.
+        The test Array.
     """
     return Array(name=name,
                  data=numpy.arange(10, dtype='int64').reshape(5, 2),
@@ -35,15 +34,14 @@ def array(name='var1', fill_value=0) -> Array:
 
 
 def delayed_array(name='var1', fill_value=0) -> DelayedArray:
-    """Create a delayed test variable with the given name, fill value,
-    dimensions, and attributes.
+    """Create a Dask-backed test variable with fixed data and metadata.
 
     Args:
         name: The name of the variable.
-        fill_value: The fill value for uninitialized parts of the array.
+        fill_value: The fill value for uninitialized elements.
 
     Returns:
-        A DelayedArray object representing a lazily-evaluated test variable.
+        The test DelayedArray.
     """
     return DelayedArray(name=name,
                         data=numpy.arange(10, dtype='int64').reshape(5, 2),

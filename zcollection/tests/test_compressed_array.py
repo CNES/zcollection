@@ -41,7 +41,7 @@ def test_read_through_dask(indexer) -> None:
 
 
 def test_metadata() -> None:
-    """Test metadata."""
+    """Test array metadata."""
     y: dask.array.core.Array = dask.array.random.random((10, 10),
                                                         chunks=(5, 5))
     z = CompressedArray(y.compute())
@@ -58,7 +58,7 @@ def test_metadata() -> None:
 
 
 def test_from_delayed_meta() -> None:
-    """Test from_delayed with meta."""
+    """Test ``from_delayed`` with metadata."""
 
     def f() -> CompressedArray:
         return CompressedArray(numpy.eye(3))
@@ -94,7 +94,7 @@ def test_map_blocks() -> None:
 
 
 def test_properties() -> None:
-    """The properties of the array are the ones Zarr holds for it."""
+    """Check that array properties match those stored by Zarr."""
     array = CompressedArray(numpy.arange(64.0).reshape(8, 8), chunks=(4, 4))
 
     assert array.ndim == 2
@@ -111,7 +111,7 @@ def test_properties() -> None:
 
 
 def test_rechunk() -> None:
-    """A rechunk keeps the values and the codecs of the array."""
+    """Rechunking preserves array values and codecs."""
     values = numpy.arange(64.0).reshape(8, 8)
     array = CompressedArray(values, chunks=(4, 4))
 
@@ -135,8 +135,7 @@ def test_rechunk_scalar() -> None:
 
 
 def test_rechunk_keeps_the_value_marking_absence() -> None:
-    """The rechunked array masks the values the array it is built from
-    masks."""
+    """Rechunking preserves which array values are masked."""
     array = CompressedArray(numpy.arange(8.0).reshape(2, 4), fill_value=0.0)
 
     rechunked = array.rechunk((1, 2))

@@ -98,7 +98,7 @@ def test_other_variables_keep_their_values(update_from_target) -> None:
 
 @pytest.mark.parametrize('update_from_target', LOCAL_TARGETS, indirect=True)
 def test_a_dataset_without_time_is_refused(update_from_target) -> None:
-    """A dataset without `time` is refused."""
+    """A dataset without the ``time`` variable is refused."""
     carried = carrying(update_from_target)
 
     with pytest.raises(ValueError, match='does not contain the variables'):
@@ -365,8 +365,7 @@ def test_a_variable_without_the_partitioned_dimension_is_refused(
 @pytest.mark.parametrize('update_from_target', LOCAL_TARGETS, indirect=True)
 def test_repeated_values_of_align_on_in_the_dataset_are_refused(
         update_from_target) -> None:
-    """Two rows of the dataset with the same value of `align_on` are
-    refused."""
+    """Input rows with repeated ``align_on`` values are refused."""
     name = output_name(update_from_target)
     before = update_from_target.load(delayed=False, distributed=False)
     carried = carrying(update_from_target)

@@ -30,16 +30,14 @@ if TYPE_CHECKING:
 
 __all__ = ('Variable', )
 
-#: Name of the attribute holding the value that marks a missing measure.
-#: Only variables that have one carry it.
+#: Name of the :data:`FILL_VALUE` attribute used to store a fill value.
+#: This attribute is written only when the variable has a fill value.
 FILL_VALUE = '_FillValue'
 
-#: Name of the attribute a Zarr 2 array holds the names of its dimensions
-#: in.
+#: Name of the Zarr 2 attribute containing array dimension names.
 DIMENSIONS = '_ARRAY_DIMENSIONS'
 
-#: The version of Zarr that names the dimensions of an array in an
-#: attribute. Its arrays carry no :data:`FILL_VALUE`.
+#: Zarr version that stores dimension names in an array attribute.
 ZARR_FORMAT_2 = 2
 
 #: Generic type for a variable interface.
@@ -55,30 +53,31 @@ def concat(
     concatenate: Callable,
     dim: str,
 ) -> T:
-    """Concatenate a variable with another variable or a sequence of variables.
+    """Concatenate a variable with one or more variables.
 
     Args:
-        self: A variable.
-        other: A variable or a sequence of variables.
-        concatenate: Function used to concatenate the arrays.
-        dim: Dimension along which the arrays are concatenated.
+        self: The source variable.
+        other: Another variable or a sequence of variables.
+        concatenate: The function used to concatenate their arrays.
+        dim: The concatenation dimension.
 
     Returns:
-        A new variable.
+        The new variable. If ``dim`` is absent from its dimensions,
+        a copy of the source variable is returned.
 
     Raises:
-        ValueError: If ``other`` is empty or is not a sequence of ``self`` type.
+        ValueError: If ``other`` is empty or contains incompatible types.
     """
     if not isinstance(other, Sequence):
         other = [other]
     if not other:
         raise ValueError('other must be a non-empty sequence')
 
-    # Self and other must have the same type
+    # All variables must have the same type.
     if not all(isinstance(item, type(self)) for item in other):
         raise ValueError(f'other must be a sequence of {type(self)}')
 
-    # A concatenation is filled when one of its variables is.
+    # The result is a filler if any input variable is a filler.
     filler: bool = any(item.filler for item in (self, *other))
     try:
         axis: int = self.dimensions.index(dim)
@@ -86,24 +85,21 @@ def concat(
             (self.array, *(item.array for item in other)), axis=axis),
                               filler=filler)
     except ValueError:
-        # If the concatenation dimension is not within the dimensions of the
-        # variable, then the original variable is returned (i.e.
-        # concatenation is not necessary).
+        # Return a copy when concatenation is not applicable to this dimension.
         return self.duplicate(filler=filler)
 
 
 def read_attributes(array: Any) -> tuple[tuple[meta.Attribute, ...], Any]:
-    """Read the attributes of a Zarr array and its fill value.
+    """Read the attributes and fill value of a Zarr array.
 
     Args:
         array: The Zarr array.
 
     Returns:
-        The attributes of the variable, and its fill value, or None when
-        it has none. The :data:`FILL_VALUE` attribute holds the encoded form
-        of the fill value, decoded here against the data type of the array.
-        A Zarr 2 array carrying no such attribute takes the fill value of
-        the array.
+        The variable attributes and its decoded fill value, or ``None`` if
+        none is defined. The :data:`FILL_VALUE` attribute stores the encoded
+        fill value, which is decoded using the array's data type. For Zarr 2
+        arrays without this attribute, the array's fill value is used.
     """
     attrs = tuple(
         meta.Attribute(name, value) for name, value in array.attrs.items()
@@ -117,14 +113,15 @@ def read_attributes(array: Any) -> tuple[tuple[meta.Attribute, ...], Any]:
 
 
 def read_dimensions(array: Any) -> tuple[str, ...]:
-    """Read the name of each dimension of a Zarr array.
+    """Return the names of a Zarr array's dimensions.
 
     Args:
         array: The Zarr array.
 
     Returns:
-        The names. A Zarr 2 array holds them in an attribute, a Zarr 3
-        array in a field of its own.
+        The dimension names. Zarr 2 arrays store them in the
+        :data:`DIMENSIONS` attribute, while Zarr 3 arrays use the
+        ``dimension_names`` metadata field.
     """
     if array.metadata.zarr_format == ZARR_FORMAT_2:
         return tuple(array.attrs.get(DIMENSIONS, ()))
@@ -132,54 +129,54 @@ def read_dimensions(array: Any) -> tuple[str, ...]:
 
 
 def read_compressor(array: Any) -> Any:
-    """Read the compressor the chunks of a Zarr array are held behind.
+    """Read the compressor of a Zarr array.
 
     Args:
         array: The Zarr array.
 
     Returns:
-        The first codec of the chain, or None when the chunks are held
-        as they are.
+        The first compressor codec, or ``None`` if the array has none.
     """
     compressors = array.compressors
     return compressors[0] if compressors else None
 
 
 def _is_itself(value: Any) -> bool:
-    """Say whether a value equals itself.
+    """Return whether a value equals itself.
 
     Args:
-        value: The value to compare with itself.
+        value: The value to compare.
 
     Returns:
-        Whether it does. A NaN and a NaT do not.
+        ``False`` for NaN or NaT; ``True`` for values equal to themselves.
     """
     return bool(value == value)  # noqa: PLR0124
 
 
 def _differs_from_itself(values: Any) -> Any:
-    """Say which elements of an array do not equal themselves.
+    """Identify array elements that are not equal to themselves.
 
     Args:
-        values: The values to compare with themselves.
+        values: The array to inspect.
 
     Returns:
-        A boolean array, true where an element is a NaN or a NaT.
+        A boolean array that is ``True`` for NaN or NaT elements.
     """
     return values != values  # noqa: PLR0124
 
 
 def masked(values: Any, fill_value: Any) -> Any:
-    """Mask the elements of an array that mark an absence.
+    """Mask array elements matching a fill value.
 
     Args:
-        values: The values a variable holds.
-        fill_value: The value the variable marks an absence with.
+        values: The array to mask.
+        fill_value: The value used to identify missing elements.
 
     Returns:
-        The values, masked where they hold that value. A NaN and a NaT mark
-        an absence as any other value does, and neither equals itself, so
-        the two are found by the comparison an element makes with itself.
+        The array with elements matching the fill value masked. When the
+        fill value is NaN or NaT, matching elements are found by comparing
+        each element with itself, since these values are not equal to
+        themselves.
     """
     module = (dask.array
               if isinstance(values, dask.array.core.Array) else numpy)
@@ -189,18 +186,18 @@ def masked(values: Any, fill_value: Any) -> Any:
 
 
 def not_equal(first: Any, second: Any) -> bool:
-    """Check if two objects are not equal.
+    """Compare two values, treating matching NaN and NaT values as equal.
 
     Args:
-        first: The first object.
-        second: The second object.
+        first: The first value.
+        second: The second value.
 
     Returns:
-        True if the two objects are different, False otherwise.
+        Whether the values differ.
     """
 
     def _is_not_a_number(number: Any) -> bool:
-        """Check if a number is NaN or NaT."""
+        """Return whether a value is NaN or NaT."""
 
         return not number == number and number != number  # noqa: PLR0124
 
@@ -215,13 +212,13 @@ def not_equal(first: Any, second: Any) -> bool:
 
 
 def _variable_repr(var: Variable) -> str:
-    """Get the string representation of a variable.
+    """Format a variable as a string.
 
     Args:
-        var: A variable.
+        var: The variable.
 
     Returns:
-        The string representation of the variable.
+        The formatted string.
     """
     # Dimensions
     dims_str: str = representation.dimensions(
@@ -251,12 +248,13 @@ class IVariable(abc.ABC):
     @property
     @abc.abstractmethod
     def data(self) -> dask.array.core.Array:
-        """Return the values as a dask array where values equal to the fill
-        value are masked. If no fill value is set, the returned array is the
-        same as the underlying array.
+        """Return variable data as a Dask array, masking fill values if defined.
+
+        An eager variable is wrapped in a Dask array. The returned data is
+        masked when a fill value is defined.
 
         Returns:
-            The dask array
+            The Dask array.
 
         .. seealso::
 
@@ -266,104 +264,100 @@ class IVariable(abc.ABC):
     @property
     @abc.abstractmethod
     def values(self) -> NDArray | NDMaskedArray:
-        """Return the variable values.
+        """Return the variable values as a NumPy array.
 
-        .. note::
-
-            If the variable has a fill value, the result is a masked array where
-            masked values are equal to the fill value.
+        Values matching a defined fill value are masked.
 
         Returns:
-            The variable data
+            The variable values, masked if a fill value is defined.
         """
 
     @values.setter
     @abc.abstractmethod
     def values(self, data: Any) -> None:
-        """Defines the values array. If the data provided is a masked array,
-        it's converted to an array, where the masked values are replaced by the
-        fill value of this instance.
+        """Replace the variable's data.
+
+        For masked input, missing values are replaced by the variable's fill
+        value. If the variable has none, the masked array's fill value is used
+        and becomes the variable's fill value. Unmasked input preserves the
+        existing fill value.
 
         Args:
-            data: The new data to use
+            data: The new data.
 
         Raises:
-            ValueError: If the shape of the data does not match the shape of
-                the stored data.
+            ValueError: If the number of data dimensions does not match the
+                number of variable dimensions, or if the variable and the
+                masked input have different fill values.
         """
 
     @abc.abstractmethod
     def persist(self: I, **kwargs) -> I:
-        """Persist the variable data into memory.
+        """Persist the variable data in memory.
 
         Args:
-            **kwargs: Additional arguments to pass to the persist method.
-
-        Returns:
-            The variable
-        """
-
-    @abc.abstractmethod
-    def compute(self, **kwargs) -> NDArray | NDMaskedArray:
-        """Return the variable data as a numpy array.
-
-        .. note::
-
-            If the variable has a fill value, the result is a masked array where
-            masked values are equal to the fill value.
-
-        Args:
-            **kwargs: Additional arguments to pass to the compute method.
-        """
-
-    @abc.abstractmethod
-    def fill(self: I) -> I:
-        """Fill the variable with the fill value. If the variable has no fill
-        value, this method does nothing.
+            **kwargs: Additional arguments passed to the persistence method.
 
         Returns:
             The variable.
         """
 
+    @abc.abstractmethod
+    def compute(self, **kwargs) -> NDArray | NDMaskedArray:
+        """Compute the variable values as a NumPy array.
+
+        Values matching a defined fill value are masked.
+
+        Args:
+            **kwargs: Additional arguments passed to the compute method.
+        """
+
+    @abc.abstractmethod
+    def fill(self: I) -> I:
+        """Fill the variable with its fill value, if one is defined.
+
+        Returns:
+            The variable, unchanged if no fill value is defined.
+        """
+
     @classmethod
     @abc.abstractmethod
     def from_zarr(cls: type[I], array: zarr.Array, name: str, **kwargs) -> I:
-        """Create a new variable from a zarr array.
+        """Create a variable from a Zarr array.
 
         Args:
-            array: The zarr array
-            name: Name of the variable
-            **kwargs: Additional arguments to pass to the method.
+            array: The Zarr array.
+            name: The variable name.
+            **kwargs: Additional arguments passed to the method.
 
         Returns:
-            The variable
+            The new variable.
         """
 
     @abc.abstractmethod
     def concat(self: I, other: I | Sequence[I], dim: str) -> I:
-        """Concatenate this variable with another variable or a list of
-        variables along a dimension.
+        """Concatenate the variable with other variables along a dimension.
 
         Args:
-            other: Variable or list of variables to concatenate with this
-                variable.
-            dim: Dimension to concatenate along.
+            other: A variable or sequence of variables to concatenate.
+            dim: The dimension along which to concatenate.
 
         Returns:
-            New variable.
+            The concatenated variable.
 
         Raises:
-            ValueError: if the variables provided is an empty sequence.
+            ValueError: If the sequence of variables is empty.
         """
 
     @abc.abstractmethod
     def __getitem__(self, key: Any) -> Any:
-        """Get a slice of the variable.
+        """Return the values selected by an index or slice.
 
         Args:
-            key: Slice or index to use.
+            key: The index or slice.
+
         Returns:
-            The variable slice.
+            The selected values.
         """
 
     @abc.abstractmethod
@@ -371,8 +365,7 @@ class IVariable(abc.ABC):
         """Rechunk the variable.
 
         Args:
-            **kwargs: Keyword arguments passed to
-                :func:`dask.array.rechunk`
+            **kwargs: Arguments passed to :func:`dask.array.rechunk`.
 
         Returns:
             The variable.
@@ -380,20 +373,19 @@ class IVariable(abc.ABC):
 
 
 class Variable(IVariable, abc.ABC):
-    """Variables hold multidimensional arrays of data.
+    """Represent a multidimensional array with associated metadata.
 
     Args:
-        name: Name of the variable
-        data: Variable data
-        dimensions: Variable dimensions
-        attrs: Variable attributes
-        compressor: Compression codec
-        fill_value: Fill value of the variable. Reading it masks the
-            elements equal to this value; a NaN or a NaT equals nothing and
-            leaves the result unmasked.
-        filters: Filters to apply before writing data to disk
-        filler: Flag indicating whether the variable is generated by the
-            system or not.
+        name: The variable name.
+        data: The variable data.
+        dimensions: The names of the variable dimensions.
+        attrs: The variable attributes.
+        compressor: The compression codec.
+        fill_value: The value used to mask missing elements when reading
+            the variable. NaN and NaT elements are also masked when the
+            fill value is NaN or NaT, respectively.
+        filters: The filters applied before writing data to storage.
+        filler: Whether the variable was generated by the system.
     """
     __slots__ = (
         'array',
@@ -418,17 +410,17 @@ class Variable(IVariable, abc.ABC):
                  filler: bool = False) -> None:
         #: Variable name
         self.name: str = name
-        #: Variable data as a dask array.
+        #: The underlying NumPy or Dask array.
         self.array: Any = data
         #: Variable dimensions
         self.dimensions = tuple(dimensions)
         #: Variable attributes
         self.attrs = tuple(attrs or ())
-        #: Compressor used to compress the data during writing data to disk
+        #: Compressor used when writing the variable to storage.
         self.compressor: Codec | None = compressor
-        #: Value to use for uninitialized values
+        #: Fill value used for uninitialized data and masking.
         self.fill_value: Any | None = fill_value
-        #: Filters to apply before writing data to disk
+        #: Filter codecs applied before writing data.
         self.filters = tuple(filters or ())
         #: Origin of the variable
         self.filler = filler
@@ -459,19 +451,19 @@ class Variable(IVariable, abc.ABC):
         return self.size * self.dtype.itemsize
 
     def duplicate(self, data: Any = None, **properties: Any) -> Self:
-        """Create a new variable from the properties of this instance.
+        """Create a new variable using this variable's properties.
 
         Args:
-            data: Variable data. Defaults to the data of this instance.
-            **properties: The properties the new variable holds.
+            data: The new data. Defaults to the current variable data.
+            **properties: Properties to set on the new variable.
 
         Returns:
-            New variable.
+            The new variable.
 
         Raises:
-            TypeError: If a variable holds no property of that name.
-            ValueError: If the shape of the data does not match the
-                dimensions of the new variable.
+            TypeError: If a property name is not supported.
+            ValueError: If the number of data dimensions does not match the
+                dimensions declared for the new variable.
         """
         kwargs: dict[str, Any] = {
             name: properties.pop(name, getattr(self, name))
@@ -488,41 +480,40 @@ class Variable(IVariable, abc.ABC):
         return result
 
     def isel(self, key: tuple[slice, ...]) -> Self:
-        """Return a new variable with data selected along the given dimension
-        indices.
+        """Return a new variable with data selected by positional indices.
 
         Args:
-            key: Dimension indices to select
+            key: A tuple of indices applied to the variable's array.
 
         Returns:
-            The new variable
+            The selected variable.
         """
         return self.duplicate(self.array[key])
 
     def rename(self, name: str) -> Self:
-        """Rename the variable.
+        """Return a copy of the variable with a different name.
 
         Args:
-            name: New variable name.
+            name: The new variable name.
 
         Returns:
-            The variable.
+            The renamed variable.
         """
         return self.duplicate(name=name)
 
     def fill_attrs(self, var: meta.VariableSchema) -> None:
-        """Fill the variable attributes using the provided metadata.
+        """Replace the variable attributes using a variable schema.
 
         Args:
-            var: Variable's metadata.
+            var: The variable schema providing the attributes.
         """
         self.attrs = var.attrs
 
     def metadata(self) -> meta.VariableSchema:
-        """Get the variable metadata.
+        """Return the variable metadata.
 
         Returns:
-            Variable metadata
+            The variable metadata.
         """
         return meta.VariableSchema(self.name,
                                    self.dtype,
@@ -533,16 +524,14 @@ class Variable(IVariable, abc.ABC):
                                    filters=self.filters)
 
     def have_same_properties(self, other: Variable) -> bool:
-        """Return true if this instance and the other variable have the same
-        properties."""
+        """Return whether two variables have the same metadata properties."""
         return self.metadata() == other.metadata()
 
     def dimension_index(self) -> Iterator[tuple[str, int]]:
-        """Return an iterator over the variable known dimensions and their
-        index.
+        """Iterate over dimension names and their indices in the variable.
 
         Returns:
-            An iterator over the variable dimensions
+            An iterator of dimension names and indices.
         """
         yield from ((item, ix) for ix, item in enumerate(self.dimensions))
 
@@ -550,7 +539,7 @@ class Variable(IVariable, abc.ABC):
         """Convert the variable to an xarray.Variable.
 
         Returns:
-            Variable as an xarray.Variable
+            The xarray variable.
         """
         encoding: dict[str, Any] = {}
         if self.filters:
@@ -559,7 +548,7 @@ class Variable(IVariable, abc.ABC):
             encoding['compressor'] = self.compressor
         data: ArrayLike = self.array
         if self.dtype.kind == 'M':
-            # xarray need a datetime64[ns] dtype
+            # xarray requires datetime values with ``datetime64[ns]`` precision.
             data = data.astype('datetime64[ns]')
             encoding['dtype'] = 'int64'
         elif self.dtype.kind == 'm':

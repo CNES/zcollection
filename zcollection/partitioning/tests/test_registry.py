@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Test the registry module.
-=========================
+Partitioning registry tests
+===========================
 """
 from typing import Any
 
@@ -32,12 +32,12 @@ class MyCodec:
         self.attribute: Any = attribute
 
     def get_config(self) -> dict:
-        """Returns the configuration of the codec."""
+        """Return the codec configuration."""
         return {'id': self.ID, 'attribute': self.attribute}
 
     @classmethod
     def from_config(cls, config: dict) -> 'MyCodec':
-        """Creates an instance from the given configuration."""
+        """Create an instance from its configuration."""
         return cls(config['attribute'])
 
 

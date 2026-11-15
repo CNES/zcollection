@@ -20,17 +20,17 @@ if TYPE_CHECKING:
 
     from ..type_hints import DType
 
-# Parse the unit of numpy.timedelta64.
+# Parse the unit of NumPy datetime64 and timedelta64 types.
 PATTERN: Callable[[str], Match[str] | None] = re.compile(
     r'(?:datetime|timedelta)64\[(\w+)\]').search
 
-#: Numpy time units
+#: NumPy time units.
 RESOLUTION: Final = ('as', 'fs', 'ps', 'ns', 'us', 'ms', 's', 'm', 'h', 'D',
                      'W', 'M', 'Y')
 
 
 def _time64_unit(dtype: DType[Any]) -> str:
-    """Get the unit of time."""
+    """Return the unit of a NumPy datetime64 or timedelta64."""
     match: Match[str] | None = PATTERN(dtype.name)
     if match is None:
         raise ValueError(f'dtype is not a time duration: {dtype}')
@@ -41,16 +41,16 @@ def _min_time64_unit(
     *args: DType[Any]
 ) -> Literal['as', 'fs', 'ps', 'ns', 'us', 'ms', 's', 'm', 'h', 'D', 'W', 'M',
              'Y']:
-    """Get the minimum unit of time."""
+    """Return the smaller of two time units."""
     index = min(RESOLUTION.index(_time64_unit(item)) for item in args)
     return RESOLUTION[index]
 
 
 class PeriodRelation(enum.IntEnum):
-    """Enumeration of the relations which can exist between two periods."""
+    """Relations between two periods."""
     __slots__ = ()
 
-    #: The first period is after.
+    #: The first period starts at or after the second period's end.
     #:
     #: .. code-block:: text
     #:
@@ -58,8 +58,7 @@ class PeriodRelation(enum.IntEnum):
     #:      [-p2-]
     AFTER = 0
 
-    #: The first period is after, but the start date of the first period is
-    #: the same date as the end date of the second period.
+    #: The first period starts at the last element of the second period.
     #:
     #: .. code-block:: text
     #:
@@ -67,7 +66,7 @@ class PeriodRelation(enum.IntEnum):
     #:      [-p2-]
     START_TOUCHING = 1
 
-    #: The start date of the first period is inside the second period.
+    #: The first period starts within the second.
     #:
     #: .. code-block:: text
     #:
@@ -75,8 +74,7 @@ class PeriodRelation(enum.IntEnum):
     #:      [-p2-]
     START_INSIDE = 2
 
-    #: The start date of the first period is same as the first date of the
-    #: second period and the end date is inside the first period.
+    #: Both periods start together, and the first ends within the second.
     #:
     #: .. code-block:: text
     #:
@@ -84,8 +82,7 @@ class PeriodRelation(enum.IntEnum):
     #:      [-------p2-------]
     INSIDE_START_TOUCHING = 3
 
-    #: The first period is inside the second period and the start date of the
-    #: two periods are the same.
+    #: Both periods start together, and the first contains the second.
     #:
     #: .. code-block:: text
     #:
@@ -93,7 +90,7 @@ class PeriodRelation(enum.IntEnum):
     #:      [--p2--]
     ENCLOSING_START_TOUCHING = 4
 
-    #: The second period is inside the first period.
+    #: The first period contains the second.
     #:
     #: .. code-block:: text
     #:
@@ -101,8 +98,7 @@ class PeriodRelation(enum.IntEnum):
     #:         [--p2--]
     ENCLOSING = 5
 
-    #: The second period is inside the first period and the end date of the
-    #: two periods are the same.
+    #: The first period contains the second, and both end together.
     #:
     #: .. code-block:: text
     #:
@@ -118,7 +114,7 @@ class PeriodRelation(enum.IntEnum):
     #:      [-----p2-----]
     EXACT_MATCH = 7
 
-    #: The first period is inside the second period.
+    #: The first period is contained within the second.
     #:
     #: .. code-block:: text
     #:
@@ -126,8 +122,8 @@ class PeriodRelation(enum.IntEnum):
     #:      [-----p2-----]
     INSIDE = 8
 
-    #: The first period is inside the second period and the end date of the
-    #: two periods are the same.
+    #: The first period is contained within the second, and both end
+    #: together.
     #:
     #: .. code-block:: text
     #:
@@ -135,7 +131,7 @@ class PeriodRelation(enum.IntEnum):
     #:      [-----p2-----]
     INSIDE_END_TOUCHING = 9
 
-    #: The end date of the first period is inside the second period.
+    #: The first period ends within the second.
     #:
     #: .. code-block:: text
     #:
@@ -143,8 +139,7 @@ class PeriodRelation(enum.IntEnum):
     #:            [-----p2-----]
     END_INSIDE = 10
 
-    #: The end date of the first period is same as the start date of the
-    #: second period.
+    #: The second period starts at the last element of the first period.
     #:
     #: .. code-block:: text
     #:
@@ -161,51 +156,52 @@ class PeriodRelation(enum.IntEnum):
     BEFORE = 12
 
     def is_after(self) -> bool:
-        """Return true if the relation is after."""
+        """Return whether the first period is after the second."""
 
         return self.value == PeriodRelation.AFTER
 
     def is_before(self) -> bool:
-        """Return true if the relation is before."""
+        """Return whether the first period is before the second."""
 
         return self.value == PeriodRelation.BEFORE
 
     def contains(self) -> bool:
-        """Return true if one period enclosing the other period."""
+        """Return whether the first period contains or equals the second."""
         return self.value in (PeriodRelation.ENCLOSING_END_TOUCHING,
                               PeriodRelation.ENCLOSING_START_TOUCHING,
                               PeriodRelation.ENCLOSING,
                               PeriodRelation.EXACT_MATCH)
 
     def is_before_overlapping(self) -> bool:
-        """Return true if one period is before but there is an overlap between
-        the two periods."""
+        """Return True for ``END_INSIDE``, ``END_TOUCHING`` or
+        ``INSIDE_START_TOUCHING``."""
         return self.value in (PeriodRelation.END_INSIDE,
                               PeriodRelation.END_TOUCHING,
                               PeriodRelation.INSIDE_START_TOUCHING)
 
     def is_after_overlapping(self) -> bool:
-        """Return true if one period is after but there is an overlap between
-        the two periods."""
+        """Return True for ``START_INSIDE``, ``START_TOUCHING`` or
+        ``INSIDE_END_TOUCHING``."""
         return self.value in (PeriodRelation.START_INSIDE,
                               PeriodRelation.START_TOUCHING,
                               PeriodRelation.INSIDE_END_TOUCHING)
 
     def is_inside(self) -> bool:
-        """Return true if one period is inside the other period."""
+        """Return whether the first period lies strictly inside the second."""
 
         return self.value == PeriodRelation.INSIDE
 
 
 class Period:
-    """Create a Period from begin to last eg: [begin, last[
+    """Create a period from ``begin`` to ``end``.
+
+    By default, the period includes ``begin`` but excludes ``end``.
+    Set ``within=True`` to include ``end``.
 
     Args:
         begin: The beginning of the period.
-        end: The ending of the period.
-        within: If true, the given period defines a closed interval
-            (i.e. the end date is within the period), otherwise the
-            interval is open.
+        end: The end of the period.
+        within: Whether to include ``end``. Defaults to ``False``.
     """
     __slots__: tuple[str, ...] = ('_begin', '_duration_unit', '_last')
 
@@ -237,7 +233,7 @@ class Period:
     @classmethod
     def from_duration(cls, begin: numpy.datetime64,
                       duration: numpy.timedelta64) -> Period:
-        """Create a Period as [begin, begin + duration[
+        """Create a period from ``begin`` to ``begin + duration``, exclusive.
 
         Args:
             begin: The beginning of the period.
@@ -263,7 +259,7 @@ class Period:
         return self._last + self._duration_unit
 
     def is_null(self) -> bool:
-        """True if period is ill formed (length is zero or less)"""
+        """Return whether the period has zero or negative length."""
         return bool(self.end() <= self._begin)  # numpy.bool_ -> bool
 
     def length(self) -> numpy.timedelta64:
@@ -298,7 +294,7 @@ class Period:
         self._last = self._last + duration
 
     def expand(self, duration: numpy.timedelta64) -> None:
-        """Expand the size of the period by the duration on both ends.
+        """Expand the period by ``duration`` at both ends.
 
         So before expand:
 
@@ -326,16 +322,15 @@ class Period:
         self,
         other: numpy.datetime64 | Period,
     ) -> bool:
-        """Check if the given period is contains this period.
+        """Return whether this period contains a date or another period.
 
         Args:
-            other: The other period to check.
+            other: The date or period to check.
 
         Returns:
-            * True if other is a date and is inside the period, zero length
-              periods contain no points
-            * True if other is a period and  fully contains (or equals) the
-              other period
+            ``True`` if the date lies within this period, or if this period
+            contains or equals the other period. A zero-length period
+            contains no dates.
         """
         if isinstance(other, numpy.datetime64):
             return bool(self._begin <= other <= self._last)
@@ -343,10 +338,10 @@ class Period:
                     and (self._last >= other.last))
 
     def is_adjacent(self, other: Period) -> bool:
-        """True if periods are next to each other without a gap.
+        """Return whether two periods are adjacent without a gap or overlap.
 
-        In the example below, p1 and p2 are adjacent, but p3 is not adjacent
-        with either of p1 or p2.
+        In the example, p1 and p2 are adjacent, but p3 is not adjacent
+        to either of them.
 
         .. code-block:: text
 
@@ -358,13 +353,12 @@ class Period:
             other: The other period to check.
 
         Returns:
-            * True if other is a date and is adjacent to this period
-            * True if other is a period and is adjacent to this period
+            ``True`` if ``other`` is a period adjacent to this one.
         """
         return other.begin == self.end() or self.begin == other.end()
 
     def is_after(self, point: numpy.datetime64) -> bool:
-        """True if all of the period is prior or point < start.
+        """Return whether the period starts after the given point.
 
         In the example below only point 1 would evaluate to true.
 
@@ -378,7 +372,7 @@ class Period:
             point: The point to check.
 
         Returns:
-            True if point is after the period
+            ``True`` if the point precedes the beginning of the period.
         """
         if self.is_null():
             # null period isn't after
@@ -386,8 +380,7 @@ class Period:
         return bool(point < self._begin)
 
     def is_before(self, point: numpy.datetime64) -> bool:
-        """True if all of the period is prior to the passed point or end <=
-        point.
+        """Return whether the last element of the period precedes the point.
 
         In the example below points 4 and 5 return true.
 
@@ -401,7 +394,7 @@ class Period:
             point: The point to check.
 
         Returns:
-            True if point is before the period
+            ``True`` if the point follows the last element of the period.
         """
         if self.is_null():
             # null period isn't before anything
@@ -409,7 +402,7 @@ class Period:
         return bool(self._last < point)
 
     def intersects(self, other: Period) -> bool:
-        """True if the periods overlap in any way.
+        """Return whether the periods overlap.
 
         In the example below p1 intersects with p2, p4, and p6.
 
@@ -426,20 +419,20 @@ class Period:
             other: The other period to check.
 
         Returns:
-            True if the periods intersect
+            Whether the periods intersect.
         """
         return bool(
             self.contains(other.begin) or other.contains(self._begin)
             or ((other.begin < self._begin) and (other.last >= self._begin)))
 
     def intersection(self, other: Period) -> Period:
-        """Return the period of intersection or null period if no intersection.
+        """Return the intersection, or a null period if there is none.
 
         Args:
             other: The other period to check.
 
         Returns:
-            The intersection period or null period if no intersection.
+            The intersecting period, or a null period.
         """
         if self._begin > other.begin:
             if self._last <= other.last:
@@ -451,13 +444,14 @@ class Period:
         return other
 
     def merge(self, other: Period) -> Period:
-        """Return the union of intersecting periods -- or null period.
+        """Return the union of intersecting periods, or a null period.
 
         Args:
             other: The other period to merge.
 
         Returns:
-            The union period of intersection or null if no intersection.
+            The combined period, or a null period if the periods do not
+            intersect.
         """
         if self.intersects(other):
             if self._begin < other.begin:
@@ -467,13 +461,15 @@ class Period:
             return Period(
                 other.begin,
                 self.end() if self._last > other.last else other.end())
-        # no intersect return null
+        # Return a null period if there is no intersection.
         return Period(self._begin, self._begin)
 
     def span(self, other: Period) -> Period:
-        """Combine two periods with earliest start and latest end.
+        """Return the shortest period spanning both periods, including any gap.
 
-        Combines two periods and any gap between them such that
+        The resulting period starts at the earlier beginning and ends at the
+        later end:
+
           * start = min(p1.start, p2.start)
           * end   = max(p1.end  , p2.end)
 
@@ -500,8 +496,7 @@ class Period:
                                  if self._last < other.last else self.end())
         return Period(start, end)
 
-    # This code has a lot of "return" statements because we have to determine
-    # the relation between the two periods among 8 different cases.
+    # Each return handles a distinct relation between the two periods.
     def _get_direct_relation(  # noqa: PLR0911
             self,
             other: Period,
@@ -531,10 +526,10 @@ class Period:
         return None
 
     def get_relation(self, other: Period) -> PeriodRelation:
-        """Get the relationship between the two time periods.
+        """Return the relation between this period and another.
 
         Args:
-            other: Period to consider
+            other: The other period.
 
         Returns:
             The relation.

@@ -28,13 +28,13 @@ if TYPE_CHECKING:
     from .. import dataset
     from ..type_hints import ArrayLike, DTypeLike, NDArray
 
-#: Object that represents a partitioning scheme
+#: Type representing a partitioning scheme.
 Partition = tuple[tuple[tuple[str, Any], ...], slice]
 
-#: The callable that parses the partitioning scheme
+#: Type of callable used to parse partition keys.
 PatternType = Callable[[str], Optional[Match[str]]]
 
-#: Allowed data types for partitioning schemes
+#: Allowed data types for partition keys.
 DATA_TYPES = ('int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32',
               'uint64')
 
@@ -44,21 +44,22 @@ def _logical_or_reduce(
     *,
     axis: int | tuple[int, ...] | None = None,
 ) -> dask.array.core.Array:
-    """Implementation of `numpy.logical_or` reduction with dask.
+    """Reduce changes between consecutive rows using logical OR.
+
+    The function compares ``arr[1:]`` with ``arr[:-1]`` and reduces the
+    resulting Boolean array along ``axis``, which defaults to 0.
 
     Args:
-        arr: Array to reduce.
-        axis: Axis to reduce. If this is None, a reduction is performed over
-            all the axes. If this is a tuple of ints, a reduction is performed
-            on multiple axes, instead of a single axis or all the axes as
-            before.
+        arr: The array to compare.
+        axis: The axis or axes over which to reduce. Defaults to 0.
+
     Returns:
-        Reduced array.
+        The logical-OR reduction of the comparison mask.
     """
     axis = axis or 0
 
     #: pylint: disable=unused-argument
-    # The function signature is required by the `dask.array.reduce` function.
+    # The chunk and aggregate signatures are required by Dask reductions.
     def chunk(block, axis, keepdims) -> Any:
         return block
 
@@ -76,12 +77,13 @@ def _logical_or_reduce(
 
 
 def unique(arr: dask.array.core.Array) -> tuple[NDArray, NDArray]:
-    """Return unique elements and their indices.
+    """Return the first element and index of each run of equal values.
 
     Args:
-        arr: Array of elements.
+        arr: The input array.
+
     Returns:
-        Tuple of unique elements and their indices.
+        The first values of consecutive runs and their indices.
     """
     size: int = arr.shape[0]
     chunks: tuple[int, ...] = arr.chunks[0]
@@ -104,12 +106,16 @@ def unique(arr: dask.array.core.Array) -> tuple[NDArray, NDArray]:
 
 
 def unique_and_check_monotony(arr: ArrayLike) -> tuple[NDArray, NDArray]:
-    """Return unique elements and their indices.
+    """Return unique values and their first indices, checking monotonicity.
 
     Args:
-        arr: Array of elements.
+        arr: The input array.
+
     Returns:
-        Tuple of unique elements and their indices.
+        The unique values and indices of their first occurrences.
+
+    Raises:
+        ValueError: If the values are not monotonic.
     """
     index: NDArray
     indices: NDArray
@@ -121,13 +127,13 @@ def unique_and_check_monotony(arr: ArrayLike) -> tuple[NDArray, NDArray]:
 
 
 def difference(arr: NDArray) -> NDArray:
-    """Calculate the difference between each element in the array and the
-    previous element.
+    """Return the differences between consecutive array elements.
 
     Args:
         arr: Array to calculate the difference for.
+
     Returns:
-        Array of differences
+        The differences between consecutive elements.
     """
     return arr[1:] - arr[:-1]
 
@@ -136,8 +142,9 @@ def concatenate_item(arr: NDArray, item: Any) -> NDArray:
     """Concatenate an array with a given item.
 
     Args:
-        arr: Array to concatenate.
-        item: Item to concatenate.
+        arr: The input array.
+        item: The item to append.
+
     Returns:
         Concatenated array.
     """
@@ -151,17 +158,19 @@ def list_partitions(
     *,
     root: bool = True,
 ) -> Iterator[str]:
-    """The number of variables used for partitioning.
+    """Yield paths at a specified depth of a directory tree.
 
-    The function will go down the tree and return all the files present when the
-    requested depth is reached.
+    Traverse the tree up to ``depth``. At the first level, only directories
+    are considered, and names beginning with a dot are skipped.
+
     Args:
-        fs: file system object
-        path: path to the directory
-        depth: maximum depth of the directory tree.
-        root: if True, the path is the root of the tree.
-    Returns:
-        Iterator of (path, directories, files).
+        fs: The file system to traverse.
+        path: The starting directory.
+        depth: The maximum depth to traverse.
+        root: Whether ``path`` is the root of the directory tree.
+
+    Yields:
+        Paths as strings.
     """
     if depth == -1:
         return StopIteration()  # type: ignore[return-value]
@@ -194,22 +203,19 @@ def list_partitions(
 
 
 class Partitioning(metaclass=abc.ABCMeta):
-    """Initializes a new Partitioning instance.
+    """Define a partitioning scheme using one or more variables.
 
     Args:
-        variables: A list of strings representing the variables to be used for
-            partitioning.
-        dtype: An optional sequence of strings representing the data type used
-            to store variable values in a binary representation without data
-            loss. Must be one of the following allowed data types: ``int8``,
-            ``int16``, ``int32``, ``int64``, ``uint8``, ``uint16``, ``uint32``,
-            ``uint64``. If not provided, defaults to ``int64`` for all
-            variables.
+        variables: Names of the partitioning variables.
+        dtype: Optional sequence of data types used to store partition keys.
+            Supported types are ``int8``, ``int16``, ``int32``, ``int64``,
+            ``uint8``, ``uint16``, ``uint32``, ``uint64``.
+            Defaults to ``int64`` for all variables.
 
     Raises:
-        TypeError: If dtype is not a sequence of strings.
-        ValueError: If any of the data types provided is not one of the allowed
-            data types.
+        TypeError: If ``dtype`` is a string instead of a sequence.
+        ValueError: If no partitioning variables are given or a data type
+            is not supported.
     """
     __slots__ = ('_dtype', '_pattern', 'variables')
 
@@ -237,7 +243,7 @@ class Partitioning(metaclass=abc.ABCMeta):
                 f"Data type must be one of {', '.join(DATA_TYPES)}.")
 
     def __len__(self) -> int:
-        """Return the number of partitions."""
+        """Return the number of partitioning keys."""
         return len(self._dtype)
 
     def dtype(self) -> tuple[tuple[str, str], ...]:
@@ -245,7 +251,7 @@ class Partitioning(metaclass=abc.ABCMeta):
         return tuple(zip(self._keys(), self._dtype, strict=True))
 
     def _keys(self) -> Sequence[str]:
-        """Return the different keys of a partition."""
+        """Return the names of the partitioning keys."""
         return self.variables
 
     def _regex(self) -> re.Pattern:
@@ -257,42 +263,39 @@ class Partitioning(metaclass=abc.ABCMeta):
         self,
         variables: dict[str, NDArray],
     ) -> Iterator[Partition]:
-        """Split the variables constituting the partitioning into partitioning
-        schemes.
+        """Split partitioning variable values into partition keys and indexers.
 
         Args:
-            variables: The variables to be split constituting the
-                partitioning scheme.
+            variables: Values of the partitioning variables.
+
         Returns:
-            A sequence of tuples that contains the partitioning
-                scheme and the associated indexer to divide the dataset on each
-                partition found.
+            Partition keys and the corresponding dataset indexers.
         """
 
     @staticmethod
     def _partition(selection: tuple[tuple[str, Any], ...]) -> tuple[str, ...]:
-        """Format the partitioning scheme."""
+        """Format a partition key."""
         return tuple(f'{k}={v}' for k, v in selection)
 
     def index_dataset(
         self,
         zds: dataset.Dataset,
     ) -> Iterator[Partition]:
-        """Yield the indexing scheme for the given dataset.
+        """Yield the partition keys and indexers of a dataset.
 
         Args:
-            zds: The dataset to be indexed.
+            zds: The dataset to partition.
+
         Yields:
-            The indexing scheme for the partitioning scheme.
+            Each partition key and the indexer selecting its rows.
+
         Raises:
-            ValueError: if one of the variables needs for the partitioning
-                is not monotonic.
+            ValueError: If a partitioning variable is not monotonic.
         """
         variables = collections.OrderedDict(
             (name, zds.variables[name].array) for name in self.variables)
         if zds.delayed:
-            # If the dask array is too chunked, the calculation is excessively
-            # long.
+            # Rechunk very small Dask chunks to limit processing overhead.
             return self._split({
                 name: arr.rechunk().persist()
                 for name, arr in variables.items()
@@ -307,18 +310,18 @@ class Partitioning(metaclass=abc.ABCMeta):
         """Split the dataset into partitions.
 
         Args:
-            zds:  The dataset to be split.
-            axis: The axis to be used for the splitting.
+            zds: The dataset to split.
+            axis: The variable used as the collection axis.
+
         Yields:
-            The partitioning scheme and the indexer to divide the dataset on
-            each partition found.
+            Each partition key and the indexer selecting its rows.
+
         Raises:
-            ValueError: if one of the variables needs for the partitioning
-                is not a one-dimensional array.
+            ValueError: If a partitioning variable is not one-dimensional.
         """
         for item in self.variables:
             if len(zds.variables[item].shape) != 1:
-                raise ValueError(f'f{item!r} must be a one-dimensional array')
+                raise ValueError(f'{item!r} must be a one-dimensional array')
         return ((self._partition(selection), {
             axis: indexer
         }) for selection, indexer in self.index_dataset(zds))
@@ -350,15 +353,16 @@ class Partitioning(metaclass=abc.ABCMeta):
         return cls(**config)
 
     def parse(self, partition: str) -> tuple[tuple[str, int], ...]:
-        """Parse a partitioning scheme.
+        """Parse a partition path into its keys.
 
         Args:
-            partition: The partitioning scheme to be parsed.
+            partition: The partition path to parse.
+
         Returns:
-            The parsed partitioning scheme.
+            The partition keys and their values.
+
         Raises:
-            ValueError: if the partitioning scheme is not driven by this
-                instance.
+            ValueError: If the path does not match this partitioning scheme.
         """
         match: Match[str] | None = self._pattern(partition)
         if match is None:
@@ -372,31 +376,34 @@ class Partitioning(metaclass=abc.ABCMeta):
         self,
         partition: tuple[tuple[str, int], ...],
     ) -> tuple[Any, ...]:
-        """Encode a partitioning scheme to the handled values.
+        """Encode partition keys into values of the declared data types.
 
         Args:
             partition: The partitioning scheme to be encoded.
+
         Returns:
             The encoded partitioning scheme.
         """
 
     @abc.abstractmethod
     def decode(self, values: tuple[Any, ...]) -> tuple[tuple[str, int], ...]:
-        """Decode a partitioning scheme.
+        """Decode values into partition keys.
 
         Args:
             values: The encoded partitioning scheme.
+
         Returns:
             The decoded partitioning scheme.
         """
 
     @staticmethod
     def join(partition_scheme: tuple[tuple[str, int], ...], sep: str) -> str:
-        """Join a partitioning scheme.
+        """Join partition keys into a path.
 
         Args:
             partition_scheme: The partitioning scheme to be joined.
             sep: The separator to be used.
+
         Returns:
             The joined partitioning scheme.
         """
@@ -410,8 +417,8 @@ class Partitioning(metaclass=abc.ABCMeta):
         """List the partitions.
 
         Args:
-            fs: The filesystem to be used.
-            path: The path to the directory containing the partitions.
+            fs: The file system containing the partitions.
+            path: The base directory containing the partitions.
 
         Yields:
             The partitions, ordered by the values of their keys. The values

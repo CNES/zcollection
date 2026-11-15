@@ -59,8 +59,8 @@ _NAMED_PARTITIONS = 10
 
 @dataclasses.dataclass(frozen=True)
 class PartitioningProperties:
-    """Properties of a partition."""
-    #: The base directory of the partition.
+    """Partitioning properties of a collection."""
+    #: Base directory containing all collection partitions.
     dir: str
     #: The name of the partitioning dimension.
     dim: str
@@ -68,15 +68,14 @@ class PartitioningProperties:
 
 def _get_slices(variable: meta.VariableSchema, dim: str,
                 indices: slice) -> tuple[slice, ...]:
-    """Return a tuple of slices that can be used to select the given dimension
-    indices.
+    """Return slices selecting the specified dimension indices.
 
     Args:
-        dim: Dimension to select
-        indices: Dimension indices to select
+        dim: Dimension to select.
+        indices: Indices to select along that dimension.
 
     Returns:
-        The slices
+        A tuple of slices.
     """
     slices: list[slice] = [slice(None)] * len(variable.dimensions)
     slices[variable.dimensions.index(dim)] = indices
@@ -88,7 +87,8 @@ def prepare_partition_operation(
     depth: int,
     selected_variables: Iterable[str] | None,
 ) -> tuple[str, ...] | None:
-    """Validate the callback and depth, and retain a reusable variable selection."""
+    """Validate the callback and depth, and retain a reusable variable
+    selection."""
     if not callable(func):
         raise TypeError('func must be a callable')
     if depth < 0:
@@ -132,17 +132,20 @@ def _try_infer_callable(
     func_args: tuple[Any, ...],
     func_kwargs: dict[str, Any],
 ) -> Any:
-    """Try to call a function with the given arguments.
+    """Call a function with partition data and capture inference errors.
 
     Args:
         func: Function to call.
-        zds: Dataset to pass to the function.
-        partition_info: Identity and location of the current partition.
-        func_args: Positional arguments to pass to the function.
-        func_kwargs: Keyword arguments to pass to the function.
+        zds: Dataset passed to the function.
+        partition_info: Information identifying the current partition.
+        func_args: Positional arguments passed to the function.
+        func_kwargs: Keyword arguments passed to the function.
 
     Returns:
-        The result of the function.
+        The function's result.
+
+    Raises:
+        RuntimeError: If the function raises while inferring its output.
     """
     try:
         return _call_partition(func, zds, partition_info, func_args,
@@ -155,8 +158,8 @@ def _try_infer_callable(
         execution_tb: str = ''.join(traceback.format_tb(exc_traceback))
         raise RuntimeError(
             f'An error occurred while applying the function {func} with '
-            f'the arguments {func_args} and {func_kwargs} to the partition. The '
-            f'error is: {exc_type!r}: {exc_value}. The traceback '
+            f'the arguments {func_args} and {func_kwargs} to the partition. '
+            f'The error is: {exc_type!r}: {exc_value}. The traceback '
             f'is: {execution_tb}') from exc
 
 
@@ -167,20 +170,20 @@ def aligned_positions(
     name: str,
     partition: str,
 ) -> NDArray:
-    """Find the rows of a partition matching the wanted values of a variable.
+    """Find stored row positions matching the requested values.
 
     Args:
-        stored: Values of the variable in the partition.
+        stored: Values of the matching variable in the partition.
         wanted: Values to locate.
-        name: Name of the variable, used in error messages.
-        partition: Partition path, used in error messages.
+        name: Variable name used in error messages.
+        partition: Partition path used in error messages.
 
     Returns:
-        Position in `stored` of each wanted value.
+        Position in ``stored`` of each requested value.
 
     Raises:
-        ValueError: If the values of `stored` or of `wanted` repeat, or a
-            wanted value has no match.
+        ValueError: If ``stored`` or ``wanted`` contains duplicates,
+            or if a requested value has no match.
     """
     order = numpy.argsort(stored, kind='stable')
     ordered = stored[order]
@@ -271,10 +274,10 @@ def _update_partition(
     trim: bool,
     metadata: meta.DatasetSchema,
 ) -> None:
-    """Call the update function and write its results to the target partition.
+    """Compute and write updated values to the target partition.
 
-    With overlap, indices selects the current partition within the dataset.
-    Without overlap, indices is None.
+    With overlap, ``indices`` selects the processed partition within
+    the loaded dataset. Without overlap, ``indices`` is ``None``.
     """
     dictionary = _call_partition(func, zds, partition_info, func_args,
                                  func_kwargs)
@@ -329,7 +332,7 @@ def map_partitions(
     func_args: tuple[Any, ...],
     func_kwargs: dict[str, Any],
 ) -> dask.bag.core.Bag:
-    """Load each partition or window and map the callback with Dask arguments."""
+    """Map a callback over partition datasets or overlap windows."""
 
     def wrap_function(partition: str, /, *args, **kwargs):
         try:
@@ -360,11 +363,11 @@ def _load_dataset(
     """Load a dataset from a partition.
 
     Args:
-        delayed: Whether to load the dataset lazily.
-        fs: File system on which the Zarr dataset is stored.
+        delayed: Whether to load the data lazily.
+        fs: File system storing the partition.
         immutable: Name of the immutable directory.
         partition: Name of the partition.
-        selected_variables: Name of the variables to load from the dataset.
+        selected_variables: Variables to load.
 
     Returns:
         The loaded dataset.
@@ -395,22 +398,22 @@ def _load_dataset_with_overlap(
     partitions: Sequence[str],
     selected_variables: Iterable[str] | None,
 ) -> tuple[dataset.Dataset, slice]:
-    """Load a dataset from a partition with overlap.
+    """Load a partition with neighboring partitions for overlap.
 
     Args:
-        delayed: Whether to load the dataset lazily.
-        depth: Depth of the overlap.
-        dim: Name of the partitioning dimension.
+        delayed: Whether to load the data lazily.
+        depth: Number of neighboring partitions on each side.
+        dim: The partitioned dimension.
         axis: Name of the stored axis variable.
-        fs: File system on which the Zarr dataset is stored.
+        fs: File system storing the partition.
         immutable: Name of the immutable directory.
         partition: Name of the partition.
-        partitions: List of all partitions.
-        selected_variables: Name of the variables to load from the dataset.
+        partitions: All available partitions.
+        selected_variables: Variables to load.
 
     Returns:
-        The loaded dataset and the slice to select the data without the
-        overlap.
+        The loaded dataset and a slice identifying the processed partition
+        within the overlap window.
     """
 
     def calculate_slice(_groups: list[dataset.Dataset],
@@ -439,10 +442,9 @@ def _load_dataset_with_overlap(
         if 0 <= ix < len(partitions)
     ]
 
-    # Load the datasets for each selected partition. A neighbour the store
-    # does not hold is left out of both lists, which calculate_slice reads
-    # in step. The partition itself is the one being mapped over, so its
-    # absence is raised.
+    # Load the selected partition and its available neighbors. Skip an
+    # absent neighbor in both lists used to calculate the central slice.
+    # An absent processed partition raises an error instead.
     groups: list[dataset.Dataset] = []
     held: list[str] = []
     for item in selected_partitions:
@@ -479,13 +481,12 @@ def _load_dataset_with_overlap(
 
 def note_failed_removal(error: BaseException, variable: str,
                         failed: Iterable[str]) -> None:
-    """Add a note to `error` naming where the array of `variable` may
-    remain.
+    """Add a note identifying partitions where a variable may remain.
 
     Args:
-        error: The error of the addition.
-        variable: The name of the variable added.
-        failed: The partitions where removing the array failed.
+        error: Error raised during the variable's addition.
+        variable: Name of the added variable.
+        failed: Partitions where removing its array failed.
     """
     names = list(failed)
     shown = ', '.join(names[:_NAMED_PARTITIONS])
@@ -553,11 +554,14 @@ def wrap_update(
 
 
 def _rm(fs: fsspec.AbstractFileSystem, dirname: str) -> None:
-    """Remove a directory and its content.
+    """Attempt to remove a directory and its contents.
+
+    Retry up to ``MAX_TRIES`` times, with a one-second delay between
+    attempts. If all attempts fail, return without raising an error.
 
     Args:
-        fs: The file system on which the directory is stored.
-        dirname: The name of the directory to remove.
+        fs: File system storing the directory.
+        dirname: Path of the directory to remove.
     """
     tries = 0
     while tries < MAX_TRIES:
@@ -585,19 +589,19 @@ def _insert(
     distributed: bool = True,
     merge_kwargs: Mapping[str, Any] | None = None,
 ) -> None:
-    """Insert or update a partition in the collection.
+    """Insert data into a partition, replacing existing data by default.
 
     Args:
-        args: Tuple containing the partition's name and its slice.
-        axis: The axis to merge on.
-        zds: The dataset to process.
-        fs: The file system that the partition is stored on.
-        merge_callable: The merge callable.
-        partitioning_properties: The partitioning properties.
-        delayed: Whether the merge callable receives the stored partition
-            and the inserted one as Dask arrays. Defaults to ``None``, which
-            gives it Dask arrays when the inserted dataset holds them.
-        distributed: Whether to use dask or not. Default To True.
+        args: Partition path and slice selecting its input data.
+        axis: Name of the axis variable used for merging.
+        zds: Dataset to insert.
+        fs: File system storing the partition.
+        merge_callable: Function for merging existing and inserted data.
+            If ``None``, the inserted data replaces any existing data.
+        partitioning_properties: Properties of the collection partitioning.
+        delayed: Whether the merge callable receives Dask arrays.
+            Defaults to ``None``, following the input dataset.
+        distributed: Whether to use Dask. Defaults to ``True``.
         merge_kwargs: Keyword arguments passed to the merge callable.
     """
     partition: tuple[str, ...]
@@ -606,7 +610,7 @@ def _insert(
     partition, indexer = args
     dirname = join_path(*((partitioning_properties.dir, *partition)))
 
-    # A partition that holds no group is empty.
+    # A partition without a Zarr group is treated as empty.
     if store.contains_group(fs, dirname):
         merging.perform(zds.isel(indexer),
                         dirname,
@@ -629,9 +633,8 @@ def _insert(
                          sync.NoSync(),
                          distributed=distributed)
     except:
-        # If the construction of the new dataset fails, the created
-        # partition is deleted to guarantee the integrity of the
-        # collection.
+        # Remove a newly created partition if writing fails, to avoid
+        # leaving a partially written partition in the collection.
         _rm(fs, dirname)
         raise
 
@@ -648,15 +651,15 @@ def _load_and_apply_indexer(
     """Load a partition and apply its indexer.
 
     Args:
-        args: Tuple containing the partition's keys and its indexer.
-        fs: The file system that the partition is stored on.
-        partition_handler: The partitioning handler.
-        partition_properties: The partitioning properties.
-        selected_variables: The selected variables to load.
+        args: Partition keys and corresponding indexer.
+        fs: File system storing the partition.
+        partition_handler: The partitioning scheme.
+        partition_properties: Properties of the collection partitioning.
+        selected_variables: Variables to load.
+        delayed: Whether to load data lazily.
 
     Returns:
-        The list of loaded datasets, empty when the store holds no
-        partition at that path.
+        Loaded datasets, or an empty list if the partition is absent.
     """
     items: list[slice]
     partition_scheme: tuple[tuple[str, int], ...]

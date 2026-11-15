@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Handle merging of datasets of a partition.
-==========================================
+Merging datasets within a partition
+===================================
 """
 from __future__ import annotations
 
@@ -28,11 +28,11 @@ __all__ = ('MergeCallable', 'merge_time_series', 'perform')
 
 #: pylint: disable=too-few-public-methods,duplicate-code
 class MergeCallable(Protocol):
-    """Protocol to merge datasets stored in a partition.
+    """Protocol for functions that merge partition datasets.
 
-    A merge callable is a function that accepts an existing dataset
-    present in a partition, a new dataset to merge, the partitioning
-    dimension and the axis to merge on. It returns the merged dataset.
+    A merge function receives the existing and inserted datasets, the axis
+    used for merging and the partitioned dimension. It returns the merged
+    dataset.
     """
 
     def __call__(
@@ -43,7 +43,7 @@ class MergeCallable(Protocol):
         partitioning_dim: str,
         **kwargs,
     ) -> dataset.Dataset:
-        """Call the partition function.
+        """Call the merge function.
 
         Args:
             existing_ds: The existing dataset.
@@ -68,7 +68,10 @@ def _rename(
     source: str,
     dest: str,
 ) -> None:
-    """Rename a directory on a file system.
+    """Move a directory to a new path, replacing the destination.
+
+    On a local file system, the directory is moved directly. On other file
+    systems, its files are copied before the source is removed.
 
     Args:
         fs: The file system.
@@ -91,7 +94,7 @@ def _rename(
 
 
 def _extract_root_dirname(dirname: str, sep: str) -> str:
-    """Extracts the root directory name from a partition name."""
+    """Return the root directory from a partition path."""
     parts = filter(lambda x: '=' not in x, dirname.split(sep))
     return sep.join(parts)
 
@@ -104,27 +107,30 @@ def _update_fs(
     distributed: bool = True,
     synchronizer: sync.Sync | None = None,
 ) -> None:
-    """Updates a dataset stored in a partition.
+    """Replace a partition dataset with new data.
+
+    The new dataset is written to a temporary directory at the collection
+    root, then moved to the partition path.
 
     Args:
         dirname: The name of the partition.
         zds: The dataset to update.
-        fs: The file system that the partition is stored on.
-        distributed: Whether to use dask or not. Default To True.
+        fs: The file system storing the partition.
+        distributed: Whether to use Dask. Defaults to ``True``.
         synchronizer: The instance handling access to critical resources.
     """
-    # Building a temporary directory to store the new data. The name of the
-    # temporary directory is the hash of the partition name.
+    # Create a temporary directory named after the partition path's hash
+    # to store the new data.
     temp: str = fs_utils.join_path(
         _extract_root_dirname(dirname, fs.sep),
         hashlib.sha256(dirname.encode()).hexdigest())
     if fs.exists(temp):
         fs.rm(temp, recursive=True)
 
-    # Initializing Zarr group
+    # Initialize the temporary Zarr group.
     store.create_group(fs, temp)
 
-    # Writing new data.
+    # Write the new dataset.
     try:
         # The synchronization is done by the caller.
         storage.write_zarr_group(zds,
@@ -138,7 +144,7 @@ def _update_fs(
         fs.rm(temp, recursive=True)
         raise
 
-    # Rename the existing entry on the file system
+    # Replace the partition with the temporary directory.
     _rename(fs, temp, dirname)
 
 
@@ -155,18 +161,18 @@ def perform(
     synchronizer: sync.Sync | None = None,
     merge_kwargs: Mapping[str, Any] | None = None,
 ) -> None:
-    """Merges a new dataset with an existing partition.
+    """Merge an inserted dataset with an existing partition, or replace it.
 
     Args:
         ds_inserted: The dataset to merge.
         dirname: The name of the partition.
         axis: The axis to merge on.
-        fs: The file system on which the partition is stored.
+        fs: The file system storing the partition.
         partitioning_dim: The partitioning dimension.
         delayed: Whether the merge callable receives the stored partition
             and the inserted one as Dask arrays. Defaults to ``None``, which
             gives it Dask arrays when the inserted dataset holds them.
-        distributed: Whether to use dask or not. Default To True.
+        distributed: Whether to use Dask. Defaults to ``True``.
         merge_callable: The merge callable. If None, the inserted dataset
             overwrites the existing dataset stored in the partition.
             Defaults to None.
@@ -184,9 +190,8 @@ def perform(
             # a NumPy dataset with a Dask one.
             ds_inserted = ds_inserted.compute()
         ds = storage.open_zarr_group(dirname, fs, delayed=delayed)
-        # Read dataset does not contain insertion properties.
-        # These properties might be loss in the merge_callable depending on which
-        # dataset is used.
+        # The dataset read from storage lacks insertion properties. A merge
+        # function may discard these properties, depending on its result.
         ds.copy_properties(ds=ds_inserted)
         zds = merge_callable(ds, ds_inserted, axis, partitioning_dim,
                              **(merge_kwargs or {}))

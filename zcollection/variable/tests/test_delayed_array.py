@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Testing variables
-=================
+Dask-backed variable tests
+==========================
 """
 from typing import Any
 
@@ -19,7 +19,7 @@ from ..delayed_array import _as_dask_array
 
 
 def test_as_dask_array() -> None:
-    """Test converting array like to a dask array."""
+    """Test converting array-like data to a Dask array."""
     dask_array: dask.array.core.Array
     fill_value: Any
     np_array: numpy.ndarray

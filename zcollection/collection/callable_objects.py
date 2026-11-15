@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Callable objects.
-=================
+Partition callback protocols
+============================
 """
 from __future__ import annotations
 
@@ -31,13 +31,14 @@ class PartitionInfo:
     """Identify a partition and its position in the overlap window."""
     #: Partition key names and their values.
     partition: dict[str, int]
-    #: Relative partition name, using the partitioner's formatting and '/'.
+    #: Partition path relative to the collection, formatted with ``/``.
     name: str
     #: The partitioned dimension.
     dimension: str
-    #: Slice of the partition along dimension within the overlap window,
-    #: including when selected variables omit that dimension.
-    #: Without overlap and during update inference, slice(None).
+    #: Slice selecting the partition along the partitioned dimension within
+    #: its overlap window. This also applies when the selected variables
+    #: omit that dimension. Without overlap or during update inference,
+    #: the slice is ``slice(None)``.
     indices: slice
 
 
@@ -45,8 +46,7 @@ class PartitionInfo:
 class PartitionCallable(Protocol):
     """Protocol for partition callables.
 
-    A partition callable is a function that accepts a dataset and
-    returns a result.
+    A partition callback receives a dataset and returns a result.
     """
 
     @property
@@ -60,12 +60,12 @@ class PartitionCallable(Protocol):
         """Call the partition function.
 
         Args:
-            zds: Dataset to partition.
+            zds: The partition dataset.
             *args: Positional arguments.
             **kwargs: Keyword arguments.
 
         Returns:
-            Result of the partition function.
+            The callback result.
         """
 
 
@@ -77,8 +77,8 @@ MapCallable = PartitionCallable
 class UpdateCallable(Protocol):
     """Protocol for update callables.
 
-    A callable update is a function that accepts a data set and returns
-    a dictionary of arrays to update.
+    An update callback receives a dataset and returns a dictionary
+    of arrays containing the updated values.
     """
 
     @property
@@ -93,12 +93,12 @@ class UpdateCallable(Protocol):
         """Call the update function.
 
         Args:
-            zds: Dataset to update.
+            zds: The partition dataset.
             *args: Positional arguments.
             **kwargs: Keyword arguments.
 
         Returns:
-            Dictionary of arrays to update.
+            A dictionary of arrays with the updated values.
         """
 
         # Mandatory to make Pylance happy.

@@ -26,15 +26,15 @@ def create_collection(
     partition_base_dir: str,
     **kwargs,
 ) -> collection.Collection:
-    """Create a collection.
+    """Create a collection from a dataset.
 
     Args:
-        axis: The axis to use for the collection.
-        ds: The dataset to use.
-        partition_handler: The partitioning handler to use.
-        partition_base_dir: The base directory to use for the partitions.
-        **kwargs: Additional parameters are passed through to the constructor
-            of the class :py:class:`Collection`.
+        axis: Name of a variable in the dataset. Its first dimension defines
+            the dimension along which the collection is partitioned.
+        ds: The initial dataset used to define the collection schema.
+        partition_handler: The partitioning scheme.
+        partition_base_dir: The collection directory.
+        **kwargs: Additional arguments passed to :py:class:`Collection`.
 
     Example:
         >>> import xarray as xr
@@ -49,7 +49,7 @@ def create_collection(
         ...     "/tmp/my_collection")
 
     Returns:
-        The collection.
+        The new collection.
 
     Raises:
         ValueError: If the base directory already exists.
@@ -73,15 +73,16 @@ def open_collection(path: str,
                     *,
                     mode: Literal['r', 'w'] | None = None,
                     **kwargs) -> collection.Collection:
-    """Open a collection.
+    """Open an existing collection.
 
     Args:
-        path: The path to the collection.
-        mode: The mode to open the collection.
-        **kwargs: Additional parameters are passed through the method
+        path: The collection path.
+        mode: The access mode.
+        **kwargs: Additional arguments passed to
             :py:meth:`zcollection.collection.Collection.from_config`.
+
     Returns:
-        The collection.
+        The opened collection.
 
     Example:
         >>> import zcollection

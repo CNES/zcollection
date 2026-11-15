@@ -3,7 +3,7 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Registers the partitioning codecs.
+Registry of partitioning schemes.
 ==================================
 """
 from __future__ import annotations
@@ -13,21 +13,21 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from . import abc
 
-#: A registry of all available partitioning codecs.
+#: Registry of available partitioning codecs.
 CODEC_REGISTRY: dict[str, type[abc.Partitioning]] = {}
 
 
 def get_codecs(config: dict[str, Any]) -> abc.Partitioning:
-    """Get the partitioning scheme for the given configuration.
+    """Create a partitioning scheme from its configuration.
 
     Args:
-        config: A dictionary of the partitioning configuration parameters.
+        config: The partitioning configuration. Its ``id`` entry is removed.
 
     Returns:
         The partitioning scheme.
 
     Raises:
-        ValueError: If the requested codec is not defined.
+        ValueError: If the requested partitioning codec is not registered.
     """
     codec_id: Any | None = config.pop('id', None)
     if codec_id is None:
@@ -45,10 +45,10 @@ def register_codec(cls: type[abc.Partitioning],
 
     Args:
         cls: The partitioning scheme class.
-        codec_id: The partitioning scheme identifier.
+        codec_id: Optional identifier for the partitioning scheme.
 
     Raises:
-        ValueError: If the codec identifier is already registered.
+        ValueError: If the identifier is missing or already registered.
     """
     if codec_id is None:
         codec_id = cls.ID

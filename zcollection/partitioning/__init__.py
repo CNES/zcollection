@@ -6,12 +6,13 @@
 Partitioning scheme.
 ====================
 
-Entry point of the implemented partitioning schemes.
+Available partitioning schemes:
 
 * :py:class:`Sequence <zcollection.partitioning.sequence.Sequence>`:
-  Partitioning a sequence of variables.
-* :py:class:`Date <zcollection.partitioning.date.Date>`: Partitioning a
-  sequence of dates.
+  Partitioning by variable values.
+* :py:class:`~zcollection.partitioning.sequence.GroupedSequence`:
+  Partitioning by variable values, grouping values of the last variable.
+* :py:class:`Date <zcollection.partitioning.date.Date>`: Partitioning by date.
 
 .. class:: Partitioning
 

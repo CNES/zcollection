@@ -30,13 +30,14 @@ def split_half_orbit(
     cycle_number: numpy.ndarray,
     pass_number: numpy.ndarray,
 ) -> Iterator[tuple[int, int]]:
-    """Calculate the indexes of the start and stop of each half-orbit.
+    """Return the start and stop indices of each half-orbit.
 
     Args:
+        cycle_number: Cycle numbers.
         pass_number: Pass numbers.
 
     Returns:
-        Iterator of start and stop indexes.
+        Iterator of start and stop indices.
     """
     assert pass_number.shape == cycle_number.shape
     pass_idx = numpy.nonzero(numpy.roll(pass_number, 1) != pass_number)[0]
@@ -51,15 +52,14 @@ def split_half_orbit(
     yield from itertools.pairwise(half_orbit)
 
 
-# The signature of the function must follow the signature of
-# zcollection.PartitionCallable
+# Match the signature required by zcollection.PartitionCallable.
 def _half_orbit(
     zds: dataset.Dataset,
     *args,
     dtype: numpy.dtype | None = None,
     **kwargs,
 ) -> NDArray:
-    """Return the indexes of the start and stop of each half-orbit.
+    """Return the start and stop indices of each half-orbit.
 
     Args:
         zds: Datasets stored in a partition to be indexed.
@@ -83,7 +83,7 @@ def _half_orbit(
 
 
 class HalfOrbitIndexer(abc.Indexer):
-    """Index SWOT collection by half-orbit."""
+    """Index a SWOT collection by half-orbit."""
     #: Column name of the cycle number.
     CYCLE_NUMBER = 'cycle_number'
 
@@ -94,7 +94,7 @@ class HalfOrbitIndexer(abc.Indexer):
         """Return the columns of the index.
 
         Returns:
-            A tuple of (name, type) pairs.
+            A list of (name, type) pairs.
         """
         return [
             *super().dtype(), (self.CYCLE_NUMBER, 'uint16'),
@@ -115,7 +115,7 @@ class HalfOrbitIndexer(abc.Indexer):
         Args:
             path: The path to the index.
             zds: The collection to be indexed.
-            filesystem: The filesystem to use.
+            filesystem: The file system to use.
 
         Returns:
             The created index.
@@ -137,7 +137,7 @@ class HalfOrbitIndexer(abc.Indexer):
         """Update the index.
 
         Args:
-            zds: New data stored in the collection to be indexed.
+            zds: The collection to index.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
             cycle_number: The name of the cycle number variable stored in the
@@ -246,7 +246,7 @@ def test_indexer(
 
 
 def test_a_partition_key_that_does_not_fit_its_type():
-    """A value the declared data type does not hold stops with an error."""
+    """Reject a partition key that does not fit its declared data type."""
     indexer = HalfOrbitIndexer('', filesystem=fsspec.filesystem('memory'))
     indexer._set_schema(())
     name, column = indexer._partition_column('cycle_number', 2, 3)

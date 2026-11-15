@@ -26,7 +26,7 @@ EXAMPLES = sorted((ROOT / 'examples').glob('ex_*.py'))
 
 
 def test_the_examples_are_found() -> None:
-    """The source tree holds the examples."""
+    """The source tree contains the examples."""
     assert EXAMPLES
 
 

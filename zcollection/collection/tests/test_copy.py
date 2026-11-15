@@ -27,7 +27,7 @@ def test_a_copy_holds_the_immutable_variables(local_fs) -> None:  # noqa: F811
 
 
 def test_a_copy_holds_the_files_of_the_root(local_fs) -> None:  # noqa: F811
-    """The copy holds the files of the root directory of the collection."""
+    """The copy includes files from the collection's root directory."""
     zcol = create_key_collection(local_fs)
     local_fs.fs.pipe_file(f'{local_fs.collection}/table.parquet', b'table')
     target = str(local_fs.root / 'copy')
@@ -38,8 +38,7 @@ def test_a_copy_holds_the_files_of_the_root(local_fs) -> None:  # noqa: F811
 
 
 def test_a_copy_refuses_a_target_holding_files(local_fs) -> None:  # noqa: F811
-    """A copy to a directory that holds files raises ValueError and writes
-    nothing."""
+    """Copying to a nonempty directory raises ``ValueError`` without writing."""
     zcol = create_key_collection(local_fs)
     target = str(local_fs.root / 'copy')
     local_fs.fs.makedirs(target)
@@ -85,8 +84,10 @@ def interrupt(*args, **kwargs) -> None:
 def test_a_copy_lists_its_partitions_without_scanning_its_store(
         local_fs,  # noqa: F811
         monkeypatch) -> None:
-    """Once its partitions are copied, the new collection lists them, even
-    when a scan of its store is interrupted."""
+    """A copied collection can list its partitions without scanning storage.
+
+    The listing still succeeds if a storage scan would be interrupted.
+    """
     zcol = create_key_collection(local_fs)
     target = str(local_fs.root / 'copy')
     monkeypatch.setattr(partitions.PartitionIndex, 'walk', interrupt)

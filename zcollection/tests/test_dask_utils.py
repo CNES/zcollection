@@ -25,8 +25,8 @@ def test_get_client_with_cluster(
 ):
     """Test the get_client function with a cluster.
 
-    The client is the one already connected, and closing it is the business
-    of whoever opened it.
+    The existing client is reused, and its owner remains responsible for
+    closing it.
     """
     assert dask_utils.get_client() is dask_client
 

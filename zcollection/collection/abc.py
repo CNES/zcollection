@@ -61,27 +61,27 @@ if TYPE_CHECKING:
 
 
 def warn_missing_partitions(paths: Iterable[str]) -> None:
-    """Log a warning naming the paths in ``selected_partitions`` that name
-    no partition.
+    """Log a warning for paths in ``selected_partitions`` that do not
+    correspond to existing partitions.
 
     Args:
-        paths: The paths left out.
+        paths: The paths excluded from the selection.
     """
     _LOGGER.warning(
         'The selected paths %s name no partition of the collection or the '
         'view and are left out.', ', '.join(repr(path) for path in paths))
 
 
-#: Type of functions filtering the partitions.
+#: Callable type for partition filters.
 PartitionFilterCallback = Callable[[dict[str, int]], bool]
 
-#: Type of argument to filter the partitions.
+#: Type accepted for partition filters.
 PartitionFilter = Optional[str | PartitionFilterCallback]
 
-#: Indexer's type.
+#: Indexer type.
 Indexer = Iterable[tuple[tuple[tuple[str, int], ...], slice]]
 
-#: Indexer arguments' type.
+#: Type of indexer arguments.
 IndexerArgs = tuple[tuple[tuple[str, int], ...], list[slice]]
 
 #: Name of the directory storing the immutable dataset.
@@ -97,7 +97,7 @@ def list_partitions_from_indexer(
     base_dir: str,
     sep: str,
 ) -> Iterator[str]:
-    """List the partitions from the indexer.
+    """List partitions selected by the indexer.
 
     Args:
         indexer: The indexer.
@@ -106,7 +106,7 @@ def list_partitions_from_indexer(
         sep: The separator.
 
     Returns:
-        The list of partitions.
+        The selected partitions.
     """
     keys = sorted({key for key, _ in indexer})
     yield from (sep.join((base_dir, partition_handler.join(key, sep)))
@@ -120,7 +120,7 @@ def build_indexer_args(
     *,
     partitions: Iterable[str] | None = None,
 ) -> Iterator[IndexerArgs]:
-    """Build the arguments for the indexer.
+    """Prepare arguments for the indexer.
 
     Args:
         collection: The collection to index.
@@ -130,25 +130,23 @@ def build_indexer_args(
             are indexed.
 
     Returns:
-        An iterator containing the arguments for the indexer.
+        An iterator of indexer arguments.
     """
-    # Build an indexer dictionary between the partition scheme and
-    # indexer.
+    # Map partitioning keys to the indexer.
     indexers_map: dict[tuple[tuple[str, int], ...], list[slice]] = {}
     _ = {
         indexers_map.setdefault(  # type: ignore[func-returns-value]
             partition_scheme, []).append(indexer)
         for partition_scheme, indexer in indexer
     }
-    # Filter the selected partitions
+    # Apply the partition filters.
     partitions = partitions or collection.partitions(filters=filters)
     selected_partitions = set(indexers_map) & {
         collection.partitioning.parse(item)
         for item in partitions
     }
 
-    # For each provided partition scheme, retrieves the corresponding
-    # indexer.
+    # Retrieve the matching indexer for each partitioning scheme.
     return ((item, indexers_map[item]) for item in sorted(selected_partitions))
 
 
@@ -164,13 +162,13 @@ def _open_held_group(
 
     Args:
         partition: The path of the partition.
-        fs: The file system the partition is held on.
+        fs: The file system storing the partition.
         delayed: Whether to load the data lazily.
         selected_variables: The variables to retain.
 
     Returns:
-        The dataset the partition holds, or ``None`` when the store holds
-        no partition at that path.
+        The partition dataset, or ``None`` if the partition is absent
+        from storage.
     """
     return storage.read_partition(partition,
                                   fs,
@@ -179,32 +177,31 @@ def _open_held_group(
 
 
 def _immutable_path(partition_properties: PartitioningProperties, ) -> str:
-    """Return the immutable path of the dataset.
+    """Return the path of the immutable variable group.
 
     Args:
         partition_properties: The partitioning properties.
 
     Returns:
-        The immutable path of the dataset containing data that are immutable
-        relative to the partitioning or None if the dataset does not contain
-        immutable data.
+        The path to the ``.immutable`` group.
     """
     return fs_utils.join_path(partition_properties.dir, IMMUTABLE)
 
 
 def _check_sizes(ds: meta.DatasetSchema, main_dimension: str) -> None:
-    """Refuse a dimension whose size no insertion can satisfy.
+    """Reject schemas with unspecified sizes outside the partitioned dimension.
 
-    A collection opened to be read is not checked: one written by an
-    earlier release carries no size at all, its configuration holding none.
+    The check runs only when opening a collection for writing. Older
+    collections may record no dimension sizes, so opening them read-only
+    skips this validation.
 
     Args:
-        ds: The schema of the collection.
-        main_dimension: The dimension the collection is partitioned along.
+        ds: The collection schema.
+        main_dimension: The partitioned dimension.
 
     Raises:
-        ValueError: If a dimension other than the main one is declared
-            without a size.
+        ValueError: If a dimension other than the partitioned dimension
+            has no declared size.
     """
     for dimension in ds.dimensions.values():
         if dimension.name != main_dimension and dimension.value < 0:
@@ -217,14 +214,17 @@ def _check_sizes(ds: meta.DatasetSchema, main_dimension: str) -> None:
 
 
 def _check_fill_values(ds: meta.DatasetSchema) -> None:
-    """Refuse a value marking an absence that its filters do not carry.
+    """Reject schemas whose filters change a variable's fill value.
+
+    Only variables with both a fill value and filters are checked. The fill
+    value must remain unchanged after encoding and decoding.
 
     Args:
-        ds: The schema of the collection.
+        ds: The collection schema.
 
     Raises:
-        ValueError: If the filters of a variable read back a value other
-            than the one the variable marks an absence with.
+        ValueError: If a variable's fill value changes after passing
+            through its filters.
     """
     for item in ds.variables.values():
         if item.fill_value is None or not item.filters:
@@ -244,11 +244,11 @@ def _check_fill_values(ds: meta.DatasetSchema) -> None:
 
 @dataclasses.dataclass(frozen=True)
 class CollectionProperties:
-    """This class contains the properties of a collection."""
-    #: The axis of the collection.
+    """Properties of a collection instance."""
+    #: The name of the axis variable.
     axis: str
 
-    #: The metadata that describes the dataset handled by the collection.
+    #: The collection schema.
     metadata: meta.DatasetSchema
 
     #: The partitioning strategy used to split the data.
@@ -265,14 +265,14 @@ class CollectionProperties:
 
 @dataclasses.dataclass(frozen=True)
 class CollectionSettings:
-    """This class contains the settings of a collection."""
-    #: The mode of access of the collection.
+    """Settings of a collection instance."""
+    #: The collection access mode.
     mode: Literal['r', 'w']
 
     #: The file system used to read/write the collection.
     filesystem: fsspec.AbstractFileSystem
 
-    #: The synchronizer used to synchronize the modifications.
+    #: The synchronizer used for collection writes.
     synchronizer: sync.Sync
 
     def __post_init__(self) -> None:
@@ -286,7 +286,7 @@ class BaseCollection(abc.ABC):
     @property
     @abc.abstractmethod
     def fs(self) -> fsspec.AbstractFileSystem:
-        """The filesystem holding the partitions."""
+        """The file system storing the partitions."""
         ...
 
     @property
@@ -340,20 +340,20 @@ class BaseCollection(abc.ABC):
     @property
     @abc.abstractmethod
     def _partitions_dir(self) -> str:
-        """Directory of the partitions."""
+        """The base directory containing the collection's partitions."""
         ...
 
     def _relative_path(self, path: str) -> str:
-        """Return the path of a partition relative to the directory of the
-        partitions."""
+        """Return a partition path relative to the collection's base
+        directory."""
         return pathlib.PurePosixPath(path).relative_to(
             self._partitions_dir).as_posix()
 
     def _overlap_pool(self, partitions: Iterable[str]) -> tuple[str, ...]:
         """Return the partitions among which the overlap windows are formed.
 
-        The pool holds every partition of the collection or the view,
-        selected for processing or not.
+        The pool includes all partitions of the collection or view,
+        including those not selected for processing.
 
         Args:
             partitions: The partitions selected for processing.
@@ -374,11 +374,11 @@ class BaseCollection(abc.ABC):
         """Return the variables of the collection.
 
         Args:
-            selected_variables: The variables to return. If None, all the
-                variables are returned.
+            selected_variables: Variables to return. If ``None``, return all
+                variables.
 
         Returns:
-            The variables of the collection.
+            The collection variables.
         """
         return dataset.get_dataset_variable_properties(self.metadata,
                                                        selected_variables)
@@ -432,37 +432,35 @@ class BaseCollection(abc.ABC):
         selected_variables: Iterable[str] | None = None,
         **kwargs,
     ) -> dask.bag.core.Bag:
-        """Map a function over the partitions of the collection.
+        """Apply a function to each selected partition.
 
         Args:
-            func: The function to apply to every partition of the collection.
+            func: The function to apply to each partition.
             *args: The positional arguments to pass to the function.
-            delayed: Whether to load the data lazily or not.
-            filters: The predicate used to filter the partitions to process.
-                To get more information on the predicate, see the
-                documentation of the :meth:`partitions` method.
-            selected_partitions: The paths of the partitions to select, relative
-                to the collection or the view.
+            delayed: Whether to load variables lazily.
+            filters: Predicate selecting partitions to process.
+                See :meth:`partitions`.
+            selected_partitions: Paths to select, relative to the collection
+                or view.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
-            selected_variables: A list of variables to retain from the
-                collection. If None, all variables are kept.
+            selected_variables: Variables to load. If ``None``, load
+                all variables.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
-            A bag holding, for each partition, the tuple of its scheme and
-            the result of the function. A partition the store no longer
-            holds is left out.
+            A Dask bag of partition keys and function results. Partitions
+            missing from storage are excluded.
 
         Raises:
-            TypeError: If func is not callable.
+            TypeError: If ``func`` is not callable.
 
         Notes:
-            Exceptions raised by the callback are propagated. A callback
-            declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
-            identifying the current partition and its slice within the overlap window.
-            See :doc:`/computing` for input selection, callback arguments and
-            execution choices.
+            Callback exceptions propagate. A callback declaring
+            ``partition_info`` receives a :class:`zcollection.PartitionInfo`
+            identifying the partition and its slice in the overlap
+            window. See :doc:`/computing` for input selection,
+            callback arguments, and execution options.
 
         Example:
             For a collection with ``var1`` and ``var2`` on the same dimensions,
@@ -501,42 +499,39 @@ class BaseCollection(abc.ABC):
         selected_variables: Iterable[str] | None = None,
         **kwargs,
     ) -> dask.bag.core.Bag:
-        """Map a function over the partitions of the collection with some
-        overlap.
+        """Apply a function to each partition with neighboring data.
 
         Args:
-            func: The function to apply to every partition of the collection.
+            func: The function to apply to each selected partition.
             *args: The positional arguments to pass to the function.
-            delayed: Whether to load the data lazily or not.
-            depth: The depth of the overlap between the partitions. Defaults
-                to 1. The neighbors are loaded whether ``filters`` and
-                ``selected_partitions`` select them or not.
-            filters: The predicate used to filter the partitions to process.
-                To get more information on the predicate, see the
-                documentation of the :meth:`partitions` method.
-            selected_partitions: The paths of the partitions to select, relative
-                to the collection or the view.
+            delayed: Whether to load variables lazily.
+            depth: Number of neighboring partitions to load on each side.
+                Defaults to 1. Neighbors are loaded even when excluded by
+                ``filters`` or ``selected_partitions``.
+            filters: Predicate selecting partitions to process.
+                See :meth:`partitions`.
+            selected_partitions: Paths to select, relative to the collection
+                or view.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
-            selected_variables: A list of variables to retain from the
-                collection. If None, all variables are kept.
+            selected_variables: Variables to load. If ``None``, load
+                all variables.
             **kwargs: The keyword arguments to pass to the function.
 
         Returns:
-            A bag holding, for each partition, the tuple of its scheme and
-            the result of the function. A partition the store no longer
-            holds is left out.
+            A Dask bag of partition keys and function results. Partitions
+            missing from storage are excluded.
 
         Raises:
-            TypeError: If func is not callable.
-            ValueError: If depth is negative.
+            TypeError: If ``func`` is not callable.
+            ValueError: If ``depth`` is negative.
 
         Notes:
-            Exceptions raised by the callback are propagated. A callback
-            declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
-            identifying the current partition and its slice within the overlap window.
-            See :doc:`/computing` for input selection, callback arguments and
-            execution choices.
+            Callback exceptions propagate. A callback declaring
+            ``partition_info`` receives a :class:`zcollection.PartitionInfo`
+            identifying the partition and its slice in the overlap
+            window. See :doc:`/computing` for input selection,
+            callback arguments, and execution options.
 
         Example:
             For a collection with ``var1`` and ``var2`` on the same dimensions,
@@ -569,14 +564,14 @@ class BaseCollection(abc.ABC):
         partition: Sequence[str],
         expr: Callable[[dict[str, int]], bool] | None,
     ) -> bool:
-        """Return whether the partition is selected.
+        """Check whether a partition matches the selection.
 
         Args:
             partition: The partition to check.
             expr: The expression used to filter the partition.
 
         Returns:
-            Whether the partition is selected.
+            ``True`` if the partition matches, otherwise ``False``.
         """
         return True if expr is None else expr(
             dict(self.partitioning.parse('/'.join(partition))))
@@ -586,7 +581,7 @@ class WritableCollection(BaseCollection):
     """Share partition updates and index reconstruction."""
 
     _index: PartitionIndex
-    #: The task removing the array of a variable from a partition.
+    #: Task that removes a variable array from a partition.
     _DROP_ARRAY: ClassVar[Callable[..., Any]]
 
     @abc.abstractmethod
@@ -596,14 +591,13 @@ class WritableCollection(BaseCollection):
 
     @contextlib.contextmanager
     def _changing_schema(self) -> Iterator[meta.DatasetSchema]:
-        """Write the configuration once the ``with`` block has changed the
-        schema.
+        """Write the configuration after a ``with`` block changes the schema.
 
-        If the block or `_write_config` raises, the schema gets back the
-        variables it had before the block.
+        If the block or ``_write_config`` raises, the schema's variable
+        declarations are restored to their state before the block.
 
         Yields:
-            The schema to change.
+            The schema to modify.
         """
         before = dict(self.metadata.variables)
         try:
@@ -639,7 +633,7 @@ class WritableCollection(BaseCollection):
     @staticmethod
     def _client_for(paths: Sequence[str], *, distributed: bool,
                     npartitions: int | None) -> dask.distributed.Client | None:
-        """Return the Dask client processing `paths`, or ``None``.
+        """Return the Dask client processing ``paths``, or ``None``.
 
         Args:
             paths: The partitions to process.
@@ -648,7 +642,7 @@ class WritableCollection(BaseCollection):
                 same time.
 
         Raises:
-            ValueError: If `paths` is not empty and `npartitions` is below
+            ValueError: If ``paths`` is not empty and `npartitions` is below
                 one.
         """
         if not paths:
@@ -659,8 +653,9 @@ class WritableCollection(BaseCollection):
     def _drop_arrays(self, name: str, paths: Sequence[str], *,
                      client: dask.distributed.Client | None,
                      npartitions: int | None, stop_on_error: bool) -> None:
-        """Remove the array of a variable from partitions. The caller holds
-        the lock.
+        """Remove a variable array from the selected partitions.
+
+        The caller holds the lock.
 
         Args:
             name: The name of the variable.
@@ -685,8 +680,9 @@ class WritableCollection(BaseCollection):
     def _undo_addition(self, name: str, paths: Sequence[str], *,
                        client: dask.distributed.Client | None,
                        npartitions: int | None, error: BaseException) -> None:
-        """Undo the addition of a variable after `error`. The caller holds
-        the lock.
+        """Undo a failed variable addition.
+
+        The caller holds the lock.
 
         Args:
             name: The name of the variable.
@@ -694,8 +690,7 @@ class WritableCollection(BaseCollection):
             client: The Dask client, or ``None``.
             npartitions: The largest number of partitions processed at the
                 same time.
-            error: The error of the addition. It receives a note if the undo
-                fails.
+            error: The original error. A note is added if cleanup fails.
         """
         try:
             self._drop_arrays(name,
@@ -736,7 +731,8 @@ class WritableCollection(BaseCollection):
         func_args: tuple[Any, ...],
         func_kwargs: dict[str, Any],
     ) -> WrappedPartitionCallable | None:
-        """Validate output variables and prepare the partition update function."""
+        """Validate output variables and prepare the partition update
+        function."""
         ...
 
     def _update(  # noqa: PLR0913
@@ -814,14 +810,14 @@ class WritableCollection(BaseCollection):
 
     def _variables_to_update(self, zds: dataset.Dataset,
                              align_on: str) -> tuple[str, ...]:
-        """Check the dataset given to :meth:`update_from`.
+        """Validate the input dataset for :meth:`update_from`.
 
         Args:
-            zds: Dataset to update from.
+            zds: Dataset containing the new values.
             align_on: Variable identifying the rows of a partition.
 
         Returns:
-            Names of the variables to update.
+            The names of the variables to update.
 
         Raises:
             ValueError: If `align_on` cannot identify the rows, or the dataset
@@ -870,19 +866,18 @@ class WritableCollection(BaseCollection):
                     npartitions: int | None = None,
                     distributed: bool = True,
                     stop_on_error: bool = True) -> tuple[str, ...]:
-        """Write the variables of a dataset into existing partitions.
+        """Update existing partitions using values from a dataset.
 
-        Each row of the dataset is written to the row of its partition that
-        has the same value of `align_on`. The other rows and variables keep
-        their values.
+        Each input row updates the stored row with the same value of
+        ``align_on``. All other rows and variables remain unchanged.
 
-        The dataset is checked before anything is written: it must contain
-        `align_on` and the partitioning variables, the schema must declare
-        each other variable along the partitioned dimension with the
-        dimensions it has in the dataset, and each row must fall in an
-        existing partition. Each partition is then matched and written on its
-        own: a partition with an unmatched row or a repeated value of
-        `align_on` keeps its values and is reported as failed.
+        The input dataset is validated before writing begins. It must contain
+        ``align_on`` and the partitioning variables. All variables to update
+        must be declared in the schema with matching dimensions that span
+        the partitioned dimension, and every row must belong to an existing
+        partition. Rows are then matched within each partition. A partition
+        with unmatched rows or duplicate ``align_on`` values is left
+        unchanged and reported as failed.
 
         Args:
             zds: Dataset containing the partitioning variables, `align_on`
@@ -951,14 +946,14 @@ class WritableCollection(BaseCollection):
 
     @staticmethod
     def _unsupported_operation(*args, **kwargs) -> NoReturn:
-        """Refuse a call that writes."""
+        """Reject an operation that modifies the collection."""
         raise io.UnsupportedOperation('not writable')
 
     def _refuse_writes(self, methods: Iterable[str]) -> None:
         """Bind each named method to :meth:`_unsupported_operation`.
 
         Args:
-            methods: The name of each method that writes.
+            methods: Names of methods that modify the collection.
         """
         for item in methods:
             assert hasattr(self, item), f'{item} is not a known method.'
@@ -977,15 +972,13 @@ class WritableCollection(BaseCollection):
         npartitions: int | None = None,
         stop_on_error: bool = True,
     ) -> tuple[str, ...]:
-        """List the invalid partitions.
-
-        A partition is invalid when it cannot be read.
+        """List partitions that cannot be read.
 
         Args:
             filters: The predicate selecting the partitions to check. By
                 default, every partition is checked.
-            distributed: Whether to use dask or not. Default To True.
-            fix: Whether to repair the invalid partitions.
+            distributed: Whether to use Dask. Defaults to ``True``.
+            fix: Whether to repair invalid partitions.
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers.
             stop_on_error: If True, no partition starts after the first
@@ -993,8 +986,7 @@ class WritableCollection(BaseCollection):
                 finish. Defaults to True.
 
         Returns:
-            The path of each invalid partition, relative to the collection or
-            the view.
+            Paths of invalid partitions, relative to the collection or view.
         """
         ...
 
@@ -1014,8 +1006,7 @@ class WritableCollection(BaseCollection):
 
 
 class ReadOnlyCollection(BaseCollection):
-    """Collection base class, offering read-only access to a collection of
-    datasets.
+    """Base class providing read-only access to a collection.
 
     The arguments of the constructor are detailed in the documentation
     of :py:class:`~zcollection.collection.Collection`.
@@ -1044,7 +1035,7 @@ class ReadOnlyCollection(BaseCollection):
                     f'The partitioning key {varname!r} is not defined in '
                     'the dataset.')
 
-        # Working on a copy to fix the main dimension size.
+        # Work on a copy when setting the partitioned dimension size.
         main_dimension = ds.variables[axis].dimensions[0]
         ds = meta.DatasetSchema.from_config(data=ds.get_config())
         ds.dimensions[main_dimension].value = -1
@@ -1063,11 +1054,10 @@ class ReadOnlyCollection(BaseCollection):
                 fs_utils.normalize_path(self._settings.filesystem,
                                         partition_base_dir), main_dimension))
 
-        #: The path to the dataset that contains the immutable data relative
-        #: to the partitioning.
+        #: Path to the dataset storing immutable variables.
         self._immutable = _immutable_path(self._properties.partition)
 
-        #: The partitions the collection holds.
+        #: The collection's partition index.
         self._index = PartitionIndex(self._settings.filesystem,
                                      self._properties.partition.dir,
                                      partition_handler,
@@ -1078,13 +1068,12 @@ class ReadOnlyCollection(BaseCollection):
 
     @property
     def axis(self) -> str:
-        """Return the axis of the collection."""
+        """Return the name of the axis variable."""
         return self._properties.axis
 
     @property
     def dimension(self) -> str:
-        """Return the main dimension (dimension of the axis) of the
-        collection."""
+        """Return the partitioned dimension of the axis variable."""
         return self._properties.dimension
 
     @property
@@ -1104,12 +1093,12 @@ class ReadOnlyCollection(BaseCollection):
 
     @property
     def mode(self) -> Literal['r', 'w']:
-        """Return the mode of the collection."""
+        """Return the collection access mode."""
         return self._settings.mode
 
     @property
     def fs(self) -> fsspec.AbstractFileSystem:
-        """Return the filesystem of the collection."""
+        """Return the collection file system."""
         return self._settings.filesystem
 
     @property
@@ -1119,13 +1108,12 @@ class ReadOnlyCollection(BaseCollection):
 
     @property
     def immutable_path(self) -> str:
-        """Return the immutable path of the collection."""
+        """Return the path to the collection's immutable variables."""
         return self._immutable
 
     @property
     def have_immutable(self) -> bool:
-        """Return True if the collection contains immutable data relative to
-        the partitioning."""
+        """Return ``True`` if the collection has immutable variables."""
         return len(self.immutable_variables) > 0
 
     @property
@@ -1140,7 +1128,7 @@ class ReadOnlyCollection(BaseCollection):
         return fs_utils.join_path(partition_base_dir, cls.CONFIG)
 
     def _indexed_partitions(self) -> tuple[str, ...]:
-        """Return the path of each partition the index names.
+        """Return the paths of the partitions listed in the index.
 
         Returns:
             The paths, ordered by the values of their keys.
@@ -1156,16 +1144,19 @@ class ReadOnlyCollection(BaseCollection):
 
     def _normalize_partitions(self,
                               partitions: Iterable[str]) -> Iterable[str]:
-        """Normalize the provided list of partitions to include the full
-        partition's path.
+        """Normalize and sort selected partition paths.
+
+        Prefix relative paths with the collection's base directory,
+        remove duplicates, and retain existing partitions only.
 
         Args:
-            partitions: The list of partitions to normalize.
+            partitions: Partition paths to normalize.
 
         Returns:
-            The list of partitions.
+            Absolute partition paths, without duplicates and ordered
+            by their partition keys.
         """
-        # Partitions have to be parsed in order to be correctly sorted
+        # Parse partition keys before sorting them.
         partitions_scheme = sorted(
             {self.partitioning.parse(item)
              for item in partitions})
@@ -1183,11 +1174,10 @@ class ReadOnlyCollection(BaseCollection):
         return existing
 
     def dimensions_properties(self) -> tuple[dict[str, int], dict[str, int]]:
-        """Extract dimension properties (size and chunks).
+        """Return the sizes and chunk sizes of the collection dimensions.
 
         Returns:
-            A tuple of dictionaries containing the dimensions associated
-            to their size and the dimensions associated to their chunks.
+            A pair of mappings from dimension names to sizes and chunk sizes.
         """
         chunks: dict[str, int] = {}
         dimensions: dict[str, int] = {}
@@ -1209,33 +1199,31 @@ class ReadOnlyCollection(BaseCollection):
         relative: bool = False,
         lock: bool = False,
     ) -> Iterator[str]:
-        """List the partitions of the collection.
+        """List the collection's partitions, optionally selecting a subset.
 
         Args:
-            filters: The predicate used to filter the partitions to load. If
-                the predicate is a string, it is a valid python expression to
-                filter the partitions, using the partitioning scheme as
-                variables. If the predicate is a function, it is a function that
-                takes the partition scheme as input and returns a boolean.
-            indexer: The indexer to apply.
-            selected_partitions: The paths of the partitions to select, relative
-                to the collection.
-            relative: Whether to return the relative path.
-            lock: Whether to lock the collection or not to avoid listing
-                partitions while the collection is being modified.
+            filters: Expression or callable selecting partitions by their
+                keys. A string contains a Python expression using the
+                partition key names; a callable takes the keys and returns
+                a boolean.
+            indexer: Indexer used to select partitions.
+            selected_partitions: Partition paths relative to the collection.
+            relative: Whether to return relative paths. Defaults to
+                ``False`` (absolute paths).
+            lock: Whether to lock the collection while listing partitions.
 
         Returns:
-            The partitions, ordered by the values of their keys. The values
-            are the ones the partitioning parses, so ``cycle=2`` is listed
-            before ``cycle=10``.
+            Partition paths ordered by the values of their keys, rather
+            than lexicographically (``cycle=2`` precedes ``cycle=10``).
 
         Example:
             >>> tuple(collection.partitions(
-            ...     filters="year == 2019 and month == 1"))
-            ('year=2019/month=01/day=01', 'year=2019/month=01/day=02/', ...)
+            ...     filters="year == 2019 and month == 1", relative=True))
+            ('year=2019/month=01/day=01', 'year=2019/month=01/day=02', ...)
             >>> tuple(collection.partitions(
-            ...     filters=lambda x: x["year"] == 2019 and x["month"] == 1))
-            ('year=2019/month=01/day=01', 'year=2019/month=01/day=02/', ...)
+            ...     filters=lambda x: x["year"] == 2019 and x["month"] == 1,
+            ...     relative=True))
+            ('year=2019/month=01/day=01', 'year=2019/month=01/day=02', ...)
         """
         if isinstance(filters, str):
             expr: Any = expression.Expression(filters)
@@ -1255,7 +1243,7 @@ class ReadOnlyCollection(BaseCollection):
             partitions = self._indexed_partitions()
 
         if indexer is not None:
-            # List of partitions existing in the indexer and partitions list
+            # Retain partitions present in both lists.
             partitions = list(partitions)
             partitions = [
                 p for p in list_partitions_from_indexer(
@@ -1307,33 +1295,30 @@ class ReadOnlyCollection(BaseCollection):
         selected_partitions: Iterable[str] | None = None,
         distributed: bool = True,
     ) -> dataset.Dataset | None:
-        """Load collection's data, respecting filters, indexer, and selected
-        partitions constraints.
+        """Load collection data using partition and variable selections.
 
         Args:
-            delayed: Whether to load data in a dask array or not.
-                Default value is True if distributed is True, False otherwise.
-            filters: The predicate used to filter the partitions to load. To
-                get more information on the predicate, see the documentation of
-                the :meth:`partitions` method.
+            delayed: Whether to load variables lazily. Defaults to
+                ``distributed`` when unspecified: Dask arrays if ``True``,
+                NumPy arrays if ``False``.
+            filters: Predicate selecting partitions by key.
+                See :meth:`partitions`.
             indexer: The indexer to apply.
-            selected_variables: A list of variables to retain from the
-                collection. If None, all variables are kept.
-            selected_partitions: The paths of the partitions to select, relative
-                to the collection.
-            distributed: Whether to use dask or not. Default To True.
+            selected_variables: Variables to load. If ``None``, load
+                all variables.
+            selected_partitions: Partition paths to select, relative to
+                the collection.
+            distributed: Whether to use Dask. Defaults to ``True``.
 
         Returns:
-            The dataset containing the selected partitions. None when
-            ``filters``, ``indexer`` or ``selected_partitions`` name the
-            partitions to read and none of them is retained. A collection
-            whose partitions are not written yet reads as its immutable
-            variables alone.
+            A dataset containing the selected partitions, or ``None`` if an
+            explicit selection retains no partition data. With no
+            selection, a collection without written partitions can still
+            return its immutable variables.
 
         Warning:
-            If you select variables to load from the collection, do not insert
-            the returned dataset otherwise all skipped variables will be reset
-            with fill values.
+            Do not reinsert a dataset loaded with ``selected_variables``.
+            Omitted variables would be reset to their fill values.
 
         Example:
             >>> collection = ...
@@ -1385,16 +1370,16 @@ class ReadOnlyCollection(BaseCollection):
     def merge_immutable(self, ds: dataset.Dataset | None,
                         selected_variables: Iterable[str] | None,
                         delayed: bool) -> dataset.Dataset | None:
-        """Read and merge immutable variables to the provided dataset.
+        """Load immutable variables and add them to a dataset.
 
         Args:
-            ds: Dataset in which to merge immutable variables.
-            selected_variables: List of variables to read.
-            delayed: Whether to load data in a dask array or not.
+            ds: Dataset to extend with immutable variables.
+            selected_variables: Variables to read.
+            delayed: Whether to load variables lazily.
 
         Returns:
-            The merged dataset or None if the provided dataset was
-            None and no immutable variables were read.
+            The dataset including immutable variables, or ``None`` if no
+            dataset was provided and no immutable variables were loaded.
         """
         var_im = self.immutable_variables
 
@@ -1424,24 +1409,21 @@ class ReadOnlyCollection(BaseCollection):
         selected_partitions: Iterable[str] | None = None,
         distributed: bool = True,
     ) -> list[dataset.Dataset] | None:
-        """Load collection's partitions, respecting filters, and selected
-        partitions constraints.
+        """Load partitions selected by filters or explicit paths.
 
         Args:
-            delayed: Whether to load data in a dask array or not.
-            filters: The predicate used to filter the partitions to load. To
-                get more information on the predicate, see the documentation of
-                the :meth:`partitions` method.
-            selected_variables: A list of variables to retain from the
-                collection. If None, all variables are kept.
-            selected_partitions: The paths of the partitions to select, relative
-                to the collection.
-            distributed: Whether to use dask or not. Default To True.
+            delayed: Whether to load variables lazily.
+            filters: Predicate selecting partitions by key.
+                See :meth:`partitions`.
+            selected_variables: Variables to load. If ``None``, load
+                all variables.
+            selected_partitions: Partition paths to select, relative to
+                the collection.
+            distributed: Whether to use Dask. Defaults to ``True``.
 
         Returns:
-            The list of dataset for each partition, or None when the
-            selection retains none, or when the store holds none of the
-            ones it retains.
+            The partition datasets, or ``None`` if no selected partitions
+            are available in storage.
         """
         # No indexer, so the dataset is loaded directly for each
         # selected partition.
@@ -1484,28 +1466,24 @@ class ReadOnlyCollection(BaseCollection):
         selected_partitions: Iterable[str] | None = None,
         distributed: bool = True,
     ) -> list[dataset.Dataset] | None:
-        """Load collection's partitions, respecting filters, indexer, and
-        selected partitions constraints.
+        """Load selected partitions using an indexer.
 
         Args:
             indexer: The indexer to apply.
-            delayed: Whether to load data in a dask array or not.
-            filters: The predicate used to filter the partitions to load. To
-                get more information on the predicate, see the documentation of
-                the :meth:`partitions` method.
-            selected_variables: A list of variables to retain from the
-                collection. If None, all variables are kept.
-            selected_partitions: The paths of the partitions to select, relative
-                to the collection.
-            distributed: Whether to use dask or not. Default To True.
+            delayed: Whether to load variables lazily.
+            filters: Predicate selecting partitions by key.
+                See :meth:`partitions`.
+            selected_variables: Variables to load. If ``None``, load
+                all variables.
+            selected_partitions: Partition paths to select, relative to
+                the collection.
+            distributed: Whether to use Dask. Defaults to ``True``.
 
         Returns:
-            The list of dataset for each partition, or None when the
-            selection retains none, or when the store holds none of the
-            ones it retains.
+            The partition datasets, or ``None`` if no selected partitions
+            are available in storage.
         """
-        # We're going to reuse the indexer variable, so ensure it is
-        # an iterable not a generator.
+        # Materialize the indexer results so they can be reused.
         indexer = tuple(indexer)
 
         # Build the indexer arguments.
@@ -1517,7 +1495,7 @@ class ReadOnlyCollection(BaseCollection):
         if len(args) == 0:
             return None
 
-        # Finally, load the selected partitions and apply the indexer.
+        # Load the selected partitions and apply the indexer.
         if distributed:
             client = dask_utils.get_client()
             bag = dask.bag.core.from_sequence(
@@ -1552,7 +1530,7 @@ class ReadOnlyCollection(BaseCollection):
         filters: PartitionFilter | None = None,
         **kwargs,
     ) -> dask.bag.core.Bag:
-        """Return a dask bag from the partitions.
+        """Create a Dask bag from selected partitions.
 
         Args:
             filters: The predicate used to filter the partitions to load.
@@ -1560,17 +1538,17 @@ class ReadOnlyCollection(BaseCollection):
                 :meth:`partitions`.
 
         Returns:
-            The dask bag.
+            The Dask bag.
         """
         partitions: list[str] = [*self.partitions(filters=filters, **kwargs)]
         return dask.bag.core.from_sequence(partitions,
                                            npartitions=len(partitions))
 
     def iterate_on_records(self) -> Iterator[tuple[str, str]]:
-        """Iterate over the relative and absolute partitions' path.
+        """Iterate over partition paths in relative and absolute forms.
 
-        Returns     The iterator over the relative and absolute
-        partitions' path.
+        Yields:
+            The relative and absolute path of each partition.
         """
         yield from ((self._relative_path(item), item)
                     for item in self.partitions())

@@ -52,19 +52,19 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 #: Type of the function used to update a view.
 ViewUpdateCallable = WrappedPartitionCallable
 
-#: Name of the file that contains the checksum of the view.
+#: Name of the Zarr array storing the reference axis and its checksum.
 CHECKSUM_FILE = '.checksum'
 
-#: Name of the attribute that contains the checksum of the view.
+#: Name of the attribute storing the reference axis checksum.
 CHECKSUM_ATTR = 'checksum'
 
 
 @dataclasses.dataclass(frozen=True)
 class ViewReference:
-    """Properties of the collection used as reference by a view.
+    """Access properties of the reference collection of a view.
 
     Args:
-        path: Path to the collection.
+        path: Path to the reference collection.
         filesystem: The file system used to access the reference collection.
     """
     #: Path to the collection.
@@ -76,7 +76,7 @@ class ViewReference:
 
 @dataclasses.dataclass(frozen=True)
 class AxisReference:
-    """Properties of the axis used as reference by a view.
+    """Reference axis values and their checksum for a view.
 
     Args:
         array: Axis values.
@@ -101,19 +101,19 @@ def _create_zarr_array(args: tuple[str, str],
                        fs: fsspec.AbstractFileSystem,
                        reference_fs: fsspec.AbstractFileSystem,
                        invalidate_cache: bool = True) -> None:
-    """Create a Zarr array, with fill_value being used as the default value for
-    uninitialized portions of the array.
+    """Create a Zarr array initialized with the variable's fill value.
 
     Args:
-        args: tuple of (relative path, absolute path).
-        base_dir: Base directory for the Zarr array.
-        fs: The filesystem used to create the Zarr array.
-        reference_fs: The filesystem used to read the reference axis.
-        dimensions: Known dimensions and their size.
+        args: The path relative to the view and the corresponding
+            reference partition path.
+        base_dir: Base directory of the view.
+        fs: The file system on which to create the Zarr array.
+        reference_fs: The file system storing the reference axis.
+        dimensions: Known dimension sizes.
         variable: The properties of the variable to create.
-        axis: Axis containing the main dimension data and size.
-        invalidate_cache: If True, invalidate the cache of the directory
-            containing the Zarr array.
+        axis: Reference axis used to determine the partitioned size.
+        chunks: Chunk sizes for the new array.
+        invalidate_cache: Whether to invalidate the array directory cache.
     """
     partition, partition_ref = args
     dirname = join_path(base_dir, partition)
@@ -179,19 +179,19 @@ def _held_one_dataset(
     args: tuple[tuple[tuple[str, int], ...], list[slice]],
     **kwargs,
 ) -> tuple[dataset.Dataset, str] | None:
-    """Return what :func:`_load_one_dataset` reads, or nothing.
+    """Load a view partition, returning ``None`` if it is absent.
 
-    The partition is named by its keys here, while
-    :func:`zcollection.storage.skip_absent_partition` takes a path, so
-    the two do not share a wrapper.
+    This function identifies partitions by their keys;
+    :func:`zcollection.storage.skip_absent_partition` expects paths,
+    so its wrapper cannot be used here.
 
     Args:
-        args: Tuple containing the partition's keys and its indexer.
+        args: The partition keys and indexer.
         **kwargs: The arguments of :func:`_load_one_dataset`.
 
     Returns:
-        The dataset and the partition's path, or ``None`` if a required
-        partition is absent. A warning identifies the absent partition.
+        The dataset and partition path, or ``None`` if a required
+        partition is absent. Its absence is logged as a warning.
     """
     try:
         return _load_one_dataset(args, **kwargs)
@@ -211,18 +211,16 @@ def _load_one_dataset(
     variables: Iterable[str],
     with_immutable: bool = False,
 ) -> tuple[dataset.Dataset, str]:
-    """Load a dataset from a partition stored in the reference collection and
-    merge it with the variables defined in this view.
+    """Load a reference partition and merge in the variables of the view.
 
     Args:
-        args: tuple containing the partition's keys and its indexer.
+        args: The partition keys and indexer.
         base_dir: Base directory of the view.
         delayed: If True, load the dataset lazily.
         fs: The file system used to access the variables in the view.
-        selected_variables: The list of variable to retain from the view
-            reference.
-        view_ref: The view reference.
-        variables: The variables to retain from the view
+        selected_variables: Variables to retain from the reference collection.
+        view_ref: Access information for the reference collection.
+        variables: Variables to retain from the view.
         with_immutable: Whether to include immutable variables or not.
 
     Returns:
@@ -243,7 +241,7 @@ def _load_one_dataset(
         delayed=delayed,
         selected_variables=selected_variables)
 
-    # Filling missing dimensions
+    # Add missing dimensions.
     mds = view_ref.metadata
     missing_dimensions = set(
         mds.dimensions) - {*zds.dimensions, view_ref.dimension}
@@ -266,7 +264,7 @@ def _load_one_dataset(
 
     zds = dataset.Dataset(data, attrs=zds.attrs, delayed=zds.delayed)
 
-    # Adding immutable variables
+    # Add immutable variables.
     if with_immutable and view_ref.have_immutable:
         zds.merge(
             open_zarr_group(view_ref.immutable_path,
@@ -288,12 +286,16 @@ def _load_one_dataset(
 
 def _assert_variable_handled(reference: meta.DatasetSchema,
                              view: meta.DatasetSchema, variable: str) -> None:
-    """Assert that a variable belongs to a view.
+    """Check that a variable is defined by the view, not its reference.
 
     Args:
         reference: The reference dataset.
         view: The view dataset.
         variable: The variable to check.
+
+    Raises:
+        ValueError: If the variable belongs to the reference collection
+            or is not defined by the view.
     """
     if variable in reference.variables:
         raise ValueError(f'Variable {variable} is read-only')
@@ -325,10 +327,13 @@ def _load_dataset(
 
 
 def _assert_have_variables(metadata: meta.DatasetSchema) -> None:
-    """Assert that the current view has variables.
+    """Check that the view defines at least one variable.
 
     Args:
-        metadata: The metadata of the dataset.
+        metadata: The view schema.
+
+    Raises:
+        ValueError: If the view defines no variables.
     """
     if not metadata.variables:
         raise ValueError('The view has no variables')
@@ -346,7 +351,7 @@ def _load_dataset_with_overlap(
     selected_variables: Iterable[str] | None,
     view_ref: collection.Collection,
 ) -> tuple[dataset.Dataset, slice]:
-    """Load a partition of a view and the neighbors the depth selects.
+    """Load a view partition and the neighbors selected by ``depth``.
 
     Args:
         base_dir: Base directory of the view.
@@ -360,8 +365,8 @@ def _load_dataset_with_overlap(
         view_ref: The view reference.
 
     Returns:
-        The concatenated datasets and the slice holding the partition in
-        them.
+        The concatenated dataset and the slice locating the selected
+        partition within it.
     """
     where: int = partitions.index(partition)
     selected: list[str] = [
@@ -413,15 +418,14 @@ def _load_dataset_with_overlap(
 
 def _calculate_axis_reference(
         path: str, view_ref: collection.Collection) -> AxisReference:
-    """Compute the axis reference of a partition (checksum, array and dimension
-    name).
+    """Read the reference axis of a partition and calculate its checksum.
 
     Args:
         path: The path of the partition.
         view_ref: The view reference.
 
     Returns:
-        The axis reference of the partition.
+        The axis values, their dimension name and SHA-256 checksum.
     """
     group: zarr.Group = store.open_group(view_ref.fs, path)
     array = cast('zarr.Array', group[view_ref.axis])
@@ -435,12 +439,12 @@ def _write_checksum_array(
     fs: fsspec.AbstractFileSystem,
     axis_ref: AxisReference,
 ) -> None:
-    """Write the checksum of a partition to a file.
+    """Store the reference axis and its checksum in the view partition.
 
     Args:
         partition: The path of the partition.
         fs: The file system used to access the variables in the view.
-        axis_ref: The axis reference of the partition.
+        axis_ref: The reference axis values and their checksum.
     """
     array: zarr.Array
     checksum_path = join_path(partition, CHECKSUM_FILE)
@@ -461,14 +465,15 @@ def _load_checksum_array(
     partition: str,
     fs: fsspec.AbstractFileSystem,
 ) -> zarr.Array:
-    """Load the checksum of a partition from a file.
+    """Open the checksum array of a view partition.
 
     Args:
         partition: The path of the partition.
         fs: The file system used to access the variables in the view.
 
     Returns:
-        The checksum of the partition and the axis of the reference partition.
+        The Zarr array containing the reference axis values and their
+        checksum attribute.
     """
     return store.open_array(fs, join_path(partition, CHECKSUM_FILE))
 
@@ -479,7 +484,7 @@ def _write_checksum(
     view_ref: collection.Collection,
     fs: fsspec.AbstractFileSystem,
 ) -> None:
-    """Write the checksum of a partition to a file.
+    """Write the reference axis checksum for a view partition.
 
     Args:
         partition: The path of the partition.
@@ -500,10 +505,10 @@ def _sync_partition(
     fs: fsspec.AbstractFileSystem,
     view_ref: collection.Collection,
 ) -> None:
-    """Sync a partition: create the partition and the underlying variables.
+    """Create a view partition, its variable arrays and its checksum.
 
     Args:
-        metadata: The dataset to sync.
+        metadata: The schema of the view variables.
         partition: The partition to sync.
         base_dir: The base directory of the view.
         fs: The file system used to access the variables in the view.
@@ -540,9 +545,9 @@ def _extend_partition(
     fs: fsspec.AbstractFileSystem,
     axis_ref: AxisReference,
 ) -> None:
-    """Resize each array of a partition carrying the reference axis.
+    """Extend the arrays along the reference axis of a view partition.
 
-    The checksum array of the partition is written again.
+    The checksum array is also rewritten.
 
     Args:
         partition: The partition to extend.
@@ -563,8 +568,8 @@ def _extend_partition(
                 shape[axis] = new_size
                 array.resize(shape)
         _write_checksum_array(partition, fs, axis_ref)
-        # fs.invalidate_cache(partition) is not done by
-        # _write_checksum_array
+        # _write_checksum_array invalidates the checksum array's cache,
+        # not the cache of the partition directory.
     except Exception as exc:
         fs.rm(partition, recursive=True)
         fs.invalidate_cache(partition)
@@ -579,12 +584,11 @@ def _check_partition(
     view_ref: collection.Collection,
     metadata: meta.DatasetSchema,
 ) -> Skipped | None:
-    """Check a partition of a view. Return SKIPPED if it is valid, None
-    otherwise.
+    """Check a view partition, returning SKIPPED if valid or None otherwise.
 
     A partition is valid when the reference collection still has it, it
-    holds the array of every variable the view declares and the checksum
-    array, and each of those arrays can be read.
+    contains an array for each declared variable and the checksum array,
+    and all these arrays can be read.
 
     Args:
         partition: The partition to check, relative to the view.
@@ -651,8 +655,9 @@ def _sync(
     metadata: meta.DatasetSchema,
     dry_run: bool = False,
 ) -> Skipped | None:
-    """Synchronize a partition of a view with the reference collection,
-    skipping a partition already synchronized.
+    """Synchronize a view partition with its reference collection.
+
+    Partitions already synchronized are skipped.
 
     Args:
         partition: The partition, relative to the view.
@@ -682,7 +687,6 @@ def _sync(
         axis_view = numpy.asarray(array[:])
         if axis_ref.array.size > axis_view.size and numpy.all(
                 axis_view == axis_ref.array[:axis_view.size]):
-            # The cache is invalidated by _extend_partition.
             if not dry_run:
                 _extend_partition(partition_view, fs, axis_ref)
             return None
@@ -700,8 +704,12 @@ def _serialize_filters(filters: collection.PartitionFilter, ) -> str:
     Args:
         filters: The partition filter to serialize.
 
+    Warns:
+        UserWarning: If the filter cannot be serialized.
+
     Returns:
-        The serialized partition filter.
+        The Base64-encoded pickle of the filter, or of ``None`` if
+        serialization fails.
     """
     stream = io.BytesIO()
     try:
@@ -722,7 +730,8 @@ def _deserialize_filters(filters: str) -> collection.PartitionFilter:
         filters: The partition filter to deserialize.
 
     Returns:
-        The deserialized partition filter.
+        The deserialized filter, or ``None`` if unpickling raises
+        ``pickle.UnpicklingError``.
     """
     stream = io.BytesIO(base64.b64decode(filters.encode('utf-8')))
     try:

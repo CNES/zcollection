@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Test of the time periods.
-=========================
+Time period tests
+=================
 """
 import datetime
 import pickle
@@ -141,12 +141,12 @@ def test_relation() -> None:
 
 
 def test_zero_length_period() -> None:
-    """Test the zero length period."""
+    """Test zero-length periods."""
     zero_len = Period.from_duration(_datetime(3), _timedelta(0))
     assert _period(1, 1) == Period.from_duration(_datetime(1), _timedelta(0))
     assert _period(3, 3) == zero_len
 
-    # zero_length period always returns false for is_before & is_after
+    # A zero-length period is neither before nor after any point.
     assert not zero_len.is_before(_datetime(5))
     assert not zero_len.is_after(_datetime(5))
     assert not zero_len.is_before(_datetime(-5))
@@ -154,7 +154,7 @@ def test_zero_length_period() -> None:
 
     assert zero_len.is_null()
     assert not zero_len.contains(_datetime(20))
-    # a null_period cannot contain any points
+    # A null period contains no points.
     assert not zero_len.contains(_datetime(3))
     assert not zero_len.contains(_period(5, 8))
 
@@ -170,7 +170,7 @@ def test_zero_length_period() -> None:
 
 
 def test_invalid_period() -> None:
-    """Test the invalid period."""
+    """Test an invalid period."""
     null_per = _period(5, 1)
 
     assert not null_per.is_before(_datetime(7))
@@ -419,6 +419,6 @@ def test_pickle() -> None:
 
 
 def test_invalid_type() -> None:
-    """Test invalid type."""
+    """Test invalid period types."""
     with pytest.raises(ValueError, match='dtype is not a time duration'):
         Period(numpy.int64(1), numpy.int64(2))  # type: ignore[arg-type]

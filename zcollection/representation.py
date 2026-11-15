@@ -17,29 +17,26 @@ if TYPE_CHECKING:
 
 
 def dimensions(dims: dict[str, int]) -> str:
-    """Returns a string representation of the dimensions.
+    """Format dataset dimensions as a string.
 
     Args:
-        dims: A dictionary containing the dimensions.
+        dims: A mapping of dimension names to sizes.
 
     Returns:
-        A string representation of the dimensions in the form of a tuple, where
-        each element of the tuple is a string containing the dimension name and
-        its corresponding value.
+        A string containing the dimension names and sizes as a tuple.
     """
     return str(tuple(f'{name}: {value}' for name, value in dims.items()))
 
 
 def _maybe_truncate(obj: Any, max_size: int) -> str:
-    """Truncate the string representation of an object to the given length.
+    """Return an object's string representation, truncated if needed.
 
     Args:
-        obj: An object.
-        max_size: The maximum length of the string representation.
+        obj: The object to format.
+        max_size: The maximum length.
 
     Returns:
-        The string representation of the object, truncated to the given length
-        if necessary.
+        The string representation, limited to ``max_size`` characters.
     """
     result = str(obj)
     if len(result) > max_size:
@@ -48,44 +45,40 @@ def _maybe_truncate(obj: Any, max_size: int) -> str:
 
 
 def pretty_print(obj: Any, num_characters: int = 120) -> str:
-    """Return a pretty printed string representation of the given object.
+    """Format an object as a fixed-width string.
 
     Args:
-        obj:
-            An object to be pretty printed.
-        num_characters:
-            An integer representing the maximum number of
-            characters per line.
+        obj: The object to format.
+        num_characters: The maximum width of the string.
 
     Returns:
-        A string representation of the object, pretty printed with a maximum of
-        `num_characters` characters per line.
+        The formatted string, truncated or padded to the specified width.
     """
     result: str = _maybe_truncate(obj, num_characters)
     return result + ' ' * max(num_characters - len(result), 0)
 
 
 def calculate_column_width(items: Iterable) -> int:
-    """Calculate the maximum width of a column.
+    """Calculate the width needed for a column.
 
     Args:
-        items: An iterable of items.
+        items: The items to measure.
 
     Returns:
-        The maximum width of a column.
+        The maximum item width, with a minimum of seven characters.
     """
     max_name: int = max(len(str(name)) for name in items)
     return max(max_name, 7)
 
 
 def attributes(attrs: Sequence[Attribute]) -> Iterator[str]:
-    """Get the string representation of the attributes.
+    """Format dataset attributes as strings.
 
     Args:
-        attrs: The attributes.
+        attrs: The attributes to format.
 
-    Returns:
-        The string representation of the attributes.
+    Yields:
+        A string representation of each attribute.
     """
     width: int = calculate_column_width(item.name for item in attrs)
     for attr in attrs:

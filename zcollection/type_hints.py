@@ -3,29 +3,29 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Type hints for the zcollection package.
-=======================================
+Type hints for ZCollection
+==========================
 
 .. rubric:: Type aliases
 
 .. py:data:: DType
     :canonical: DType
 
-    Type of a numpy array.
+    NumPy data type (``numpy.dtype``).
 
 .. py:data:: DTypeLike
     :canonical: DTypeLike
 
-    Type of a numpy array or a string.
+    A value accepted as a NumPy data type specification.
 
 .. py:data:: NDArray
     :canonical: NDArray
 
-    Type of a numpy array.
+    NumPy array type.
 
 .. py:data:: NDMaskedArray
 
-    Type of a numpy array with a mask.
+    NumPy masked array type.
 """
 from __future__ import annotations
 
@@ -58,25 +58,25 @@ class ArrayLike(Protocol[_DType_co]):
     def dtype(self) -> DType:
         """The data type of the array."""
 
-        # Make checker happy.
+        # Required for static type checking.
         ...
 
     @property
     def shape(self) -> tuple[int, ...]:
         """The shape of the array."""
 
-        # Make checker happy.
+        # Required for static type checking.
         ...
 
     @property
     def size(self) -> int:
         """The size of the array."""
 
-        # Make checker happy.
+        # Required for static type checking.
         ...
 
     def astype(self, dtype: DTypeLike) -> ArrayLike[_DType_co]:
         """Convert the array to a given type."""
 
-        # Make checker happy.
+        # Required for static type checking.
         ...

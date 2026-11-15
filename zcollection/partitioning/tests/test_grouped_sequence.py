@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Test partitioning by grouped sequence.
-======================================
+Grouped sequence partitioning tests
+===================================
 """
 from __future__ import annotations
 
@@ -157,7 +157,7 @@ def test_config(variables, dtype, part_size) -> None:
 
 
 def test_pickle() -> None:
-    """Test the pickling of the GroupedSequence class."""
+    """Test pickling a GroupedSequence."""
     partitioning = GroupedSequence(variables=('a', 'b'),
                                    size=3,
                                    start=7,
@@ -268,7 +268,7 @@ def test_uint64_group_bounds_keep_their_precision(delayed) -> None:
 
 @pytest.mark.parametrize('start', [-10, 0, 10, 100])
 def test_splits(start):
-    """Test the _split method with different sets of parameters."""
+    """Test GroupedSequence._split with different configurations."""
     v1 = 'v1'
     v2 = 'v2'
 

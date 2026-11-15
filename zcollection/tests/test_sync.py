@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Testing the sync module.
-========================
+Synchronization tests
+=====================
 """
 import pickle
 
@@ -12,7 +12,7 @@ from .. import sync
 
 
 def test_no_sync():
-    """Test the no_sync class."""
+    """Test the ``sync.NoSync`` synchronizer."""
     touch = False
     with sync.NoSync() as _:
         touch = True

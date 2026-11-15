@@ -39,7 +39,7 @@ def record(item: int,
            track: str,
            fail: tuple[int, ...] = (),
            delay: float = 0.0) -> None:
-    """Fail on the items `fail`; otherwise sleep and record the call."""
+    """Fail for items in `fail`; otherwise sleep and record the call."""
     start = time.time()
     if item in fail:
         raise ValueError(f'item {item} failed')
@@ -62,7 +62,7 @@ def items(track: pathlib.Path) -> list[int]:
 
 
 def peak(calls: list[tuple[int, float, float]]) -> int:
-    """Return the largest number of calls running at the same time."""
+    """Return the maximum number of concurrent calls."""
     events = sorted([(start, 1)
                      for _, start, _ in calls] + [(stop, -1)
                                                   for _, _, stop in calls])
@@ -74,8 +74,7 @@ def peak(calls: list[tuple[int, float, float]]) -> int:
 
 
 def test_window_bounds_the_partitions_in_flight(client, tmp_path) -> None:
-    """At most `npartitions` partitions run at the same time, and one
-    without Dask."""
+    """At most `npartitions` partitions run concurrently (one without Dask)."""
     written = execution.run(functools.partial(record,
                                               track=str(tmp_path),
                                               delay=0.05),
@@ -141,8 +140,7 @@ def test_returns_once_the_tasks_in_flight_finish(
     release = tmp_path.parent / f'{tmp_path.name}.release'
 
     class ReleasingAsCompleted(dask.distributed.as_completed):
-        """Release the waiting tasks once run receives a finished
-        task."""
+        """Release waiting tasks when ``run`` receives a completed task."""
 
         def __next__(self):
             future = super().__next__()
@@ -187,7 +185,7 @@ def record_on_release(item: int,
                       track: str,
                       release: str,
                       fail: tuple[int, ...] = ()) -> None:
-    """Pass item zero to `record` at once, and the other items once the
+    """Pass item zero to `record` immediately and the other items once the
     release file exists."""
     if item:
         deadline = time.monotonic() + 30
@@ -238,7 +236,7 @@ def exit_on_one(item: int) -> None:
 
 
 def test_a_lost_worker_is_reported_on_its_partition() -> None:
-    """A partition whose worker dies is reported as failed."""
+    """When a worker dies, its partition is reported as failed."""
     with dask.config.set({'distributed.scheduler.allowed-failures': 0}):
         with dask.distributed.LocalCluster(n_workers=2,
                                            threads_per_worker=1,

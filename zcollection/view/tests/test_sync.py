@@ -2,7 +2,7 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""Synchronizing a view, and creating one."""
+"""Creating and synchronizing views."""
 from __future__ import annotations
 
 from unittest import mock
@@ -71,8 +71,9 @@ def test_a_failed_sync_reports_each_partition(
 
 def test_sync_records_its_filters_once_it_succeeds(
         local_fs, monkeypatch) -> None:  # noqa: F811
-    """sync records its filters only once every selected partition is
-    synchronized."""
+    """``sync`` records its filters only after every selected partition has been
+    synchronized.
+    """
     create_key_collection(local_fs)
     zview = create(local_fs, filters='key == 1', distributed=False)
     fail_after(monkeypatch, _sync, 'key=3')
@@ -110,8 +111,9 @@ def test_sync_holds_the_lock(
 def test_a_failed_creation_is_resumed(
         local_fs,  # noqa: F811
         monkeypatch) -> None:
-    """After a failed creation, validate_partitions(fix=True) then
-    sync(filters=view.filters) complete the view."""
+    """Recover a failed view creation with ``validate_partitions(fix=True)``
+    followed by ``sync(filters=view.filters)``.
+    """
     create_key_collection(local_fs)
     fail_after(monkeypatch, _sync, 'key=2')
 

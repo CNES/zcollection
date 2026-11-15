@@ -2,7 +2,7 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""Test the time series merging."""
+"""Test merging time series."""
 from typing import TYPE_CHECKING
 import copy
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 def test_merge_disjoint() -> None:
-    """Test the update of two disjoint time series."""
+    """Test merging two disjoint time series."""
     generator = data.create_test_dataset()
     zds0 = next(generator)
     zds1 = next(generator)
@@ -35,7 +35,7 @@ def test_merge_disjoint() -> None:
 
 
 def test_merge_intersection() -> None:
-    """Test the update of two intersecting time series."""
+    """Test merging two overlapping time series."""
     generator = data.create_test_dataset()
     zds0 = next(generator)
     # ds0.variables["time"].values => numpy.array([
@@ -81,7 +81,7 @@ def test_merge_intersection() -> None:
 
 
 def test_intersection_with_tolerance() -> None:
-    """Test the update of two intersecting time series with a data gap."""
+    """Test merging overlapping time series with a data gap."""
     axis: NDArray = numpy.arange(numpy.datetime64('2000-01-01', 'ns'),
                                  numpy.datetime64('2000-01-01T23:59:59', 'ns'),
                                  numpy.timedelta64(1, 's'))
@@ -125,8 +125,7 @@ def test_intersection_with_tolerance() -> None:
     assert numpy.all((zds_gap_filled.variables['var1'].values[:, 0] < 0
                       ).sum() == zds1.dimensions['num_lines'])
 
-    # Create gaps in the data by removing the data between 11:00 to 13:00
-    # 15:00 to 17:00 and 19:00 to 21:00
+    # Create gaps from 11:00 to 13:00, 15:00 to 17:00 and 19:00 to 21:00.
     mask = (axis > numpy.datetime64('2000-01-01T11:00:00', 'ns')) & (
         axis < numpy.datetime64('2000-01-01T13:00:00', 'ns'))
     mask |= (axis > numpy.datetime64('2000-01-01T15:00:00', 'ns')) & (

@@ -31,20 +31,17 @@ Scalar = int | float | bytes
 #: Index data type.
 DType = Scalar | Iterable[Scalar]
 
-#: Type of associative dictionary used for index queries, which matches a
-#: column of the index to the requested values.
+#: Mapping of index column names to the values to query.
 QueryDict = dict[str, DType]
 
 
 #: pylint: disable=too-few-public-methods
 class IndexingCallable(Protocol):
-    """Protocol for indexing the partitions of a collection.
+    """Protocol for functions that index collection partitions.
 
-    A partition callable is a function that accepts a dataset and
-    returns a numpy structured array to be converted to a DataFrame and
-    stored in the index. The function is called for each partition of
-    the collection to determine the first and last index of the
-    partition that contains the value to be indexed.
+    An indexing function receives a partition dataset and returns a NumPy
+    structured array describing the positions of indexed values. The array
+    is converted to a DataFrame and stored in the index.
     """
 
     def __call__(
@@ -53,7 +50,7 @@ class IndexingCallable(Protocol):
         *args,
         **kwargs,
     ) -> NDArray:
-        """Indexing the partition of the collection.
+        """Build index data for a collection partition.
 
         Args:
             zds: Dataset to be indexed.
@@ -61,7 +58,7 @@ class IndexingCallable(Protocol):
             **kwargs: Keyword arguments.
 
         Returns:
-            A numpy structured array to be converted to a DataFrame and stored
+            A NumPy structured array to convert to a DataFrame and store
             in the index.
         """
 
@@ -71,13 +68,11 @@ class IndexingCallable(Protocol):
 
 
 class Indexer(abc.ABC):
-    """Abstract base class for indexing a collection.
-
-    This class defines the interface for indexing a collection.
+    """Base class defining the interface for collection indexes.
 
     Args:
         path: The path to the index.
-        filesystem: The filesystem to use.
+        filesystem: The file system containing the index.
     """
     #: The name of the column containing the start of the slice.
     START = 'start'
@@ -95,7 +90,7 @@ class Indexer(abc.ABC):
             path = str(path)
         #: Path to the index.
         self._path: str = path
-        #: Filesystem to use.
+        #: File system containing the index.
         self._fs: fsspec.AbstractFileSystem = \
             filesystem or fsspec.filesystem('file')
         #: Metadata to attach to the index.
@@ -104,7 +99,7 @@ class Indexer(abc.ABC):
         self._partition_keys: tuple[str, ...] = ()
         #: PyArrow table containing the index.
         self._table: pyarrow.Table | None = None
-        #: Type for each columns of the index.
+        #: Data type of each column of the index.
         self._type: dict[str, pyarrow.DataType] = {}
 
     @property
@@ -123,7 +118,7 @@ class Indexer(abc.ABC):
             **_kwargs: Additional arguments to pass to the function.
 
         Returns:
-            A tuple of (name, type) pairs.
+            A list of ``(name, type)`` pairs.
         """
         return [
             (self.START, 'int64'),
@@ -157,7 +152,7 @@ class Indexer(abc.ABC):
         partition_schema: tuple[tuple[str, pyarrow.DataType], ...],
         **kwargs,
     ) -> None:
-        """Set the schema properties of the index.
+        """Set the index schema.
 
         Args:
             partition_schema: A tuple of (name, type) pairs that describes the
@@ -170,7 +165,7 @@ class Indexer(abc.ABC):
 
     def _partition_column(self, name: str, value: Any,
                           length: int) -> tuple[str, pyarrow.Array]:
-        """Return the column holding the value a partition has for a key.
+        """Build a column containing a partition key value.
 
         Args:
             name: Name of the partitioning variable.
@@ -194,7 +189,7 @@ class Indexer(abc.ABC):
             ) from None
 
     def _sort_keys(self) -> list[tuple[str, str]]:
-        """Return the list of keys to sort the index by."""
+        """Return the keys used to sort the index."""
         keys: tuple[str, ...] = (*self._partition_keys, self.START, self.STOP)
         return [(key, 'ascending') for key in keys]
 
@@ -213,7 +208,7 @@ class Indexer(abc.ABC):
             path: The path to the index.
             zds: The collection to index.
             meta: Metadata to attach to the index.
-            filesystem: The filesystem to use.
+            filesystem: The file system to use.
 
         Returns:
             The created index.
@@ -240,7 +235,7 @@ class Indexer(abc.ABC):
         Args:
             path: The path to the index.
             zds: The collection to index.
-            filesystem: The filesystem to use.
+            filesystem: The file system to use.
 
         Returns:
             The created index.
@@ -257,7 +252,7 @@ class Indexer(abc.ABC):
 
         Args:
             path: The path to the index.
-            filesystem: The filesystem to use.
+            filesystem: The file system to use.
 
         Returns:
             The index.
@@ -283,7 +278,7 @@ class Indexer(abc.ABC):
         npartitions: int | None = None,
         **kwargs,
     ) -> None:
-        """Update the index.
+        """Update the index for the selected collection partitions.
 
         Args:
             zcollection: The collection to index.
@@ -297,7 +292,7 @@ class Indexer(abc.ABC):
                               partition_size=partition_size,
                               npartitions=npartitions,
                               **kwargs)
-        # List of new partitions indexed.
+        # Partitions indexed during this update.
         partitions = []
         for partition, data in bag.compute():
             length = data.size
@@ -322,11 +317,11 @@ class Indexer(abc.ABC):
         if not partitions:
             return
 
-        # The existing index must be updated?
+        # Check whether the existing index needs updating.
         if self._fs.exists(self._path):
             table = pyarrow.parquet.read_table(self._path, filesystem=self._fs)
 
-            # Build the list of mask to select the rows to drop.
+            # Build a mask selecting rows to remove.
             mask = [
                 functools.reduce(
                     pyarrow.compute.and_,  # type:ignore[attr-defined]
@@ -343,7 +338,7 @@ class Indexer(abc.ABC):
                 mask,
             )
 
-            # Inserts the previous index without the updated partitions.
+            # Keep existing index rows outside the updated partitions.
             tables.insert(0, table.filter(
                 pyarrow.compute.invert(mask)))  # type:ignore[attr-defined]
 
@@ -368,7 +363,7 @@ class Indexer(abc.ABC):
         """Update the index.
 
         Args:
-            zds: The dataset containing the new data.
+            zds: The collection whose partitions are to be indexed.
             partition_size: The length of each bag partition.
             npartitions: The number of desired bag partitions.
         """
@@ -404,7 +399,7 @@ class Indexer(abc.ABC):
         start = table[self.START].to_numpy()
         stop = table[self.STOP].to_numpy()
 
-        # Calculate the indexes of each contiguous slice.
+        # Calculate the indices of each contiguous slice.
         # index = [0,     1, ...,   69,    70, ...,   134]
         # start = [817, 823, ..., 2320, 17333, ..., 19337]
         # stop  = [832, 874, ..., 2396, 17420, ..., 19389]
@@ -413,13 +408,13 @@ class Indexer(abc.ABC):
                        numpy.where(start[1:] - stop[:-1] > 0)[0] + 1,
                        [len(table)]]
 
-        # Adds the chunks corresponding to the partitioning keys
+        # Add the chunks corresponding to the partitioning keys.
         chunks += [
             numpy.where(numpy.roll(values, 1) != values)[0]
             for values in data.values()
         ]
 
-        # Finally, we build the list of indexes of the different chunks found.
+        # Build the indices of the resulting chunks.
         chunks = numpy.unique(numpy.concatenate(chunks))
 
         return (  # force yapf to respect the line break for flake8
@@ -435,12 +430,13 @@ class Indexer(abc.ABC):
         mask: pyarrow.ChunkedArray | None = None,
         only_partition_keys: bool = True,
     ) -> collection.Indexer:
-        """Query the index.
+        """Query the index for matching column values.
 
         Args:
-            columns: Dictionary of columns to query.
-            logical_op: The logical operator to use. Can be "and", "and_not",
-                "invert", "or", "xor". Defaults to "and".
+            columns: Mapping of column names to the values to match.
+            logical_op: The logical operator to use. Can be ``"and"``,
+                ``"and_not"``, ``"invert"``, ``"or"`` or ``"xor"``.
+                Defaults to ``"and"``.
             mask: An optional mask to apply to the table before querying.
             only_partition_keys: If True, only the partition keys are kept.
 
@@ -461,7 +457,7 @@ class Indexer(abc.ABC):
             raise ValueError(
                 f'Invalid column names: {", ".join(columns.keys())}')
 
-        # Transform the columns values into a list if they are not iterable.
+        # Wrap non-iterable column values in lists.
         values = {
             k: [v] if not isinstance(v, Iterable) else v
             for k, v in columns.items()

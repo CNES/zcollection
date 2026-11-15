@@ -141,7 +141,8 @@ def test_update_empty_selection(update_target, monkeypatch):
 @pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 @pytest.mark.parametrize('depth', [0, 1])
 def test_update_loads_bounded_window(update_target, depth, monkeypatch):
-    """Callbacks run before all partitions are loaded and release their inputs."""
+    """Callbacks run before all partitions are loaded and release their
+    inputs."""
     target = update_target
     output = output_name(target)
     kind = 'view' if isinstance(target, view.View) else 'collection'
@@ -215,7 +216,7 @@ def test_update_overlap_without_reading_output(update_target, trim):
 @pytest.mark.usefixtures('dask_client')
 def test_update_overlap_masked_second_axis(update_target, delayed,
                                            distributed):
-    """Trim masked results along the schema's partitioned axis."""
+    """Trim masked results along the partitioned dimension in the schema."""
     target = update_target
     output = 'matrix_target'
     if isinstance(target, view.View):
@@ -407,7 +408,10 @@ def test_update_skips_an_absent_partition(
 
 @pytest.mark.parametrize('missing_all', [False, True])
 def test_inference_skips_absent_partitions(tmp_path, missing_all):
-    """Inference locks reads, skips absent paths and returns only output names."""
+    """Inference skips absent partitions and reads others under a lock.
+
+    The callback runs without the lock; only its output names are retained.
+    """
     synchronizer = sync.ProcessSync(str(tmp_path / 'inference.lock'))
     loaded = []
     calls = []
@@ -458,7 +462,8 @@ def test_update_rejects_unknown_outputs(update_target, infer):
 
 @pytest.mark.parametrize('update_target', LOCAL_TARGETS, indirect=True)
 def test_update_invalidates_selected_paths(update_target, monkeypatch):
-    """Both update methods invalidate the selected partition paths at the end."""
+    """Both update methods invalidate the selected partition paths at the
+    end."""
     partitions = tuple(update_target.partitions())
     selected = partitions[1:2]
     invalidate = update_target.fs.invalidate_cache
@@ -495,7 +500,8 @@ def test_update_rejects_negative_depth_before_callback(
 
 
 def test_partition_resources_are_read_only(empty_target):  # noqa: F811
-    """A partition index and its operations retain the same filesystem and lock."""
+    """Collections and views keep their original file system and
+    synchronizer objects and reject reassignment."""
     fs = empty_target.fs
     synchronizer = empty_target.synchronizer
     with pytest.raises(AttributeError):

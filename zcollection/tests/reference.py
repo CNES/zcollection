@@ -41,13 +41,13 @@ SCALE = 1000
 #: value sitting behind a filter.
 SCALED_FILL_VALUE = -10.0
 
-#: Fill value of the ``counts`` variable. No measurement carries it.
+#: Fill value of the ``counts`` variable, used by one measurement.
 COUNT_FILL_VALUE = -99
 
 #: Name of the partitioning dimension.
 DIMENSION = 'num_lines'
 
-#: Name of the dimension the immutable variables carry.
+#: Name of the dimension used by immutable variables.
 IMMUTABLE_DIMENSION = 'num_pixels'
 
 #: Length of the immutable dimension.
@@ -60,10 +60,10 @@ def axis() -> numpy.ndarray:
 
 
 def plain_values() -> numpy.ndarray:
-    """Return values holding exact zeros and no fill value.
+    """Return values that include exact zeros and have no fill value.
 
-    A zero here is a measurement, not an absence. Reading it back as a masked
-    value is a corruption that raises nothing.
+    A zero here is a measurement, not an absence.
+    Reading it back as masked would silently corrupt the data.
     """
     values = numpy.arange(SIZE, dtype='float64') - 4.0
     assert 0.0 in values
@@ -105,16 +105,16 @@ def grid_values() -> numpy.ndarray:
 
 
 def pixel_values() -> numpy.ndarray:
-    """Return values carried by the immutable dimension alone.
+    """Return values along the immutable dimension only.
 
-    A variable that does not span the partitioning dimension is stored once,
-    beside the partitions, not in each of them.
+    A variable without the partitioned dimension is stored once,
+    alongside the partitions rather than in each one.
     """
     return numpy.arange(NUM_PIXELS, dtype='int16') * 10
 
 
 def filter_codec() -> numcodecs.abc.Codec:
-    """Return the filter the scaled variables are stored behind."""
+    """Return the filter used to store the scaled variables."""
     return numcodecs.FixedScaleOffset(offset=0,
                                       scale=SCALE,
                                       dtype='f8',
@@ -126,12 +126,12 @@ def make_dataset(delayed: bool = False,
     """Build the reference dataset.
 
     Args:
-        delayed: Whether to hold the values in Dask arrays.
-        immutable: Whether to carry the variable that does not span the
-            partitioning dimension. Release 2026.6.0 selects the variables
+        delayed: Whether to use Dask arrays for the values.
+        immutable: Whether to include a variable without the
+            partitioned dimension. Release 2026.6.0 selects the variables
             to partition by the name of the axis rather than by the name of
-            the dimension. It writes such a variable when the two names
-            match, and fails when they differ, as they do here.
+            the dimension. It writes such a variable when the names
+            match, but fails when they differ, as they do here.
 
     Returns:
         The dataset.

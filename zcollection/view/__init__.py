@@ -3,7 +3,7 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-View on a reference collection.
+View of a reference collection.
 ===============================
 """
 from __future__ import annotations
@@ -62,17 +62,17 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class View(WritableCollection):
-    """View on a reference collection.
+    """A view of a reference collection.
 
     Args:
-        base_dir: Path to the directory where the view is stored.
+        base_dir: Directory in which the view is stored.
         view_ref: Access properties for the reference collection.
         ds: The dataset schema for this view, or None for an empty schema.
         filesystem: The file system used to access the view.
         filters: The filters used to select the partitions of the reference. If
             not provided, all partitions are selected.
         synchronizer: The synchronizer used to synchronize the view.
-        distributed: Whether to use dask or not. Default To True.
+        distributed: Whether to use Dask. Defaults to ``True``.
         npartitions: The largest number of partitions written at the same
             time when the view is created. Defaults to the number of Dask
             workers.
@@ -86,9 +86,9 @@ class View(WritableCollection):
             :py:class:`io.UnsupportedOperation`.
 
     Note:
-        Normally, you should not call this constructor directly. Instead, use
-        :func:`create_view <zcollection.create_view>` or :func:`open_view
-        <zcollection.open_view>` to create or open a view.
+        Prefer :func:`create_view <zcollection.create_view>` or
+        :func:`open_view <zcollection.open_view>` over calling this
+        constructor directly.
     """
     #: Configuration filename of the view.
     CONFIG: ClassVar[str] = '.view'
@@ -108,7 +108,7 @@ class View(WritableCollection):
                  _initialize: bool = True,
                  _deprecated: bool = False) -> None:
         self._fs: fsspec.AbstractFileSystem = fs_utils.get_fs(filesystem)
-        #: Path to the directory where the view is stored.
+        #: Directory where the view is stored.
         self.base_dir: str = fs_utils.normalize_path(fs=self.fs, path=base_dir)
         #: The reference collection of the view.
         self.view_ref: collection.Collection = convenience.open_collection(
@@ -118,7 +118,7 @@ class View(WritableCollection):
         self._synchronizer: sync.Sync = synchronizer or sync.NoSync()
         #: The filters used to select the partitions of the reference.
         self.filters = filters
-        #: The partitions of the reference the view holds.
+        #: Index of the view partitions.
         self._index = PartitionIndex(self.fs,
                                      self.base_dir,
                                      self.view_ref.partitioning,
@@ -150,7 +150,7 @@ class View(WritableCollection):
 
     @property
     def fs(self) -> fsspec.AbstractFileSystem:
-        """The filesystem holding the view."""
+        """The file system storing the view."""
         return self._fs
 
     @property
@@ -160,7 +160,7 @@ class View(WritableCollection):
 
     @property
     def metadata(self) -> meta.DatasetSchema:
-        """The schema of the variables owned by the view."""
+        """The schema of the variables defined by the view."""
         return self._metadata
 
     @property
@@ -184,11 +184,12 @@ class View(WritableCollection):
     def _sync_partitions(self, filters: collection.PartitionFilter, *,
                          distributed: bool, npartitions: int | None,
                          stop_on_error: bool) -> tuple[str, ...]:
-        """Synchronize the partitions of the reference that `filters`
-        selects. The caller holds the lock.
+        """Synchronize the selected reference partitions.
+
+        The caller holds the lock.
 
         Args:
-            filters: The predicate selecting the partitions of the reference.
+            filters: The predicate selecting reference partitions.
             distributed: Whether to use Dask.
             npartitions: The largest number of partitions processed at the
                 same time.
@@ -220,10 +221,10 @@ class View(WritableCollection):
         return written
 
     def _held_partitions(self) -> frozenset[str]:
-        """Return the path of each partition the index names.
+        """Return the indexed partition paths.
 
         Returns:
-            The paths, relative to the view.
+            The partition paths, relative to the view.
         """
         return frozenset(
             self._index.path_of(key) for key in self._index.keys())
@@ -235,7 +236,7 @@ class View(WritableCollection):
 
     @classmethod
     def _config(cls, base_dir: str) -> str:
-        """Returns the configuration path."""
+        """Return the configuration path."""
         return fs_utils.join_path(base_dir, cls.CONFIG)
 
     def _write_config(self) -> None:
@@ -266,18 +267,20 @@ class View(WritableCollection):
         filesystem: fsspec.AbstractFileSystem | str | None = None,
         synchronizer: sync.Sync | None = None,
     ) -> View:
-        """Open a View described by a configuration file.
+        """Open a view from its configuration.
 
         Args:
-            path: The path to the configuration file.
-            filesystem: The filesystem to use for the view.
-            synchronizer: The synchronizer to use for the view.
+            path: The directory of the view.
+            filesystem: The file system used to access the view.
+            synchronizer: The synchronizer used by the view.
 
         Returns:
             The view.
 
         Raises:
-            ValueError: If the provided directory does not contain a view.
+            ValueError: If the configuration is missing, contains invalid JSON,
+                or uses a format version newer than this release supports.
+            KeyError: If a required entry is missing from the configuration.
         """
         _LOGGER.info('Opening view %r', path)
         fs = fs_utils.get_fs(filesystem)
@@ -326,16 +329,16 @@ class View(WritableCollection):
         indexer: collection.Indexer | None = None,
         selected_partitions: Iterable[str] | None = None,
     ) -> Iterator[str]:
-        """Returns the list of partitions in the view.
+        """Iterate over the partitions of the view.
 
         Args:
-            filters: The partition filters.
+            filters: Filters selecting reference partitions.
             indexer: The indexer to apply.
             selected_partitions: The paths of the partitions to select, relative
                 to the view.
 
         Returns:
-            The list of partitions.
+            The absolute paths of the selected view partitions.
         """
         held: frozenset[str] = self._held_partitions()
         listed = tuple(
@@ -358,9 +361,9 @@ class View(WritableCollection):
                      stop_on_error: bool = True) -> None:
         """Add a variable to the view.
 
-        Every value of the variable is its fill value, or the default value
-        of its data type without one, until it is written, for example by
-        :meth:`update`.
+        New arrays contain the variable's fill value, or the default for
+        its data type if none is defined, until :meth:`update` writes
+        other values.
 
         If a partition fails, the variable is removed from the view. If that
         removal fails as well, the variable stays, and a note on the error
@@ -369,7 +372,7 @@ class View(WritableCollection):
 
         Args:
             variable: The variable to add.
-            distributed: Whether to use Dask. Defaults to True.
+            distributed: Whether to use Dask. Defaults to ``True``.
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers.
             stop_on_error: If True, no partition starts after the first
@@ -388,9 +391,13 @@ class View(WritableCollection):
             >>> view.add_variable(
             ...    zcollection.meta.VariableSchema(
             ...        "temperature",
-            ...        "float32", ("time", "lat", "lon"),
-            ...        (zcollection.meta.Attribute("units", "degrees Celsius"),
-            ...         zcollection.meta.Attribute("long_name", "temperature")),
+            ...        "float32", dimensions=("time", "lat", "lon"),
+            ...        attrs=(
+            ...            zcollection.meta.Attribute(
+            ...                "units", "degrees Celsius"),
+            ...            zcollection.meta.Attribute(
+            ...                "long_name", "temperature"),
+            ...        ),
             ...        fill_value=-9999.0))
         """
         ref_zcol = self.view_ref
@@ -405,7 +412,9 @@ class View(WritableCollection):
         if ref_zcol.dimension not in variable.dimensions:
             raise ValueError('Immutable variable cannot be added to views.')
 
-        # Attributes are not stored at the variable's level
+        # Variable attributes stay in the view schema, not in the
+        # partition arrays. They are applied when variables are loaded
+        # through load().
         stored = variable.set_for_insertion()
         dimensions, chunks = ref_zcol.dimensions_properties()
 
@@ -507,11 +516,11 @@ class View(WritableCollection):
         selected_partitions: Iterable[str] | None = None,
         distributed: bool = True,
     ) -> dataset.Dataset | None:
-        """Load the view.
+        """Load variables from the view and its reference collection.
 
         Args:
-            delayed: Whether to load data in a dask array or not.
-                Default value is True if distributed is True, False otherwise.
+            delayed: Whether to load the data lazily. Defaults to the
+                value of ``distributed``.
             filters: The predicate used to filter the partitions to select.
                 To get more information on the predicate, see the
                 documentation of the :meth:`Collection.partitions
@@ -521,10 +530,10 @@ class View(WritableCollection):
                 reference collection. If None, all variables are loaded.
             selected_partitions: The paths of the partitions to select, relative
                 to the view.
-            distributed: Whether to use dask or not. Default To True.
+            distributed: Whether to use Dask. Defaults to ``True``.
 
         Returns:
-            The dataset containing the selected partitions. None when
+            A dataset with the selected partitions, or ``None`` when
             ``filters``, ``indexer`` or ``selected_partitions`` select no
             data. Without an explicit partition selection, immutable
             variables from the reference can be loaded alone.
@@ -585,8 +594,8 @@ class View(WritableCollection):
                     for arg in arguments) if item is not None
             ]
 
-        # The load function returns the path of each partition beside its
-        # dataset. Only the datasets are kept here.
+        # The loader returns a path and dataset for each partition.
+        # Only the datasets are needed here.
         arrays: list[dataset.Dataset] = [item[0] for item in datasets]
 
         if arrays:
@@ -649,7 +658,8 @@ class View(WritableCollection):
         func_args: tuple[Any, ...],
         func_kwargs: dict[str, Any],
     ) -> ViewUpdateCallable | None:
-        """Validate output names and build the function for partition updates."""
+        """Validate output names and build the function for partition
+        updates."""
         dim = self.view_ref.dimension
         load = functools.partial(_load_dataset,
                                  base_dir=self.base_dir,
@@ -713,12 +723,12 @@ class View(WritableCollection):
         stop_on_error: bool = True,
         **kwargs,
     ) -> tuple[str, ...]:
-        """Update a variable stored in the view.
+        """Update variables stored in the view.
 
         Args:
             func: The function to apply to calculate the new values for the
                 target variables.
-            args: The positional arguments to pass to the function.
+            *args: The positional arguments to pass to the function.
             depth: The depth of the overlap between the partitions. Default is
                 0 (no overlap). If depth is greater than 0, the function is
                 applied on each partition with ``depth`` neighbors on each
@@ -746,11 +756,11 @@ class View(WritableCollection):
             delayed: If True, load variables as Dask arrays. If False, load
                 variables directly into NumPy arrays. If None, use the value of
                 ``distributed``. Default is None.
-            distributed: Whether to use dask or not. Default To True.
+            distributed: Whether to use Dask. Defaults to ``True``.
             stop_on_error: If True, no partition starts after the first
                 failure, except the ones already submitted to Dask, which
                 finish. Defaults to True.
-            kwargs: The keyword arguments to pass to the function.
+            **kwargs: The keyword arguments to pass to the function.
 
         Returns:
             The path of each partition written, relative to the view.
@@ -768,8 +778,9 @@ class View(WritableCollection):
             the same variables must be idempotent and account for these updates.
             Distributed tasks can run in any order. Inference adds a callback
             invocation whose returned values are discarded. A callback
-            declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
-            on every call, including inference and calls without overlap.
+            declaring ``partition_info`` receives a
+            :class:`zcollection.PartitionInfo` on every call, including
+            inference and calls without overlap.
             See :doc:`/updating` for examples of overlap, trimming and
             external arguments.
 
@@ -780,10 +791,13 @@ class View(WritableCollection):
             .. code-block:: python
 
                 def celsius_to_kelvin(ds):
-                    return {'temperature_kelvin': ds['temperature'].values + 273.15}
+                    return {
+                        'temperature_kelvin': ds['temperature'].values + 273.15
+                    }
 
-                view.update(celsius_to_kelvin, variables=('temperature_kelvin', ),
-                            selected_variables=('temperature', ))
+                view.update(
+                    celsius_to_kelvin, variables=('temperature_kelvin', ),
+                    selected_variables=('temperature', ))
         """
         _assert_have_variables(self.metadata)
 
@@ -889,7 +903,7 @@ class View(WritableCollection):
         npartitions: int | None = None,
         stop_on_error: bool = True,
     ) -> collection.abc.PartitionFilterCallback:
-        """Synchronize the view with the underlying collection.
+        """Synchronize the view with its reference collection.
 
         Args:
             filters: The predicate used to select the partitions to
@@ -899,8 +913,8 @@ class View(WritableCollection):
                 If None, all partitions of the reference are synchronized.
                 Existing partitions are not removed, even if they are not
                 selected by the predicate. The view records the predicate
-                once every selected partition is synchronized.
-            distributed: Whether to use dask or not. Default To True.
+                after synchronizing all selected partitions.
+            distributed: Whether to use Dask. Defaults to ``True``.
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers.
             stop_on_error: If True, no partition starts after the first
@@ -958,11 +972,11 @@ class View(WritableCollection):
         Args:
             filters: The predicate selecting the partitions to check. By
                 default, every partition is checked.
-            distributed: Whether to use dask or not. Default To True.
+            distributed: Whether to use Dask. Defaults to ``True``.
             fix: Whether to repair the invalid partitions. When the reference
                 collection still has the partition, the view writes it again,
-                and its variables hold their fill value. Otherwise the view
-                deletes the partition and removes it from the index.
+                and its variables are reset to their fill values. Otherwise,
+                the view deletes the partition and removes it from the index.
             npartitions: The largest number of partitions processed at the
                 same time. Defaults to the number of Dask workers.
             stop_on_error: If True, no partition starts after the first
@@ -1027,17 +1041,18 @@ class View(WritableCollection):
                            client: dask.distributed.Client | None,
                            npartitions: int | None,
                            stop_on_error: bool) -> None:
-        """Write the invalid partitions again, or delete those the reference
-        collection no longer has. The caller holds the lock.
+        """Repair invalid view partitions using the reference collection.
+
+        Rebuild partitions still present in the reference collection and remove
+        those that no longer exist. Rebuilding resets the view variables to
+        their fill values. The caller holds the synchronizer lock.
 
         Args:
-            partitions: The invalid partitions, relative to the view.
+            partitions: The invalid partition paths, relative to the view.
             client: The Dask client, or ``None``.
-            npartitions: The largest number of partitions processed at the
-                same time.
-            stop_on_error: If True, no partition starts after the first
-                failure, except the ones already submitted to Dask, which
-                finish.
+            npartitions: The maximum number of partition tasks in progress.
+            stop_on_error: Whether to stop submitting partitions after the first
+                failure. Already submitted Dask tasks finish.
         """
         records = [
             (name,

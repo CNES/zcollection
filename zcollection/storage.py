@@ -46,21 +46,19 @@ def execute_transaction(
     futures: Sequence[dask.distributed.Future | dask_Delayed],
     **kwargs: Any,
 ) -> Any:
-    """Execute a transaction in the collection.
+    """Compute a transaction using a Dask client under a synchronizer.
 
-    This function executes a transaction in the collection by computing the
-    given futures using the provided Dask client. The synchronizer instance is
-    used to handle access to critical resources. Any additional keyword
-    arguments are passed to the `dask.distributed.compute` function.
+    The synchronizer remains active while the tasks are computed. If a task
+    fails, wait for the submitted work to finish before raising the error.
 
     Args:
         client: The Dask client.
-        synchronizer: The instance handling access to critical resources.
-        futures: Lazy tasks to be done.
-        **kwargs: Keyword arguments to pass to `dask.distributed.compute`.
+        synchronizer: The synchronizer for the transaction.
+        futures: The lazy tasks to compute.
+        **kwargs: Additional arguments passed to ``client.compute``.
 
     Returns:
-        The result of the transaction.
+        The computed results, or ``None`` if no tasks were provided.
     """
     if not futures:
         return None
@@ -71,8 +69,7 @@ def execute_transaction(
                                         **kwargs)  # type: ignore[arg-type]
             return client.gather(awaitables)
     except:
-        # Before throwing the exception, we wait until all future scheduled
-        # ones finished.
+        # Wait for all submitted tasks to finish before propagating the error.
         dask.distributed.wait(awaitables)
         dask.distributed.wait(futures)
         raise
@@ -84,10 +81,10 @@ def _to_zarr(array: dask.array.core.Array, dirname: str, name: str,
 
     Args:
         array: The Dask array to write.
-        dirname: The storage directory of the Zarr dataset.
-        name: The name of the variable to write.
-        fs: The file system on which the Zarr dataset is stored.
-        **kwargs: Additional keyword arguments to pass to
+        dirname: The Zarr dataset directory.
+        name: The variable to write.
+        fs: The file system containing the Zarr dataset.
+        **kwargs: Additional arguments passed to
             :func:`zcollection.store.create_array`.
     """
     _LOGGER.debug('Writing Zarr variable %r', name)
@@ -115,13 +112,13 @@ def _to_zarr(array: dask.array.core.Array, dirname: str, name: str,
 
 def variable_attributes(
         variable: meta.VariableSchema | dataset.Variable) -> dict[str, Any]:
-    """Return the attributes an array holds for a variable.
+    """Return the attributes to store for a variable.
 
     Args:
         variable: The variable to process.
 
     Returns:
-        Its attributes, and its fill value when it has one.
+        The variable's attributes, including its fill value if defined.
     """
     attrs = collections.OrderedDict(item.get_config()
                                     for item in variable.attrs)
@@ -141,20 +138,17 @@ def write_zarr_variable(
 ) -> None:
     """Write a variable to a Zarr dataset.
 
-    Args:
-        args: The arguments to the function:
-            - Name of the variable to write.
-            - The variable to write.
-        dirname: The target directory.
-        fs: The file system on which the Zarr dataset is stored.
-        block_size_limit: Maximum size (in bytes) of a block/chunk. Defaults
-            to :data:`zcollection.meta.BLOCK_SIZE_LIMIT`.
-        chunks: Chunk size for each dimension. Defaults to ``None`` (i.e. the
-            default chunk size is used).
+    If writing fails, remove the array and raise the original exception with
+    an additional note identifying the variable.
 
-    Raises:
-        Exception: Whatever the write raises, carrying a note naming the
-            variable.
+    Args:
+        args: The variable name and the variable to write.
+        dirname: The target directory.
+        fs: The target file system.
+        block_size_limit: Maximum block size in bytes. Defaults to
+            :data:`zcollection.meta.BLOCK_SIZE_LIMIT`.
+        chunks: Chunk sizes for each dimension. If ``None``, use the default
+            chunk sizes.
     """
     kwargs: dict[str, tuple[Codec, ...]]
 
@@ -164,8 +158,7 @@ def write_zarr_variable(
         variable, dataset.DelayedArray) else dask.array.core.from_array(
             variable.array)
 
-    # If the user has not specified a chunk size, we use the default one.
-    # Otherwise, we use the user's choice.
+    # Use the configured chunk sizes, or the defaults if none were provided.
     block_size_limit = block_size_limit or meta.BLOCK_SIZE_LIMIT
     var_chunks: dict[int, int | str] = dict.fromkeys(range(
         variable.ndim), -1) if chunks is None else {
@@ -185,8 +178,7 @@ def write_zarr_variable(
                  attributes=variable_attributes(variable),
                  **kwargs)
     except Exception as err:
-        # If an exception is thrown, we delete the variable from the Zarr
-        # dataset.
+        # Remove the Zarr array if writing fails.
         del_zarr_array(dirname, name, fs)
         err.add_note(f'while writing the variable {name!r}')
         raise
@@ -197,15 +189,15 @@ def _write_meta(
     dirname: str,
     fs: fsspec.AbstractFileSystem,
 ) -> None:
-    """Write the metadata of a dataset to a Zarr dataset.
+    """Write and consolidate a Zarr group's metadata.
 
     Args:
         zds: The dataset to process.
-        dirname: The storage directory of the Zarr dataset.
-        fs: The file system on which the Zarr dataset is stored.
+        dirname: The Zarr dataset directory.
+        fs: The file system containing the dataset.
 
     Raises:
-        OSError: If the group does not hold every variable of the dataset.
+        OSError: If the group is missing any variable from the dataset.
     """
     attrs = collections.OrderedDict(item.get_config() for item in zds.attrs)
     store.write_group_attributes(fs, dirname, attrs)
@@ -225,25 +217,19 @@ def write_zarr_group(
     *,
     distributed: bool = True,
 ) -> None:
-    """Write a partition of a dataset to a Zarr group.
+    """Write a dataset partition to a Zarr group.
+
+    The variables are written first, followed by the group attributes and
+    consolidated metadata. The synchronizer is used for the entire write.
 
     Args:
         zds: The dataset partition to write.
-        dirname: The name of the partition.
-        fs: The file system that the partition is stored on.
-        synchronizer: The instance handling access to critical resources.
-        distributed: Whether to use Dask distributed to write the variables
-            in parallel. Defaults to ``True``.
-
-    Writes the variables of the given dataset partition to a Zarr group
-    located at the specified directory on the given file system. If
-    `distributed` is `True`, the variables are written in parallel using
-    Dask distributed. Otherwise, the variables are written sequentially.
-
-    The `synchronizer` argument is an instance of `sync.Sync` that handles
-    access to critical resources, such as the Zarr group's metadata and
-    attributes. This ensures that multiple processes or threads do not
-    attempt to modify the same resource at the same time.
+        dirname: The partition directory.
+        fs: The file system where the partition is stored.
+        synchronizer: The synchronizer used for the entire write.
+        distributed: Whether to write variables in parallel using Dask.
+            If ``False``, variables are written sequentially. Defaults to
+            ``True``.
     """
     with synchronizer:
         if distributed:
@@ -286,16 +272,15 @@ def write_zarr_group_missing(
     *,
     distributed: bool = True,
 ) -> None:
-    """Write variables from the provided dataset that are missing from the Zarr
-    group.
+    """Write any dataset variables missing from a Zarr group.
 
     Args:
-        zds: The dataset to write.
-        dirname: The name of the partition.
-        fs: The file system that the partition is stored on.
-        synchronizer: The instance handling access to critical resources.
-        distributed: Whether to use Dask distributed to write the variables
-            in parallel. Defaults to ``True``.
+        zds: The source dataset.
+        dirname: The partition directory.
+        fs: The file system containing the partition.
+        synchronizer: The synchronizer for the write.
+        distributed: Whether to write variables in parallel using Dask.
+            Defaults to ``True``.
     """
 
     _LOGGER.debug('Opening Zarr group %r', dirname)
@@ -315,16 +300,17 @@ def open_zarr_array(
     *,
     delayed: bool = True,
 ) -> dataset.Variable:
-    """Open a Zarr array as a Dask array or a NumPy array.
+    """Open a Zarr array as a ZCollection variable.
 
     Args:
         array: The Zarr array to open.
-        name: The name of the variable.
-        delayed: Whether to load the variable lazily. If True, returns a Dask
-            array. If False, returns a NumPy array. Defaults to True.
+        name: The variable name.
+        delayed: Whether to return a lazily loaded variable. If ``True``,
+            return a ``DelayedArray`` backed by Dask; otherwise, return an
+            ``Array`` backed by NumPy. Defaults to ``True``.
 
     Returns:
-        The variable as a Dask array or a NumPy array.
+        The ZCollection variable.
     """
     if delayed:
         return dataset.DelayedArray.from_zarr(array, name)
@@ -332,11 +318,11 @@ def open_zarr_array(
 
 
 def init_zarr_group(dirname, fs: fsspec.AbstractFileSystem) -> None:
-    """Initialize an empty zarr group.
+    """Initialize a Zarr group if its directory does not exist.
 
     Args:
-        dirname: Group's path.
-        fs: The file system that the partition is stored on.
+        dirname: The group directory.
+        fs: The file system for the group.
     """
     if fs.exists(dirname):
         return
@@ -346,17 +332,19 @@ def init_zarr_group(dirname, fs: fsspec.AbstractFileSystem) -> None:
     store.consolidate(fs, dirname)
 
 
-#: What the function :func:`skip_absent_partition` wraps returns.
+#: Return type of functions wrapped by :func:`skip_absent_partition`.
 _T = TypeVar('_T')
 
 
 class AbsentPartition(FileNotFoundError):
-    """A store holds no partition at a path its index names.
+    """Raised when a partition referenced by the index is absent from storage.
 
-    It is raised where a partition is read and nowhere else, so catching
-    it catches that one fault and no other file the caller may be
-    missing. Its message is the path of the partition. A view reads two
-    stores, its reference and its own, and raises this for either.
+    The exception is a subclass of ``FileNotFoundError`` and is raised only
+    when reading an absent partition. Catching it does not suppress errors
+    for other missing files. Its message contains the partition path.
+
+    A view can raise this exception for a partition missing from either
+    its own storage or that of its reference collection.
     """
 
 
@@ -367,20 +355,19 @@ def read_partition(
     delayed: bool = True,
     selected_variables: Iterable[str] | None = None,
 ) -> dataset.Dataset:
-    """Read the partition a path names.
+    """Read a partition from storage.
 
     Args:
-        dirname: The path of the partition.
-        fs: The file system the partition is held on.
+        dirname: The partition path.
+        fs: The file system containing the partition.
         delayed: Whether to load the data lazily.
-        selected_variables: The variables to retain. Defaults to ``None``,
-            which retains all of them.
+        selected_variables: Variables to include. If ``None``, include all.
 
     Returns:
-        The dataset the partition holds.
+        The partition dataset.
 
     Raises:
-        AbsentPartition: If the store holds no partition at that path.
+        AbsentPartition: If the partition is absent from storage.
     """
     try:
         return open_zarr_group(dirname,
@@ -397,11 +384,11 @@ def read_partition(
 
 
 def skip_absent_partition(func: Callable[..., _T]) -> Callable[..., _T | None]:
-    """Return a function that gives nothing for an absent partition.
+    """Wrap a function to skip absent partitions.
 
-    The wrapped function takes the path of a partition as its first
-    argument. A call raising :class:`AbsentPartition` is warned about and
-    returns ``None``; every other error is raised.
+    The wrapped function takes a partition path as its first argument.
+    If it raises :class:`AbsentPartition`, the wrapper logs a warning and
+    returns ``None``. Other exceptions propagate.
 
     Args:
         func: The function to wrap.
@@ -422,10 +409,10 @@ def skip_absent_partition(func: Callable[..., _T]) -> Callable[..., _T | None]:
 
 
 def warn_absent_partition(dirname: str) -> None:
-    """Warn that the store holds no partition at a path the index names.
+    """Log a warning when an indexed partition is absent from storage.
 
-    The caller skips that partition. Its index entry remains until
-    ``reindex`` or ``validate_partitions(fix=True)`` removes it.
+    The caller skips the partition. Its index entry remains until it is
+    removed by ``reindex`` or ``validate_partitions(fix=True)``.
 
     Args:
         dirname: The path of the absent partition.
@@ -442,18 +429,18 @@ def open_zarr_group(
     delayed: bool = True,
     selected_variables: Iterable[str] | None = None,
 ) -> dataset.Dataset:
-    """Open a Zarr group stored in a partition.
+    """Read a Zarr group as a ZCollection dataset.
 
     Args:
-        dirname: The name of the partition.
-        fs: The file system that the partition is stored on.
-        delayed: Whether to load the variables lazily. Defaults to True.
-        selected_variables: The list of variables to retain from the Zarr
-            group. If None, all variables are selected. Defaults to None.
+        dirname: The partition directory.
+        fs: The file system containing the partition.
+        delayed: Whether to load variables lazily. Defaults to ``True``.
+        selected_variables: Variables to include, or ``None`` for all.
+            Defaults to ``None``.
 
     Returns:
-        The Zarr group stored in the partition, with the specified variables
-        and attributes. Its variables are ordered by name.
+        The dataset with the selected variables and group attributes.
+        Variables are ordered by name.
     """
     _LOGGER.debug('Opening Zarr group %r', dirname)
     group = store.open_group(fs, dirname)
@@ -481,16 +468,16 @@ def partition_dimension_size(
     axis: str,
     fs: fsspec.AbstractFileSystem,
 ) -> int:
-    """Return a partition's row count from loaded dimensions or axis metadata.
+    """Return the size of a partitioned dimension.
 
     Args:
-        dimensions: The dimensions of the selected dataset.
+        dimensions: The known dimensions of the selected dataset.
         dim: The partitioned dimension.
-        axis: The path of the stored axis whose first dimension is dim.
-        fs: The file system holding the axis.
+        axis: The stored axis path, with ``dim`` as its first dimension.
+        fs: The file system containing the axis.
 
     Returns:
-        The size of dim. Reading the axis shape loads only its metadata.
+        The size of ``dim``. Reading the axis shape requires only metadata.
     """
     if dim in dimensions:
         return dimensions[dim]
@@ -543,13 +530,13 @@ def del_zarr_array(
 ) -> None:
     """Delete a variable from a Zarr dataset.
 
-    If `dirname` contains a group, its metadata is consolidated, whether or not
-    the group held the variable.
+    If ``dirname`` contains a group, consolidate its metadata even if the
+    variable was already absent.
 
     Args:
-        dirname: The name of the dataset.
-        name: The name of the variable.
-        fs: The file system that the dataset is stored on.
+        dirname: The dataset directory.
+        name: The variable to delete.
+        fs: The file system containing the dataset.
     """
     _LOGGER.debug('Deleting Zarr array %r', dirname)
     path = join_path(dirname, name)
@@ -568,24 +555,24 @@ def variable_shape(
     axis: str | None,
     fs: fsspec.AbstractFileSystem,
 ) -> tuple[int, ...]:
-    """Compute the shape of a variable.
+    """Compute the shape of a variable from known dimensions.
 
     Args:
-        variable: Variable for which to compute the shape.
-        dimensions: Known dimensions and their size.
-        axis: Main axis path.
-        fs: The file system that the dataset is stored on.
+        variable: The variable to size.
+        dimensions: Known dimension names and sizes.
+        axis: The stored axis path, used to determine one missing size.
+        fs: The file system containing the dataset.
 
     Returns:
-        Tuple containing the shape of the variable.
+        The shape of the variable.
     """
     dims = set(variable.dimensions) - set(dimensions)
     if dims:
-        # Only a single dimension might be missing: the main axis
+        # At most one dimension can be missing: the partitioned dimension.
         if len(dims) > 1 or axis is None:
             raise ValueError(f'Variable {variable.name} contains'
                              f' unknown dimensions: {dims}.')
-        # We do not want to change to original dimensions
+        # Preserve the original dimensions.
         dimensions = dimensions.copy()
         dim_main, = dims
         dimensions[dim_main] = store.open_array(fs, axis, mode='r').size
@@ -602,23 +589,20 @@ def add_zarr_array(
     axis: str | None = None,
     chunks: dict[str, int] | None = None,
 ) -> None:
-    """Add a variable to a Zarr dataset.
+    """Add a variable to an existing Zarr dataset.
+
+    If the dataset directory is missing, log a warning and leave it unchanged.
+    The new array receives the variable's attributes, and the group's
+    metadata is consolidated.
 
     Args:
-        dirname: The name of the dataset.
+        dirname: The dataset directory.
         variable: The variable to add.
-        dimensions: Known dimensions and their size.
-        fs: The file system that the dataset is stored on.
-        axis: Axis containing the main dimension data and size.
-        chunks: Chunk size for each dimension. Defaults to None. See
-            :func:`zcollection.store.create_array` for more information.
-
-    Notes:
-        This function adds a new variable to an existing Zarr dataset. The new
-        variable is created with the specified chunk size (if provided).
-        The function also writes the variable's attributes to the dataset,
-        and consolidates the dataset's metadata. A dataset the file system
-        does not hold is left alone.
+        dimensions: Known dimension names and sizes.
+        fs: The file system containing the dataset.
+        axis: The stored axis path used to obtain the partitioned size.
+        chunks: Chunk sizes for each dimension, or ``None`` for defaults.
+            See :func:`zcollection.store.create_array`.
     """
     _LOGGER.debug('Adding variable %r to Zarr dataset %r', variable.name,
                   dirname)
@@ -657,16 +641,19 @@ def check_zarr_group(
         fs: fsspec.AbstractFileSystem,
         variables: Iterable[str] = (),
 ) -> bool:
-    """Check if a directory contains a valid Zarr group.
+    """Check whether a directory contains a readable Zarr group.
+
+    Treat missing files and known reading errors as validation failures;
+    other exceptions propagate.
 
     Args:
-        dirname: The name of the directory containing the Zarr group to check.
-        fs: The file system to use.
-        variables: The arrays the group must hold.
+        dirname: The directory to check.
+        fs: The file system containing the directory.
+        variables: The arrays that must be present in the group.
 
     Returns:
-        True if the group opens, holds each array of `variables`, and each of
-        its arrays can be read, False otherwise.
+        ``True`` if the group opens, contains the required arrays, and all
+        arrays can be read; ``False`` if a handled validation error occurs.
     """
     required = set(variables)
     try:

@@ -3,18 +3,15 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Translation and configuration of codecs
-========================================
+Codec translation and configuration
+===================================
 
-A variable names the codecs it is held behind, using the classes
-numcodecs defines or the ones Zarr defines. This module translates the
-first into the second.
+Convert numcodecs codecs into their Zarr equivalents. Blosc, Zstd and GZip
+use dedicated translations; other numcodecs codecs use the corresponding
+Zarr wrapper. If no wrapper is available, translation raises ``ValueError``.
 
-Blosc, Zstd and GZip are translated into the Zarr codec of the same
-name. Every other codec of numcodecs is translated into the wrapper Zarr
-ships for it, which writes the identifier numcodecs gives it, prefixed
-with ``numcodecs.``. A codec Zarr ships no wrapper for is refused. A
-codec already named by Zarr goes through untouched.
+Zarr codecs are returned unchanged. The wrappers use codec identifiers
+prefixed with ``numcodecs.``.
 """
 from __future__ import annotations
 
@@ -33,14 +30,14 @@ if TYPE_CHECKING:
     from typing import Literal
     from collections.abc import Callable, Iterable, Sequence
 
-    #: Builds the Zarr codecs standing for a codec, from its configuration.
+    #: Create Zarr codecs from a codec configuration.
     Build = Callable[[dict[str, Any]], tuple[zarr.abc.codec.Codec, ...]]
 
-#: Marker selecting the codecs Zarr applies when none is named.
+#: Marker for using Zarr's default codecs.
 DEFAULT_COMPRESSOR = 'auto'
 
-#: :class:`numcodecs.Blosc` names a shuffle by an integer, Zarr by a name.
-#: ``None`` lets Zarr pick one from the size of an item.
+#: :class:`numcodecs.Blosc` identifies shuffle modes with integers, while
+#: Zarr uses names. ``None`` lets Zarr choose based on the item size.
 _SHUFFLE: dict[int, Literal['noshuffle', 'shuffle', 'bitshuffle'] | None] = {
     numcodecs.Blosc.NOSHUFFLE: 'noshuffle',
     numcodecs.Blosc.SHUFFLE: 'shuffle',
@@ -67,8 +64,8 @@ def _gzip(config: dict[str, Any]) -> tuple[zarr.abc.codec.Codec, ...]:
     return (zarr.codecs.GzipCodec(level=config['level']), )
 
 
-#: How Blosc, Zstd and GZip are translated, by the identifier numcodecs
-#: gives each.
+#: Translation functions for Blosc, Zstd and GZip, keyed by their
+#: numcodecs identifiers.
 _TRANSLATIONS: dict[str, Build] = {
     'blosc': _blosc,
     'zstd': _zstd,
@@ -91,16 +88,16 @@ def from_config(config: dict[str, Any]) -> Codec:
 
 
 def _wrapped(codec: numcodecs.abc.Codec) -> tuple[zarr.abc.codec.Codec, ...]:
-    """Translate a codec through the wrapper Zarr ships for it.
+    """Convert a numcodecs codec using its corresponding Zarr wrapper.
 
     Args:
         codec: The codec to translate.
 
     Returns:
-        The wrapper Zarr ships for it.
+        The Zarr wrapper for the codec.
 
     Raises:
-        ValueError: If Zarr ships no wrapper for the codec.
+        ValueError: If Zarr has no corresponding wrapper.
     """
     name = type(codec).__name__
     wrapper = getattr(zarr.codecs.numcodecs, name, None)
@@ -116,13 +113,13 @@ def _wrapped(codec: numcodecs.abc.Codec) -> tuple[zarr.abc.codec.Codec, ...]:
 def translate(
     codec: numcodecs.abc.Codec | zarr.abc.codec.Codec,
 ) -> tuple[zarr.abc.codec.Codec, ...]:
-    """Return the Zarr codecs standing for a codec.
+    """Convert a codec into the corresponding Zarr codecs.
 
     Args:
-        codec: A codec of either vocabulary.
+        codec: A numcodecs or Zarr codec.
 
     Returns:
-        The Zarr codecs standing for it.
+        The Zarr codecs for the given codec.
     """
     if isinstance(codec, zarr.abc.codec.Codec):
         return (codec, )
@@ -135,15 +132,15 @@ def translate(
 def compressors(
     compressor: numcodecs.abc.Codec | zarr.abc.codec.Codec | str | None,
 ) -> Any:
-    """Return the codecs a chunk is held behind.
+    """Return the compressors to pass to Zarr.
 
     Args:
-        compressor: The compressor of a variable, :data:`DEFAULT_COMPRESSOR`
-            to let Zarr pick one, or ``None`` to write the chunks as they
-            are.
+        compressor: The compressor for a variable. Use
+            :data:`DEFAULT_COMPRESSOR` for Zarr's default or ``None``
+            to store chunks without compression.
 
     Returns:
-        What :func:`zarr.create_array` takes as its ``compressors``.
+        The value accepted by :func:`zarr.create_array` as ``compressors``.
     """
     if compressor is None or isinstance(compressor, str):
         return compressor

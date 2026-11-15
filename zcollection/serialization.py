@@ -3,11 +3,11 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Serialization of data types and fill values
-===========================================
+Serializing data types and fill values
+======================================
 
-Collections store the data type and the fill value of their variables as
-JSON. These functions are the encoding they are stored with.
+Encode and decode the data types and fill values stored in collection
+metadata as JSON.
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def decode_dtype(data: Any) -> numpy.dtype:
 
 
 def _encode_float(value: Any, _dtype: numpy.dtype) -> Any:
-    """Encode a floating point fill value, naming the values JSON lacks."""
+    """Encode a floating-point fill value, handling NaN and infinities."""
     if numpy.isnan(value):
         return 'NaN'
     if numpy.isposinf(value):
@@ -65,7 +65,7 @@ def _encode_complex(value: Any, _dtype: numpy.dtype) -> Any:
             encode_fill_value(value.imag, scalar.imag.dtype))
 
 
-#: How a fill value is encoded, by the kind of its data type.
+#: Encoders for fill values, indexed by data type kind.
 _ENCODERS: dict[str, Callable[[Any, numpy.dtype], Any]] = {
     'f': _encode_float,
     'u': lambda value, _dtype: int(value),
@@ -100,7 +100,7 @@ def _decode_bytes(data: Any, dtype: numpy.dtype) -> Any:
     try:
         data = base64.standard_b64decode(data)
     except binascii.Error:
-        # A value that is not base64 decodes as itself.
+        # A value that is not Base64-encoded is returned unchanged.
         pass
     return numpy.array(data, dtype=dtype)[()]
 
@@ -111,7 +111,7 @@ def _decode_void(data: Any, dtype: numpy.dtype) -> Any:
                        dtype=dtype.str).view(dtype)[()]
 
 
-#: How a fill value is decoded, by the kind of its data type.
+#: Decoders for fill values, indexed by data type kind.
 _DECODERS: dict[str, Callable[[Any, numpy.dtype], Any]] = {
     'f': _decode_float,
     'c': _decode_complex,
@@ -122,17 +122,17 @@ _DECODERS: dict[str, Callable[[Any, numpy.dtype], Any]] = {
 
 
 def encode_fill_value(value: Any, dtype: numpy.dtype) -> Any:
-    """Encode a fill value.
+    """Encode a fill value for JSON serialization.
 
     Args:
-        value: The fill value, or None when the variable declares none.
-        dtype: The data type of the variable.
+        value: The fill value, or ``None`` if none is defined.
+        dtype: The variable's data type.
 
     Returns:
-        A JSON-serializable form of the fill value.
+        A JSON-serializable representation of the fill value.
 
     Raises:
-        TypeError: If the data type holds Python objects.
+        TypeError: If the data type contains Python objects.
     """
     if value is None:
         return None
@@ -143,18 +143,17 @@ def encode_fill_value(value: Any, dtype: numpy.dtype) -> Any:
 
 
 def decode_fill_value(data: Any, dtype: numpy.dtype) -> Any:
-    """Decode a fill value.
+    """Decode a serialized fill value.
 
     Args:
-        data: The encoded fill value, or None when the variable declares
-            none.
-        dtype: The data type of the variable.
+        data: The encoded fill value, or ``None`` if none is defined.
+        dtype: The variable's data type.
 
     Returns:
-        The fill value.
+        The decoded fill value.
 
     Raises:
-        TypeError: If the data type holds Python objects.
+        TypeError: If the data type contains Python objects.
     """
     if data is None:
         return None

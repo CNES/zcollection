@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Metadata testing.
-=================
+Metadata tests
+==============
 """
 from __future__ import annotations
 
@@ -183,7 +183,7 @@ def test_dataset() -> None:
 
 
 def test_select_variables() -> None:
-    """Test select_variables."""
+    """Test variable selection."""
     root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
         config: dict[str, Any] = json.load(stream)
@@ -202,7 +202,7 @@ def test_select_variables() -> None:
 
 
 def test_deprecated_config() -> None:
-    """Test select_variables."""
+    """An old configuration sets dimension sizes and chunk sizes to -1."""
     root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('deprecated_dataset.json').open(
             encoding='utf-8') as stream:
@@ -221,7 +221,7 @@ def test_deprecated_config() -> None:
 
 
 def test_pickle() -> None:
-    """Test pickling."""
+    """Test serialization with pickle."""
     root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
         data: dict[str, Any] = json.load(stream)
@@ -231,7 +231,7 @@ def test_pickle() -> None:
 
 
 def test_missing_variables() -> None:
-    """Test missing_variables."""
+    """Test reporting missing variables."""
     root: pathlib.Path = pathlib.Path(__file__).parent
     with root.joinpath('first_dataset.json').open(encoding='utf-8') as stream:
         data: dict[str, Any] = json.load(stream)
@@ -257,9 +257,9 @@ def test_missing_variables() -> None:
 
 
 def test_drop_variable() -> None:
-    """``drop_variable`` removes the variable, keeps the order of the
-    others, and raises a ``ValueError`` for a name the schema does not
-    declare."""
+    """Dropping a variable preserves the order of the remaining variables
+    and raises ``ValueError`` for an unknown name.
+    """
     ds = meta.DatasetSchema(dimensions=(meta.Dimension('x', 0), ),
                             variables=[
                                 meta.VariableSchema(name,
@@ -336,7 +336,7 @@ def test_set_for_insertion():
 
 
 def test_select_variables_by_dims() -> None:
-    """Test select_variable_by_dims."""
+    """Test selecting variables by their dimensions."""
     ds = meta.DatasetSchema(dimensions=(meta.Dimension('a', 0),
                                         meta.Dimension('b', 10),
                                         meta.Dimension('x', 10),

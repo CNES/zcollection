@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Handles the partition selection expressions
-===========================================
+Partition selection expressions
+===============================
 """
 from __future__ import annotations
 
@@ -18,19 +18,21 @@ if TYPE_CHECKING:
 
 @dataclasses.dataclass
 class Expression:
-    """Partitioning expressions.
+    """Evaluate an expression against partition keys.
 
     Args:
-        expression: The expression to be evaluated
+        expression: The expression to evaluate.
+
     Raises:
-        NameError: If a variable is not defined.
+        NameError: If a variable is missing when the expression is evaluated.
+
     Example:
         >>> expr = Expression("year==2000 and month==1 and day in range(1, 12)")
     """
     #: Compiled expression to be evaluated
     code: types.CodeType
 
-    #: Known data members
+    #: Names of the instance attributes defined by ``__slots__``.
     __slots__: tuple[str, ...] = ('code', )
 
     #: The builtins that are allowed in the expression.
@@ -46,8 +48,8 @@ class Expression:
                 for name in self.code.co_names if name not in self.BUILTINS
             }
 
-            # The eval function is used here to evaluate a simple expression.
-            # The only builtin functions allowed is the range function.
+            # Evaluate a simple expression with ``eval``, allowing only
+            # ``range`` as a built-in function.
             return eval(self.code, {'__builtins__': self.BUILTINS}, __locals)
 
         except KeyError as err:

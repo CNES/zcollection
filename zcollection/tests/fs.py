@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Fixture for testing the file system.
-====================================
+File system test fixtures
+=========================
 """
 from typing import Any
 from collections.abc import Iterator
@@ -30,10 +30,10 @@ def tempdir(tmp_path) -> pathlib.Path:
 
 
 class Local:
-    """Local files system."""
+    """Local file system."""
 
     def __init__(self, tmp_path, protocol) -> None:
-        #: The filesystem.
+        #: The file system.
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(protocol)
         #: The root directory.
         self.root = tempdir(pathlib.Path(tmp_path))
@@ -48,13 +48,12 @@ class Local:
 
 @pytest.fixture
 def local_fs(tmp_path, pytestconfig) -> Iterator[Local]:
-    """Local filesystem."""
+    """Provide a local file system."""
     protocol: str = 'memory' if pytestconfig.getoption('memory') else 'file'
     instance = Local(tmp_path, protocol)
     yield instance
     try:
-        # For the memory protocol we delete the written data to free the
-        # memory.
+        # Remove test data on the memory file system to release memory.
         if isinstance(instance.fs,
                       fsspec.implementations.memory.MemoryFileSystem):
             instance.fs.rm(str(instance.root), recursive=True)
@@ -66,21 +65,21 @@ if S3_IMPORT_EXCEPTION is None:
 
     @pytest.fixture
     def s3_fs(s3, s3_base) -> S3:  # type: ignore[arg-type]
-        """S3 filesystem."""
+        """S3 file system."""
         return S3(s3, s3_base)
 else:
 
     @pytest.fixture
     def s3() -> None:
-        """S3 filesystem."""
+        """S3 file system."""
 
     @pytest.fixture
     def s3_base() -> None:
-        """S3 filesystem."""
+        """S3 file system."""
 
     @pytest.fixture
     def s3_fs(pytestconfig) -> None:
-        """S3 filesystem."""
+        """S3 file system."""
         if pytestconfig.getoption('s3'):
             pytest.fail(f'Unable to test S3: {S3_IMPORT_EXCEPTION}')
         else:

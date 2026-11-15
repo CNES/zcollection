@@ -21,16 +21,16 @@ if TYPE_CHECKING:
 
     from ..type_hints import ArrayLike, NDArray
 
-#: Numpy time units
+#: NumPy time units.
 RESOLUTION = ('Y', 'M', 'D', 'h', 'm', 's')
 
-#: Numpy time unit meanings
+#: Names of NumPy time units.
 UNITS = ('year', 'month', 'day', 'hour', 'minute', 'second')
 
-#: Data type for time units
+#: Data type used for time units.
 DATA_TYPES = ('uint16', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8')
 
-#: Time separation units
+#: Time units used for partitioning.
 SEPARATORS: dict[str, str] = {
     'year': '-',
     'month': '-',
@@ -42,13 +42,15 @@ SEPARATORS: dict[str, str] = {
 
 
 def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
-    """Return unique elements and their indices.
+    """Return unique dates and their indices, checking monotonicity.
 
     Args:
-        arr: Array of elements.
-        is_delayed: If True, the array is delayed.
+        arr: The dates to examine.
+        is_delayed: Whether the array uses Dask.
+
     Returns:
-        Tuple of unique elements and their indices.
+        The unique dates and their indices.
+
     Raises:
         ValueError: If the array is not monotonic.
     """
@@ -57,8 +59,7 @@ def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
 
     if is_delayed:
         index, indices = abc.unique(arr)  # type: ignore[arg-type]
-        # We don't use here the function `numpy.diff` but `abc.difference` for
-        # optimization purposes.
+        # Use ``abc.difference`` instead of ``numpy.diff`` here.
         if not numpy.all(abc.difference(index.view(numpy.int64)) >= 0):
             raise ValueError('index is not monotonic')
         return index, indices
@@ -69,15 +70,14 @@ class Date(abc.Partitioning):
     """Initialize a partitioning scheme based on dates.
 
     Args:
-        variables: A list of strings representing the variables to be used for
-            partitioning.
+        variables: A one-element sequence containing the name of the
+            datetime variable used for partitioning.
         resolution: Time resolution of the partitioning. Must be in
             :data:`RESOLUTION`.
 
     Raises:
-        ValueError: If the resolution is not in the list of supported
-            resolutions or if the partitioning is not performed on a one
-            dimensional variable.
+        ValueError: If the resolution is unsupported or the number of
+            partitioning variables is not one.
 
     Example:
         >>> partitioning = Date(variables=("time", ), resolution="Y")
@@ -95,11 +95,11 @@ class Date(abc.Partitioning):
             raise ValueError('resolution must be in: ' + ', '.join(RESOLUTION))
         index: int = RESOLUTION.index(resolution) + 1
 
-        #: The time resolution of the partitioning
+        #: The time resolution of the partitioning.
         self.resolution: str = resolution
-        #: The time parts used for the partitioning
+        #: The time components used for partitioning.
         self._attrs: tuple[str, ...] = UNITS[:index + 1]
-        #: The indices of the time parts used for the partitioning
+        #: Indices of the time components used for partitioning.
         self._index = tuple(range(index))
         super().__init__(variables,
                          tuple(DATA_TYPES[ix] for ix in self._index))
@@ -124,13 +124,13 @@ class Date(abc.Partitioning):
         self,
         variables: dict[str, NDArray],
     ) -> Iterator[abc.Partition]:
-        """Return the partitioning scheme for the given variables."""
+        """Split datetime values into date-based partition keys."""
         index: NDArray
         indices: NDArray
         name: str
         values: ArrayLike
 
-        # Determine if the variables are handled by Dask.
+        # Check whether the variable uses Dask.
         is_delayed: bool = any(
             isinstance(value, dask.array.core.Array)
             for value in variables.values())
@@ -150,7 +150,7 @@ class Date(abc.Partitioning):
 
     @staticmethod
     def _stringify(partition: tuple[tuple[str, int], ...]) -> str:
-        """Return a string representation of the partitioning scheme."""
+        """Format a date-based partition key as a string."""
         string = ''.join(f'{value:02d}' + SEPARATORS[item]
                          for item, value in partition)
         if string[-1] in SEPARATORS.values():
@@ -159,7 +159,7 @@ class Date(abc.Partitioning):
 
     @staticmethod
     def join(partition_scheme: tuple[tuple[str, int], ...], sep: str) -> str:
-        """Join a partitioning scheme.
+        """Join date-based partition keys into a path.
 
         Args:
             partition_scheme: The partitioning scheme to be joined.
@@ -180,7 +180,7 @@ class Date(abc.Partitioning):
         self,
         partition: tuple[tuple[str, int], ...],
     ) -> tuple[Any, ...]:
-        """Encode a partitioning scheme.
+        """Encode date-based partition keys as datetime values.
 
         Args:
             partition: The partitioning scheme to be encoded.
@@ -202,7 +202,7 @@ class Date(abc.Partitioning):
         self,
         values: tuple[Any, ...],
     ) -> tuple[tuple[str, int], ...]:
-        """Decode a partitioning scheme.
+        """Decode datetime values into partition keys.
 
         Args:
             values: The partitioning scheme to be decoded.
@@ -223,6 +223,6 @@ class Date(abc.Partitioning):
     def get_config(self) -> dict[str, Any]:
         config = super().get_config()
 
-        # dtype are automatically computed by this partitioning
+        # Data types are determined automatically for date partitioning.
         config.pop('dtype')
         return config

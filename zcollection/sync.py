@@ -20,8 +20,7 @@ if TYPE_CHECKING:
 
 
 class Sync(abc.ABC):  # pragma: no cover
-    """Interface of the classes handling the synchronization of concurrent
-    accesses."""
+    """Interface for synchronizing concurrent access."""
 
     @abc.abstractmethod
     def __enter__(self) -> bool:
@@ -33,29 +32,25 @@ class Sync(abc.ABC):  # pragma: no cover
 
     @abc.abstractmethod
     def is_locked(self) -> bool:
-        """Returns True if the lock is acquired, False otherwise."""
+        """Return ``True`` if the lock is acquired, ``False`` otherwise."""
 
 
 class NoSync(Sync):
-    """This class is used when the user does not want to synchronize accesses
-    to the collection, in other words, when there is no concurrency."""
+    """Synchronizer that performs no locking."""
 
     def __enter__(self) -> bool:
         return True
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
-        """As this class does not perform any synchronization, this method has
-        nothing to do."""
+        """Exit without performing synchronization."""
 
     def is_locked(self) -> bool:
-        """As this class does not perform any synchronization, this method
-        always returns False."""
+        """Return ``False`` because no lock is used."""
         return False
 
 
 class ProcessSync(Sync):
-    """This class is used when the user wants to synchronize accesses to the
-    collection, in other words, when there is concurrency."""
+    """Synchronize access using an inter-process lock."""
 
     def __init__(self, path: str) -> None:
         self.lock = fasteners.InterProcessLock(path)

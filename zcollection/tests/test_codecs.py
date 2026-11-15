@@ -3,12 +3,12 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Testing the translation of codecs
-=================================
+Codec translation tests
+=======================
 
-The translation of a codec sets what lands in the metadata of an array,
-and what another implementation of Zarr can read. These tests pin what
-each codec is translated into.
+Codec translation determines the array metadata and which Zarr
+implementations can read it. These tests check the resulting codec names
+and configurations.
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def names(codec: numcodecs.abc.Codec) -> list[str]:
     (numcodecs.GZip(level=4), ['gzip']),
 ])
 def test_a_registered_codec_is_translated(codec, expected) -> None:
-    """Each of these codecs is written under the name Zarr gives it."""
+    """Each registered codec uses the name assigned by Zarr."""
     assert names(codec) == expected
 
 
@@ -53,11 +53,12 @@ def test_a_registered_codec_is_translated(codec, expected) -> None:
                                 dtype='f8'), ['numcodecs.fixedscaleoffset']),
 ])
 def test_an_unregistered_codec_keeps_its_own_name(codec, expected) -> None:
-    """A codec translated into the wrapper keeps its numcodecs identifier.
+    """A codec translated through the wrapper keeps its numcodecs identifier.
 
-    Zarr writes that identifier prefixed with ``numcodecs.``. The name lies
-    outside the registry of the Zarr v3 specification: reading an array it
-    is applied to takes an implementation that provides the codec.
+    Zarr writes that identifier prefixed with ``numcodecs.``.
+    This name is not part of the Zarr v3 codec registry.
+    Reading an array using it requires an implementation that provides
+    the codec.
     """
     assert names(codec) == expected
 
@@ -82,16 +83,16 @@ def test_the_shuffle_blosc_picks_is_left_to_zarr() -> None:
 
 
 def test_a_zarr_codec_is_carried_as_it_is() -> None:
-    """A codec already named by Zarr goes through untouched."""
+    """A Zarr codec is passed through unchanged."""
     codec = zarr.codecs.BloscCodec(cname='lz4')
     assert codecs.translate(codec) == (codec, )
 
 
 def test_a_codec_zarr_holds_nothing_for_is_refused() -> None:
-    """A codec with no counterpart raises."""
+    """An unsupported codec is rejected."""
 
     class Unknown(numcodecs.abc.Codec):
-        """A codec of no known kind."""
+        """A codec type not known to Zarr."""
         codec_id = 'unknown'
 
         def encode(self, buf):
@@ -107,7 +108,10 @@ def test_a_codec_zarr_holds_nothing_for_is_refused() -> None:
 
 
 def test_the_compressor_zarr_picks_is_left_to_it() -> None:
-    """The marker and the absence of a compressor go through."""
+    """``DEFAULT_COMPRESSOR`` becomes ``'auto'``.
+
+    ``filters(None)`` returns ``()``; ``compressors(None)`` returns ``None``.
+    """
     assert codecs.compressors(codecs.DEFAULT_COMPRESSOR) == 'auto'
     assert codecs.compressors(None) is None
     assert codecs.filters(None) == ()
@@ -118,9 +122,9 @@ def test_the_compressor_zarr_picks_is_left_to_it() -> None:
 def test_a_translated_scaling_holds_the_same_values(
         local_fs,  # noqa: F811
         astype) -> None:
-    """A translated scaling reads back what numcodecs reads back.
+    """Translated scaling produces the same values as numcodecs.
 
-    numcodecs rounds the scaled values before it writes them.
+    numcodecs rounds scaled values before writing them.
     """
     values = numpy.linspace(-1.5, 1.5, 1000)
     codec = numcodecs.FixedScaleOffset(offset=0,

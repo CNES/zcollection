@@ -60,7 +60,7 @@ from .fs import local_fs  # noqa: F401
 #: The frozen collection.
 ARCHIVE = pathlib.Path(__file__).parent / 'deprecated_collection.zip'
 
-#: Partitions the frozen collection holds, as the reports name them.
+#: Partitions in the frozen collection, as named in reports.
 PARTITIONS = (
     'year=2000/month=01/day=01',
     'year=2000/month=01/day=02',
@@ -82,7 +82,7 @@ ZARR_3_FILE = 'zarr.json'
 #: The local file system, for the fixtures and the tests that stay on it.
 local = fs_utils.get_fs('file')
 
-#: Variable a view holds of its own.
+#: Variable defined by the view.
 VIEW_VARIABLE = meta.VariableSchema(
     name='derived',
     dtype=numpy.dtype('float64'),
@@ -104,7 +104,7 @@ def deprecated(tmp_path) -> str:
 def deprecated_view(deprecated, tmp_path) -> str:
     """Write a view on the frozen collection, in the deprecated format.
 
-    The view holds one variable of its own, filled with values read from the
+    The view defines one variable, filled with values read from the
     collection it references.
     """
     path = str(tmp_path / 'deprecated_view')
@@ -132,16 +132,16 @@ def deprecated_view(deprecated, tmp_path) -> str:
 
 
 def double_the_plain_variable(zds, name) -> dict[str, Any]:
-    """Return the values a view holds in its own variable."""
+    """Return the values of the variable defined by the view."""
     return {name: zds.variables['plain'].values * 2.0}
 
 
 def place(source: str, tested_fs) -> tuple[str, str]:
-    """Copy a collection onto the filesystem under test.
+    """Copy a collection to the file system under test.
 
     Args:
-        source: The collection to copy, on the local filesystem.
-        tested_fs: The filesystem under test.
+        source: The collection to copy, on the local file system.
+        tested_fs: The file system under test.
 
     Returns:
         The path of the copy, and the path for the target of a migration.
@@ -152,10 +152,10 @@ def place(source: str, tested_fs) -> tuple[str, str]:
 
 
 def digest(fs: fsspec.AbstractFileSystem, path: str) -> dict[str, str]:
-    """Return the digest of every file of a directory.
+    """Return a digest for each file in a directory.
 
     Args:
-        fs: The filesystem the directory is held on.
+        fs: The file system storing the directory.
         path: The directory to read.
 
     Returns:
@@ -204,10 +204,10 @@ def write_view_config(fs: fsspec.AbstractFileSystem, path: str,
 
 def point_view_at(fs: fsspec.AbstractFileSystem, path: str,
                   reference_path: str) -> None:
-    """Write the paths a copied view configuration holds.
+    """Update the paths stored in a copied view's configuration.
 
     Args:
-        fs: The filesystem the view is held on.
+        fs: The file system the view is held on.
         path: The directory of the view.
         reference_path: The collection the view references.
     """
@@ -221,7 +221,7 @@ def point_view_at(fs: fsspec.AbstractFileSystem, path: str,
 
 
 def checksum_of(fs: fsspec.AbstractFileSystem, partition: str) -> str:
-    """Read the checksum a view holds for one of its partitions."""
+    """Read the checksum stored for a partition of a view."""
     array = store.open_array(fs,
                              fs_utils.join_path(partition, '.checksum'),
                              mode='r')
@@ -242,11 +242,10 @@ def unconsolidate(fs: fsspec.AbstractFileSystem, partition: str) -> None:
 def rewrite_array(path: pathlib.Path, chunks: dict[str, int]) -> None:
     """Write a Zarr 2 array again, with the given chunking.
 
-    The codecs, the fill value, the attributes and the values are the ones
-    the array holds.
+    Preserve the array codecs, fill value, attributes and values.
 
     Args:
-        path: The directory of the array, on the local filesystem.
+        path: The directory of the array, on the local file system.
         chunks: The chunk size of each dimension.
     """
     metadata: dict[str, Any] = json.loads((path / '.zarray').read_text())
@@ -279,7 +278,7 @@ def rechunk(partition: str,
     """Write the arrays of a Zarr 2 group again, with the given chunking.
 
     Args:
-        partition: The directory of the group, on the local filesystem.
+        partition: The directory of the group, on the local file system.
         chunks: The chunk size of each dimension.
         names: The arrays to write again. All of them when it is None.
     """
@@ -294,7 +293,7 @@ def downgrade(partition: str) -> None:
     """Write the arrays of a view partition in the Zarr 2 format.
 
     Args:
-        partition: The directory of the partition, on the local filesystem.
+        partition: The directory of the partition, on the local file system.
     """
     for path in sorted(item for item in pathlib.Path(partition).iterdir()
                        if item.is_dir()):
@@ -319,12 +318,12 @@ def downgrade(partition: str) -> None:
 
 
 def add_immutable(path: str) -> None:
-    """Write an immutable variable beside the partitions of a collection.
+    """Add an immutable variable alongside the collection partitions.
 
-    The frozen collection carries none.
+    The frozen collection has none.
 
     Args:
-        path: The directory of the collection, on the local filesystem.
+        path: The directory of the collection, on the local file system.
     """
     values: numpy.ndarray = reference.pixel_values()
     immutable = fs_utils.join_path(path, collection.IMMUTABLE)
@@ -399,7 +398,8 @@ def attributes_of(attrs) -> dict[str, Any]:
 
 @pytest.mark.parametrize('dtype', ['datetime64[ns]', 'timedelta64[ns]'])
 def test_temporal_comparison_handles_nat_and_preserves_units(dtype) -> None:
-    """NaT compares equal while real differences and units remain significant."""
+    """NaT compares equal while real differences and units remain
+    significant."""
     values = numpy.array([1000, 'NaT'], dtype=dtype)
 
     assert not migration.detail._differ(values, values.copy())
@@ -410,10 +410,9 @@ def test_temporal_comparison_handles_nat_and_preserves_units(dtype) -> None:
 
 
 def test_the_migration_module_holds_the_entry_points() -> None:
-    """The eight functions and the two reports are named by one module.
+    """The migration module exports eight functions and two report classes.
 
-    The package names none of them: importing zcollection carries no
-    vocabulary of a migration into a program that only reads a collection.
+    None of these names is exported at the top level of ``zcollection``.
     """
     assert set(migration.__all__) == {
         'Outcome', 'Status', 'check', 'check_view', 'migrate', 'migrate_view',
@@ -433,7 +432,7 @@ def test_the_migration_module_holds_the_entry_points() -> None:
 
 
 def test_the_reports_hold_the_fields_of_the_contract() -> None:
-    """An outcome holds three tuples, a status three others."""
+    """An outcome has three fields and a status has four."""
     assert tuple(
         item.name
         for item in dataclasses.fields(migration.Outcome)) == ('done',
@@ -472,7 +471,8 @@ def test_the_values_of_every_variable_survive_the_copy(fs, request,
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_the_target_is_a_writable_zarr_3_collection(fs, request,
                                                     deprecated) -> None:
-    """The target holds Zarr 3 stores, and takes a variable written to it."""
+    """The migrated Zarr 3 collection accepts a new variable whose values
+    are entirely masked."""
     tested_fs = request.getfixturevalue(fs)
     source, target = place(deprecated, tested_fs)
 
@@ -509,10 +509,11 @@ def test_the_target_is_a_writable_zarr_3_collection(fs, request,
 
 def test_the_target_is_configured_as_a_collection_written_today(
         deprecated, tmp_path) -> None:
-    """The copy carries the configuration a fresh write produces.
+    """The migrated collection has the same configuration as a collection
+    created and populated by this release.
 
-    The size of the partitioning dimension stays unset: it is the one
-    dimension whose size varies from one partition to the next.
+    The partitioned dimension has no fixed size because its length can
+    vary between partitions.
     """
     target = str(tmp_path / 'target')
     today = str(tmp_path / 'today')
@@ -529,7 +530,7 @@ def test_the_target_is_configured_as_a_collection_written_today(
 
 def test_a_target_configured_otherwise_is_refused(deprecated,
                                                   tmp_path) -> None:
-    """A target whose configuration disagrees with the source stops the run."""
+    """An incompatible target configuration prevents migration."""
     target = str(tmp_path / 'target')
     migrate(deprecated, target, distributed=False)
 
@@ -588,7 +589,7 @@ def test_selected_partitions_migrates_only_the_partitions_it_names(
 
 def test_a_status_on_an_empty_target_reports_every_partition_missing(
         deprecated, tmp_path) -> None:
-    """Before the first migration, the source holds everything missing."""
+    """Before migration, every source partition is reported as missing."""
     report = status(deprecated, str(tmp_path / 'target'))
 
     assert report.migrated == ()
@@ -609,7 +610,7 @@ def test_a_status_prints_the_counts_of_each_group(deprecated,
 
 def test_a_status_counts_as_pruned_what_the_source_no_longer_holds(
         deprecated, tmp_path) -> None:
-    """A partition the target alone holds is counted apart."""
+    """A partition present only in the target is reported as pruned."""
     target = str(tmp_path / 'target')
     migrate(deprecated, target, distributed=False)
     prune(deprecated, target, filters='day == 1', distributed=False)
@@ -710,9 +711,9 @@ def test_a_partition_that_raises_does_not_stop_the_run(
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_prune_removes_a_migrated_partition_and_refuses_the_others(
         fs, request, deprecated) -> None:
-    """The source loses the partitions the target holds complete.
+    """Prune only the partitions complete in the target.
 
-    The files of the collection itself stay.
+    The files of the source collection itself are preserved.
     """
     tested_fs = request.getfixturevalue(fs)
     source, target = place(deprecated, tested_fs)
@@ -740,7 +741,7 @@ def test_prune_removes_a_migrated_partition_and_refuses_the_others(
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_check_reads_every_value_as_equal(fs, request, deprecated) -> None:
-    """A copy read back holds the values of the source."""
+    """Reading the copy returns the same values as the source."""
     tested_fs = request.getfixturevalue(fs)
     source, target = place(deprecated, tested_fs)
     migrate(source,
@@ -884,7 +885,7 @@ def test_the_source_is_unchanged(deprecated, tmp_path) -> None:
 
 
 def test_a_migration_reads_and_writes_on_two_filesystems(deprecated) -> None:
-    """Each side of a migration is read through the filesystem given for it."""
+    """Each side of a migration is read through the file system given for it."""
     target = '/migrated-collection'
     memory: fsspec.AbstractFileSystem = fsspec.filesystem('memory')
     try:
@@ -990,15 +991,15 @@ def test_check_compares_the_immutable_variables(deprecated, tmp_path) -> None:
 
 def test_check_names_the_arrays_the_source_holds_no_chunk_of(
         deprecated, tmp_path, caplog) -> None:
-    """An array the source holds no chunk of is named in a warning.
+    """An array with no chunks in the source is reported in a warning.
 
-    Zarr reads it as the fill value on both sides, so comparing the values
-    cannot see it.
+    Zarr reads it as the fill value on both sides, so a value comparison
+    cannot detect the missing chunks.
     """
     local = fs_utils.get_fs('file')
     target = str(tmp_path / 'target')
 
-    # The chunk alone, the metadata of the array staying.
+    # Remove only the chunk file, leaving the array metadata intact.
     local.rm(fs_utils.join_path(deprecated, PARTITIONS[0], 'masked', '0'))
     # The whole array.
     local.rm(fs_utils.join_path(deprecated, PARTITIONS[1], 'grid'),
@@ -1045,7 +1046,7 @@ def fill_the_masked_variable(partition: str) -> None:
 
 def test_a_chunk_sits_beside_the_metadata_of_its_array(deprecated,
                                                        tmp_path) -> None:
-    """An array names a chunk with the ``c`` prefix and a dot."""
+    """An array chunk uses a name starting with ``c`` followed by a dot."""
     target = str(tmp_path / 'target')
     migrate(deprecated, target, distributed=False)
 
@@ -1057,7 +1058,7 @@ def test_a_chunk_sits_beside_the_metadata_of_its_array(deprecated,
 
 def test_a_chunk_holding_nothing_but_the_fill_value_is_not_written(
         deprecated, tmp_path) -> None:
-    """Its array keeps its metadata, and reads back its values and masks."""
+    """A fill-value-only chunk is omitted without losing metadata or values."""
     for name in PARTITIONS:
         fill_the_masked_variable(fs_utils.join_path(deprecated, name))
     source = read_collection(deprecated, local)
@@ -1107,7 +1108,7 @@ def test_a_second_view_migration_holds_what_it_wrote(deprecated_view,
 
 def test_prune_refuses_a_target_that_is_not_the_copy(deprecated,
                                                      tmp_path) -> None:
-    """Another collection does not stand for the copy of this one."""
+    """A different collection cannot serve as the source copy."""
     other = str(tmp_path / 'other')
     zds = reference.make_dataset(immutable=False)
     zds = zds.select_vars(names=['time', 'plain'])
@@ -1122,7 +1123,7 @@ def test_prune_refuses_a_target_that_is_not_the_copy(deprecated,
 
 def test_prune_removes_what_both_the_filter_and_the_list_name(
         deprecated, tmp_path) -> None:
-    """The two ways of selecting bound each other, as they do elsewhere."""
+    """A partition is pruned only if both the filter and list select it."""
     target = str(tmp_path / 'target')
     migrate(deprecated, target, distributed=False)
 
@@ -1139,7 +1140,7 @@ def test_prune_removes_what_both_the_filter_and_the_list_name(
 
 def test_a_view_status_names_what_the_source_view_no_longer_holds(
         deprecated_view, tmp_path) -> None:
-    """A partition the copy holds alone is named, not passed over."""
+    """A partition present only in the copy is reported as pruned."""
     target = str(tmp_path / 'view-target')
     migrate_view(deprecated_view, target, distributed=False)
     local.rm(fs_utils.join_path(deprecated_view, PARTITIONS[0]),
@@ -1155,7 +1156,7 @@ def test_a_view_status_names_what_the_source_view_no_longer_holds(
 
 def test_check_names_a_variable_whose_attributes_changed(deprecated,
                                                          tmp_path) -> None:
-    """The copy carries the attributes over, so the check reads them."""
+    """Changes to a variable's attributes are reported by the check."""
     target = str(tmp_path / 'target')
     migrate(deprecated, target, distributed=False)
 
@@ -1174,7 +1175,7 @@ def test_check_names_a_variable_whose_attributes_changed(deprecated,
 
 def test_check_names_a_variable_whose_chunking_changed(deprecated,
                                                        tmp_path) -> None:
-    """The copy keeps the chunking of the source, so the check reads it."""
+    """Changes to a variable's chunking are detected by the check."""
     for name in PARTITIONS:
         rechunk(fs_utils.join_path(deprecated, name), SOURCE_CHUNKS)
     target = str(tmp_path / 'target')
@@ -1202,7 +1203,7 @@ def test_check_names_a_variable_whose_chunking_changed(deprecated,
 
 def test_check_names_an_array_short_of_one_chunk_of_several(
         deprecated, tmp_path, caplog) -> None:
-    """The count of the chunks held is read against the grid of the array."""
+    """Missing chunks are detected against the array's expected chunk grid."""
     partition = fs_utils.join_path(deprecated, PARTITIONS[0])
     rechunk(partition, SOURCE_CHUNKS)
     held = sorted(pathlib.Path(partition, 'plain').glob('[0-9]*'))
@@ -1220,7 +1221,8 @@ def test_check_names_an_array_short_of_one_chunk_of_several(
 
 def test_check_view_names_the_variables_the_target_changed(
         deprecated_view, tmp_path) -> None:
-    """A partition whose values were changed is reported with its variable."""
+    """A changed view partition is reported with the name of the variable
+    that differs."""
     target = str(tmp_path / 'view-target')
     migrate_view(deprecated_view, target, distributed=False)
 
@@ -1238,7 +1240,7 @@ def test_check_view_names_the_variables_the_target_changed(
 
 def test_check_names_the_attributes_of_a_group_that_changed(
         deprecated, tmp_path) -> None:
-    """The copy carries the attributes of the dataset over too."""
+    """Changes to dataset attributes are detected by the check."""
     target = str(tmp_path / 'target')
     migrate(deprecated, target, distributed=False)
 
@@ -1290,7 +1292,7 @@ def test_a_selection_that_holds_no_partition_writes_nothing(
 
 def test_check_view_skips_a_partition_the_target_does_not_hold(
         deprecated_view, tmp_path) -> None:
-    """A view the copy has not been written yet compares nothing."""
+    """Without a migrated view partition, ``check_view`` skips comparison."""
     target = str(tmp_path / 'view-target')
 
     outcome = check_view(deprecated_view, target, distributed=False)
@@ -1302,7 +1304,7 @@ def test_check_view_skips_a_partition_the_target_does_not_hold(
 
 def test_check_names_a_variable_the_target_masks_otherwise(
         deprecated, tmp_path) -> None:
-    """Two variables holding one absence apart are read as differing."""
+    """A difference in which values are masked is detected."""
     target = str(tmp_path / 'target')
     migrate(deprecated, target, distributed=False)
 
@@ -1321,7 +1323,7 @@ def test_check_names_a_variable_the_target_masks_otherwise(
 
 def test_a_filter_migrates_only_the_view_partitions_it_selects(
         deprecated_view, tmp_path) -> None:
-    """A view is selected the way a collection is."""
+    """A filter also limits which view partitions are migrated."""
     target = str(tmp_path / 'view-target')
 
     outcome = migrate_view(deprecated_view,
@@ -1343,7 +1345,7 @@ def test_a_filter_migrates_only_the_view_partitions_it_selects(
 
 def test_prune_view_removes_a_migrated_partition_and_refuses_the_others(
         deprecated_view, tmp_path) -> None:
-    """The source view loses the partitions the copy holds in full."""
+    """Pruning a view removes only partitions complete in its copy."""
     target = str(tmp_path / 'view-target')
     migrate_view(deprecated_view,
                  target,
@@ -1450,7 +1452,7 @@ def test_prune_paths_reject_aliases(protocol, source, target) -> None:
 
 
 def test_prune_paths_accept_distinct_filesystems() -> None:
-    """Equal paths on different filesystems denote distinct locations."""
+    """Equal paths on different file systems denote distinct locations."""
     migration.detail._require_distinct_paths('/collection',
                                              '/collection', local,
                                              fsspec.filesystem('memory'))
@@ -1493,7 +1495,7 @@ def test_prune_refuses_its_own_source(fs, request, is_view) -> None:
 @pytest.mark.parametrize('is_view', [False, True])
 def test_prune_accepts_the_same_path_on_distinct_filesystems(request,
                                                              is_view) -> None:
-    """Equal paths on local and memory filesystems identify two copies."""
+    """Equal paths on local and memory file systems identify two copies."""
     source = request.getfixturevalue(
         'deprecated_view' if is_view else 'deprecated')
     memory = fsspec.filesystem('memory')
@@ -1602,7 +1604,7 @@ def test_view_migration_resumes_with_a_compatible_target(
 
 
 def test_a_deprecated_view_is_read(deprecated, deprecated_view) -> None:
-    """A deprecated view opens, with a warning, and reads."""
+    """A deprecated view opens with a warning and can be read."""
     with pytest.warns(UserWarning, match='written by an earlier release'):
         zview = zcollection.open_view(deprecated_view)
 
@@ -1615,7 +1617,7 @@ def test_a_deprecated_view_is_read(deprecated, deprecated_view) -> None:
 
 def test_a_deprecated_view_refuses_what_writes(deprecated,
                                                deprecated_view) -> None:
-    """A deprecated view refuses each of its methods that writes."""
+    """A deprecated view refuses write operations."""
     with pytest.warns(UserWarning, match='written by an earlier release'):
         zview = zcollection.open_view(deprecated_view)
 
@@ -1633,7 +1635,7 @@ def test_a_deprecated_view_refuses_what_writes(deprecated,
 
 def test_a_deprecated_view_repairs_no_partition(deprecated,
                                                 deprecated_view) -> None:
-    """Repairing the partitions of a deprecated view changes nothing."""
+    """Repairing a deprecated view fails without changing its partitions."""
     with pytest.warns(UserWarning, match='written by an earlier release'):
         zview = zcollection.open_view(deprecated_view)
 

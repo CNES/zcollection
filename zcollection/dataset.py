@@ -34,34 +34,34 @@ if TYPE_CHECKING:
 
     from .type_hints import ArrayLike, NDArray, NDMaskedArray
 
-#: Alias to type hint for the variables of a dataset.
+#: Type alias for a dataset's variables.
 VariableType = OrderedDict[str, Variable]
 
-#: Alias to type hint for the attributes of a dataset.
+#: Type alias for a dataset's attributes.
 AttributeType = tuple[Attribute, ...]
 
 
 def _dask_repr(array: dask.array.core.Array) -> str:
-    """Get the string representation of a dask array.
+    """Format a Dask array as a string.
 
     Args:
-        array: A dask array.
+        array: The Dask array.
 
     Returns:
-        The string representation of the dask array.
+        The formatted string.
     """
     chunksize = tuple(item[0] for item in array.chunks)
     return f'dask.array<chunksize={chunksize}>'
 
 
 def _dataset_repr(zds: Dataset) -> str:
-    """Get the string representation of a dataset.
+    """Format a dataset as a string.
 
     Args:
-        zds: A dataset.
+        zds: The dataset.
 
     Returns:
-        The string representation of the dataset.
+        The formatted string.
     """
     # Dimensions
     dims_str: str = representation.dimensions(zds.dimensions)
@@ -90,34 +90,34 @@ def _dataset_repr(zds: Dataset) -> str:
 
 def _duplicate_delayed_array(var: DelayedArray,
                              data: dask.array.core.Array) -> DelayedArray:
-    """Duplicate the variable with a new data.
+    """Copy a variable, replacing its data.
 
     Args:
-        var: Variable to duplicate.
-        data: The new data to use
+        var: The variable to copy.
+        data: The data for the new variable.
 
     Returns:
-        The duplicated variable
+        The copied variable.
     """
     return var.duplicate(data)
 
 
 def _duplicate_array(var: Array, data: NDArray) -> Array:
-    """Duplicate the variable with a new data.
+    """Copy a variable, replacing its data.
 
     Args:
-        var: Variable to duplicate.
-        data: The new data to use
+        var: The variable to copy.
+        data: The data for the new variable.
 
     Returns:
-        The duplicated variable
+        The copied variable.
     """
     return var.duplicate(data)
 
 
 def _delete_delayed_vars(self: Dataset, indexer: slice | Sequence[int],
                          axis: str) -> list[Variable]:
-    """Delete the variables along the given axis."""
+    """Remove selected entries along the specified axis."""
     return [
         _duplicate_delayed_array(
             var,  # type: ignore[arg-type]
@@ -129,7 +129,7 @@ def _delete_delayed_vars(self: Dataset, indexer: slice | Sequence[int],
 
 def _delete_vars(self: Dataset, indexer: slice | Sequence[int],
                  axis: str) -> list[Variable]:
-    """Delete the variables along the given axis."""
+    """Remove selected entries along the specified axis."""
     return [
         _duplicate_array(
             var,  # type: ignore[arg-type]
@@ -140,7 +140,7 @@ def _delete_vars(self: Dataset, indexer: slice | Sequence[int],
 
 def _update_dimensions(self: Dataset,
                        delayed: bool | None = None) -> bool | None:
-    """Update the dimensions of the dataset based on its variables."""
+    """Update dataset dimension sizes from the variables."""
     for var in self.variables.values():
         if delayed is None:
             delayed = isinstance(var, DelayedArray)
@@ -162,33 +162,24 @@ def _update_dimensions(self: Dataset,
 
 
 class Dataset:
-    """Hold variables, dimensions, and attributes that together form a dataset.
+    """A dataset containing variables, dimensions, and attributes.
+
+    A dataset stores either :py:class:`Array
+    <zcollection.variable.array.Array>` or :py:class:`DelayedArray
+    <zcollection.variable.delayed_array.DelayedArray>` variables. The two types
+    cannot be mixed in the same dataset.
 
     Args:
-        variables (DelayedArray | Array): A dictionary of variables in the
-            dataset, with variable names as keys and :py:class:`Array
-            <zcollection.variable.array.Array>` or :py:class:`DelayedArray
-            <zcollection.variable.delayed_array.DelayedArray>` objects as
-            values.
-        attrs: A tuple of global attributes on this dataset.
-        delayed: A boolean indicating whether the dataset contains delayed
-            variables (numpy arrays wrapped in dask arrays).
+        variables: An iterable of variable objects. The dataset indexes each
+            variable by its ``name`` attribute.
+        attrs: The global attributes of the dataset.
+        delayed: Whether the dataset uses delayed variables. If ``None``, the
+            value is inferred from its variables.
 
     Raises:
-        ValueError: If the dataset contains variables with the same dimensions
-            but with different values.
-        ValueError: If the dataset contains both delayed and non-delayed
-            variables.
-
-    Notes:
-        The dataset is a dictionary-like container of variables. It also holds
-        the dimensions and attributes of the dataset.
-        If the dataset contains delayed variables, the values are
-        :py:class:`DelayedArray
-        <zcollection.variable.delayed_array.DelayedArray>` objects. Otherwise,
-        the values are :py:class:`Array
-        <zcollection.variable.array.Array>` objects. It is impossible to mix
-        delayed and non-delayed variables in the same dataset.
+        ValueError: If variables assign different sizes to the same dimension,
+            declare more dimensions than their data provides, or mix delayed
+            and non-delayed arrays.
     """
     __slots__ = (
         'attrs',
@@ -204,7 +195,7 @@ class Dataset:
                  *,
                  attrs: Sequence[Attribute] | None = None,
                  delayed: bool | None = None) -> None:
-        #: The list of global attributes on this dataset
+        #: Global dataset attributes.
         self.attrs = tuple(attrs or ())
 
         #: Dataset contents as dict of
@@ -218,11 +209,10 @@ class Dataset:
             str, Variable] = collections.OrderedDict(
                 (item.name, item) for item in variables)
 
-        #: A dictionary of dimension names and their index in the dataset
+        #: Mapping of dimension names to their sizes.
         self.dimensions: DimensionType = {}
 
-        # Loops over each variable in the dataset and updates the dimensions
-        # according to the shape of the array.
+        # Update dimension sizes from the shape of each variable.
         delayed = _update_dimensions(self, delayed)
 
         #: Maximum data chunk size
@@ -231,7 +221,7 @@ class Dataset:
         #: Chunk size for each dimension
         self.dim_chunks: DimensionType = {}
 
-        #: The type of variables in the dataset
+        #: The representation used for dataset variables.
         self.delayed: bool = delayed if delayed is not None else True
 
     def __len__(self) -> int:
@@ -241,16 +231,16 @@ class Dataset:
         return bool(self.variables)
 
     def __getitem__(self, name: str) -> Variable:
-        """Return a variable from the dataset.
+        """Return a variable by name.
 
         Args:
-            name: The name of the variable to return
+            name: The name of the variable.
 
         Returns:
-            The variable
+            The variable.
 
         Raises:
-            KeyError: If the variable is not found
+            KeyError: If the variable does not exist.
         """
         return self.variables[name]
 
@@ -273,10 +263,10 @@ class Dataset:
 
     @property
     def nbytes(self) -> int:
-        """Return the total number of bytes in the dataset.
+        """Return the total size of the dataset in bytes.
 
         Returns:
-            The total number of bytes in the dataset
+            The total number of bytes.
         """
         return sum(item.nbytes for item in self.variables.values())
 
@@ -289,22 +279,20 @@ class Dataset:
 
         Args:
             var: The variable to add.
-            data: The values to write. Defaults to the data of ``var``, or
-                to its fill value when it holds none.
-            filler: Flag indicating whether the variable is generated by the
-                system or not.
+            data: The data to use. Defaults to the data of ``var``, or to its
+                fill value if no data is available.
+            filler: Whether the variable was generated by the library.
 
         Raises:
-            ValueError: If the variable added has dimensions that conflict with
-                existing dimensions, or if the variable has dimensions not
-                defined in the dataset.
+            ValueError: If the variable introduces unknown dimensions or
+                dimensions with incompatible sizes.
         """
         if set(var.dimensions) - set(self.dimensions):
             raise ValueError(f'variable {var.name} has dimensions '
                              f'{var.dimensions} that are not in the dataset')
 
         if data is None:
-            # A variable holding data describes itself and carries its values.
+            # A variable provides both its metadata and its data.
             data = getattr(var, 'array', None)
 
         if data is None:
@@ -334,10 +322,10 @@ class Dataset:
         """Rename variables in the dataset.
 
         Args:
-            names: A mapping from old names to new names
+            names: A mapping from existing names to new names.
 
         Raises:
-            ValueError: If the new names conflict with existing names
+            ValueError: If a new name conflicts with an existing one.
         """
         for old, new in names.items():
             if new in self.variables:
@@ -345,10 +333,10 @@ class Dataset:
             self.variables[new] = self.variables.pop(old).rename(new)
 
     def drops_vars(self, names: str | Sequence[str]) -> None:
-        """Drop variables from the dataset.
+        """Remove variables from the dataset.
 
         Args:
-            names: Variable names to drop.
+            names: The names of the variables to remove.
         """
         if isinstance(names, str) or not isinstance(names, Iterable):
             names = [names]
@@ -372,10 +360,10 @@ class Dataset:
         return zds
 
     def metadata(self) -> meta.DatasetSchema:
-        """Get the dataset metadata.
+        """Return the dataset metadata.
 
         Returns:
-            Dataset metadata
+            The dataset metadata.
         """
         return meta.DatasetSchema(
             tuple(
@@ -388,15 +376,15 @@ class Dataset:
 
     @staticmethod
     def from_xarray(zds: xarray.Dataset, delayed: bool = True) -> Dataset:
-        """Create a new dataset from a xarray dataset.
+        """Create a dataset from an xarray dataset.
 
         Args:
-            zds: Dataset to convert.
-            delayed: If True, the data will be wrapped in a dask array. If
-                False, the data will be handled as a numpy array.
+            zds: The xarray dataset to convert.
+            delayed: Whether to wrap the data in Dask arrays (``True``) or use
+                NumPy arrays (``False``).
 
         Returns:
-            New dataset.
+            The converted dataset.
         """
         handler: type[DelayedArray | Array]
         handler = DelayedArray if delayed else Array
@@ -422,14 +410,14 @@ class Dataset:
             delayed=delayed)
 
     def to_xarray(self, **kwargs) -> xarray.Dataset:
-        """Convert the dataset to a xarray dataset.
+        """Convert the dataset to an xarray dataset.
 
         Args:
-            **kwargs: Additional parameters are passed through the function
+            **kwargs: Additional arguments passed to
                 :py:func:`xarray.conventions.decode_cf_variables`.
 
         Returns:
-            Dataset as a xarray dataset.
+            The xarray dataset.
         """
         data_vars = collections.OrderedDict(
             (name, var.to_xarray()) for name, var in self.variables.items())
@@ -445,17 +433,14 @@ class Dataset:
         variables: Sequence[str] | None = None,
         **kwargs,
     ) -> dict[str, NDArray | NDMaskedArray]:
-        """Convert the dataset to a dictionary, between the variable names and
-        their data.
+        """Convert the selected variables to a dictionary of arrays.
 
         Args:
-            variables: Variables to include (default to all dataset's
-                variables).
-            **kwargs: Additional parameters are passed through the function
-                :py:func:`dask.compute`.
+            variables: The variables to include. Defaults to all variables.
+            **kwargs: Additional arguments passed to :py:func:`dask.compute`.
 
         Returns:
-            Dictionary of variables.
+            A dictionary mapping variable names to their data.
         """
         variables = variables or tuple(self.variables.keys())
         if self.delayed:
@@ -468,20 +453,19 @@ class Dataset:
                   if key in variables))
 
     def copy_properties(self, ds: Dataset | meta.DatasetSchema):
-        """Copy chunks and block properties from provided dataset.
+        """Copy chunk and block settings from another dataset.
 
         Args:
-            ds: Dataset from which to copy properties..
+            ds: The dataset providing these settings.
         """
         self.dim_chunks = ds.dim_chunks
         self.block_size_limit = ds.block_size_limit
 
     def fill_attrs(self, mds: meta.DatasetSchema) -> None:
-        """Fill the dataset and its variables attributes using the provided
-        metadata.
+        """Apply metadata attributes to the dataset and its variables.
 
         Args:
-            mds: Dataset metadata.
+            mds: The dataset metadata.
         """
         self.attrs = tuple(mds.attrs)
         tuple(
@@ -489,14 +473,13 @@ class Dataset:
                 var.name]) for var in self.variables.values())
 
     def isel(self, slices: dict[str, Any]) -> Dataset:
-        """Return a new dataset with each array indexed along the specified
-        slices.
+        """Return a dataset selected by dimension indices.
 
         Args:
-            slices: Dictionary of dimension names and slices
+            slices: A mapping of dimension names to index slices.
 
         Returns:
-            New dataset.
+            The selected dataset.
         """
         dims_invalid: set[str] = set(slices) - set(self.dimensions)
         if dims_invalid:
@@ -512,16 +495,14 @@ class Dataset:
         return zds
 
     def delete(self, indexer: slice | Sequence[int], axis: str) -> Dataset:
-        """Return a new dataset without the data selected by the provided
-        indices.
+        """Return a dataset with the selected entries removed.
 
         Args:
-            indexer: Indices to remove along the specified axis.
-            axis: The axis along which to delete the subarrays defined
-                in the dataset.
+            indexer: The indices to remove along ``axis``.
+            axis: The dimension along which to remove entries.
 
         Returns:
-            New dataset.
+            The resulting dataset.
         """
         variables: list[Variable] = _delete_delayed_vars(
             self, indexer, axis) if self.delayed else _delete_vars(
@@ -535,11 +516,11 @@ class Dataset:
         """Compute the dataset variables.
 
         Args:
-            **kwargs: Additional parameters are passed through to
-                :py:func:`dask.compute`.
+            **kwargs: Additional arguments passed to :py:func:`dask.compute`.
 
         Returns:
-            New dataset.
+            A dataset with computed variables, or the current dataset if its
+            variables are already eager.
         """
         if not self.delayed:
             return self
@@ -564,14 +545,14 @@ class Dataset:
         return zds
 
     def rechunk(self, **kwargs) -> Dataset:
-        """Rechunk the dataset.
+        """Rechunk the dataset variables.
 
         Args:
-            **kwargs: Keyword arguments are passed through to
-                :py:func:`dask.array.rechunk`.
+            **kwargs: Arguments passed to :py:func:`dask.array.rechunk`.
 
         Returns:
-            New dataset.
+            The rechunked dataset, or the current dataset if its variables
+            are already eager.
 
         .. seealso:: :py:func:`dask.array.rechunk`
         """
@@ -590,15 +571,18 @@ class Dataset:
         compress: bool = False,
         **kwargs,
     ) -> Dataset:
-        """Persist the dataset variables.
+        """Persist the dataset variables in memory.
+
+        If ``compress`` is enabled, persisted blocks are stored as compressed
+        arrays. The method updates and returns the current dataset.
 
         Args:
-            compress: If true, compress the data loaded into memory.
-            **kwargs: Additional parameters are passed to the function
+            compress: Whether to compress the persisted data in memory.
+            **kwargs: Additional arguments passed to
                 :py:meth:`dask.array.Array.persist`.
 
         Returns:
-            The dataset with the variables persisted into memory.
+            The dataset with persisted variables.
         """
         if not self.delayed:
             return self
@@ -618,16 +602,15 @@ class Dataset:
         """Concatenate datasets along a dimension.
 
         Args:
-            other: Datasets to concatenate.
-            dim: Dimension along which to concatenate the datasets.
+            other: The datasets to concatenate.
+            dim: The dimension along which to concatenate.
 
         Returns:
-            New dataset.
+            The concatenated dataset.
 
         Raises:
-            ValueError: If the provided sequence of datasets is empty, if the
-                datasets do not all hold their data the same way, or if they
-                do not all hold the same variables.
+            ValueError: If the sequence is empty, the datasets use different
+                array representations, or they have different variables.
         """
         if not isinstance(other, Iterable):
             other = [other]
@@ -651,10 +634,11 @@ class Dataset:
         return zds
 
     def merge(self, other: Dataset | None) -> None:
-        """Merge the provided dataset into this dataset.
+        """Merge another dataset's variables, dimensions, and attributes into
+        this dataset.
 
         Args:
-            other: Dataset to merge into this dataset.
+            other: The dataset to merge.
         """
         if other is None:
             return
@@ -665,12 +649,12 @@ class Dataset:
         # Merge the variables
         for name, var in other.variables.items():
 
-            # It's impossible to merge a variable with itself.
+            # Reject variable names that already exist in the dataset.
             if name in self.variables:
                 raise ValueError(f'variable {name} already exists')
             self.variables[name] = var
 
-        # If the dataset has common dimensions, they must be identical.
+        # Shared dimensions must have the same size.
         same_dims: set[str] = set(self.dimensions) & set(other.dimensions)
         if same_dims and not all(self.dimensions[dim] == other.dimensions[dim]
                                  for dim in same_dims):
@@ -679,7 +663,7 @@ class Dataset:
         # Merge the dimensions.
         self.dimensions.update(other.dimensions)
 
-        # Merge the attributes (overwriting any existing attributes).
+        # Merge attributes, replacing existing values when names overlap.
         if self.attrs is None:
             self.attrs = other.attrs
         elif other.attrs is not None:
@@ -690,25 +674,28 @@ class Dataset:
     def select_variables_by_dims(self,
                                  dims: Sequence[str],
                                  predicate: bool = True) -> Dataset:
-        """Return a new dataset with only the variables that have the specified
-        dimensions if predicate is true, otherwise return a new dataset with
-        only the variables that do not have the specified dimensions.
+        """Select variables according to their dimensions.
+
+        When ``predicate`` is ``True``, keep variables sharing at least one
+        dimension with ``dims``. If ``dims`` is empty, keep variables without
+        dimensions instead. When ``predicate`` is ``False``, keep the other
+        variables. An empty selection returns an empty dataset.
 
         Args:
-            dims: Dimensions to select.
-            predicate: If true, select variables with the specified dimensions,
-                otherwise select variables without the specified dimensions.
+            dims: The dimensions used for selection.
+            predicate: Whether to select matching (``True``) or nonmatching
+                (``False``) variables.
 
         Returns:
-            New dataset or None if no variables match the predicate.
+            A new dataset containing the selected variables.
         """
 
         def _predicate_for_dimension_less(var: Variable) -> bool:
-            """Return true if the variable is selected by the predicate."""
+            """Return whether the variable matches the selection predicate."""
             return (len(var.dimensions) == 0) == predicate
 
         def _predicate_for_dimension(var: Variable) -> bool:
-            """Return true if the variable is selected by the predicate."""
+            """Return whether the variable matches the selection predicate."""
             return bool(set(var.dimensions) & set_of_dims) == predicate
 
         condition: Callable[..., bool]
@@ -730,9 +717,9 @@ class Dataset:
         """Write the dataset to a Zarr store.
 
         Args:
-            path: Path to the Zarr store.
-            fs: Filesystem to use.
-            parallel: If true, write the data in parallel.
+            path: The destination Zarr store.
+            fs: The file system for the destination.
+            parallel: Whether to write the data in parallel.
         """
         if not self.delayed:
             raise ValueError('cannot write a non-delayed dataset to Zarr')
@@ -756,16 +743,16 @@ class Dataset:
 
 def get_variable_metadata(
         var: Variable | meta.VariableSchema) -> meta.VariableSchema:
-    """Get the variable metadata.
+    """Return the metadata of a variable.
 
     Args:
-        var: Variable to get the metadata for.
+        var: The variable.
 
     Returns:
-        Variable metadata.
+        Its metadata.
 
     Raises:
-        TypeError: If the variable is of another type.
+        TypeError: If the input is not a supported variable type.
     """
     if isinstance(var, Variable):
         return var.metadata()
@@ -778,15 +765,15 @@ def get_variable_metadata(
 def get_dataset_variable_properties(
         metadata: meta.DatasetSchema,
         selected_variables: Iterable[str] | None = None) -> tuple[Array, ...]:
-    """Return the variables' properties defined in the dataset.
+    """Create empty variables using a dataset schema.
 
     Args:
-        metadata: Metadata dataset containing variables' information.
-        selected_variables: The variables to return. If None, all the
-            variables are returned.
+        metadata: The dataset schema.
+        selected_variables: The variables to include. If ``None`` or empty,
+            all variables are included.
 
     Returns:
-        The variables defined in the dataset.
+        The variables with empty arrays and the properties from the schema.
     """
     selected_variables = selected_variables or metadata.variables.keys()
     return tuple(
@@ -802,19 +789,24 @@ def get_dataset_variable_properties(
 
 @dataclasses.dataclass
 class Expression:
-    """Partitioning expressions.
+    """Evaluate an expression using variables from a dataset.
+
+    The expression can use the supported NumPy functions and constants.
 
     Args:
-        expression: The expression to be evaluated
+        expression: The expression to evaluate.
+
     Raises:
-        NameError: If a variable is not defined.
+        NameError: If a referenced variable is missing from the dataset
+            when the expression is evaluated.
+
     Example:
         >>> expr = Expression("a + b * sin(c)")
     """
     #: Compiled expression to be evaluated
     code: types.CodeType
 
-    #: Known data members
+    #: Names of the instance attributes defined by ``__slots__``.
     __slots__: tuple[str, ...] = ('code', )
 
     #: The builtins that are allowed in the expression.
@@ -872,8 +864,7 @@ class Expression:
                 for name in self.code.co_names if name not in self.BUILTINS
             }
 
-            # The eval function is used here to evaluate a simple expression.
-            # The only builtin functions allowed is the range function.
+            # Evaluate using the supported NumPy functions and constants.
             return eval(self.code, {'__builtins__': self.BUILTINS}, __locals)
 
         except KeyError as exc:

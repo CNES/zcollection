@@ -2,15 +2,16 @@
 Migration of a collection
 =========================
 
-A collection written by an earlier release is migrated by copying it into a
-new one, partition by partition. A partition is read with the compressor, the
-filters, the fill value, the dimensions and the attributes of each variable,
-and written with them in the layout this release writes.
+Migrate collections created by earlier releases to the current storage
+layout. Each partition is read and written again, preserving its variable
+compressors, filters, fill values, dimensions, and attributes.
 
-Each function here reads a collection and its copy. Only
-:func:`prune <zcollection.migration.prune>` removes anything, and only from the source:
-it removes the partitions the copy holds, and the configuration and the
-immutable variables of the source stay.
+Migration writes to a separate target without modifying source data.
+Incomplete target partitions may be removed before they are rewritten.
+The pruning functions, :func:`prune <zcollection.migration.prune>` and
+:func:`prune_view <zcollection.migration.prune_view>`, remove partitions
+from their respective sources. Pruning preserves the source collection's
+configuration and immutable variables.
 """
 from __future__ import annotations
 
@@ -58,8 +59,8 @@ if TYPE_CHECKING:
 #: Module logger.
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-#: Names of the files a node holds its metadata in, in either layout. Every
-#: other file an array holds is a chunk.
+#: Metadata filenames used by Zarr 2 and Zarr 3 nodes. Other files
+#: in an array store are chunks.
 _METADATA_FILES = frozenset(
     {'.zarray', '.zattrs', '.zgroup', '.zmetadata', 'zarr.json'})
 
@@ -84,13 +85,13 @@ def _require_distinct_paths(
 
 
 def _merge(outcomes: Iterable[Outcome]) -> Outcome:
-    """Gather the outcomes of several partitions into one.
+    """Combine the outcomes of several partitions.
 
     Args:
         outcomes: The outcomes to gather.
 
     Returns:
-        The outcome holding every partition of every field, sorted.
+        A combined outcome with the partitions in each field sorted.
     """
     items: tuple[Outcome, ...] = tuple(outcomes)
     return Outcome(
@@ -100,17 +101,16 @@ def _merge(outcomes: Iterable[Outcome]) -> Outcome:
 
 
 def _failure(partition: str, err: Exception) -> Outcome:
-    """Return the outcome of a partition the run stopped on.
+    """Report a failed partition and log its exception.
 
-    Called from the handler that caught the error, so that the log carries
-    the traceback.
+    Called from an exception handler to include the traceback in the log.
 
     Args:
         partition: The path of the partition, relative to its collection.
         err: The error raised.
 
     Returns:
-        The outcome holding the partition and the error as text.
+        An outcome containing the partition and its error message.
     """
     _LOGGER.exception('The run stopped on the partition %r', partition)
     text: str = ''.join(traceback.format_exception_only(err)).strip()
@@ -118,11 +118,11 @@ def _failure(partition: str, err: Exception) -> Outcome:
 
 
 def _relative_path(path: str, base_dir: str) -> str:
-    """Return the path of a partition relative to its collection.
+    """Return a partition path relative to its collection.
 
     Args:
         path: The path of the partition.
-        base_dir: The directory of the collection.
+        base_dir: The collection directory.
 
     Returns:
         The relative path.
@@ -131,15 +131,15 @@ def _relative_path(path: str, base_dir: str) -> str:
 
 
 def is_complete(fs: fsspec.AbstractFileSystem, dirname: str) -> bool:
-    """Say whether a partition is complete.
+    """Check whether a partition has consolidated metadata.
 
     Args:
-        fs: The file system the partition is held on.
+        fs: The file system storing the partition.
         dirname: The path of the partition.
 
     Returns:
-        Whether the metadata of the partition is consolidated. Consolidating
-        it is the last write a partition receives.
+        Whether the partition can be opened using consolidated metadata,
+        which is written last when a partition is created.
     """
     try:
         store.open_group(fs, dirname)
@@ -150,17 +150,17 @@ def is_complete(fs: fsspec.AbstractFileSystem, dirname: str) -> bool:
 
 def dimension_chunks(
         arrays: Iterable[tuple[str, zarr.Array]]) -> meta.DimensionType:
-    """Read the size of a chunk along each dimension a group spans.
+    """Read the chunk size of each dimension in a Zarr group.
 
     Args:
         arrays: The name and the array of each variable of the group.
 
     Returns:
-        The size of a chunk along each dimension.
+        The chunk size for each dimension.
 
     Raises:
-        ValueError: If two arrays hold a different chunk size along one
-            dimension. A collection carries one chunk size per dimension.
+        ValueError: If arrays disagree on the chunk size of a
+            dimension. Each dimension has one chunk size per collection.
     """
     chunks: meta.DimensionType = {}
     for name, array in arrays:
@@ -181,14 +181,14 @@ def copy_group(
     source_fs: fsspec.AbstractFileSystem,
     target_fs: fsspec.AbstractFileSystem,
 ) -> None:
-    """Copy a Zarr group, with the chunking of the source.
+    """Copy a Zarr group while preserving its chunk sizes.
 
     Args:
         source_dirname: The path of the group to read.
-        target_dirname: The path of the group to write. A group already
-            there is replaced.
-        source_fs: The file system the source is held on.
-        target_fs: The file system the target is held on.
+        target_dirname: The destination group path. Any existing group
+            is replaced.
+        source_fs: The file system storing the source group.
+        target_fs: The file system for the destination group.
 
     Raises:
         ValueError: If the arrays of the source disagree on the chunk size
@@ -196,7 +196,8 @@ def copy_group(
     """
     zds = storage.open_zarr_group(source_dirname, source_fs, delayed=False)
 
-    # A dataset read from a store carries no chunking: the arrays hold it.
+    # A dataset read from storage has no chunking metadata; the
+    # source arrays provide it.
     zds.dim_chunks = dimension_chunks(
         store.open_group(source_fs, source_dirname).arrays())
 
@@ -220,15 +221,15 @@ def copy_arrays(
     target_fs: fsspec.AbstractFileSystem,
     names: Sequence[str],
 ) -> None:
-    """Copy the Zarr arrays a view holds in one of its partitions.
+    """Copy the Zarr arrays of one view partition.
 
     Args:
         source_dirname: The path of the partition to read.
-        target_dirname: The path of the partition to write. A partition
-            already there is replaced.
+        target_dirname: The destination partition path. Any existing
+            partition is replaced.
         source_fs: The file system the source is held on.
         target_fs: The file system the target is held on.
-        names: The variables the view declares.
+        names: Names of the variables defined by the view.
 
     Raises:
         ValueError: If the arrays of the source disagree on the chunk size
@@ -265,10 +266,10 @@ def copy_arrays(
 
 
 def _remove(fs: fsspec.AbstractFileSystem, dirname: str) -> None:
-    """Remove a directory and the cached listing of its parent.
+    """Remove a directory and invalidate the file system cache.
 
     Args:
-        fs: The file system the directory is held on.
+        fs: The file system storing the directory.
         dirname: The path of the directory.
     """
     if fs.exists(dirname):
@@ -277,15 +278,15 @@ def _remove(fs: fsspec.AbstractFileSystem, dirname: str) -> None:
 
 
 def _differ(first: NDArray, second: NDArray) -> bool:
-    """Say whether two sets of values differ.
+    """Compare two arrays, including their masks and data types.
 
     Args:
         first: The values read from the source.
         second: The values read from the target.
 
     Returns:
-        Whether the two arrays mask different elements, or hold different
-        values where neither masks one. Two NaNs or two NaTs count as equal.
+        Whether their shapes, data types, masks or unmasked values differ.
+        Two NaNs or two NaTs are considered equal.
     """
     mask: NDArray = numpy.ma.getmaskarray(first)
     if first.shape != second.shape or not numpy.array_equal(
@@ -305,26 +306,22 @@ def incomplete_arrays(
     dirname: str,
     fs: fsspec.AbstractFileSystem,
 ) -> tuple[str, ...]:
-    """Return the names of the arrays whose metadata calls for more chunks
-    than the group holds.
+    """Find arrays with fewer stored chunk files than their chunk grids require.
 
-    Zarr reads a chunk it cannot find as the fill value. An array that lost
-    one is still declared in the consolidated metadata of its group, so the
-    group is read without error and the missing chunk is read as that
-    value.
+    Zarr reads missing chunks as the fill value. An array can therefore be
+    opened and read even when some of its chunk files are missing.
 
-    The count is sound on a collection written by an earlier release, which
-    writes every chunk, including one holding nothing but the fill value.
-    The collections this release writes leave such a chunk out, so a group
-    of theirs holds fewer files than its grid calls for and this reports
-    names it should not.
+    The check is reliable for collections written by earlier releases,
+    which stored every chunk, including chunks containing only the fill
+    value. Current collections omit fill-only chunks, so this function
+    may also report arrays that are complete.
 
     Args:
         dirname: The path of the group.
-        fs: The file system the group is held on.
+        fs: The file system storing the group.
 
     Returns:
-        The names of the arrays short of a chunk, sorted.
+        The sorted names of arrays with fewer chunk files than expected.
     """
     start = len(fs_utils.normalize_path(fs, dirname)) + 1
     held: dict[str, int] = {}
@@ -344,14 +341,14 @@ def incomplete_arrays(
 
 
 def _nodes(fs: fsspec.AbstractFileSystem, dirname: str) -> set[str]:
-    """Return the name of each node a directory holds the metadata of.
+    """Return the names of Zarr nodes with metadata in a directory.
 
     Args:
         fs: The file system the directory is held on.
         dirname: The path of the directory.
 
     Returns:
-        The names.
+        The node names.
     """
     start = len(fs_utils.normalize_path(fs, dirname)) + 1
     return {
@@ -367,32 +364,32 @@ def is_view_partition_complete(
     dirname: str,
     names: Iterable[str],
 ) -> bool:
-    """Say whether a partition of a view is written in full.
+    """Check whether a view partition was written completely.
 
-    A view holds its variables as arrays standing on their own, with no
-    group over them, so the metadata a collection is gathered under has no
-    equivalent here. The checksum is written after the variables, which
-    makes it the mark of a partition written to the end.
+    View variables are stored as individual Zarr arrays, without a group
+    containing consolidated metadata. The checksum is written after the
+    arrays, so its presence together with all declared arrays indicates
+    that the partition write finished.
 
     Args:
-        fs: The file system the view is held on.
+        fs: The file system storing the view.
         dirname: The path of the partition.
-        names: The variables the view declares.
+        names: The variable names declared by the view.
 
     Returns:
-        Whether the partition holds its checksum and every variable.
+        ``True`` if the checksum and all declared arrays are present;
+        otherwise ``False``.
     """
     held = _nodes(fs, dirname)
     return CHECKSUM_FILE in held and set(names) <= held
 
 
 def warn_absent(dirname: str, fs: fsspec.AbstractFileSystem) -> None:
-    """Log the arrays whose metadata calls for more chunks than the group
-    holds.
+    """Warn about arrays with missing chunks in storage.
 
     Args:
         dirname: The path of the group.
-        fs: The file system the group is held on.
+        fs: The file system storing the group.
     """
     short = incomplete_arrays(dirname, fs)
     if short:
@@ -407,7 +404,7 @@ def differing_arrays(
     target_fs: fsspec.AbstractFileSystem,
     names: Iterable[str],
 ) -> tuple[str, ...]:
-    """Compare the values two partitions of a view hold.
+    """Compare the array values in two view partitions.
 
     Args:
         source_dirname: The path of the partition to read.
@@ -417,8 +414,8 @@ def differing_arrays(
         names: The variables the view declares.
 
     Returns:
-        The names of the variables whose values differ, and of those the
-        target does not hold, sorted.
+        Sorted names of variables with different values or missing from
+        the target.
     """
     held = _nodes(target_fs, target_dirname)
     differing = {name for name in names if name not in held}
@@ -434,13 +431,13 @@ def differing_arrays(
 
 def _attributes(
         attrs: Iterable[meta.Attribute]) -> tuple[tuple[str, Any], ...]:
-    """Return the attributes in an order two groups can be compared in.
+    """Return attributes sorted by name for comparison.
 
     Args:
         attrs: The attributes of a variable or of a dataset.
 
     Returns:
-        The name and the value of each, by name.
+        The name and value of each attribute, sorted by name.
     """
     return tuple(sorted((item.name, item.value) for item in attrs))
 
@@ -449,14 +446,14 @@ def _chunks(
     dirname: str,
     fs: fsspec.AbstractFileSystem,
 ) -> dict[str, tuple[int, ...]]:
-    """Return the shape of a chunk of each array a group holds.
+    """Return the chunk shape of every array in a Zarr group.
 
     Args:
         dirname: The path of the group.
         fs: The file system the group is held on.
 
     Returns:
-        The shape, by array name.
+        A mapping from array names to chunk shapes.
     """
     return {
         name: array.chunks
@@ -466,15 +463,14 @@ def _chunks(
 
 def _variable_differs(first: dataset.Variable,
                       second: dataset.Variable) -> bool:
-    """Say whether two variables differ in anything the copy carries over.
+    """Check whether two variables differ in their migrated properties.
 
     Args:
         first: The variable read from the source.
         second: The variable read from the target.
 
     Returns:
-        Whether their dimensions, their attributes, their fill value or
-        their values differ.
+        Whether their dimensions, attributes, fill values or data differ.
     """
     if (first.dimensions != second.dimensions
             or _attributes(first.attrs) != _attributes(second.attrs)):
@@ -493,12 +489,11 @@ def differing_variables(
     source_fs: fsspec.AbstractFileSystem,
     target_fs: fsspec.AbstractFileSystem,
 ) -> tuple[str, ...]:
-    """Compare what two groups hold.
+    """Compare the variables and attributes of two Zarr groups.
 
-    The values of each variable are compared, masks included, and so are
-    its attributes, its fill value, the name of each of its dimensions and
-    the shape of its chunks. The attributes of the group itself are
-    reported under the name ``attributes``.
+    The comparison covers values and masks, attributes, fill values,
+    dimension names and chunk shapes. Differences in group attributes
+    are reported under ``attributes``.
 
     Args:
         source_dirname: The path of the group to read.
@@ -507,8 +502,7 @@ def differing_variables(
         target_fs: The file system the target is held on.
 
     Returns:
-        The names of the variables that differ, and of those one group
-        holds alone, sorted.
+        Sorted names of variables that differ or exist in only one group.
     """
     first = storage.open_zarr_group(source_dirname, source_fs, delayed=False)
     second = storage.open_zarr_group(target_dirname, target_fs, delayed=False)
@@ -533,7 +527,7 @@ def _migrate_one(
     source_fs: fsspec.AbstractFileSystem,
     target_fs: fsspec.AbstractFileSystem,
 ) -> Outcome:
-    """Copy one partition into the target.
+    """Copy a source partition to the target.
 
     Args:
         partition: The path of the partition, relative to its collection.
@@ -543,9 +537,9 @@ def _migrate_one(
         target_fs: The file system the target is held on.
 
     Returns:
-        The partition under ``done`` when it was written, under ``skipped``
-        when the target already held it complete, and under ``failed`` with
-        the error as text when the copy stopped.
+        An outcome with the partition under ``done`` if copied, under
+        ``skipped`` if already complete in the target, or under
+        ``failed`` with an error message if copying failed.
     """
     target_dirname = fs_utils.join_path(target, partition)
     if is_complete(target_fs, target_dirname):
@@ -567,7 +561,7 @@ def _check_one(
     source_fs: fsspec.AbstractFileSystem,
     target_fs: fsspec.AbstractFileSystem,
 ) -> Outcome:
-    """Compare the values of one partition with the ones of its copy.
+    """Compare a source partition with its migrated copy.
 
     Args:
         partition: The path of the partition, relative to its collection.
@@ -577,9 +571,9 @@ def _check_one(
         target_fs: The file system the target is held on.
 
     Returns:
-        The partition under ``done`` when the two hold the same values,
-        under ``skipped`` when the target does not hold it complete, and
-        under ``failed`` with the names of the variables that differ.
+        An outcome with the partition under ``done`` if values match,
+        under ``skipped`` if the target copy is incomplete or absent,
+        or under ``failed`` with the names of differing variables.
     """
     target_dirname = fs_utils.join_path(target, partition)
     if not is_complete(target_fs, target_dirname):
@@ -616,9 +610,10 @@ def _prune_one(
         target_fs: The file system the target is held on.
 
     Returns:
-        The partition under ``done`` when it was removed, under ``skipped``
-        when the source no longer held it, and under ``failed`` with the
-        reason when the target does not hold it complete.
+        An outcome with the partition under ``done`` if removed, under
+        ``skipped`` if already absent from the source, or under
+        ``failed`` with the reason if no complete target copy is available
+        or removal fails.
     """
     source_dirname = fs_utils.join_path(source, partition)
     if not source_fs.exists(source_dirname):
@@ -657,9 +652,10 @@ def _prune_view_one(
         names: The variables the view declares.
 
     Returns:
-        The partition under ``done`` when it was removed, under ``skipped``
-        when the source no longer held it, and under ``failed`` with the
-        reason when the target does not hold it in full.
+        An outcome with the partition under ``done`` if removed, under
+        ``skipped`` if already absent from the source, or under
+        ``failed`` with the reason if no complete target copy is available
+        or removal fails.
     """
     source_dirname = fs_utils.join_path(source, partition)
     if not source_fs.exists(source_dirname):
@@ -689,7 +685,10 @@ def _migrate_view_one(
     names: Sequence[str],
     view_ref: collection.Collection,
 ) -> Outcome:
-    """Copy the variables a view holds in one partition, and its checksum.
+    """Copy one view partition to the target.
+
+    The checksum of the reference axis is recomputed from the collection
+    the target view references.
 
     Args:
         partition: The path of the partition, relative to the view.
@@ -701,9 +700,9 @@ def _migrate_view_one(
         view_ref: The collection the target view references.
 
     Returns:
-        The partition under ``done`` when it was written, under ``skipped``
-        when the target already held it in full, and under ``failed`` with
-        the error as text when the copy stopped.
+        An outcome with the partition under ``done`` if copied, under
+        ``skipped`` if already complete in the target, or under
+        ``failed`` with an error message if copying failed.
     """
     target_dirname = fs_utils.join_path(target, partition)
     if is_view_partition_complete(target_fs, target_dirname, names):
@@ -727,7 +726,7 @@ def _check_view_one(
     target_fs: fsspec.AbstractFileSystem,
     names: Sequence[str],
 ) -> Outcome:
-    """Compare the variables a view holds in one partition with their copies.
+    """Compare the variables of a view partition with their copies.
 
     Args:
         partition: The path of the partition, relative to the view.
@@ -738,9 +737,9 @@ def _check_view_one(
         names: The variables the view declares.
 
     Returns:
-        The partition under ``done`` when the two hold the same values,
-        under ``skipped`` when the target does not hold it in full, and
-        under ``failed`` with the names of the variables that differ.
+        An outcome with the partition under ``done`` if values match,
+        under ``skipped`` if the target copy is incomplete or absent,
+        or under ``failed`` with the names of differing variables.
     """
     target_dirname = fs_utils.join_path(target, partition)
     if not is_view_partition_complete(target_fs, target_dirname, names):
@@ -765,7 +764,7 @@ def _run(
     distributed: bool,
     **kwargs,
 ) -> Outcome:
-    """Apply a function to every selected partition.
+    """Run an operation on each selected partition.
 
     Args:
         func: The function to apply. It returns an outcome for the
@@ -776,7 +775,7 @@ def _run(
         **kwargs: The keyword arguments to pass to the function.
 
     Returns:
-        The outcomes of every partition, gathered.
+        The combined outcome of all selected partitions.
     """
     if not partitions:
         return Outcome((), (), ())
@@ -795,7 +794,7 @@ def _selection(
     filters: PartitionFilter,
     selected_partitions: Iterable[str] | None,
 ) -> tuple[str, ...]:
-    """List the partitions of the source a run acts on.
+    """Select and sort the source partitions for an operation.
 
     Args:
         src: The source collection.
@@ -804,7 +803,7 @@ def _selection(
             relative to the collection.
 
     Returns:
-        The paths of the partitions, relative to the source, sorted.
+        Partition paths relative to the source, sorted lexicographically.
     """
     if selected_partitions is not None:
         selected_partitions = tuple(selected_partitions)
@@ -837,9 +836,9 @@ def migrate_partitions(
         distributed: Whether to spread the partitions over a Dask cluster.
 
     Returns:
-        The partitions written under ``done``, those the target already held
-        complete under ``skipped``, and those the copy stopped on under
-        ``failed``.
+        An outcome with partitions copied under ``done``, already
+        complete in the target under ``skipped``, and unsuccessful
+        copies under ``failed``.
     """
     return _run(_migrate_one,
                 _selection(src, filters, selected_partitions),
@@ -871,8 +870,7 @@ def migrate_collection(
         distributed: Whether to spread the partitions over a Dask cluster.
 
     Returns:
-        The outcome of the immutable variables and that of the partitions,
-        gathered.
+        A combined outcome for immutable variables and partitions.
     """
     return _merge((
         migrate_immutable(src, target, target_fs),
@@ -990,10 +988,9 @@ def check_partitions(
         variables differ under ``failed``. The immutable variables are
         reported under the name ``.immutable``.
 
-        The source is read for the arrays its metadata declares and holds
-        no chunk of; this module logs their names as a warning. Zarr reads
-        such an array as the fill value on both sides, so comparing the
-        values cannot see it.
+        A warning names the source arrays with fewer chunk files than their
+        chunk grid requires. Zarr reads missing chunks as fill values, so a
+        value comparison alone cannot detect their absence.
     """
     return _merge((
         check_immutable(src, target, target_fs),
@@ -1052,7 +1049,7 @@ def migrate_view_partitions(
     view_ref: collection.Collection,
     distributed: bool = True,
 ) -> Outcome:
-    """Copy the partitions of a view into the target.
+    """Copy selected view partitions into the target.
 
     Args:
         source: The directory the source view is stored in.
@@ -1066,9 +1063,9 @@ def migrate_view_partitions(
         distributed: Whether to spread the partitions over a Dask cluster.
 
     Returns:
-        The partitions written under ``done``, those the target already
-        held in full under ``skipped``, and those the copy stopped on under
-        ``failed``.
+        An outcome with copied partitions under ``done``, partitions
+        already complete in the target under ``skipped``, and failed
+        copies under ``failed``.
     """
     return _run(_migrate_view_one,
                 partitions,
@@ -1091,7 +1088,7 @@ def check_view_partitions(
     names: Sequence[str],
     distributed: bool = True,
 ) -> Outcome:
-    """Compare the variables a view holds with their copies.
+    """Compare view variables with their migrated copies.
 
     Args:
         source: The directory the source view is stored in.
@@ -1128,7 +1125,7 @@ def prune_view_partitions(
     names: Sequence[str],
     distributed: bool = True,
 ) -> Outcome:
-    """Remove from a view the partitions its copy holds.
+    """Remove source view partitions that are complete in the target.
 
     Args:
         source: The directory the source view is stored in.
@@ -1175,10 +1172,8 @@ def view_status(
         view_ref: The collection the source view references.
 
     Returns:
-        The partitions the target holds in full, those it does not, those
-        it holds alone, and those neither view can give back. A view is
-        copied whole, so a partition under ``pruned`` is one the source
-        view no longer holds and the copy was never told to drop.
+        The status of each partition, classified as described in
+        :class:`~zcollection.migration.Status`.
     """
     source_partitions = {
         _relative_path(item, source)
@@ -1217,8 +1212,8 @@ def collection_status(
         target_fs: The file system the target is held on.
 
     Returns:
-        The partitions the target holds complete, those it does not, those
-        it holds alone, and those neither collection can give back.
+        The status of each partition, classified as described in
+        :class:`~zcollection.migration.Status`.
     """
     source_partitions: set[str] = set(src.partitions(relative=True))
     target_partitions: set[str] = set()
@@ -1250,11 +1245,11 @@ def _open_source(
     path: str,
     fs: fsspec.AbstractFileSystem,
 ) -> collection.Collection:
-    """Open the source collection, read only.
+    """Open the source collection in read-only mode.
 
     Args:
         path: The path to the collection.
-        fs: The file system the collection is held on.
+        fs: The file system storing the collection.
 
     Returns:
         The collection.
@@ -1272,13 +1267,13 @@ def read_collection_config(path: str,
 
     Args:
         path: The path to the collection.
-        fs: The file system the collection is held on.
+        fs: The file system storing the collection.
 
     Returns:
         The configuration.
 
     Raises:
-        ValueError: If the directory holds no collection configuration.
+        ValueError: If the directory contains no collection configuration.
     """
     config: str = collection.Collection._config(path)
 
@@ -1294,7 +1289,7 @@ def _configuration(
     fs: fsspec.AbstractFileSystem,
     data: dict[str, Any],
 ) -> tuple[str, meta.DatasetSchema, partitioning.Partitioning]:
-    """Read the properties a collection is built from.
+    """Read the axis, schema and partitioning from a collection configuration.
 
     Args:
         path: The path to the collection.
@@ -1302,13 +1297,13 @@ def _configuration(
         data: The configuration of the collection.
 
     Returns:
-        The axis, the metadata and the partitioning. A configuration
-        written by an earlier release names its dimensions without their
-        size: these sizes are read from the first partition.
+        The axis, metadata and partitioning. For older configurations,
+        dimension sizes are recovered from the first partition or from
+        immutable variables.
 
     Raises:
-        ValueError: If the collection holds no partition, or if the
-            metadata misses a dimension its variables span.
+        ValueError: If an older collection has no partition from which
+            to recover dimension sizes.
     """
     zcol_partitioning: partitioning.Partitioning = partitioning.get_codecs(
         data['partitioning'])
@@ -1329,7 +1324,7 @@ def _configuration(
         raise ValueError(
             'The collection requires at least one partition to be updatable.')
 
-    # Using the first partition to extract dimensions information
+    # Read dimension sizes from the first partition.
     partition = partitions[0]
 
     for dimension, variable in dimensions_source.items():
@@ -1362,14 +1357,15 @@ def _configuration(
 
 def _dimensions_source(ds: meta.DatasetSchema,
                        main_dimension: str) -> dict[str, meta.VariableSchema]:
-    """Associate dimension to a variable containing it.
+    """Map each non-partitioned dimension to a variable that uses it.
 
     Args:
-        ds: Dataset from which to get variables information.
-        main_dimension: Name of the main dimension.
+        ds: The dataset containing the variables.
+        main_dimension: The partitioned dimension to exclude.
 
     Returns:
-        Dictionary of dimension associated to a variable containing it.
+        A mapping from each non-partitioned dimension to a variable
+        that uses it.
     """
     dimensions_source: dict[str, meta.VariableSchema] = {}
     dimensions = list(ds.dimensions)
@@ -1394,10 +1390,10 @@ def _matching_target(
 ) -> collection.Collection:
     """Open the copy of a collection, read only.
 
-    The axis, the partitioning and the variables of the two are compared,
-    which is what tells one collection from another. The size of a
-    dimension is not: reading it costs an array of the source, and two
-    collections are not told apart by it.
+    The source and target must agree on the axis, partitioning and
+    variable names. Dimension sizes are not checked: they do not
+    identify a collection, and checking them would require reading
+    source arrays.
 
     Args:
         source: The path to the collection that was copied.
@@ -1430,7 +1426,7 @@ def _open_target(
     source_fs: fsspec.AbstractFileSystem,
     target_fs: fsspec.AbstractFileSystem,
 ) -> collection.Collection:
-    """Open the collection a migration writes into.
+    """Open or create the target collection for migration.
 
     Args:
         source: The path to the collection to copy.
@@ -1439,8 +1435,8 @@ def _open_target(
         target_fs: The file system the target is held on.
 
     Returns:
-        The target collection. A directory holding no configuration is
-        created with the one the source describes.
+        The target collection. If no configuration exists, one is
+        created from the source configuration.
 
     Raises:
         ValueError: If the target holds a configuration that disagrees with
@@ -1480,7 +1476,7 @@ def _reference(
     path: str,
     fs: fsspec.AbstractFileSystem,
 ) -> tuple[meta.DatasetSchema, view.View]:
-    """Read a view and open the collection it references.
+    """Open a view and its reference collection.
 
     Args:
         path: The path to the view.
@@ -1508,7 +1504,7 @@ def _view_selection(
     filters: collection.PartitionFilter,
     selected_partitions: Iterable[str] | None,
 ) -> tuple[str, ...]:
-    """List the partitions of a view a run acts on.
+    """Select the view partitions for an operation.
 
     Args:
         zview: The view to list.
@@ -1517,7 +1513,7 @@ def _view_selection(
             relative to the view.
 
     Returns:
-        The paths, relative to the view, in alphabetical order.
+        Partition paths relative to the view, sorted alphabetically.
     """
     start = len(zview.base_dir) + 1
     return tuple(
@@ -1531,13 +1527,13 @@ def read_view_config(path: str,
 
     Args:
         path: The path to the view.
-        fs: The file system the view is held on.
+        fs: The file system storing the view.
 
     Returns:
         The configuration.
 
     Raises:
-        ValueError: If the directory holds no view configuration.
+        ValueError: If the directory contains no view configuration.
     """
     config: str = view.View._config(path)
 
@@ -1549,14 +1545,14 @@ def read_view_config(path: str,
 
 
 def _view_metadata(data: dict[str, Any]) -> meta.DatasetSchema:
-    """Read the metadata of the variables a view holds.
+    """Read the metadata of variables defined by a view.
 
     Args:
         data: The configuration of the view.
 
     Returns:
-        The metadata, without dimensions: a view takes them from the
-        collection it references.
+        The variable metadata without dimensions, which are defined
+        by the reference collection.
     """
     if meta.format_version(data) != meta.DEPRECATED_FORMAT_VERSION:
         return meta.DatasetSchema.from_config(data['metadata'])

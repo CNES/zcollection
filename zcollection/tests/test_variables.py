@@ -81,9 +81,11 @@ def test_a_failed_addition_is_undone(target, monkeypatch, distributed) -> None:
 @KINDS
 def test_a_failed_undo_leaves_the_variable_declared(target,
                                                     monkeypatch) -> None:
-    """When the removal of the added arrays fails too, the schema still
-    declares the variable, the error names the partitions concerned, and drop_variable
-    finishes the removal."""
+    """If removal of added arrays also fails, the variable remains declared.
+
+    The error identifies the affected partitions, and ``drop_variable``
+    completes the removal.
+    """
     fail_after(monkeypatch, tasks(target)._add_array, 'key=3')
     fail_after(monkeypatch, tasks(target)._drop_array, 'key=1')
 
@@ -146,7 +148,7 @@ def test_variables_are_added_and_dropped_under_the_lock(
 @KINDS
 @pytest.mark.usefixtures('dask_client')
 def test_an_invalid_npartitions_leaves_the_schema(target) -> None:
-    """An npartitions below one is refused before the schema changes."""
+    """``npartitions`` below one is rejected before the schema changes."""
     with pytest.raises(ValueError, match='npartitions'):
         target.add_variable(EXTRA, True, npartitions=0)
 

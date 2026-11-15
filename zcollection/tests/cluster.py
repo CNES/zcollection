@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Fixtures for testing Dask clusters using the pytest.
-====================================================
+Fixtures for testing Dask clusters with pytest.
+===============================================
 """
 from typing import TYPE_CHECKING
 from collections.abc import Iterator
@@ -26,8 +26,8 @@ def dask_cluster(
 ) -> Iterator[str]:
     """Launch a Dask LocalCluster with a configurable number of workers.
 
-    Under xdist each worker holds a base directory of its own, so each one
-    runs a cluster of its own.
+    Under xdist each worker uses a separate base directory and
+    starts a separate cluster.
     """
     n_workers: int | None
     threads_per_worker: int | None
@@ -51,7 +51,7 @@ def dask_cluster(
     tmp_path: py.path.local = tmpdir_factory.getbasetemp()
     scheduler_file: py.path.local = tmp_path / 'scheduler.json'
 
-    # Use the root path of the test session for the dask worker space
+    # Use the test session's root directory for Dask worker storage.
     dask_worker: py.path.local = tmp_path / 'dask_worker_space'
     dask.config.set(temporary_directory=str(dask_worker))
 
@@ -80,7 +80,7 @@ def dask_cluster(
 
 @contextlib.contextmanager
 def _scheduler_file(dask_cluster, ) -> Iterator[str]:
-    """Get the scheduler used to connect to the cluster."""
+    """Yield the scheduler file path used to connect to the cluster."""
     yield dask_cluster
 
 

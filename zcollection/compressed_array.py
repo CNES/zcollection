@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Compressed array class
-======================
+Compressed arrays
+=================
 """
 from __future__ import annotations
 
@@ -32,17 +32,16 @@ Array = NDArray | NDMaskedArray
 
 
 class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
-    """Hold a compressed array and provide a numpy.ndarray interface to it.
+    """Provide a NumPy-compatible interface to compressed array data.
 
-    Each operation on the array uncompresses the data, performs the operation,
-    and returns a numpy array. A rechunk holds the new chunks behind the
-    codecs of the array it is built from.
-
-    Data is compressed using zarr.
+    The array is compressed using Zarr. Operations decompress its values,
+    perform the requested operation, and return a NumPy array. Rechunking
+    preserves the source array's codecs.
 
     Args:
-        array: A numpy.ndarray or a zarr.Array.
-        **kwargs: Keyword arguments to pass to zarr.create_array.
+        array: A NumPy array, Zarr array, or CompressedArray.
+        **kwargs: Arguments passed to ``zarr.create_array`` when creating the
+            in-memory array.
     """
 
     def __init__(
@@ -73,13 +72,13 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         self,
         key: int | tuple[int | slice, ...],
     ) -> NDArrayLikeOrScalar | NDMaskedArray:
-        """Retrieve data for an item or region of the array.
+        """Return the values selected by an index or slice.
 
         Args:
-            key: The key to retrieve.
+            key: The index or slice to retrieve.
 
         Returns:
-            The data for the key.
+            The selected values.
         """
         values: NDArrayLikeOrScalar | NDMaskedArray = self._array[key]
         if self._fill_value is not None:
@@ -91,11 +90,11 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         key: int | tuple[int | slice, ...],
         value: Array,
     ) -> None:
-        """Set data for an item or region of the array.
+        """Assign values to an index or slice of the array.
 
         Args:
-            key: The key to set.
-            value: The value to set.
+            key: The index or slice to update.
+            value: The values to assign.
         """
         self._array[key] = value
 
@@ -131,7 +130,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
 
     @property
     def compressors(self) -> tuple[Codec, ...]:
-        """The codecs the compressed chunks are held behind."""
+        """The codecs used to compress the array chunks."""
         return self._array.compressors
 
     @property
@@ -145,7 +144,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return self._array.filters
 
     def reshape(self, *shape: int) -> Array:
-        """Return a new array with the same data with a new shape.
+        """Return a new array containing the same data with a different shape.
 
         Args:
             *shape: The new shape.
@@ -157,14 +156,14 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
 
     @property
     def chunks(self) -> tuple[int, ...]:
-        """The length of each dimension of a chunk of the array."""
+        """The chunk size along each dimension."""
         return self._array.chunks
 
     def rechunk(self, chunks: tuple[int, ...]) -> CompressedArray:
-        """Rechunk the array.
+        """Return the array with a different chunk layout.
 
         Args:
-            chunks: The new chunks.
+            chunks: The new chunk sizes.
 
         Returns:
             The rechunked array.
@@ -178,14 +177,13 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
                                fill_value=self._fill_value)
 
     def __array__(self, dtype=None) -> Array:
-        """Return a numpy.ndarray of the array.
+        """Return the array as a NumPy array.
 
         Args:
-            dtype: The data type of the array.
+            dtype: The requested data type.
 
         Returns:
-            The numpy.ndarray of the array or numpy.ma.masked_array if
-            a fill_value is defined.
+            A NumPy array, or a masked array if a fill value is defined.
         """
         array: Array = numpy.asanyarray(self._array[...], dtype=self.dtype)
         if self._fill_value is not None:
@@ -195,7 +193,7 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         return array
 
     def _cast(self, obj: Any) -> Any:
-        """Cast an object to a value compatible with numpy.ndarray."""
+        """Convert an object to a value compatible with a NumPy array."""
         if isinstance(obj, CompressedArray):
             #: pylint: disable=protected-access
             return obj._array[...] if self._fill_value is None else \
@@ -216,16 +214,16 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         args,
         kwargs,
     ) -> Any:
-        """Support numpy functions.
+        """Support NumPy functions on compressed arrays.
 
         Args:
-            func: The numpy function.
+            func: The NumPy function.
             _types: The types of the arguments.
-            args: The arguments.
-            kwargs: The keyword arguments.
+            args: Positional arguments.
+            kwargs: Keyword arguments.
 
         Returns:
-            The result of the numpy function.
+            The result of the NumPy function.
         """
         arrays: list[NDArray] = [
             item.__array__() if isinstance(item, CompressedArray) else item
@@ -240,16 +238,16 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         *args,
         **kwargs,
     ) -> Any:
-        """Call a numpy ufunc on the array.
+        """Apply a NumPy universal function to the array.
 
         Args:
-            ufunc: The ufunc to call.
+            ufunc: The universal function.
             method: The method to call.
-            *args: The arguments to pass to the ufunc.
-            **kwargs: The keyword arguments to pass to the ufunc.
+            *args: Positional arguments for the function.
+            **kwargs: Keyword arguments for the function.
 
         Returns:
-            The result of the ufunc.
+            The result of the universal function.
         """
         inputs = [self._cast(arg) for arg in args]
 
@@ -265,10 +263,10 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
         """Return a copy of the array with the specified data type.
 
         Args:
-            astype_dtype: The data type to cast to.
+            astype_dtype: The target data type.
 
         Returns:
-            The casted array.
+            The converted array.
         """
         return self.__array__(astype_dtype)
 
@@ -279,13 +277,13 @@ def dask_array_from_compressed_array(
     inline_array=False,
     **kwargs,
 ) -> dask.array.core.Array:
-    """Create a dask array from a compressed array.
+    """Create a Dask array backed by a compressed array.
 
     Args:
         array: The compressed array.
 
     Returns:
-        The dask array.
+        The Dask array.
     """
     chunks: tuple[int, ...] = array.chunks
     if name is None:

@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Testing variables
-=================
+NumPy-backed variable tests
+===========================
 """
 from typing import Any
 
@@ -17,7 +17,7 @@ from ..array import _as_numpy_array
 
 
 def test_as_numpy_array() -> None:
-    """Test converting array like to a dask array."""
+    """Test converting array-like data to a NumPy array."""
     array: numpy.ndarray
     fill_value: Any
     np_array: numpy.ndarray

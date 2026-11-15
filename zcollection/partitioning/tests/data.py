@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Make test data.
-===============
+Partitioning test data
+======================
 """
 import numpy
 import xarray
@@ -16,7 +16,7 @@ DELTA = numpy.timedelta64(72, 'h')
 
 def create_test_sequence(repeatability, number_of_measures,
                          number_of_cycles) -> xarray.Dataset:
-    """Creation of a data set for testing purposes."""
+    """Create a sequence dataset for partitioning tests."""
     pass_number = numpy.hstack([
         numpy.tile(ix + 1, number_of_measures) for j in range(number_of_cycles)
         for ix in range(repeatability)

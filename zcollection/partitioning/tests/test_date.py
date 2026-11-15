@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Test partitioning by date.
-==========================
+Date partitioning tests
+=======================
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 #: First date of the dataset to partition
 START_DATE = numpy.datetime64('2000-01-06', 'ns')
 
-#: Time delta between two partitions
+#: Time step between consecutive dates in the test dataset.
 TIME_DELTA = numpy.timedelta64(1, 'h')
 
 
@@ -142,7 +142,7 @@ def test_split_dataset(delayed: bool) -> None:
 
 
 def test_construction() -> None:
-    """Test the construction of the Date class."""
+    """Test constructing a Date partitioning scheme."""
     partitioning = Date(('dates', ), 'D')
     assert partitioning.resolution == 'D'
     assert partitioning.variables == ('dates', )
@@ -218,8 +218,7 @@ def test_config(resolution, dtype):
 
 @pytest.mark.parametrize('delayed', [False, True])
 def test_no_monotonic(delayed: bool):
-    """Test that the Date partitioning raises an error if the temporal axis is
-    not monotonic."""
+    """Reject non-monotonic dates when partitioning."""
     dates: numpy.ndarray = numpy.arange(numpy.datetime64('2000-01-01', 'h'),
                                         numpy.datetime64('2000-01-02', 'h'),
                                         numpy.timedelta64(1, 'm'))
@@ -237,7 +236,7 @@ def test_no_monotonic(delayed: bool):
 
 
 def test_values_must_be_datetime64():
-    """Test that the values must be datetime64."""
+    """Reject values that are not datetime64."""
     dates = numpy.arange(numpy.datetime64('2000-01-01', 'h'),
                          numpy.datetime64('2000-01-02', 'h'),
                          numpy.timedelta64(1, 'm'))

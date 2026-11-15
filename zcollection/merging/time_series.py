@@ -23,10 +23,9 @@ def _merge_time_series(
     axis: str,
     partitioning_dim: str,
 ) -> dataset.Dataset:
-    """Merge two time series together.
+    """Merge two time series.
 
-    See :func:`merge_time_series` for
-    details.
+    See :func:`merge_time_series` for details.
     """
     existing_axis: NDArray = existing_ds.variables[axis].values
     inserted_axis: NDArray = inserted_ds.variables[axis].values
@@ -48,7 +47,7 @@ def _merge_time_series(
     if relation.is_after():
         return existing_ds.concat(inserted_ds, partitioning_dim)
 
-    # The new piece replace the old one
+    # The new data replaces the existing data.
     if relation.contains():
         return inserted_ds
 
@@ -59,7 +58,7 @@ def _merge_time_series(
     if relation.is_before_overlapping():
 
         indices = numpy.nonzero(
-            # comparison between ndarray and datetime64
+            # Compare NumPy array values with datetime64 values.
             existing_axis > intersection.end())[0]
 
         return inserted_ds.concat(
@@ -70,7 +69,7 @@ def _merge_time_series(
     if relation.is_after_overlapping():
 
         indices = numpy.nonzero(
-            # comparison between ndarray and datetime64
+            # Compare NumPy array values with datetime64 values.
             existing_axis < intersection.begin)[0]
 
         return existing_ds.isel({
@@ -78,12 +77,12 @@ def _merge_time_series(
         }).concat(inserted_ds, partitioning_dim)
 
     assert relation.is_inside()
-    # comparison between ndarray and datetime64
+    # Compare NumPy array values with datetime64 values.
     index = numpy.nonzero(existing_axis < intersection.begin)[0]
     before: dataset.Dataset = existing_ds.isel(
         {partitioning_dim: slice(0, index[-1] + 1, None)})
 
-    # comparison between ndarray and datetime64
+    # Compare NumPy array values with datetime64 values.
     index = numpy.nonzero(existing_axis > intersection.end())[0]
 
     after: dataset.Dataset = existing_ds.isel(
@@ -99,17 +98,15 @@ def merge_time_series(
     partitioning_dim: str,
     **kwargs,
 ) -> dataset.Dataset:
-    """Merge two time series together.
+    """Merge two time series, replacing overlapping values with new data.
 
-    Replaces only the intersection between the existing dataset and the new one,
-    but also keeps the existing records if they have not been updated.
+    Existing records outside the inserted time series are retained. Where
+    the series overlap, values from the inserted dataset replace existing
+    values.
 
-    The following figure illustrates the implemented algorithm. Column ``A``
-    represents the new data and column ``B``, the data already present. The
-    different cells in the columns represent the hours on the day of the
-    measurements. The merge result is shown in column ``C``. It contains the
-    measurements of the column ``A`` or column ``B`` if column ``A`` does not
-    replace them.
+    The figure shows the merge: column ``A`` contains inserted measurements,
+    column ``B`` contains existing measurements, and column ``C`` contains
+    the result. Each cell represents an hour of measurements.
 
     .. figure:: ../images/merge_time_series.svg
         :align: center
@@ -120,11 +117,10 @@ def merge_time_series(
         inserted_ds: The inserted dataset.
         axis: The axis to merge on.
         partitioning_dim: The name of the partitioning dimension.
-        kwargs:
-            tolerance: This parameter sets the tolerance level for detecting
-                data gaps in the inserted axis dataset. If set to ``None``,
-                the algorithm will not check for data gaps in the inserted
-                dataset.
+        kwargs: Additional options, including ``tolerance``. When specified,
+            ``tolerance`` detects gaps in the inserted axis and splits the
+            inserted data into segments before merging them. With ``None``,
+            gaps are not checked.
 
     Returns:
         The merged dataset.
@@ -148,8 +144,7 @@ def merge_time_series(
         index = numpy.array([], dtype=numpy.int64)
 
     if index.size > 1:
-        # Split the inserted dataset into several datasets between the data
-        # gaps.
+        # Split the inserted dataset at gaps before merging each segment.
         for ix in range(len(index) - 1):
             existing_ds = _merge_time_series(
                 existing_ds,

@@ -3,16 +3,16 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Index of the partitions
-=======================
+Partition index
+===============
 
-The index of the partitions of a collection or a view is one file at
-its root. Reading it costs one request; listing the partitions from the
-store costs one request per directory.
+The partition index of a collection or view is stored in a file at its
+root. Reading the index requires one request; listing partitions directly
+from storage requires one request per directory.
 
-A partition is named by its key, the value each of the names of the
-partitioning takes. The index stores the key of each partition, ordered
-by their values, and the names. A path is built from a key by
+Each partition key contains a value for every name defined by the
+partitioning scheme. The index stores these names and the partition keys,
+ordered by their values. A partition path is constructed from its key using
 :meth:`zcollection.partitioning.abc.Partitioning.join`.
 """
 from __future__ import annotations
@@ -34,27 +34,26 @@ if TYPE_CHECKING:
 
     from . import partitioning
 
-#: Name of the file holding the index, at the root of the collection or
-#: of the view.
+#: Name of the partition index file at the root of a collection or view.
 FILENAME = '.partitions'
 
-#: Version of the layout the index is written in.
+#: Version of the partition index layout.
 VERSION = 2
 
-#: The key of a partition: the value each of its names takes.
+#: Partition key: one value for each name defined by the partitioning scheme.
 Key = tuple[int, ...]
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class PartitionIndex:
-    """The index of the partitions of a collection or of a view.
+    """Index of partitions in a collection or view.
 
     Args:
-        fs: The file system holding the store.
-        base_dir: The path of the collection or of the view.
-        partition_handler: The partitioning the store is written with.
-        writable: Whether the index may be written.
+        fs: The file system containing the collection or view.
+        base_dir: The collection or view directory.
+        partition_handler: The partitioning scheme.
+        writable: Whether the index can be written.
     """
     __slots__ = (
         '_base_dir',
@@ -83,12 +82,12 @@ class PartitionIndex:
 
     @property
     def names(self) -> tuple[str, ...]:
-        """Return the name the partitioning gives to each value of a key."""
+        """Return the names associated with the values of a partition key."""
         return self._names
 
     @property
     def path(self) -> str:
-        """Return the path of the file holding the index."""
+        """Return the path of the partition index file."""
         return fs_utils.join_path(self._base_dir, FILENAME)
 
     def path_of(self, key: Key) -> str:
@@ -128,14 +127,15 @@ class PartitionIndex:
 
     @contextlib.contextmanager
     def updating(self, *, reindex_on_error: bool = False) -> Iterator[None]:
-        """Mark the index as updating while partitions are written.
+        """Mark the index as updating during partition changes.
 
-        The index is written when the block ends.
+        On successful exit, write the updated index. After an error, the index
+        remains marked as updating unless it is rebuilt successfully.
 
         Args:
-            reindex_on_error: Whether to rebuild the index when the block
-                raises. Otherwise, or if the rebuild fails, the index stays
-                marked. A failed rebuild is logged.
+            reindex_on_error: Whether to rebuild the index after an error.
+                If rebuilding fails, log the failure and leave the index marked
+                as updating.
         """
         keys = set(self.keys())
         self.write(sorted(keys), updating=True)
@@ -207,8 +207,7 @@ class PartitionIndex:
         """Add partitions to the index.
 
         Args:
-            paths: The path of each partition to add, relative to the root
-                or not.
+            paths: Partition paths, relative to the root or including it.
         """
         self._update(added=self.keys_of(paths), removed=())
 
@@ -216,8 +215,7 @@ class PartitionIndex:
         """Remove partitions from the index.
 
         Args:
-            paths: The path of each partition to remove, relative to the
-                root or not.
+            paths: Partition paths, relative to the root or including it.
         """
         self._update(added=(), removed=self.keys_of(paths))
 
@@ -236,14 +234,13 @@ class PartitionIndex:
             self.write(sorted(keys))
 
     def keys_of(self, paths: Iterable[str]) -> tuple[Key, ...]:
-        """Return the key each path names.
+        """Return the partition keys corresponding to paths.
 
         Args:
-            paths: The path of each partition, relative to the root or
-                not.
+            paths: Partition paths, relative to the root or including it.
 
         Returns:
-            The key of each path.
+            The partition key for each path.
         """
         handler: partitioning.Partitioning = self._partitioning
         return tuple(

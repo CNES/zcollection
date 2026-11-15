@@ -22,55 +22,53 @@ if TYPE_CHECKING:
 #: Block size limit used with dask arrays. (128 MiB)
 BLOCK_SIZE_LIMIT = 134217728
 
-#: Alias to type hint for the dimensions of a dataset.
+#: Type alias for dataset dimensions.
 DimensionType = dict[str, int]
 
-#: Version of the layout the configuration of a collection or of a view is
-#: written in. Raised by a change that makes what is written unreadable by
-#: the code preceding it.
+#: Version of the configuration layout used for collections and views.
+#: Incremented when a format change would prevent older code from reading it.
 FORMAT_VERSION = 1
 
-#: Version of the layout the releases of the package write.
+#: Configuration layout version used by earlier package releases.
 DEPRECATED_FORMAT_VERSION = 0
 
 
 def format_version(config: dict[str, Any]) -> int:
-    """Read the version of the layout a configuration is written in.
+    """Read the layout version from a collection or view configuration.
 
     Args:
-        config: The configuration of a collection or of a view.
+        config: The configuration to inspect.
 
     Returns:
-        The version of the layout.
+        The layout version.
     """
     version: Any = config.get('version', DEPRECATED_FORMAT_VERSION)
     if isinstance(version, int):
         return version
-    # A string in this key is the version of the package that wrote the
-    # configuration. '0' marks the layout the releases write, any other
-    # string the one that follows it.
+    # A string identifies the package version that wrote the configuration.
+    # ``'0'`` denotes the layout of earlier releases; other strings
+    # identify the subsequent layout.
     return (DEPRECATED_FORMAT_VERSION if version == '0' else FORMAT_VERSION)
 
 
 class Attribute:
-    """Handle the metadata of a dataset attribute.
+    """Metadata for a dataset attribute.
 
     Args:
-        name: name of the attribute.
-        value: value of the attribute.
+        name: The attribute name.
+        value: The attribute value.
     """
     __slots__ = ('name', 'value')
 
     def __init__(self, name: str, value: Any) -> None:
-        #: Name of the key.
+        #: Attribute name.
         self.name: str = name
-        #: Value of the key.
+        #: Attribute value.
         self.value: Any = self._encode(value)
 
     @staticmethod
     def _encode(value: Any) -> Any:
-        """Encode an attribute value as something that can be serialized as
-        JSON."""
+        """Encode an attribute value for JSON serialization."""
         if isinstance(value, numpy.ndarray):
             return value.tolist()
 
@@ -88,29 +86,29 @@ class Attribute:
         return self.get_config() == other.get_config()
 
     def get_config(self) -> tuple[str, Any]:
-        """Get the key/value pair configuration."""
+        """Return the attribute as a name-value configuration pair."""
         return self.name, self.value
 
     @staticmethod
     def from_config(data: tuple[str, Any]) -> Attribute:
-        """Create a new instance from its metadata.
+        """Create an attribute from its configuration.
 
         Args:
-            data: attribute configuration.
+            data: The attribute configuration.
 
         Returns:
-            Attribute: a new attribute.
+            The new attribute.
         """
         return Attribute(*data)
 
 
 class Dimension:
-    """Handle the metadata of a dataset dimension.
+    """Metadata for a dataset dimension.
 
     Args:
-        name: name of the dimension.
-        value: size of the dimension, or -1 when it is not fixed.
-        chunks: size of the dimension's chunks.
+        name: The dimension name.
+        value: The dimension size, or ``-1`` if unspecified.
+        chunks: The chunk size along the dimension.
     """
     __slots__ = ('chunks', 'name', 'value')
 
@@ -121,15 +119,15 @@ class Dimension:
 
     @staticmethod
     def from_config(data: tuple[str, int, int]) -> Dimension:
-        """Creates a new instance from its metadata.
+        """Create a dimension from its configuration.
 
         Returns:
-            Dimension: a new dimension.
+            The new dimension.
         """
         return Dimension(*data)
 
     def get_config(self) -> tuple[str, int, int]:
-        """Get the key/value/chunk values configuration."""
+        """Return the dimension configuration, including its chunk size."""
         return self.name, self.value, self.chunks
 
     def __repr__(self) -> str:
@@ -143,25 +141,24 @@ class Dimension:
 
 
 class VariableSchema:
-    """Handle the metadata of a dataset variable.
+    """Metadata defining a dataset variable.
 
     Args:
-        name: Name of the variable.
-        dtype: Data type of the variable.
-        dimensions: Names of the dimensions of the variable. Defaults to None.
-        attrs: Attributes of the variable. Defaults to None.
-        compressor: Compression codec for the variable. Defaults to None.
-        fill_value: Fill value of the variable. Defaults to None. Reading
-            a variable masks the elements equal to this value. If it is NaN
-            or NaT, the NaN or NaT elements are masked.
-        filters: Filters for the variable. Defaults to None.
+        name: The variable name.
+        dtype: The variable data type.
+        dimensions: The variable dimensions. Defaults to ``None``.
+        attrs: The variable attributes. Defaults to ``None``.
+        compressor: The compression codec. Defaults to ``None``.
+        fill_value: The fill value, used to mask matching values when reading.
+            This also applies when the fill value is NaN or NaT. Defaults
+            to ``None``.
+        filters: The variable filters. Defaults to ``None``.
 
     Warning:
-        If the variable uses filters, the ``fill_value`` parameter must be the
-        value that results from decoding the filter. For example, if the filter
-        is ``FixedScaleOffset(0, 1000)`` and the desired ``fill_value`` is
-        ``65536``, then the ``fill_value`` parameter must be ``65536 / 1000 =
-        65.536``.
+        When filters are used, ``fill_value`` must be expressed as the
+        decoded value. For example, a ``FixedScaleOffset(0, 1000)`` filter
+        requires ``65.536`` as the fill value to represent ``65536`` after
+        scaling.
     """
     __slots__ = ('attrs', 'compressor', 'dimensions', 'dtype', 'fill_value',
                  'filters', 'name')
@@ -201,10 +198,10 @@ class VariableSchema:
         return self.get_config() == other.get_config()
 
     def get_config(self) -> dict[str, Any]:
-        """Get the variable metadata.
+        """Return the variable schema configuration.
 
         Returns:
-            variable configuration.
+            The variable configuration.
         """
         compressor_config = codecs.get_config(
             self.compressor) if self.compressor is not None else None
@@ -228,13 +225,13 @@ class VariableSchema:
 
     @staticmethod
     def from_config(data: dict[str, Any]) -> VariableSchema:
-        """Create a new variable from the given variable configuration.
+        """Create a variable schema from a configuration.
 
         Args:
-            data: variable configuration.
+            data: The variable configuration.
 
         Returns:
-            new variable.
+            The new variable schema.
         """
 
         dtype: numpy.dtype = serialization.decode_dtype(data['dtype'])
@@ -255,10 +252,10 @@ class VariableSchema:
         )
 
     def set_for_insertion(self) -> VariableSchema:
-        """Create a new variable without any attribute.
+        """Return a copy of the variable schema without attributes.
 
         Returns:
-            The variable.
+            The new variable schema.
         """
         return VariableSchema(self.name,
                               self.dtype,
@@ -269,17 +266,14 @@ class VariableSchema:
 
 
 class DatasetSchema:
-    """Handle the metadata of a dataset.
+    """Metadata defining a dataset schema.
 
     Args:
-        dimensions: A sequence of :py:class:`Dimension` objects representing
-            the dimensions of the dataset associated to their size.
-        variables: A sequence of :py:class:`VariableSchema` objects representing the
-            variables of the dataset.
-        attrs: An optional sequence of :py:class:`Attribute` objects
-            representing the attributes of the dataset. Defaults to None.
-        block_size_limit: An optional integer representing the maximum size
-            (in bytes) of a block/chunk of variable's data.
+        dimensions: The :py:class:`Dimension` objects describing names, sizes,
+            and chunk sizes.
+        variables: The :py:class:`VariableSchema` objects for the variables.
+        attrs: The dataset :py:class:`Attribute` objects. Defaults to ``None``.
+        block_size_limit: The maximum size in bytes of a data chunk.
     """
     __slots__ = ('attrs', 'block_size_limit', 'dimensions', 'variables')
 
@@ -304,17 +298,17 @@ class DatasetSchema:
         #: Attributes of the dataset.
         self.attrs = list(attrs or [])
 
-        #: Maximum data chunk size
+        #: Maximum data chunk size.
         self.block_size_limit: int = block_size_limit or BLOCK_SIZE_LIMIT
 
     @property
     def dim_chunks(self) -> DimensionType:
-        """Dimensions' chunks properties."""
+        """Return a mapping of dimension names to their chunk sizes."""
         return {dim.name: dim.chunks for dim in self.dimensions.values()}
 
     @property
     def dim_size(self) -> DimensionType:
-        """Dimensions' size properties."""
+        """Return a mapping of dimension names to their sizes."""
         return {dim.name: dim.value for dim in self.dimensions.values()}
 
     def select_variables(
@@ -322,13 +316,11 @@ class DatasetSchema:
         keep_variables: Iterable[str] | None = None,
         drop_variables: Iterable[str] | None = None,
     ) -> set[str]:
-        """Select variables to keep or drop from the dataset.
+        """Select variable schemas to retain or remove.
 
         Args:
-            keep_variables: A list of variables to retain from the schema.
-                If None, all variables are kept.
-            drop_variables: A list of variables to exclude from the schema.
-                If None, no variables are dropped.
+            keep_variables: Variables to retain. Defaults to all variables.
+            drop_variables: Variables to exclude. Defaults to none.
 
         Returns:
             The selected variables.
@@ -352,10 +344,10 @@ class DatasetSchema:
         return not self.__eq__(other)
 
     def get_config(self) -> dict[str, Any]:
-        """Get the dataset metadata.
+        """Return the dataset schema configuration.
 
         Returns:
-            Schema configuration.
+            The schema configuration.
         """
         attributes = sorted(attr.get_config() for attr in self.attrs)
         variables = tuple(self.variables[name].get_config()
@@ -373,14 +365,14 @@ class DatasetSchema:
         }
 
     def add_dimension(self, dimension: Dimension) -> None:
-        """Add a dimension to the dataset.
+        """Declare a new dimension in the dataset schema.
 
         Args:
-            dimension: dimension to add.
+            dimension: The dimension to add.
 
         Raises:
-            TypeError: If the dimension is not a Dimension object.
-            ValueError: If the dimension already exists in the dataset.
+            TypeError: If the argument is not a ``Dimension``.
+            ValueError: If the dimension is already declared.
         """
         if not isinstance(dimension, Dimension):
             raise TypeError(
@@ -395,16 +387,16 @@ class DatasetSchema:
     def add_variable(self,
                      variable: VariableSchema,
                      dimensions: set[str] | None = None) -> None:
-        """Add a variable to the dataset.
+        """Add a variable to the dataset schema.
 
         Args:
-            variable: variable to add.
-            dimensions: set of known dimensions.
+            variable: The variable to add.
+            dimensions: The permitted dimensions. Defaults to those already
+                declared in the schema.
 
         Raises:
-            TypeError: If the variable is of another type.
-            ValueError: If the variable already exists in the dataset or if
-                the variable's dimensions do not match the dataset's
+            TypeError: If the argument is not a variable schema.
+            ValueError: If the variable already exists or uses undeclared
                 dimensions.
         """
         if not isinstance(variable, VariableSchema):
@@ -417,7 +409,7 @@ class DatasetSchema:
                 'collection.')
 
         dimensions = dimensions or set(self.dimensions)
-        # Looking for unknown dimensions.
+        # Check whether the variable uses undeclared dimensions.
         if (set(variable.dimensions) | dimensions) != dimensions:
             raise ValueError(
                 'The new variable must use the dataset dimensions.')
@@ -425,13 +417,13 @@ class DatasetSchema:
         self.variables[variable.name] = variable
 
     def drop_variable(self, name: str) -> None:
-        """Remove a variable from the dataset.
+        """Remove a variable from the dataset schema.
 
         Args:
             name: The name of the variable to remove.
 
         Raises:
-            ValueError: If the variable does not exist in the dataset.
+            ValueError: If the variable does not exist.
         """
         if name not in self.variables:
             raise ValueError(
@@ -440,13 +432,13 @@ class DatasetSchema:
 
     @staticmethod
     def from_config(data: dict[str, Any]) -> DatasetSchema:
-        """Create a new dataset from the given dataset configuration.
+        """Create a dataset schema from its configuration.
 
         Args:
-            data: dataset configuration.
+            data: The dataset configuration.
 
         Returns:
-            New dataset.
+            The new dataset schema.
         """
         return DatasetSchema(
             tuple(
@@ -460,14 +452,13 @@ class DatasetSchema:
 
     @staticmethod
     def from_deprecated_config(data: dict[str, Any]) -> DatasetSchema:
-        """Create a new dataset from the given deprecated dataset
-        configuration.
+        """Create a dataset schema from an older configuration format.
 
         Args:
-            data: dataset configuration.
+            data: The older dataset configuration.
 
         Returns:
-            New dataset.
+            The new dataset schema.
         """
         chunks = dict(data.get('chunks', []))
         return DatasetSchema(
@@ -482,19 +473,17 @@ class DatasetSchema:
         )
 
     def missing_variables(self, other: DatasetSchema) -> tuple[str, ...]:
-        """Finds the variables in the provided dataset that are not in this
-        instance.
+        """Find variables declared here but missing from another schema.
 
         Args:
-            other: The dataset to compare against.
+            other: The dataset schema to compare.
 
         Returns:
-            A tuple containing the names of the variables that are defined in
-            this dataset but not in the provided dataset.
+            The names of variables declared here but absent from ``other``.
 
         Raises:
-            ValueError: If the provided dataset does not define one or more
-                variables that are defined in this dataset.
+            ValueError: If ``other`` declares variables that are absent from
+                this schema.
         """
         this = set(self.variables)
         others = set(other.variables)
@@ -509,18 +498,16 @@ class DatasetSchema:
     def select_variables_by_dims(self,
                                  dims: Sequence[str],
                                  predicate: bool = True) -> set[str]:
-        """Select variables that have at least one dimension in the given
-        dimensions depending on the predicate.
+        """Select variable names according to their dimensions.
 
         Args:
-            dims: A sequence of dimensions to select.
-            predicate: A boolean value that determines whether to select
-                variables that have the given dimensions (True) or variables
-                that don't have the given dimensions (False).
+            dims: The dimensions to match. An empty sequence selects the
+                variables without dimensions.
+            predicate: If ``True``, select variables sharing at least one of
+                these dimensions; otherwise, select the other variables.
 
         Returns:
-            A set of variable names that have the given dimensions (if predicate
-            is True) or don't have the given dimensions (if predicate is False).
+            The set of selected variable names.
         """
         if len(dims) == 0:
             return {

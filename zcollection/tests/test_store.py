@@ -3,13 +3,12 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Testing the store module
-========================
+Storage backend tests
+=====================
 
-The defaults of :func:`zcollection.store.create_array` decide what an array
-holds where nothing was written to it, and what its chunks are held behind.
-A storage layer that changes them changes the data without raising, so they
-are pinned here.
+The defaults of :func:`zcollection.store.create_array` determine the
+values of unwritten array regions and how chunks are compressed. Changing
+these defaults can silently change data, so the tests fix their behavior.
 """
 from __future__ import annotations
 
@@ -40,11 +39,11 @@ if TYPE_CHECKING:
 def keys_read(fs: fsspec.AbstractFileSystem, path: str) -> Iterator[list[str]]:
     """Record the keys read from a store.
 
-    The record holds the keys read from every store of the kind that
-    holds this path.
+    The record includes reads from every store of the same type as the
+    store at this path.
 
     Args:
-        fs: The file system the store is held on.
+        fs: The file system storing the data.
         path: The path of the store.
 
     Yields:
@@ -77,7 +76,7 @@ def test_uninitialized_values_read_as_zero(local_fs) -> None:  # noqa: F811
 
 
 def test_s3_stores_do_not_open_extra_sessions(s3_fs) -> None:
-    """Zarr operations open no S3 session on a second filesystem."""
+    """Zarr operations open no S3 session on a second file system."""
     fs = s3_fs.fs
     unexpected_sessions: list[int] = []
     set_session = type(fs).set_session
@@ -116,11 +115,11 @@ def test_fill_value_is_the_one_given(local_fs) -> None:  # noqa: F811
 
 def test_no_fill_value_becomes_the_default_of_the_type(
         local_fs) -> None:  # noqa: F811
-    """An array always carries a fill value.
+    """Every Zarr array has a fill value.
 
-    A fill value of ``None`` becomes the default of the data type. A
-    variable that carries none is marked by the absence of
-    :data:`zcollection.variable.abc.FILL_VALUE`.
+    When ``fill_value`` is ``None``, Zarr uses the default for the data
+    type. A variable without a declared fill value has no
+    :data:`zcollection.variable.abc.FILL_VALUE` attribute.
     """
     path = join_path(str(local_fs.root), 'array')
     array = store.create_array(local_fs.fs,
@@ -134,7 +133,7 @@ def test_no_fill_value_becomes_the_default_of_the_type(
 
 def test_chunks_are_held_behind_the_default_compressor(
         local_fs) -> None:  # noqa: F811
-    """An array created without a compressor carries the Zarr default."""
+    """An array without an explicit compressor uses Zarr's default."""
     path = join_path(str(local_fs.root), 'array')
     array = store.create_array(local_fs.fs,
                                path,
@@ -170,7 +169,7 @@ def test_filters_are_applied(local_fs) -> None:  # noqa: F811
 
 
 def test_name_holds_the_array_inside_the_store(local_fs) -> None:  # noqa: F811
-    """``name`` is the key the array is held under."""
+    """``name`` gives the key under which the array is stored."""
     path = join_path(str(local_fs.root), 'group')
     store.create_group(local_fs.fs, path)
     store.create_array(local_fs.fs,
@@ -186,7 +185,7 @@ def test_name_holds_the_array_inside_the_store(local_fs) -> None:  # noqa: F811
 
 
 def test_overwrite_replaces_an_array(local_fs) -> None:  # noqa: F811
-    """``overwrite`` replaces an array already held at that path."""
+    """``overwrite`` replaces an array already stored at that path."""
     path = join_path(str(local_fs.root), 'array')
     store.create_array(local_fs.fs,
                        path,
@@ -203,7 +202,7 @@ def test_overwrite_replaces_an_array(local_fs) -> None:  # noqa: F811
 
 
 def test_creating_over_an_array_is_refused(local_fs) -> None:  # noqa: F811
-    """Creating an array where one already is raises."""
+    """Creating an array at an occupied path raises an error."""
     path = join_path(str(local_fs.root), 'array')
     store.create_array(local_fs.fs,
                        path,
@@ -218,7 +217,7 @@ def test_creating_over_an_array_is_refused(local_fs) -> None:  # noqa: F811
 
 
 def test_an_empty_group_holds_no_array(local_fs) -> None:  # noqa: F811
-    """A group created on its own holds nothing."""
+    """A newly created group contains no arrays."""
     path = join_path(str(local_fs.root), 'group')
     store.create_group(local_fs.fs, path)
     store.consolidate(local_fs.fs, path)
@@ -253,10 +252,10 @@ def test_a_read_only_array_refuses_a_write(local_fs) -> None:  # noqa: F811
 
 
 def test_a_group_opens_read_only(local_fs) -> None:  # noqa: F811
-    """A group opened with the default mode refuses a write.
+    """A group opened in the default mode refuses writes.
 
-    Consolidated metadata is read-only whatever the mode; a group opened
-    in ``r+`` hands back writable arrays.
+    Consolidated metadata is read-only in every mode, but a group opened
+    in ``r+`` returns writable arrays.
     """
     path = join_path(str(local_fs.root), 'group')
     store.create_group(local_fs.fs, path)
@@ -316,7 +315,7 @@ def test_opening_a_node_with_a_creating_mode_raises(
 
 
 def test_opening_an_absent_array_raises(local_fs) -> None:  # noqa: F811
-    """Opening an array the store does not hold builds none of it."""
+    """Opening an absent array raises without creating it."""
     path = join_path(str(local_fs.root), 'absent')
 
     with pytest.raises(FileNotFoundError):

@@ -77,7 +77,7 @@ def overlap_target(request):
                          indirect=['overlap_target'])
 @pytest.mark.usefixtures('dask_client')
 def test_map_overlap_immutable_only(overlap_target, depth):
-    """Recover central slices when selected inputs omit the partitioned axis."""
+    """Recover central slices even without a selected partitioned variable."""
 
     def callback(zds, *, partition_info):
         assert set(zds.variables) == {'constant'}
@@ -109,7 +109,8 @@ def test_map_overlap_immutable_only(overlap_target, depth):
 @pytest.mark.usefixtures('dask_client')
 def test_update_overlap_immutable_only(overlap_target, delayed, distributed,
                                        trim):
-    """Selected constants can produce partitioned outputs with either trim mode."""
+    """Selected constants can produce partitioned outputs with either trim
+    mode."""
     output = 'derived' if isinstance(overlap_target, view.View) else 'result'
 
     def callback(zds, *, partition_info):
@@ -170,7 +171,8 @@ def test_partition_size_uses_loaded_dimension(monkeypatch):
 
 @pytest.mark.parametrize('overlap_target', UPDATE_TARGETS, indirect=True)
 def test_overlap_immutable_only_skips_absent_neighbor(overlap_target):
-    """An absent neighbor contributes no rows to the central partition's slice."""
+    """An absent neighbor contributes no rows to the central partition's
+    slice."""
     reference = overlap_target.view_ref if isinstance(
         overlap_target, view.View) else overlap_target
     reference.fs.rm(next(path for path in reference.partitions()

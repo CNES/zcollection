@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Fixtures for testing S3 using the pytest and minio.
-===================================================
+Fixtures for testing S3 with pytest and MinIO.
+==============================================
 """
 from typing import Literal
 from collections.abc import Iterator
@@ -21,12 +21,12 @@ import pytest
 import requests
 import s3fs
 
-#: Credential for minio
+#: Credentials for MinIO.
 CREDENTIAL = '25219d58-f6c6-11eb-922c-770d49cd18e4'
 
 
 def have_minio() -> Literal[True]:
-    """Check if minio is available."""
+    """Check whether MinIO is available."""
     try:
         subprocess.check_output(['minio', '--version'])
         return True
@@ -39,7 +39,7 @@ have_minio()
 
 
 def is_minio_up(endpoint_uri: str, timeout: float) -> bool:
-    """Check if minio server is up."""
+    """Check whether the MinIO server is running."""
     try:
         response = requests.get(endpoint_uri, timeout=timeout)
         if response.status_code == 403:
@@ -51,7 +51,7 @@ def is_minio_up(endpoint_uri: str, timeout: float) -> bool:
 
 
 def wait_for_minio_to_start(endpoint_uri: str, timeout: float) -> None:
-    """Wait for the minio server to start."""
+    """Wait for the MinIO server to start."""
     while timeout > 0:
         try:
             response = requests.get(endpoint_uri, timeout=1)
@@ -74,7 +74,7 @@ def unused_port() -> int:
 
 @pytest.fixture(scope='session')
 def s3_base(tmp_path_factory, pytestconfig) -> Iterator[str]:
-    """Launch minio server."""
+    """Start a MinIO server."""
     if pytestconfig.getoption('s3') is False:
         pytest.skip('S3 disabled')
     port = unused_port()
@@ -123,7 +123,7 @@ def make_bucket(name, endpoint_uri: str) -> None:
 
 @pytest.fixture
 def s3(s3_base) -> Iterator[s3fs.core.S3FileSystem]:
-    """Create a S3 file system instance."""
+    """Create an S3 file system."""
     s3fs.core.S3FileSystem.clear_instance_cache()
     fs = s3fs.core.S3FileSystem(anon=False,
                                 key=CREDENTIAL,
@@ -142,15 +142,15 @@ def s3(s3_base) -> Iterator[s3fs.core.S3FileSystem]:
 
 
 class S3Path(type(pathlib.Path())):  # type: ignore[misc]
-    """Handle S3 path on multiple platforms."""
+    """Handle S3 paths across platforms."""
 
     def __str__(self) -> str:
         return super().__str__().replace('\\', '/')
 
 
 class S3:
-    """S3 filesystem."""
-    #: Bucket ID
+    """S3 file system."""
+    #: Bucket identifier.
     ID = 0
 
     def __init__(self, s3: s3fs.core.S3FileSystem, endpoint_uri: str) -> None:

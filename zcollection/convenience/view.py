@@ -29,29 +29,28 @@ def create_view(path: str,
                 distributed: bool = True,
                 npartitions: int | None = None,
                 stop_on_error: bool = True) -> view.View:
-    """Create a new view.
+    """Create a view of a reference collection.
 
     Args:
-        path: View storage directory.
-        view_ref: Access properties for the reference view.
-        filesystem: The file system used to access the view.
-        filters: The filters used to select the partitions of the reference
-            view. If not provided, all partitions are selected.
-        synchronizer: The synchronizer used to synchronize the view.
-        distributed: Whether to use dask or not. Default To True.
-        npartitions: The largest number of partitions written at the same
-            time. Defaults to the number of Dask workers.
-        stop_on_error: If True, no partition starts after the first failure,
-            except the ones already submitted to Dask, which finish. Defaults
-            to True.
+        path: The view directory.
+        view_ref: Access properties for the reference collection.
+        filesystem: The file system for the view.
+        filters: Select partitions from the reference collection. If ``None``,
+            select all partitions.
+        synchronizer: The synchronizer for the view.
+        distributed: Whether to use Dask. Defaults to ``True``.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers.
+        stop_on_error: Whether to stop submitting partitions after a failure.
+            Tasks already submitted to Dask are allowed to finish.
+            Defaults to ``True``.
 
     Example:
-        >>> view_ref = ViewReference(
-        ...     partition_base_dir="/data/mycollection")
+        >>> view_ref = ViewReference(path="/data/mycollection")
         >>> view = create_view("/home/user/myview", view_ref)
 
     Returns:
-        The created view.
+        The new view.
 
     Raises:
         ValueError: If the path already exists, or if ``npartitions`` is
@@ -81,9 +80,9 @@ def open_view(
     """Open an existing view.
 
     Args:
-        path: View storage directory.
-        filesystem: The file system used to access the view.
-        synchronizer: The synchronizer used to synchronize the view.
+        path: The view directory.
+        filesystem: The file system for the view.
+        synchronizer: The synchronizer for the view.
 
     Returns:
         The opened view.

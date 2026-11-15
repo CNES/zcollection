@@ -92,6 +92,6 @@ def test_structured_dtype_serialization() -> None:
     'function',
     [serialization.encode_fill_value, serialization.decode_fill_value])
 def test_object_data_type_is_refused(function) -> None:
-    """A data type holding Python objects has no encoding here."""
+    """Object data types are not supported by the serializer."""
     with pytest.raises(TypeError, match='Unsupported data type'):
         function(0, numpy.dtype('O'))

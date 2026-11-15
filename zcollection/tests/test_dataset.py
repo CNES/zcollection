@@ -106,7 +106,7 @@ def test_dataset(factory) -> None:
 
 
 def test_dataset_dimensions_conflict() -> None:
-    """Test dataset creation with dimensions conflict."""
+    """Test rejecting datasets with conflicting dimensions."""
     with pytest.raises(ValueError,
                        match=r'variable .* has conflicting dimensions'):
         dataset.Dataset([
@@ -136,7 +136,7 @@ def test_dataset_dimensions_conflict() -> None:
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_xarray(factory) -> None:
-    """Test xarray creation."""
+    """Test conversion of datasets to xarray."""
     zds = create_delayed_dataset(factory)
     xr1 = zds.to_xarray()
     assert isinstance(xr1, xarray.Dataset)
@@ -159,7 +159,7 @@ def test_dataset_isel(factory) -> None:
     assert numpy.all(selected_zds.variables['var1'].values == numpy.arange(
         0, 10, 2).reshape(5, 1))
 
-    # Cannot slice on something which is not a dimension
+    # Cannot select a name that is not a dimension.
     with pytest.raises(ValueError, match='invalid dimension'):
         zds.isel(slices={'z': slice(0, 1)})
 
@@ -308,7 +308,7 @@ Data variables:
 
 @pytest.mark.parametrize('factory', [array, delayed_array])
 def test_dataset_rename(factory) -> None:
-    """Test renaming of datasets."""
+    """Test dataset renaming."""
     zds = create_delayed_dataset(factory)
     zds.rename({'var1': 'var3', 'var2': 'var4'})
     assert zds.variables['var3'].name == 'var3'

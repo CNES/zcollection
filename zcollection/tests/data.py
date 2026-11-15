@@ -91,7 +91,7 @@ def create_test_dataset(delayed: bool = True) -> Iterator[dataset.Dataset]:
 def create_test_dataset_with_fillvalue(
         delayed: bool = True,
         rows: slice | None = None) -> Iterator[dataset.Dataset]:
-    """Create a dataset with a fixed scale offset filter and fill values."""
+    """Create a dataset with a FixedScaleOffset filter and fill values."""
 
     dates: NDArray = numpy.arange(START_DATE, END_DATE, DELTA)
     measures: NDArray = numpy.arange(0, len(dates), dtype=numpy.float64)
@@ -133,7 +133,7 @@ def create_test_collection(
     return zcol
 
 
-#: List of filesystems and datasets to test.
+#: File systems and datasets used by the tests.
 FILE_SYSTEM_DATASET = list(
     itertools.product([
         'local_fs',
@@ -198,14 +198,16 @@ def record_lock(monkeypatch, target) -> list[bool]:
     return held
 
 
-#: The partitions of the collection :func:`create_key_collection` returns.
+#: Partitions created by :func:`create_key_collection`.
 KEYS = ('key=1', 'key=2', 'key=3', 'key=4')
 
 
 def create_key_collection(fs, *, insert: bool = True):
-    """Return a collection partitioned by ``key``, with the partitions
-    :data:`KEYS` of two rows each, or with no partitions if `insert` is
-    false."""
+    """Return a collection partitioned by ``key``.
+
+    If ``insert`` is True, it has the partitions listed in :data:`KEYS`,
+    with two rows each. Otherwise it has no partitions.
+    """
     keys = numpy.repeat(numpy.arange(1, 5), 2)
     zds = dataset.Dataset([
         variable.Array('key', keys, ('row', )),
@@ -224,8 +226,8 @@ def create_key_collection(fs, *, insert: bool = True):
 
 
 def create_target(kind: str, fs):
-    """Return the collection of :func:`create_key_collection`, or a view of
-    it, according to `kind`."""
+    """Return a collection from :func:`create_key_collection` or a view
+    of it, depending on ``kind``."""
     create_key_collection(fs)
     if kind == 'collection':
         return convenience.open_collection(str(fs.collection),
@@ -238,8 +240,8 @@ def create_target(kind: str, fs):
                                    distributed=False)
 
 
-#: Run a test on a collection and on a view, through a ``target`` fixture
-#: that calls :func:`create_target`.
+#: Parameterize a ``target`` fixture for collections and views using
+#: :func:`create_target`.
 KINDS = pytest.mark.parametrize('target', ['collection', 'view'],
                                 indirect=True)
 

@@ -6,9 +6,9 @@
 Migration of a collection to Zarr 3
 ===================================
 
-A collection written by an earlier release is read and nothing else. The
-functions here copy one into a collection this release writes, and the copy
-is what makes its data writable again.
+Collections written by earlier releases can only be opened read-only.
+These functions copy them into the current layout, making the copied
+data writable again.
 """
 from __future__ import annotations
 
@@ -50,17 +50,17 @@ def migrate(
     selected_partitions: Iterable[str] | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
-    """Copy a collection into a new one, in the layout this release writes.
+    """Copy a collection into the current storage layout.
 
-    The source is read: its partitions, its configuration and its immutable
-    variables stay as they are. The first call creates the target, with the
-    configuration the source describes.
+    The source remains unchanged, including its partitions, configuration
+    and immutable variables. The first call creates the target using the
+    source configuration.
 
     Args:
         source: The path to the collection to copy.
         target: The path to the collection to write.
-        source_filesystem: The file system the source is held on.
-        target_filesystem: The file system to hold the target on.
+        source_filesystem: The file system storing the source collection.
+        target_filesystem: The file system for the target collection.
         filters: The predicate selecting the partitions to copy, as
             :py:meth:`Collection.partitions
             <zcollection.collection.abc.ReadOnlyCollection.partitions>`
@@ -71,14 +71,14 @@ def migrate(
             Defaults to ``True``.
 
     Returns:
-        The partitions written under ``done``, those the target already
-        held complete under ``skipped``, and those the copy stopped on
-        under ``failed``, each with the error as text. The immutable
-        variables are reported under the name ``.immutable``.
+        An outcome with copied partitions under ``done``, partitions
+        already complete in the target under ``skipped``, and failed
+        copies under ``failed`` with their error messages. Immutable
+        variables are reported as ``.immutable``.
 
     Raises:
-        ValueError: If the target holds a configuration that disagrees with
-            the one the source describes.
+        ValueError: If the target configuration differs from
+            the configuration derived from the source.
 
     Example:
         >>> import zcollection
@@ -112,8 +112,7 @@ def status(
     source_filesystem: fsspec.AbstractFileSystem | str | None = None,
     target_filesystem: fsspec.AbstractFileSystem | str | None = None,
 ) -> detail.Status:
-    """Compare the partitions of a collection with those of the copy it was
-    migrated into.
+    """Compare a collection with its migrated copy.
 
     Args:
         source: The path to the collection that was copied.
@@ -122,10 +121,13 @@ def status(
         target_filesystem: The file system the target is held on.
 
     Returns:
-        The partitions both hold under ``migrated``, those of the source
-        the target does not hold complete under ``missing``, and those the
-        target holds alone under ``pruned``. Printing it gives the counts
-        of one group per value of the first partitioning key.
+        A status grouping partitions as follows: ``migrated`` for those
+        present in the source and complete in the target; ``missing`` for
+        those present in the source but absent or incomplete in the target;
+        ``pruned`` for those absent from the source but complete in the
+        target; and ``lost`` for those absent from the source and incomplete
+        in the target. Its string representation groups counts by the
+        first partitioning key.
 
     Example:
         >>> import zcollection
@@ -153,11 +155,9 @@ def check(
     selected_partitions: Iterable[str] | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
-    """Compare the values of a collection with those of the copy it was
-    migrated into.
+    """Compare a collection with its migrated copy.
 
-    Every value of every variable of the selected partitions is read and
-    compared, masks included.
+    All values in the selected partitions are compared, including masks.
 
     Args:
         source: The path to the collection that was copied.
@@ -174,13 +174,14 @@ def check(
             Defaults to ``True``.
 
     Returns:
-        The partitions whose values are equal under ``done``, those the
-        target does not hold complete under ``skipped``, and those whose
-        variables differ under ``failed``, each with the names of those
-        variables.
+        An outcome with matching partitions under ``done``, partitions
+        missing or incomplete in the target under ``skipped``, and
+        differing partitions under ``failed`` with the names of the
+        variables that differ.
 
     Raises:
-        ValueError: If one of the two directories holds no collection.
+        ValueError: If either directory contains no collection, or if the
+            target is not a copy of the source.
     """
     source_fs = fs_utils.get_fs(source_filesystem)
     target_fs = fs_utils.get_fs(target_filesystem)
@@ -206,17 +207,17 @@ def prune(
     selected_partitions: Iterable[str] | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
-    """Remove from a collection the partitions its copy holds.
+    """Remove source partitions already copied to the target.
 
-    A partition directory is removed; the files of the collection itself
-    stay. Comparing the values of the two collections is the job of
+    Only partition directories are removed; the collection files remain.
+    To compare values before pruning, use
     :py:func:`check <zcollection.migration.check>`.
 
     Args:
         source: The path to the collection that was copied.
         target: The path to the copy.
-        source_filesystem: The file system the source is held on.
-        target_filesystem: The file system the target is held on.
+        source_filesystem: The file system storing the source collection.
+        target_filesystem: The file system storing the target collection.
         filters: The predicate selecting the partitions to remove, as
             :py:meth:`Collection.partitions
             <zcollection.collection.abc.ReadOnlyCollection.partitions>`
@@ -227,9 +228,9 @@ def prune(
             Defaults to ``True``.
 
     Returns:
-        The partitions removed under ``done``, those the source no longer
-        held under ``skipped``, and those the target does not hold complete
-        under ``failed``, each with the reason.
+        An outcome with removed partitions under ``done``, partitions
+        already absent from the source under ``skipped``, and partitions
+        without a complete target copy under ``failed``, with the reason.
 
     Raises:
         ValueError: If one of the two directories holds no collection, or
@@ -269,12 +270,11 @@ def migrate_view(
     selected_partitions: Iterable[str] | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
-    """Copy a view into a new one, in the layout this release writes.
+    """Copy a view into the current storage layout.
 
-    The source is read: the variables it holds in each partition, its
-    configuration and its checksums stay as they are. In the target, the
-    checksum of each copied partition is computed again from the collection
-    it references.
+    The source remains unchanged, including its variables, configuration
+    and checksums. The target recalculates each copied partition's
+    checksum from its reference collection.
 
     Args:
         source: The path to the view to copy.
@@ -293,8 +293,9 @@ def migrate_view(
             Defaults to ``True``.
 
     Returns:
-        The partitions written under ``done``, and those the copy stopped
-        on under ``failed``, each with the error as text.
+        An outcome with copied partitions under ``done``, partitions
+        already complete in the target under ``skipped``, and failed
+        copies under ``failed`` with their error messages.
 
     Raises:
         ValueError: If the source holds no view configuration, or the target
@@ -366,7 +367,7 @@ def view_status(
     source_filesystem: fsspec.AbstractFileSystem | str | None = None,
     target_filesystem: fsspec.AbstractFileSystem | str | None = None,
 ) -> detail.Status:
-    """Say how far the copy of a view has got.
+    """Report the migration status of a view.
 
     Args:
         source: The path to the view that was copied.
@@ -375,15 +376,20 @@ def view_status(
         target_filesystem: The file system the target is held on.
 
     Returns:
-        The partitions the copy holds in full, those it does not, those it
-        holds alone, and those neither view can give back.
+        A status grouping partitions as follows: ``migrated`` for those
+        present in the source and complete in the target; ``missing`` for
+        those present in the source but absent or incomplete in the target;
+        ``pruned`` for those absent from the source but complete in the
+        target; and ``lost`` for those absent from the source and incomplete
+        in the target.
 
     Raises:
         ValueError: If the source holds no view configuration.
 
     Example:
         >>> import zcollection
-        >>> print(zcollection.migration.view_status("/data/myview", "/data/myview.new"))
+        >>> print(zcollection.migration.view_status(
+        ...     "/data/myview", "/data/myview.new"))
     """
     source_fs = fs_utils.get_fs(source_filesystem)
     target_fs = fs_utils.get_fs(target_filesystem)
@@ -407,10 +413,10 @@ def prune_view(
     selected_partitions: Iterable[str] | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
-    """Remove from a view the partitions its copy holds.
+    """Remove source view partitions already copied to the target.
 
-    A partition directory is removed; the configuration of the view stays.
-    Comparing the values of the two views is the job of
+    Only partition directories are removed; the view configuration
+    remains. To compare values before pruning, use
     :py:func:`check_view <zcollection.migration.check_view>`.
 
     Args:
@@ -426,9 +432,9 @@ def prune_view(
             Defaults to ``True``.
 
     Returns:
-        The partitions removed under ``done``, those the source no longer
-        held under ``skipped``, and those the copy does not hold in full
-        under ``failed``, each with the reason.
+        An outcome with removed partitions under ``done``, partitions
+        already absent from the source under ``skipped``, and partitions
+        without a complete target copy under ``failed``, with the reason.
 
     Raises:
         ValueError: If the source holds no view configuration, or source
@@ -468,12 +474,10 @@ def check_view(
     selected_partitions: Iterable[str] | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
-    """Compare the variables of a view with those of the copy it was
-    migrated into.
+    """Compare the variables of a view with their migrated copies.
 
-    Every value of every variable the view declares is read on both sides
-    and compared, masks included. The partitions of the collection the view
-    references are not read: comparing those is the job of
+    Every variable defined by the view is compared, including values and
+    masks. Variables from the reference collection are not compared; use
     :py:func:`check <zcollection.migration.check>`.
 
     Args:
@@ -490,10 +494,10 @@ def check_view(
             Defaults to ``True``.
 
     Returns:
-        The partitions whose values are equal under ``done``, those the
-        target does not hold in full under ``skipped``, and those whose
-        variables differ under ``failed``, each with the names of the
-        variables.
+        An outcome with matching partitions under ``done``, partitions
+        missing or incomplete in the target under ``skipped``, and
+        differing partitions under ``failed`` with the names of the
+        variables that differ.
 
     Raises:
         ValueError: If the source holds no view configuration.

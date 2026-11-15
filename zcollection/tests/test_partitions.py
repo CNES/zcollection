@@ -3,12 +3,12 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Testing the index of the partitions
-===================================
+Partition index tests
+=====================
 
-A listing that reads the index sees what the store holds only as long as
-the two agree. These tests pin what writes the index, and what happens
-when it is gone.
+Listings based on the index reflect storage only while the index and
+store agree. These tests check when the index is updated and how a
+missing index is handled.
 """
 from __future__ import annotations
 
@@ -77,7 +77,8 @@ def test_invalid_keys_are_rejected(keys) -> None:
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_a_corrupt_index_cannot_drop_the_collection(fs, request) -> None:
-    """Dropping partitions through a corrupt index preserves the configuration."""
+    """Dropping partitions through a corrupt index preserves the
+    configuration."""
     tested_fs = request.getfixturevalue(fs)
     zcol = create_test_collection(tested_fs, distributed=False)
     expected = set(zcol.partitions(relative=True))
@@ -100,7 +101,7 @@ def test_a_corrupt_index_cannot_drop_the_collection(fs, request) -> None:
 
 
 def count_listings(monkeypatch) -> dict[str, int]:
-    """Count the directory listings a local file system serves."""
+    """Count the directory listings performed by a local file system."""
     counted = {'ls': 0}
     listing = fsspec.implementations.local.LocalFileSystem.ls
 
@@ -125,7 +126,7 @@ def test_a_path_survives_the_index(handler, path) -> None:
 
 
 def test_an_insertion_writes_the_index(local_fs) -> None:  # noqa: F811
-    """An insertion names in the index the partitions it wrote."""
+    """Insertion adds written partitions to the index."""
     zcol = create_test_collection(local_fs, distributed=False)
     written = join_path(str(local_fs.collection), partitions.FILENAME)
 
@@ -140,7 +141,7 @@ def test_an_insertion_writes_the_index(local_fs) -> None:  # noqa: F811
 def test_a_listing_reads_the_index(
         local_fs,  # noqa: F811
         monkeypatch) -> None:
-    """A listing that reads the index walks no directory."""
+    """Listing through a valid index requires no directory walk."""
     zcol = create_test_collection(local_fs, distributed=False)
     expected = tuple(zcol.partitions())
     counted = count_listings(monkeypatch)
@@ -161,7 +162,8 @@ def test_a_listing_reads_the_index(
 def test_an_unusable_index_is_walked_without_writing(
         local_fs,  # noqa: F811
         written) -> None:
-    """An unusable index triggers a directory walk without writing the index."""
+    """An unusable or missing index triggers a directory walk without writing
+    an index."""
     zcol = create_test_collection(local_fs, distributed=False)
     expected = tuple(zcol.partitions())
     path = join_path(str(local_fs.collection), partitions.FILENAME)
@@ -181,7 +183,7 @@ def test_an_unusable_index_is_walked_without_writing(
 def test_a_read_only_collection_lists_without_writing(
         local_fs,  # noqa: F811
         caplog) -> None:
-    """A collection that may not be written is listed without an index."""
+    """A read-only collection can list partitions without a stored index."""
     zcol = create_test_collection(local_fs, distributed=False)
     expected = tuple(zcol.partitions())
     path = join_path(str(local_fs.collection), partitions.FILENAME)
@@ -209,7 +211,7 @@ def test_a_dropped_partition_leaves_the_index(local_fs) -> None:  # noqa: F811
 
 
 def test_reindex_reads_the_store(local_fs) -> None:  # noqa: F811
-    """Indexing again names what the store holds, and nothing else."""
+    """Reindexing uses the partitions stored on disk, and no others."""
     zcol = create_test_collection(local_fs, distributed=False)
     before = tuple(zcol.partitions())
     local_fs.fs.rm(before[0], recursive=True)
@@ -263,7 +265,7 @@ def test_a_read_raises_the_errors_of_its_caller(
     zcol = create_test_collection(local_fs, distributed=False)
 
     def absent_elsewhere(zds) -> int:
-        """Read a file that has nothing to do with the collection."""
+        """Read a file unrelated to the collection."""
         with open('/a-file-that-is-not-there', 'rb'):
             pass
         return 1
@@ -425,7 +427,7 @@ def test_a_failed_reindex_after_a_failed_insertion_leaves_the_index_marked(
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_sync_retries_an_interrupted_index_publication(fs, request) -> None:
-    """Retrying sync publishes partitions completed before its failure."""
+    """Retrying sync publishes partitions completed before the failure."""
     tested_fs = request.getfixturevalue(fs)
     zcol = create_test_collection(tested_fs, delayed=False, distributed=False)
     zview = create_view(str(tested_fs.view),
@@ -681,7 +683,7 @@ def test_opening_for_writing_leaves_an_existing_index_unchanged(
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_reindex_refreshes_cached_directory_listings(fs, request) -> None:
-    """Reindexing observes changes made through another filesystem instance."""
+    """Reindexing observes changes made through another file system instance."""
     tested_fs = request.getfixturevalue(fs)
     zcol = create_test_collection(tested_fs, delayed=False, distributed=False)
     zcol._index.walk()
@@ -695,7 +697,7 @@ def test_reindex_refreshes_cached_directory_listings(fs, request) -> None:
 def test_an_insertion_keeps_the_index_without_a_walk(
         local_fs,  # noqa: F811
         monkeypatch) -> None:
-    """A successful insertion updates a ready index without listing directories."""
+    """Successful insertion updates the index without scanning directories."""
     zcol = create_test_collection(local_fs, delayed=False, distributed=False)
     datasets = create_test_dataset(delayed=False)
     next(datasets)

@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Test of views
-=============
+View tests
+==========
 """
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ def test_view_callbacks_with_distinct_filesystems(
         mixed_filesystem_view,
         dask_client,  # noqa: F811
 ):
-    """Mappings and updates read immutables from the reference filesystem."""
+    """Mappings and updates read immutables from the reference file system."""
     _, target, data, distributed = mixed_filesystem_view
     expected = data['value'].values[:5] + data['pixel'].values
 
@@ -198,10 +198,10 @@ def test_view(  # noqa: PLR0915
     assert isinstance(zview, view.View)
     assert isinstance(str(zview), str)
 
-    # No variable recorded
+    # The view initially declares no variables.
     assert not zview.variables()
 
-    # Only reading reference variables
+    # Load only variables from the reference collection.
     zds = zview.load(delayed=delayed, distributed=distributed)
     assert set(zds.variables) == {v.name for v in zview.view_ref.variables()}
 
@@ -250,8 +250,7 @@ def test_view(  # noqa: PLR0915
     # The metadata of the reference collection is not modified.
     assert 'var3' not in zview.view_ref.metadata.variables.keys()
 
-    # Loading a set of variables one from the view and another from
-    # the reference having different dimensions.
+    # Load view and reference variables with different dimensions.
     zds = zview.load(delayed=delayed,
                      selected_variables=('time', 'var3'),
                      distributed=distributed)
@@ -259,15 +258,14 @@ def test_view(  # noqa: PLR0915
     assert tuple(zds.variables) == ('time', 'var3')
     assert 'var3' in zds.metadata().variables.keys()
 
-    # Loading a non-existing variable.
+    # Request a variable that does not exist.
     zds = zview.load(delayed=delayed,
                      selected_variables=('var55', ),
                      distributed=distributed)
     assert zds is not None
     assert len(zds.variables) == 0
 
-    # Test view loading that is no longer synchronized with the reference
-    # collection.
+    # Load a view that is no longer synchronized with its reference collection.
     tested_fs.fs.rm(str(
         tested_fs.view.joinpath('year=2000', 'month=01', 'day=13')),
                     recursive=True)
@@ -301,11 +299,11 @@ def test_view(  # noqa: PLR0915
         numpy.datetime64('2000-01-16'),
     }
 
-    # Create a variable with the unsynchronized view
+    # Add a variable while the view is out of sync.
     var.name = 'var4'
     zview.add_variable(var, distributed=distributed)
 
-    # Testing variables method
+    # Test the view's variables() method.
     assert {v.name for v in zview.variables()} == {'var3', 'var4'}
     assert {v.name
             for v in zview.variables(selected_variables=[var.name])
@@ -343,8 +341,7 @@ def test_view(  # noqa: PLR0915
     assert numpy.allclose(ds1.variables['var1'].values,
                           ds2.variables['var1'].values)
 
-    # Filters will eliminate all partition allowing to test a
-    # branch handling this case
+    # Exclude all partitions to test the empty-selection branch.
     ds1 = zview.load(delayed=delayed,
                      indexer=indexers,
                      filters='day > 60',
@@ -365,7 +362,7 @@ def test_view(  # noqa: PLR0915
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_view_add_variable_immutable(fs, request):
-    """Test the addition of an immutable variable."""
+    """Reject adding an immutable variable to a view."""
     tested_fs = request.getfixturevalue(fs)
 
     create_test_collection(tested_fs, delayed=False, distributed=False)
@@ -393,7 +390,7 @@ def test_view_add_variable_immutable(fs, request):
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_view_read_immutable(fs, request):
-    """Test the reading of an immutable variable."""
+    """Test reading an immutable variable through a view."""
     tested_fs = request.getfixturevalue(fs)
 
     col_ref = create_test_collection(tested_fs,
@@ -401,7 +398,7 @@ def test_view_read_immutable(fs, request):
                                      distributed=False)
     view_ref = view.ViewReference(str(tested_fs.collection), tested_fs.fs)
 
-    # Cannot add an immutable variable to a view
+    # Add an immutable variable to the reference collection.
     known_dimensions, _ = col_ref.dimensions_properties()
     dim = 'num_pixels'
     var_data = numpy.arange(known_dimensions[dim], dtype='int16')
@@ -422,7 +419,7 @@ def test_view_read_immutable(fs, request):
         distributed=False,
     )
 
-    # Reading immutable variable from the view
+    # Read the immutable variable through the view.
     ds = zview.load(selected_variables=[new.name], distributed=False)
 
     assert numpy.array_equal(ds[new.name].values, var_data)
@@ -430,8 +427,9 @@ def test_view_read_immutable(fs, request):
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_view_read_immutable_only(fs, request):
-    """Test the reading in a view based on a collection only containing
-    immutable variables."""
+    """Read immutable variables through a view of a collection containing
+    only immutable variables.
+    """
     tested_fs = request.getfixturevalue(fs)
     zds_reference = dataset.Dataset(
         variables=[
@@ -473,7 +471,7 @@ def test_view_read_immutable_only(fs, request):
 
     zcol.insert(ds=zds_reference.select_vars(names='lat'), distributed=False)
 
-    # Reading immutable variable from the view
+    # Read the immutable variable through the view.
     data = zview.load(distributed=False)
 
     assert set(data.variables) == {'lat'}
@@ -497,7 +495,7 @@ def test_view_update(
     request,
     tmp_path,
 ):
-    """Test updating variable."""
+    """Test updating a view variable."""
     tested_fs = request.getfixturevalue(fs)
 
     create_test_collection(tested_fs, delayed=False)
@@ -526,10 +524,7 @@ def test_view_update(
     test_dir.mkdir()
 
     def plus_one_with_log(zds: dataset.Dataset, varname):
-        """Update function increasing a variable by 1.
-
-        This update function create a new file each time its called.
-        """
+        """Increment a variable and write a log file on every call."""
         with dask.distributed.Lock('update'):
             i = 0
             f = test_dir / f'file_{i}'
@@ -543,7 +538,7 @@ def test_view_update(
 
     zview.update(plus_one_with_log, var.name)  # type: ignore[arg-type]
 
-    # One log per partition + 1 log for the initial call
+    # Expect one log per partition and one for the initial call.
     assert len(tuple(test_dir.iterdir())) == len(list(zview.partitions())) + 1
 
     shutil.rmtree(test_dir)
@@ -631,7 +626,7 @@ def test_view_overlap(
     arg,
     request,
 ):
-    """Test the map_overlap function."""
+    """Test updates with overlap and trimming, followed by map_overlap."""
     tested_fs = request.getfixturevalue(arg)
 
     create_test_collection(tested_fs)
@@ -969,10 +964,10 @@ def test_view_written_in_a_newer_layout(fs, request) -> None:
 
 def _view_owning_a_variable(
         tested_fs) -> tuple[collection.Collection, view.View]:
-    """Create a view owning one variable, on a reference of six partitions.
+    """Create a view with one variable and six reference partitions.
 
     Args:
-        tested_fs: The file system holding the collection and the view.
+        tested_fs: The file system storing the collection and view.
 
     Returns:
         The reference collection and the view.
@@ -1096,7 +1091,7 @@ def test_validate_partitions_checks_the_selected_partitions(fs,
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_creating_a_view_writes_its_index(fs, request, caplog) -> None:
-    """A view holds an index of its partitions as soon as it is created."""
+    """A newly created view already has a partition index."""
     tested_fs = request.getfixturevalue(fs)
     create_test_collection(tested_fs, distributed=False)
     with caplog.at_level(logging.WARNING, logger='zcollection.partitions'):

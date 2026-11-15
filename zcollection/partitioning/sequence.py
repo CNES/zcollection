@@ -26,17 +26,16 @@ MIN_GROUP_SIZE: int = 2
 
 
 def _is_monotonic(arr: NDArray) -> bool:
-    """Check if the array is monotonic.
+    """Check whether records are ordered by the partitioning keys.
 
-    The matrix will be sorted in the reverse order of the partitioning keys
-    (column in the matrix). If the order of the matrix is unchanged, the
-    different partitioning columns are monotonic.
+    The columns represent partitioning keys. If lexicographic sorting leaves
+    their row order unchanged, the keys are monotonic.
 
     Args:
         arr: The array to check.
 
     Returns:
-        True if the array is monotonic, False otherwise.
+        Whether the rows are already in partition-key order.
     """
     # `reversed` because `numpy.lexsort` wants the most significant key last.
     values: list[NDArray] = [
@@ -47,13 +46,17 @@ def _is_monotonic(arr: NDArray) -> bool:
 
 
 def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
-    """Return unique elements and their indices.
+    """Return unique partition keys and their first indices.
 
     Args:
-        arr: Array of elements.
-        is_delayed: If True, the array is delayed.
+        arr: The array of partition keys.
+        is_delayed: Whether the array uses Dask.
+
     Returns:
-        Tuple of unique elements and their indices.
+        The unique keys and their indices.
+
+    Raises:
+        ValueError: If the partition keys are not monotonic.
     """
     index: NDArray
     indices: NDArray
@@ -67,44 +70,41 @@ def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
 
 
 class Sequence(abc.Partitioning):
-    """Initialize a partitioning scheme for a sequence of variables.
+    """Partition a dataset using a sequence of variables.
 
-    A sequence is a combination of variables constituting unique monotonic keys.
-    For example, the orbit number (``cycle``) and the half-orbit number
-    (``pass``) of a satellite.
+    The variables define monotonic partition keys, such as the ``cycle``
+    and ``pass`` numbers of a satellite.
 
     Args:
-        variables: A list of strings representing the variables to be used for
-            partitioning.
-        dtype: An optional sequence of strings representing the data type used
-            to store variable values in a binary representation without data
-            loss. Must be one of the following allowed data types: ``int8``,
-            ``int16``, ``int32``, ``int64``, ``uint8``, ``uint16``, ``uint32``,
-            ``uint64``. If not provided, defaults to ``int64`` for all
-            variables.
+        variables: Names of the partitioning variables.
+        dtype: Optional data types used to store partition keys. Supported
+            types are ``int8``, ``int16``, ``int32``, ``int64``, ``uint8``,
+            ``uint16``, ``uint32`` and ``uint64``. Defaults to ``int64``
+            for every variable.
 
     Raises:
-        ValueError: If the periodicity is not valid.
+        TypeError: If ``dtype`` is a string instead of a sequence.
+        ValueError: If no variables are given or a data type is unsupported.
 
     Example:
-        >>> partitioning = Sequence(["a", "b", "c"], (None, 10, 10))
+        >>> partitioning = Sequence(["a", "b", "c"],
+        ...                        ("int64", "int32", "int16"))
     """
     #: The ID of the partitioning scheme.
     ID: ClassVar[str] = 'Sequence'
 
     def _split(self, variables: dict[str, NDArray]) -> Iterator[abc.Partition]:
-        """Split the variables constituting the partitioning into partitioning
-        schemes."""
+        """Split monotonic integer variables into partition keys."""
         index: NDArray
         indices: NDArray
         matrix: dask.array.core.Array | NDArray
 
-        # Determine if the variables are handled by Dask.
+        # Check whether the variables use Dask.
         is_delayed: bool = any(
             isinstance(item, dask.array.core.Array)
             for item in variables.values())
 
-        # Combines the arrays of variable values into a transposed matrix.
+        # Combine variable arrays into a matrix with one row per record.
         matrix = dask.array.routines.vstack(tuple(
             variables.values())).transpose() if is_delayed else numpy.vstack(
                 tuple(variables.values())).transpose()
@@ -116,7 +116,7 @@ class Sequence(abc.Partitioning):
 
         fields = tuple(variables.keys())
 
-        # We want to reference a lambda function, not assign it to a variable.
+        # Pass the lambda directly rather than assigning it a name.
         if len(fields) == 1:
 
             def concat(fields, keys):
@@ -136,7 +136,7 @@ class Sequence(abc.Partitioning):
         self,
         partition: tuple[tuple[str, int], ...],
     ) -> tuple[int, ...]:
-        """Encode a partitioning scheme to the handled values.
+        """Encode partition keys into their values.
 
         Args:
             partition: The partitioning scheme to be encoded.
@@ -156,7 +156,7 @@ class Sequence(abc.Partitioning):
                      for _, value in self.parse(self.join(partition, '/')))
 
     def decode(self, values: tuple[int, ...]) -> tuple[tuple[str, int], ...]:
-        """Decode a partitioning scheme.
+        """Decode values into partition keys.
 
         Args:
             values: The encoded partitioning scheme.
@@ -175,18 +175,16 @@ class Sequence(abc.Partitioning):
 
 
 class GroupedSequence(Sequence):
-    """Initialize a partitioning scheme for a sequence of variables where the
-    last variable values will be grouped according to the provided size
-    parameter.
+    """Partition a sequence by grouping values of its last variable.
 
-    A sequence is a combination of variables constituting unique monotonic keys.
+    The partitioning variables define monotonic keys. Values of the last
+    variable are grouped into ranges of ``size``, aligned to ``start``.
 
     Args:
-        variables: Sequence of variables on which to partition.
-        size: Number of values of the last variable contained in each partition.
-            The size must be at least 2 (1 sized sequence should use the
-            Sequence partitioning scheme).
-        start: The value the groups are aligned on. Defaults to 0.
+        variables: Names of the partitioning variables.
+        size: Width of each group along the last variable. Must be at least 2;
+            use :class:`Sequence` for individual values.
+        start: Value used to align the groups. Defaults to 0.
         dtype: An optional sequence of strings representing the data type used
             to store partition keys without data loss. Group lower bounds
             must fit the last declared type; use a signed type if they can be
@@ -222,8 +220,7 @@ class GroupedSequence(Sequence):
         self,
         variables: dict[str, NDArray],
     ) -> Iterator[abc.Partition]:
-        """Split the variables constituting the partitioning into partitioning
-        schemes."""
+        """Split the last variable into groups and build partition keys."""
         last_field = list(variables)[-1]
         values = variables[last_field]
         offset = self.start % self.size
@@ -242,6 +239,6 @@ class GroupedSequence(Sequence):
             if not limits.min <= lower_bound <= limits.max:
                 raise ValueError(
                     f"The lower bound {lower_bound} of {last_field!r} "
-                    f"does not fit the declared {key_dtype} partition key dtype."
-                )
+                    f"does not fit the declared {key_dtype} partition key "
+                    'dtype.')
             yield (*fields[:-1], (last_field, lower_bound)), indexer

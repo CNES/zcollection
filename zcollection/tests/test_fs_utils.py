@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Testing utilities
-=================
+File system utility tests
+=========================
 """
 from typing import Any
 import os
@@ -114,7 +114,7 @@ def test_normalize_path() -> None:
         root = root.replace('\\', '/')
 
     def istrcmp(str1, str2):
-        """Case insensitive string comparison."""
+        """Compare strings without regard to case."""
         if platform.system() == 'Windows':
             str1 = str1.replace('\\', '/')
             str2 = str2.replace('\\', '/')
@@ -138,7 +138,7 @@ def test_normalize_path() -> None:
 
 
 def test_copy_file(tmp_path) -> None:
-    """Test the copy file across different file systems."""
+    """Test copying a file across file systems."""
     fs_source = fsspec.filesystem('file')
     fs_target = fsspec.filesystem('memory')
     path = str(tmp_path / 'foo.txt')
@@ -150,7 +150,7 @@ def test_copy_file(tmp_path) -> None:
 
 
 def test_copy_files(tmp_path) -> None:
-    """Test the copy files across different file systems."""
+    """Test copying multiple files across file systems."""
     source = tmp_path / 'source'
     target = tmp_path / 'target'
     fs_source = fsspec.filesystem('file')
@@ -174,7 +174,7 @@ def test_copy_files(tmp_path) -> None:
 
 
 def test_copy_tree(tmp_path) -> None:
-    """Test the copy tree across different file systems."""
+    """Test copying a directory tree across file systems."""
     item: Any
     fs_source = fsspec.filesystem('file')
     fs_target = fsspec.filesystem('memory')
@@ -235,7 +235,7 @@ def test_copy_tree(tmp_path) -> None:
 
 def test_copy_tree_does_not_create_a_target_for_an_absent_source(
         tmp_path) -> None:
-    """An absent source raises before the target is created."""
+    """An absent source raises before the target directory is created."""
     fs = fsspec.filesystem('file')
     target = str(tmp_path / 'target')
 
@@ -317,10 +317,10 @@ def test_replace_file_leaves_no_half_of_itself(tmp_path, monkeypatch, wrapped,
 
 
 def test_replace_file_writes_an_object_store_in_one_request(tmp_path) -> None:
-    """A file system that is not local is written where it stands.
+    """Write directly to the target path on non-local file systems.
 
-    Renaming a key of an object store copies it, so the content goes
-    straight to its path, the request writing it being one operation.
+    Renaming an object-store key requires a copy. Writing directly avoids
+    that copy and sends the new content in a single request.
     """
     fs = fsspec.filesystem('memory')
     path = '/config.json'

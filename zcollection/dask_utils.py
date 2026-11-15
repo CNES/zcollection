@@ -22,18 +22,18 @@ if TYPE_CHECKING:
 
 def dask_workers(client: dask.distributed.Client,
                  cores_only: bool = False) -> int:
-    """Return the number of dask workers available.
+    """Return the number of available Dask workers or threads.
 
     Args:
-        client: dask client
-        cores_only: if True, only the number of cores is returned,
-            otherwise the total number of threads is returned.
+        client: The Dask client.
+        cores_only: If ``True``, return the number of workers. Otherwise,
+            return the total number of threads across all workers.
 
     Returns:
-        number of dask workers
+        The number of workers or threads, according to ``cores_only``.
 
     Raises:
-        ValueError: If no dask workers are available.
+        RuntimeError: If no Dask workers are available.
     """
     result: int = len(
         client.ncores()) if cores_only else sum(  # type: ignore[arg-type]
@@ -45,10 +45,10 @@ def dask_workers(client: dask.distributed.Client,
 
 
 def get_client() -> dask.distributed.Client:
-    """Return the default dask client.
+    """Return the current Dask client, creating a local one if needed.
 
     Returns:
-        default dask client
+        The current or newly created Dask client.
     """
     try:
         return dask.distributed.get_client()
@@ -61,15 +61,18 @@ def get_client() -> dask.distributed.Client:
 
 def split_sequence(sequence: Sequence[Any],
                    sections: int | None = None) -> Iterator[Sequence[Any]]:
-    """Split a sequence into sections.
+    """Split a sequence into approximately equal sections.
 
     Args:
         sequence: The sequence to split.
-        sections: The number of sections to split the sequence into. Default
-            divides the sequence into n sections of one element.
+        sections: The desired number of sections. By default, create one
+            section per element.
 
-    Returns:
-        Iterator of sequences.
+    Yields:
+        Each section of the sequence.
+
+    Raises:
+        ValueError: If ``sections`` is not positive.
     """
     sections = len(sequence) if sections is None else sections
     if sections <= 0:
@@ -88,14 +91,14 @@ def split_sequence(sequence: Sequence[Any],
 
 
 def simple_delayed(name: str, func: Callable) -> dask_Delayed:
-    """Create a simple delayed function.
+    """Create a single-task Dask Delayed object.
 
     Args:
-        name: name of the function
-        func: function to be delayed
+        name: The task name.
+        func: The function to defer.
 
     Returns:
-        delayed function
+        The Dask Delayed object.
     """
     name = f'{name}-{uuid.uuid4()!s}'
     return dask_Delayed(

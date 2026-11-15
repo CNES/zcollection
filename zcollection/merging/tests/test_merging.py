@@ -3,7 +3,7 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Test merging.
+Merging tests
 =============
 """
 from typing import cast
@@ -25,7 +25,7 @@ class MyError(RuntimeError):
 
 
 class ThrowError(sync.Sync):
-    """Throw an error when merging."""
+    """Raise an error during merging."""
 
     def __enter__(self) -> bool:
         raise MyError('This is an error')

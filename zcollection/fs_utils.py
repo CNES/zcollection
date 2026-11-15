@@ -29,14 +29,14 @@ def join_path(*args: str) -> str:
 
 
 def normalize_path(fs: fsspec.AbstractFileSystem, path: str) -> str:
-    """Normalize the path.
+    """Normalize a file system path.
 
     Args:
-        fs: file system object
-        path: path to test
+        fs: The file system.
+        path: The path to normalize.
 
     Returns:
-        Normalized path.
+        The normalized path.
     """
 
     # There is no public method to perform this operation.
@@ -52,13 +52,13 @@ def normalize_path(fs: fsspec.AbstractFileSystem, path: str) -> str:
 def get_fs(
     filesystem: fsspec.AbstractFileSystem | str | None = None
 ) -> fsspec.AbstractFileSystem:
-    """Return the file system object from the input.
+    """Return a file system from an instance or protocol name.
 
     Args:
-        filesystem: file system object or file system name
+        filesystem: A file system instance or protocol name.
 
     Returns:
-        File system object.
+        The file system instance.
 
     Example:
         >>> from fsspec.implementations.local import LocalFileSystem
@@ -77,17 +77,16 @@ def fs_walk(
     *,
     strict: bool = False,
 ) -> Iterator[tuple[str, list[str], list[str]]]:
-    """Return the list of files and directories in a directory.
+    """Walk a directory tree, yielding directories and files at each level.
 
     Args:
-        fs: file system object
-        path: path to the directory
-        sort: if True, the list of files and directories is sorted
-            alphabetically
-        strict: Whether file system errors are raised.
+        fs: The file system.
+        path: The directory to traverse.
+        sort: Whether to sort entries alphabetically.
+        strict: Whether to raise file system errors.
 
-    Returns:
-        Iterator of (path, directories, files).
+    Yields:
+        A tuple of ``(path, directories, files)`` for each directory.
     """
     dirs: list[str]
     files: list[str]
@@ -103,13 +102,12 @@ def fs_walk(
 
     for is_dir, name in ((info['type'] == 'directory', info['name'])
                          for info in listing):
-        # each info name must be at least [path]/part , but here
-        # we check also for names like [path]/part/
+        # Classify each listed entry as a directory or a file.
         dirs.append(name) if is_dir else files.append(
             name.rsplit(SEPARATOR, 1)[-1])
 
     def sort_sequence(sequence: list[str]) -> list[str]:
-        """Sort the sequence if the user wishes."""
+        """Sort the sequence if requested."""
         return sorted(sequence) if sort else sequence
 
     dirs = sort_sequence(dirs)
@@ -120,14 +118,13 @@ def fs_walk(
 
 
 def remove_tree(fs: fsspec.AbstractFileSystem, path: str) -> None:
-    """Remove a directory and what it holds.
+    """Remove a directory and its contents.
 
-    If the directory is absent, the function returns without raising an
-    exception.
+    If the directory is absent, return without raising an exception.
 
     Args:
-        fs: The file system holding the directory.
-        path: The path of the directory.
+        fs: The file system containing the directory.
+        path: The directory to remove.
     """
     try:
         fs.rm(path, recursive=True)
@@ -143,15 +140,16 @@ def replace_file(
 ) -> None:
     """Replace the contents of a file.
 
-    Local files, accessed directly or through ``DirFileSystem``, are written
-    to a neighboring temporary file and replaced atomically. A failed write
-    or replacement preserves the previous contents. Other filesystems receive
-    a direct ``pipe_file`` call; replacement guarantees depend on the backend.
+    For local files, including those accessed through ``DirFileSystem``,
+    the new contents are written to a temporary file beside the target,
+    then atomically moved into place. If writing or replacement fails,
+    the original contents are preserved. Other file systems use
+    ``pipe_file``; their guarantees depend on the backend.
 
     Args:
-        fs: The file system holding the file.
+        fs: The file system containing the file.
         path: The path of the file.
-        data: What the file is to hold.
+        data: The new contents.
     """
     content: bytes = data.encode() if isinstance(data, str) else data
     backend_fs = fs
@@ -184,13 +182,13 @@ def copy_file(
     fs_source: fsspec.AbstractFileSystem,
     fs_target: fsspec.AbstractFileSystem,
 ) -> None:
-    """Copy a file from one location to another.
+    """Copy a file between locations.
 
     Args:
-        source: The name of the source file.
-        target: The name of the target file.
-        fs_source: The file system that the source file is stored on.
-        fs_target: The file system that the target file is stored on.
+        source: The source file path.
+        target: The target file path.
+        fs_source: The source file system.
+        fs_target: The target file system.
     """
     with fs_source.open(source, 'rb') as source_stream:
         with fs_target.open(target, 'wb') as target_stream:
@@ -203,13 +201,13 @@ def copy_files(
     fs_source: fsspec.AbstractFileSystem,
     fs_target: fsspec.AbstractFileSystem,
 ) -> None:
-    """Copy a list of files from one location to another.
+    """Copy files to another directory.
 
     Args:
-        source: The names of the source files.
-        target: The name of the target directory.
-        fs_source: The file system that the source files are stored on.
-        fs_target: The file system that the target directory is stored on.
+        source: The paths of the source files.
+        target: The target directory.
+        fs_source: The source file system.
+        fs_target: The target file system.
     """
     tuple(
         copy_file(  # type: ignore[func-returns-value]
@@ -226,13 +224,15 @@ def copy_tree(
     fs_source: fsspec.AbstractFileSystem,
     fs_target: fsspec.AbstractFileSystem,
 ) -> None:
-    """Copy a directory tree from one location to another.
+    """Copy a directory tree to another location.
+
+    If copying fails, remove the target before raising the error again.
 
     Args:
-        source: The name of the source directory.
-        target: The name of the target directory.
-        fs_source: The file system that the source directory is stored on.
-        fs_target: The file system that the target directory is stored on.
+        source: The source directory.
+        target: The target directory.
+        fs_source: The source file system.
+        fs_target: The target file system.
 
     Raises:
         ValueError: If the target already exists.

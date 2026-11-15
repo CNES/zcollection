@@ -3,12 +3,11 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Execution of an operation on partitions
-=======================================
+Executing operations on partitions
+==================================
 
-An operation runs one task per partition. With Dask, at most
-``npartitions`` tasks run at the same time: a task is submitted when
-another one finishes.
+Process one partition per task. With Dask, keep at most ``npartitions``
+tasks in flight, submitting a new task whenever one finishes.
 """
 from __future__ import annotations
 
@@ -24,25 +23,22 @@ from . import dask_utils
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
-#: The largest number of failed partitions named in the message of
-#: PartitionErrors.
+#: Maximum number of failed partitions named in a PartitionErrors message.
 _NAMED_FAILURES = 10
 
 
 class PartitionErrors(Exception):
-    """Error raised when partitions of an operation fail.
+    """Error raised when an operation fails on one or more partitions.
 
-    A failed partition can be partly modified. The message names up to ten
-    failed partitions, counts the others and gives the traceback of the
-    first, in the order the operation processes the partitions.
+    A failed partition may be partly modified. The message names up to ten
+    failed partitions, counts any additional failures, and includes the
+    traceback of the first failure in the order passed to the executor.
 
     Attributes:
-        completed: The paths of the partitions processed, relative to the
-            collection or the view. Skipped partitions are left out.
-        failed: The traceback of the error of each failed partition, keyed
-            by path.
-        not_attempted: The paths of the partitions the operation did not
-            attempt.
+        completed: The paths of processed partitions, relative to the
+            collection or view. Skipped partitions are omitted.
+        failed: Error tracebacks as text, keyed by partition path.
+        not_attempted: The paths of partitions not attempted.
     """
 
     def __init__(self, completed: Sequence[str], failed: Mapping[str, str],
@@ -61,8 +57,8 @@ class PartitionErrors(Exception):
             f'{first}')
 
     def __reduce__(self) -> tuple[Any, ...]:
-        # Pickle rebuilds an exception from `args`, which holds only the
-        # message here.
+        # Pickle reconstructs an exception from ``args``, which contains only
+        # the message here.
         return type(self), (self.completed, self.failed, self.not_attempted)
 
 
@@ -70,19 +66,18 @@ class Skipped:
     """The result of a task that skipped its partition."""
 
 
-#: The value a task returns when it skips its partition. `run` leaves that
-#: partition out of its result and out of PartitionErrors.
+#: Result returned when a task skips its partition. ``run`` excludes the
+#: partition from its return value and from PartitionErrors.
 SKIPPED = Skipped()
 
 
 class _Failure(NamedTuple):
-    """The result of a task whose partition failed."""
+    """The result of a task that failed to process its partition."""
     trace: str
 
 
 def _call(func: Callable[..., Any], item: Any, kwargs: dict[str, Any]) -> Any:
-    """Return `func(item, **kwargs)`, or the traceback of its exception as a
-    _Failure."""
+    """Return ``func(item, **kwargs)`` or a ``_Failure`` with its traceback."""
     try:
         return func(item, **kwargs)
     except Exception as err:
@@ -97,32 +92,32 @@ def run(func: Callable[..., Any],
         npartitions: int | None,
         stop_on_error: bool,
         kwargs: Mapping[str, Any] | None = None) -> tuple[str, ...]:
-    """Process each partition with `func`, one task per partition.
+    """Process each partition with ``func``, one task per partition.
 
-    With a client, `run` returns or raises once every submitted task has
-    finished, unless a second interruption arrives while it waits for them.
+    With a Dask client, wait for submitted tasks to finish, even after an
+    error or interruption. A second interruption stops the wait, but tasks
+    already submitted to Dask may continue running.
 
     Args:
-        func: The function processing one partition, called as
-            ``func(item, **kwargs)``. It returns :data:`SKIPPED` when it
-            skips the partition.
-        items: The argument of `func` for each partition.
-        names: The name of each partition, in the order of `items`.
-        client: The Dask client, or ``None`` to process the partitions one
-            after the other in this process.
-        npartitions: The largest number of partitions processed at the same
-            time with Dask. Defaults to the number of workers.
-        stop_on_error: If True, no partition starts after the first failure,
-            except the ones already submitted to Dask, which finish.
-        kwargs: Keyword arguments passed to `func`.
+        func: The function called for each partition as
+            ``func(item, **kwargs)``. Return :data:`SKIPPED` to skip one.
+        items: The argument passed to ``func`` for each partition.
+        names: The partition names, in the order of ``items``.
+        client: The Dask client, or ``None`` to process partitions
+            sequentially in the calling process.
+        npartitions: The maximum number of partition tasks in progress
+            with Dask. Defaults to the number of workers.
+        stop_on_error: Whether to stop submitting new partitions after
+            the first failure. Already submitted tasks can finish.
+        kwargs: Keyword arguments passed to ``func``.
 
     Returns:
-        The names of the partitions processed, in the order of `items`.
-        Skipped partitions are left out.
+        The names of processed partitions, in the order of ``items``.
+        Skipped partitions are omitted.
 
     Raises:
-        ValueError: If `npartitions` is below one.
-        PartitionErrors: If a partition failed.
+        ValueError: If ``npartitions`` is below one.
+        PartitionErrors: If a partition fails.
     """
     check_npartitions(npartitions)
     items = list(items)
@@ -187,7 +182,7 @@ def _run_sequential(func: Callable[..., Any], items: list[Any],
 def _run_distributed(client: distributed.Client, func: Callable[..., Any],
                      items: list[Any], width: int, stop_on_error: bool,
                      kwargs: dict[str, Any]) -> dict[int, Any]:
-    """Process the partitions with Dask, at most `width` at a time."""
+    """Process partitions with Dask, up to ``width`` tasks in flight."""
     outcomes: dict[int, Any] = {}
     in_flight: dict[distributed.Future, int] = {}
     pending = iter(range(len(items)))
@@ -225,9 +220,9 @@ def _run_distributed(client: distributed.Client, func: Callable[..., Any],
             if not stop:
                 submit()
     except BaseException:
-        # An interruption, or an error of the client or of a submission:
-        # wait for the tasks in flight, then raise the same exception. After
-        # a second interruption during the wait, the function leaves at once.
+        # On interruption or client/submission error, wait for submitted tasks
+        # to finish before re-raising the exception. A second interruption
+        # during the wait exits immediately.
         with contextlib.suppress(Exception):
             distributed.wait(list(in_flight))
         raise

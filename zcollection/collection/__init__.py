@@ -143,12 +143,14 @@ def _drop_array(partition: str, *, variable: str,
 
 def _check_partition(partition: str, *, fs: fsspec.AbstractFileSystem,
                      variables: tuple[str, ...]) -> execution.Skipped | None:
-    """Check a partition. Return SKIPPED if it is valid, None otherwise.
+    """Check a partition and identify whether it is valid.
+
+    Return ``SKIPPED`` for a valid partition and ``None`` otherwise.
 
     Args:
         partition: The partition to check.
-        fs: The file system holding the partition.
-        variables: The arrays the partition must hold.
+        fs: The file system storing the partition.
+        variables: The arrays required in the partition.
     """
     if storage.check_zarr_group(partition, fs, variables):
         return execution.SKIPPED
@@ -156,46 +158,35 @@ def _check_partition(partition: str, *, fs: fsspec.AbstractFileSystem,
 
 
 class Collection(ReadOnlyCollection, WritableCollection):
-    """This class manages a collection of files in Zarr format stored in a set
-    of subdirectories. These subdirectories split the data, by cycles or dates
-    for example, in order to optimize access and updates, deletion or addition
-    of new data.
+    """Store a dataset as a collection of partitioned Zarr groups.
+
+    Partitioning by date, cycle, or other keys allows individual parts of
+    the dataset to be read and updated without processing the whole collection.
 
     Args:
-        axis: The axis of the collection. This is the dimension along which the
-            data is partitioned.
-        ds: The dataset containing the collection. This dataset is used to
-            create the metadata of the collection, which is used to validate
-            datasets that are inserted in the collection. The dimension named
-            by ``axis`` grows with each insertion; the size of every other
-            dimension is the one this dataset has, and holds for the life of
-            the collection.
-        partition_handler: The partitioning strategy for the collection. This
-            is an instance of a subclass of
+        axis: The name of the variable used for partitioning. Its first
+            dimension is the partitioned dimension.
+        ds: The dataset used to define the collection schema. Inserted
+            datasets are validated against it. The partitioned dimension
+            can vary in size; all other dimensions retain their declared sizes.
+        partition_handler: The partitioning scheme, an instance of
             :py:class:`~zcollection.partitioning.abc.Partitioning`.
-        partition_base_dir: The base directory for the collection. This is the
-            directory where the subdirectories containing the partitioned data
-            are stored.
-        mode: The mode of the collection. This can be either 'r' (read-only) or
-            'w' (write). In read-only mode, the collection can only be read and
-            no data can be inserted or modified. In write mode, the collection
-            can be read and modified.
-        filesystem: The filesystem to use for the collection. This is an
-            instance of a subclass of :py:class:`fsspec.AbstractFileSystem`.
-        synchronizer: The synchronizer to use for the collection. This is an
-            instance of a subclass of
-            :py:class:`~zcollection.sync.Sync`.
+        partition_base_dir: The base directory where partitions are stored.
+        mode: The access mode: ``'r'`` for read-only or ``'w'`` for reading
+            and writing. Defaults to ``'w'``.
+        filesystem: An :py:class:`fsspec.AbstractFileSystem` instance or a
+            file system protocol name. Defaults to the local file system.
+        synchronizer: The synchronizer used for the collection, an instance
+            of :py:class:`~zcollection.sync.Sync`.
 
     Raises:
-        ValueError:
-            If the axis does not exist in the dataset, if the partition key is
-            not defined in the dataset or if the access mode is not supported.
+        ValueError: If ``axis`` or a partitioning key is missing from
+            the dataset, or if the access mode is unsupported.
 
     Notes:
-        Normally, this class is not instantiated directly but through the
-        :py:meth:`create_collection <zcollection.create_collection>` and
-        :py:meth:`open_collection <zcollection.open_collection>` methods of this
-        library.
+        Use :py:func:`~zcollection.create_collection` and
+        :py:func:`~zcollection.open_collection` to create or open collections
+        instead of instantiating this class directly.
     """
     _DROP_ARRAY = staticmethod(_drop_array)
 
@@ -220,8 +211,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
 
         if self.mode == 'r':
 
-            # These methods are overloaded when the collection is opened in
-            # readonly.
+            # Replace these methods when the collection is opened read-only.
             self._read_only_mode()
 
         else:
@@ -244,7 +234,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
         return self
 
     def _read_only_mode(self) -> None:
-        """The collection is read-only, so refuse each method that writes."""
+        """Disable methods that modify a read-only collection."""
         self._refuse_writes((
             'add_dimension',
             'add_variable',
@@ -294,26 +284,24 @@ class Collection(ReadOnlyCollection, WritableCollection):
         filesystem: fsspec.AbstractFileSystem | str | None = None,
         synchronizer: sync.Sync | None = None,
     ) -> Collection:
-        """Open a Collection described by a configuration file.
+        """Open a collection from its stored configuration.
 
         Args:
-            path: The path to the configuration file.
-            mode: The mode of the collection. This can be either 'r'
-                (read-only) or 'w' (write).
-            filesystem: The filesystem to use for the collection. This is an
-                instance of a subclass of
-                :py:class:`fsspec.AbstractFileSystem`.
-            synchronizer: The synchronizer to use for the collection. This is
-                an instance of a subclass of
-                :py:class:`~zcollection.sync.Sync`.
+            path: Path to the collection directory.
+            mode: Access mode, ``'r'`` for read-only or ``'w'`` for
+                reading and writing. Defaults to ``'r'``.
+            filesystem: The file system used for the collection, as a
+                :py:class:`fsspec.AbstractFileSystem` instance.
+            synchronizer: The synchronizer used for the collection, as a
+                :py:class:`~zcollection.sync.Sync` instance.
 
         Returns:
-            The collection.
+            The opened collection.
 
         Raises:
-            ValueError:
-                If the provided directory does not contain a valid collection
-                configuration file.
+            ValueError: If the configuration is missing, its layout is
+                newer than supported, or an older collection is opened
+                in write mode.
         """
         _LOGGER.info('Opening collection: %r', path)
         fs = fs_utils.get_fs(filesystem)
@@ -375,51 +363,42 @@ class Collection(ReadOnlyCollection, WritableCollection):
     ) -> tuple[str, ...]:
         """Insert a dataset into the collection.
 
+        Existing partitions are replaced unless a merge callable is supplied.
+
         Args:
-            ds: The dataset to insert. It can be either a xarray.Dataset or a
-                dataset.Dataset object.
-            merge_callable: A function to use to merge the existing data set
-                already stored in partitions with the new partitioned data. If
-                None, the new partitioned data overwrites the existing
-                partitioned data.
-            npartitions: The largest number of partitions written at the
-                same time. Defaults to 1. With ``None``, it is the number of
-                Dask workers. With ``distributed=False``, the partitions are
-                processed one at a time.
-            delayed: Whether the merge callable receives the stored
-                partition and the inserted one as Dask arrays. Defaults to
-                ``None``, which gives it Dask arrays when ``ds`` holds them.
-            distributed: Whether to use dask or not. Default To True.
-            stop_on_error: If True, no partition starts after the first
-                failure, except the ones already submitted to Dask, which
-                finish. Defaults to True.
-            kwargs: Additional keyword arguments passed to the merge callable.
+            ds: The dataset to insert, as an ``xarray.Dataset`` or a
+                :class:`zcollection.dataset.Dataset`.
+            merge_callable: Function for combining existing and inserted
+                partition data. Defaults to ``None`` (replace the partition).
+            npartitions: Maximum number of partition tasks in progress.
+                Defaults to 1, or the number of Dask workers when ``None``.
+                With ``distributed=False``, partitions run sequentially.
+            delayed: Whether the merge callable receives Dask arrays.
+                Defaults to ``None``, which follows the representation
+                of the input dataset.
+            distributed: Whether to use Dask. Defaults to ``True``.
+            stop_on_error: Whether to stop submitting partitions after the
+                first failure. Already submitted Dask tasks finish.
+                Defaults to ``True``.
+            kwargs: Additional keyword arguments for the merge callable.
 
         Returns:
-            The path of each partition written, relative to the collection.
-            :py:meth:`partitions` reads the same paths, and
-            ``selected_partitions`` takes them.
+            Paths of the written partitions, relative to the collection.
+            :py:meth:`partitions` also returns relative paths when called
+            with ``relative=True``. These paths can be passed to
+            ``selected_partitions``.
 
         Raises:
-            ValueError:
-                If the dataset does not match the definition of the
-                collection, if ``delayed`` is ``True`` and ``ds`` holds no
-                Dask array, or if ``npartitions`` is below one.
-            PartitionErrors:
-                If a partition failed.
-
-        Warns:
-            UserWarning:
-                If two different partitions use the same file (chunk), the
-                library that handles the storage of chunked arrays (HDF5,
-                NetCDF, Zarr, etc.) must be compatible with concurrent access.
+            ValueError: If the dataset is incompatible with the collection,
+                ``delayed=True`` is used without Dask arrays, or
+                ``npartitions`` is below one.
+            PartitionErrors: If a partition fails.
 
         Notes:
-            Each worker will process a set of independent partitions. However,
-            be careful, two different partitions can use the same file (chunk),
-            therefore, the library that handles the storage of chunked arrays
-            (HDF5, NetCDF, Zarr, etc.) must be compatible with concurrent
-            access.
+            Partitions are processed independently, but their underlying
+            data may share a file or chunk. Storage libraries such as
+            HDF5, NetCDF, or Zarr must support concurrent access when
+            multiple partitions access the same backing resource.
         """
 
         if isinstance(ds, xarray.Dataset):
@@ -473,18 +452,16 @@ class Collection(ReadOnlyCollection, WritableCollection):
         return written
 
     def _set_ds_for_insertion(self, ds: dataset.Dataset) -> dataset.Dataset:
-        """Create a new dataset ready to be inserted into a collection.
+        """Prepare a dataset for insertion into the collection.
 
-         * Missing collection's variables and dimensions are added
-           to the dataset
-         * Dimension's size are checked
-         * Each variable is checked
+        Add missing partitioned variables and dimensions where applicable,
+        then check their dimensions and properties against the schema.
 
         Args:
-            ds: Dataset to insert.
+            ds: The dataset to insert.
 
         Returns:
-            New dataset.
+            The prepared dataset.
         """
         mds = self.metadata
 
@@ -516,19 +493,21 @@ class Collection(ReadOnlyCollection, WritableCollection):
 
     def _set_var_for_insertion(self,
                                variable: variable_abc.T) -> variable_abc.T:
-        """Create a new variable ready to be inserted into a collection.
+        """Prepare a variable for insertion into the collection.
 
-        The attributes, the compressor, the filters and the fill value are
-        taken from the metadata of the collection, which stores and names its
-        variables the same way in every partition. The data type and dimensions
-        are checked against it, and so is the fill value when the variable
-        names one.
+        Check its data type, dimensions, and declared fill value against
+        the collection schema. Use the schema's compressor, filters, and
+        fill value, and remove the variable's attributes before insertion.
 
         Args:
             variable: The variable to insert.
 
         Returns:
-            The variable.
+            The prepared variable.
+
+        Raises:
+            ValueError: If the variable is unknown or its data type,
+                dimensions, or fill value is incompatible with the schema.
         """
         var_meta = self.metadata.variables.get(variable.name, None)
 
@@ -567,35 +546,34 @@ class Collection(ReadOnlyCollection, WritableCollection):
         distributed: bool = True,
         stop_on_error: bool = True,
     ) -> tuple[str, ...]:
-        """Drop the selected partitions.
+        """Remove the partitions selected by ``filters`` and ``timedelta``.
+
+        When both are provided, a partition must match the filter and be
+        older than ``timedelta``. Without either, all partitions are removed.
 
         Args:
-            filters: The predicate used to filter the partitions to drop. To
-                get more information on the predicate, see the documentation of
-                the :meth:`partitions` method.
-            timedelta: Select the partitions created before the specified time
-                delta relative to the current time.
-                This option can only be used on filesystem supporting
-                the ``fs.created()`` method.
-            npartitions: The largest number of partitions dropped at the same
-                time. Defaults to the number of Dask workers. With
-                ``distributed=False``, the partitions are dropped one at a
-                time.
-            distributed: Whether to use dask or not. Default To True.
-            stop_on_error: If True, no partition starts after the first
-                failure, except the ones already submitted to Dask, which
-                finish. Defaults to True.
+            filters: Predicate selecting partitions by their keys. See
+                :meth:`partitions` for supported predicates.
+            timedelta: Select partitions older than the specified duration,
+                relative to the current time. Requires a file system
+                implementing ``fs.created()``.
+            npartitions: Maximum number of partition tasks in progress.
+                Defaults to the number of Dask workers. With
+                ``distributed=False``, partitions run sequentially.
+            distributed: Whether to use Dask. Defaults to ``True``.
+            stop_on_error: Whether to stop submitting partitions after the
+                first failure. Already submitted Dask tasks finish.
+                Defaults to ``True``.
 
         Returns:
-            The path of each partition dropped, relative to the collection.
-            A partition the index lists but the store does not hold is left
-            out.
+            Paths of the removed partitions, relative to the collection.
+            Entries absent from storage are excluded from the result.
 
         Raises:
-            ValueError: If ``npartitions`` is below one and a partition is
-                selected.
-            PartitionErrors: If a partition failed. The partitions listed
-                afterwards are the ones the store holds.
+            ValueError: If ``npartitions`` is below one and at least one
+                partition is selected.
+            PartitionErrors: If a partition fails. A subsequent listing
+                reports the partitions still present in storage.
 
         Example:
             >>> collection.drop_partitions(filters="year == 2019")
@@ -623,19 +601,17 @@ class Collection(ReadOnlyCollection, WritableCollection):
     def _drop_partitions(self, paths: Sequence[str], *,
                          npartitions: int | None, distributed: bool,
                          stop_on_error: bool) -> tuple[str, ...]:
-        """Drop partitions. The caller holds the lock of the synchronizer.
+        """Remove partitions while the caller holds the synchronizer lock.
 
         Args:
-            paths: The absolute path of each partition to drop.
-            npartitions: The largest number of partitions dropped at the same
-                time.
-            distributed: Whether to use dask or not.
-            stop_on_error: If True, no partition starts after the first
-                failure, except the ones already submitted to Dask, which
-                finish.
+            paths: Absolute paths of the partitions to remove.
+            npartitions: Maximum number of partition tasks in progress.
+            distributed: Whether to use Dask.
+            stop_on_error: Whether to stop submitting partitions after the
+                first failure. Already submitted Dask tasks finish.
 
         Returns:
-            The path of each partition dropped, relative to the collection.
+            Paths of the removed partitions, relative to the collection.
         """
         if not paths:
             return ()
@@ -655,8 +631,8 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 # partitions.
                 for path in paths:
                     self.fs.invalidate_cache(path)
-            # Every selected partition leaves the index, including a skipped
-            # one, which the index lists but the store does not hold.
+            # Remove every selected partition from the index, including
+            # those already absent from storage and therefore skipped.
             self._index.remove(paths)
         return dropped
 
@@ -686,7 +662,8 @@ class Collection(ReadOnlyCollection, WritableCollection):
         func_args: tuple[Any, ...],
         func_kwargs: dict[str, Any],
     ) -> WrappedPartitionCallable | None:
-        """Validate output names and build the function for partition updates."""
+        """Validate output names and build the function for partition
+        updates."""
         dim = self.dimension
         immutable = self.immutable_path if self.have_immutable else None
         load = functools.partial(_load_dataset,
@@ -754,62 +731,58 @@ class Collection(ReadOnlyCollection, WritableCollection):
         stop_on_error: bool = True,
         **kwargs,
     ) -> tuple[str, ...]:
-        """Update the selected partitions.
+        """Compute and write variables in selected partitions.
 
         Args:
-            func: The function to apply on each partition.
-            *args: The positional arguments to pass to the function.
-            depth: The depth of the overlap between the partitions. Default is
-                0 (no overlap). If depth is greater than 0, the function is
-                applied on each partition with ``depth`` neighbors on each
-                side, whether ``filters`` and ``selected_partitions`` select
-                these neighbors or not. Only the selected partitions are
-                written.
-            variables: The list of variables updated by the function. If None,
-                the variables are inferred by calling the function on the first
-                available selected partition, using the requested loading and
-                execution modes. This additional call uses that partition alone,
-                including when ``depth`` is greater than 0. Default is None.
-            selected_variables: A list of variables to load from the collection.
-                If None, all variables are loaded.
-            selected_partitions: The paths of the partitions to select, relative
-                to the collection.
-            filters: The expression used to filter the partitions to update.
-            trim: Whether to keep only the current partition's values from
-                the results returned by ``func`` when using overlap. Set it
-                to ``False`` if your function already returns only those values.
-            npartitions: The largest number of partitions updated at the
-                same time. Defaults to the number of Dask workers. With
-                ``distributed=False``, the partitions are processed one at a
-                time.
-            delayed: If True, load variables as Dask arrays. If False, load
-                variables directly into NumPy arrays. If None, use the value of
-                ``distributed``. Default is None.
-            distributed: Whether to use dask or not. Default To True.
-            stop_on_error: If True, no partition starts after the first
-                failure, except the ones already submitted to Dask, which
-                finish. Defaults to True.
-            **kwargs: The keyword arguments to pass to the function.
+            func: Function applied to each selected partition.
+            *args: Positional arguments passed to the function.
+            depth: Number of neighboring partitions to load on each side.
+                Defaults to 0. Neighbors are loaded even when excluded by
+                ``filters`` or ``selected_partitions``; only selected
+                partitions are written.
+            variables: Names of variables to update. If ``None``, call
+                ``func`` once on the first available selected partition
+                to infer the names, then discard that call's results.
+                This call uses the requested loading and execution modes,
+                but no overlap. Defaults to ``None``.
+            selected_variables: Variables to load. Defaults to all.
+            selected_partitions: Partition paths relative to the collection.
+            filters: Expression selecting partitions to update.
+            trim: Whether to retain only the processed partition's values
+                from an overlap result. Set to ``False`` if ``func`` already
+                returns only those values.
+            npartitions: Maximum number of partition tasks in progress.
+                Defaults to the number of Dask workers. With
+                ``distributed=False``, partitions run sequentially.
+            delayed: Whether to load variables as Dask arrays (``True``)
+                or NumPy arrays (``False``). If ``None``, follow
+                ``distributed``. Defaults to ``None``.
+            distributed: Whether to use Dask. Defaults to ``True``.
+            stop_on_error: Whether to stop submitting partitions after the
+                first failure. Already submitted Dask tasks finish.
+                Defaults to ``True``.
+            **kwargs: Keyword arguments passed to the function.
 
         Returns:
-            The path of each partition written, relative to the collection.
+            Paths of the written partitions, relative to the collection.
 
         Raises:
-            ValueError: If the variables to update are not in the collection,
+            ValueError: If an output variable is absent or immutable,
                 or if ``npartitions`` is below one.
-            PartitionErrors: If a partition failed.
+            PartitionErrors: If a partition fails.
 
         Notes:
-            Each task loads and writes one partition or overlap window at a
-            time. With overlap, neighboring partitions may already contain
-            values written by another call. Callbacks that read and rewrite
-            the same variables must be idempotent and account for these updates.
-            Distributed tasks can run in any order. Inference adds a callback
-            invocation whose returned values are discarded. A callback
-            declaring ``partition_info`` receives a :class:`zcollection.PartitionInfo`
-            on every call, including inference and calls without overlap.
-            See :doc:`/updating` for examples of overlap, trimming and
-            external arguments.
+            Each task loads a partition or overlap window before writing
+            the results. With overlap, neighboring partitions may already
+            contain values written by another task. Functions that read
+            and rewrite the same variables must be idempotent and account
+            for these changes. Distributed tasks can run in any order.
+
+            A callback declaring ``partition_info`` receives a
+            :class:`zcollection.PartitionInfo` on every call, including
+            calls without overlap and the output-inference call.
+            See :doc:`/updating` for examples of overlap, trimming, and
+            passing additional arguments.
 
         Example:
             For an existing writable collection with input ``var1`` and
@@ -838,11 +811,15 @@ class Collection(ReadOnlyCollection, WritableCollection):
                             **kwargs)
 
     def update_immutable(self, name: str, data: ArrayLike) -> None:
-        """Update an immutable variable with provided data..
+        """Update an immutable variable with the supplied data.
 
         Args:
             name: Name of the variable to update.
-            data: Immutable variable data.
+            data: New values for the variable.
+
+        Raises:
+            ValueError: If the variable is unknown or the data dimensions
+                do not match the collection.
         """
         dimensions, _ = self.dimensions_properties()
         variable = self.metadata.variables.get(name, None)
@@ -850,7 +827,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
         if variable is None:
             raise ValueError(f'Immutable variable ({name}) does not exist.')
 
-        # Validate dimensions size
+        # Validate the dimension sizes.
         for i, dim in enumerate(variable.dimensions):
             if dimensions[dim] != data.shape[i]:
                 raise ValueError(
@@ -862,13 +839,14 @@ class Collection(ReadOnlyCollection, WritableCollection):
             fs_utils.join_path(self._immutable, variable.name), data, self.fs)
 
     def add_dimension(self, dimension: meta.Dimension) -> None:
-        """Add a dimension to the collection.
+        """Add a dimension to the collection schema.
 
         Args:
             dimension: The dimension to add.
 
         Raises:
-            ValueError: if the dimension is already part of the collection.
+            TypeError: If ``dimension`` is not a ``Dimension`` instance.
+            ValueError: If the dimension is already declared.
 
         Example:
             >>> import zcollection
@@ -920,32 +898,32 @@ class Collection(ReadOnlyCollection, WritableCollection):
     ) -> None:
         """Add a variable to the collection.
 
-        Every value of the variable is its fill value, or the default value
-        of its data type without one, until it is written, for example by
-        :meth:`update`.
+        The new arrays are initialized with the variable's fill value or, if
+        none is defined, the default value for its data type. Use
+        :meth:`update` to populate the variable.
 
-        If a partition fails, the variable is removed from the collection.
-        If that removal fails as well, the variable stays, and a note on the
-        error names the partitions where its array may remain: call
-        :meth:`drop_variable` before reading the collection.
+        If a partition fails, ZCollection attempts to remove the added
+        arrays and revert the schema change. If cleanup also fails, the
+        variable remains declared. The exception identifies the partitions
+        where its arrays may remain. Call :meth:`drop_variable` before
+        reading the collection.
 
         Args:
             variable: The variable to add.
-            distributed: Whether to use Dask. Defaults to True.
-            npartitions: The largest number of partitions processed at the
-                same time. Defaults to the number of Dask workers. Ignored
-                for an immutable variable.
-            stop_on_error: If True, no partition starts after the first
-                failure, except the ones already submitted to Dask, which
-                finish. Defaults to True.
+            distributed: Whether to use Dask. Defaults to ``True``.
+            npartitions: The maximum number of partition tasks in progress.
+                Defaults to the number of Dask workers. Ignored for an
+                immutable variable.
+            stop_on_error: Whether to stop submitting partitions after the
+                first failure. Already submitted Dask tasks finish. Defaults
+                to ``True``.
 
         Raises:
-            ValueError: If the collection already has a variable of that
-                name, if the variable uses a dimension the collection does
-                not declare, or if ``npartitions`` is below one when there
-                are partitions to process.
-            PartitionErrors: If a partition failed. ``completed`` names the
-                partitions that received the array before it was removed.
+            ValueError: If the name is already used, the variable refers to
+                an undeclared dimension, or ``npartitions`` is below one when
+                there are partitions to process.
+            PartitionErrors: If a partition fails. ``completed`` identifies
+                partitions that received the array before cleanup.
 
         Example:
             >>> import zcollection
@@ -963,7 +941,9 @@ class Collection(ReadOnlyCollection, WritableCollection):
         """
         variable = dataset.get_variable_metadata(variable)
         _LOGGER.info('Adding the variable %r to the collection', variable.name)
-        # Attributes are not stored at variable's level
+        # Variable attributes stay in the collection schema, not in the
+        # partition arrays. They are applied when variables are loaded
+        # through load().
         stored = variable.set_for_insertion()
         dimensions, chunks = self.dimensions_properties()
 
@@ -1013,24 +993,23 @@ class Collection(ReadOnlyCollection, WritableCollection):
     ) -> None:
         """Remove a variable from the collection.
 
-        If a partition fails, the variable stays in the collection; calling
-        this method again finishes the removal.
+        If a partition fails, the variable remains declared. Call this
+        method again to remove any remaining arrays and finish the removal.
 
         Args:
-            variable: The name of the variable to remove.
-            distributed: Whether to use Dask. Defaults to True.
-            npartitions: The largest number of partitions processed at the
-                same time. Defaults to the number of Dask workers. Ignored
-                for an immutable variable.
-            stop_on_error: If True, no partition starts after the first
-                failure, except the ones already submitted to Dask, which
-                finish. Defaults to True.
+            variable: Name of the variable to remove.
+            distributed: Whether to use Dask. Defaults to ``True``.
+            npartitions: Maximum number of partition tasks in progress.
+                Defaults to the number of Dask workers. Ignored for
+                immutable variables.
+            stop_on_error: Whether to stop submitting partitions after the
+                first failure. Already submitted Dask tasks finish.
+                Defaults to ``True``.
 
         Raises:
-            ValueError: If the collection has no variable of that name, if
-                the partitioning uses it, or if ``npartitions`` is below one
-                when there are partitions to process.
-            PartitionErrors: If a partition failed.
+            ValueError: If the variable is absent, used for partitioning,
+                or ``npartitions`` is below one when partitions are selected.
+            PartitionErrors: If a partition fails.
 
         Example:
             >>> import zcollection
@@ -1079,36 +1058,36 @@ class Collection(ReadOnlyCollection, WritableCollection):
     ) -> Collection:
         """Copy the collection to a new location.
 
-        ``copy`` writes the immutable variables and the files of the root
-        directory, then the configuration, then the selected partitions. If
-        it stops after writing the configuration, the new collection opens
-        with the partitions its store holds.
+        The copy includes immutable variables and files at the collection
+        root. It writes the configuration and an empty partition index
+        before copying selected partitions. If interrupted afterwards,
+        the new collection can be opened with the partitions present
+        in its storage.
 
         Args:
-            target: The target location. It must be absent or empty.
-            filters: The predicate used to filter the partitions to copy.
-            filesystem: The file system to use. If None, the file system of the
-                collection is used.
-            mode: The mode used to open the new collection. Default is 'w'.
-            npartitions: The largest number of partitions copied at the same
-                time. Defaults to the number of Dask workers. With
-                ``distributed=False``, the partitions are copied one at a
-                time.
-            synchronizer: The synchronizer of the new collection. Its lock is
-                held while ``copy`` writes the new collection. Default is None.
-            distributed: Whether to use dask or not. Default To True.
-            stop_on_error: If True, no partition starts after the first
-                failure, except the ones already submitted to Dask, which
-                finish. Defaults to True.
+            target: Destination, which must be absent or empty.
+            filters: Predicate selecting partitions to copy.
+            filesystem: Destination file system. Defaults to the file
+                system of the source collection.
+            mode: Access mode of the new collection. Defaults to ``'w'``.
+            npartitions: Maximum number of partition tasks in progress.
+                Defaults to the number of Dask workers. With
+                ``distributed=False``, partitions run sequentially.
+            synchronizer: Synchronizer assigned to the new collection.
+                Its lock is held throughout the copy. Defaults to ``None``.
+            distributed: Whether to use Dask. Defaults to ``True``.
+            stop_on_error: Whether to stop submitting partitions after the
+                first failure. Already submitted Dask tasks finish.
+                Defaults to ``True``.
 
         Returns:
             The new collection.
 
         Raises:
-            ValueError: If the target is not empty, or if ``npartitions`` is
-                below one and a partition is selected.
-            PartitionErrors: If a partition failed. The partitions the new
-                collection lists afterwards are the ones its store holds.
+            ValueError: If the target is not empty, or if ``npartitions``
+                is below one when a partition is selected.
+            PartitionErrors: If a partition fails. A subsequent listing
+                reports the partitions present in the target storage.
 
         Example:
             >>> import zcollection
@@ -1131,8 +1110,8 @@ class Collection(ReadOnlyCollection, WritableCollection):
                 fs_utils.copy_tree(self._immutable,
                                    fs_utils.join_path(target, IMMUTABLE),
                                    self.fs, filesystem)
-            # The files of the root directory, except the index, written
-            # below, and the configuration, written next.
+            # Copy root-level files except the configuration and index.
+            # Both are written separately below.
             root = self.partition_properties.dir
             fs_utils.copy_files([
                 item['name'] for item in self.fs.ls(root, detail=True)
@@ -1178,35 +1157,37 @@ class Collection(ReadOnlyCollection, WritableCollection):
         npartitions: int | None = None,
         stop_on_error: bool = True,
     ) -> tuple[str, ...]:
-        """List the invalid partitions of the collection.
+        """Find invalid partitions in the collection.
 
-        A partition is invalid when it cannot be read, or when it lacks an
-        array of a variable the collection declares with the partitioned
-        dimension. A failed :meth:`add_variable` can leave declared a
-        variable that some partitions lack. Call :meth:`drop_variable` before
-        validating with ``fix``, which otherwise deletes those partitions.
+        A partition is invalid if it cannot be read or lacks an array for
+        a declared variable spanning the partitioned dimension.
+
+        A failed :meth:`add_variable` may leave some partitions without
+        an array declared in the schema. Call :meth:`drop_variable`
+        before using ``fix=True``; otherwise, validation deletes those
+        partitions.
 
         Args:
-            filters: The predicate selecting the partitions to check. By
-                default, every partition is checked.
-            distributed: Whether to use dask or not. Default To True.
-            fix: Whether to delete the invalid partitions and remove them
-                from the index.
-            npartitions: The largest number of partitions processed at the
-                same time. Defaults to the number of Dask workers.
-            stop_on_error: If True, no partition starts after the first
-                failure, except the ones already submitted to Dask, which
-                finish. Defaults to True.
+            filters: Predicate selecting partitions to check. Defaults
+                to all partitions.
+            distributed: Whether to use Dask. Defaults to ``True``.
+            fix: Whether to delete invalid partitions and remove their
+                index entries.
+            npartitions: Maximum number of partition tasks in progress.
+                Defaults to the number of Dask workers.
+            stop_on_error: Whether to stop submitting partitions after the
+                first failure. Already submitted Dask tasks finish.
+                Defaults to ``True``.
 
         Returns:
-            The path of each invalid partition, relative to the collection.
+            Paths of the invalid partitions, relative to the collection.
 
         Raises:
-            ValueError: If ``npartitions`` is below one when there are
-                partitions to check.
-            PartitionErrors: If a partition could not be checked or deleted.
-                After a failed check, nothing is deleted, and ``completed``
-                names the invalid partitions found.
+            ValueError: If ``npartitions`` is below one when partitions
+                are selected for validation.
+            PartitionErrors: If a partition cannot be checked or deleted.
+                After a failed check, nothing is deleted and ``completed``
+                identifies invalid partitions found so far.
         """
         with self.synchronizer if fix else contextlib.nullcontext():
             paths = {

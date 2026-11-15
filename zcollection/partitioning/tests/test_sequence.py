@@ -3,8 +3,8 @@
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 """
-Test partitioning by sequence.
-==============================
+Sequence partitioning tests
+===========================
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 def test_construction() -> None:
-    """Test the sequence constructor."""
+    """Test constructing a Sequence partitioning scheme."""
     assert isinstance(Sequence(('a', 'b')), Sequence)
     assert len(Sequence(('a', 'b'))) == 2
     with pytest.raises(ValueError, match='Data type must be one of'):
@@ -204,7 +204,7 @@ def test_multiple_sequence(delayed: bool) -> None:
 
 
 def test_values_must_be_integer() -> None:
-    """Test that the values must be integer."""
+    """Reject noninteger partitioning values."""
     values = numpy.arange(0, 100, dtype='f8')
     partitioning = Sequence(('values', ))
 

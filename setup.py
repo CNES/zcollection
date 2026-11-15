@@ -2,24 +2,26 @@
 #
 # All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
-"""This script is the entry point for building, distributing and installing
-this module using distutils/setuptools."""
+"""Build, distribute, and install the package using setuptools."""
 import pathlib
 
 import setuptools
 import setuptools.command.sdist
 
-# Working directory
+# Directory containing setup.py.
 WORKING_DIRECTORY = pathlib.Path(__file__).parent.absolute()
 
 
 class SDist(setuptools.command.sdist.sdist):
-    """Custom sdist command that copies the pytest configuration file into the
-    package."""
+    """Build a source distribution with the pytest configuration in the package.
+
+    Move ``conftest.py`` into the package before building, then restore it
+    to its original location.
+    """
     user_options = setuptools.command.sdist.sdist.user_options
 
     def run(self):
-        """Carry out the action."""
+        """Run the source distribution build."""
         source = WORKING_DIRECTORY.joinpath('conftest.py')
         target = WORKING_DIRECTORY.joinpath('zcollection', 'conftest.py')
         source.rename(target)

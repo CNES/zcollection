@@ -6,12 +6,13 @@
 Reading a collection written before the metadata change
 =======================================================
 
-``deprecated_collection`` holds the reference dataset as release 2026.6.0
-wrote it: no ``version`` key, dimensions as a flat list of names, chunk
-sizes in a list of their own.
+``deprecated_collection`` contains the reference dataset as release 2026.6.0
+wrote it: no ``version`` key, dimensions as a list of names, and chunk sizes
+in a separate list.
 
-Collections in that format exist on disk. These tests assert that the
-current code still reads them, and that updating one makes it writable.
+These tests verify that the current code reads the old format, warns when
+opening it, and refuses writes. Migration to the current format is tested
+in ``test_migration.py``.
 """
 from __future__ import annotations
 
@@ -48,7 +49,7 @@ def read_config(path: str) -> dict:
 
 
 def test_the_fixture_is_in_the_old_format(deprecated) -> None:
-    """The frozen collection is what the old format looks like."""
+    """The frozen collection uses the older format."""
     config = read_config(deprecated)
 
     assert 'version' not in config
@@ -57,12 +58,12 @@ def test_the_fixture_is_in_the_old_format(deprecated) -> None:
 
 
 def test_the_fixture_carries_no_immutable_variable(deprecated) -> None:
-    """This collection holds no immutable variable.
+    """This collection has no immutable variables.
 
-    The reference dataset names its axis ``time`` and the dimension that
-    axis spans ``num_lines``. Release 2026.6.0 selects the variables to
-    partition by the name of the axis rather than by the name of the
-    dimension, so inserting it there leaves nothing to partition.
+    The reference dataset uses ``time`` for its axis and ``num_lines``
+    for the dimension it spans. Release 2026.6.0 selects variables
+    to partition by the axis name instead of the dimension name.
+    Because the names differ here, nothing is partitioned.
     """
     config = read_config(deprecated)
     names = {variable['name'] for variable in config['dataset']['variables']}
@@ -72,7 +73,7 @@ def test_the_fixture_carries_no_immutable_variable(deprecated) -> None:
 
 
 def test_opening_warns_and_yields_a_read_only_collection(deprecated) -> None:
-    """An old collection opens, and says it has to be updated."""
+    """Opening an old collection warns and allows read-only access."""
     with pytest.warns(UserWarning, match='written by an earlier release'):
         collection = zcollection.open_collection(deprecated)
 
@@ -80,7 +81,7 @@ def test_opening_warns_and_yields_a_read_only_collection(deprecated) -> None:
 
 
 def test_opening_for_writing_is_refused(deprecated) -> None:
-    """Writing to an old collection is refused until it is updated."""
+    """An old collection cannot be opened for writing before migration."""
     with pytest.warns(UserWarning, match='written by an earlier release'), \
             pytest.raises(ValueError, match='written by an earlier release'):
         zcollection.open_collection(deprecated, mode='w')
@@ -125,7 +126,7 @@ def test_values_are_unchanged(deprecated) -> None:
 
 
 def test_a_view_opens_on_an_old_collection(deprecated, tmp_path) -> None:
-    """A view reads the dimensions of a partition whatever wrote it."""
+    """A view reads partition dimensions from a collection in the old format."""
     with pytest.warns(UserWarning, match='written by an earlier release'):
         zview = zcollection.create_view(
             str(tmp_path / 'view'),
