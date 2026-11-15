@@ -55,7 +55,7 @@ jobs:
         condarc: |
           channels:
             - conda-forge
-        create-args: |
+        create-args: >-
           python=3.12
           minio-server=2025.10.15.17.29.55
         environment-name: ZCollection
