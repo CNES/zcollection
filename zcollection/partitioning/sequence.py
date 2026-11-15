@@ -62,11 +62,12 @@ def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
     indices: NDArray
 
     if is_delayed:
-        index, indices = abc.unique(arr)  # type: ignore[arg-type]
-        if not _is_monotonic(index):
-            raise ValueError('index is not monotonic')
-        return index, indices
-    return abc.unique_and_check_monotony(arr)
+        index, indices = abc.unique_dask(arr)  # type: ignore[arg-type]
+    else:
+        index, indices = abc.unique_numpy(arr)  # type: ignore[arg-type]
+    if not _is_monotonic(index):
+        raise ValueError('index is not monotonic')
+    return index, indices
 
 
 class Sequence(abc.Partitioning):

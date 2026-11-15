@@ -58,12 +58,13 @@ def _unique(arr: ArrayLike, is_delayed: bool) -> tuple[NDArray, NDArray]:
     indices: NDArray
 
     if is_delayed:
-        index, indices = abc.unique(arr)  # type: ignore[arg-type]
-        # Use ``abc.difference`` instead of ``numpy.diff`` here.
-        if not numpy.all(abc.difference(index.view(numpy.int64)) >= 0):
-            raise ValueError('index is not monotonic')
-        return index, indices
-    return abc.unique_and_check_monotony(arr)
+        index, indices = abc.unique_dask(arr)  # type: ignore[arg-type]
+    else:
+        index, indices = abc.unique_numpy(arr)  # type: ignore[arg-type]
+    # Use ``abc.difference`` instead of ``numpy.diff`` here.
+    if not numpy.all(abc.difference(index.view(numpy.int64)) >= 0):
+        raise ValueError('index is not monotonic')
+    return index, indices
 
 
 class Date(abc.Partitioning):

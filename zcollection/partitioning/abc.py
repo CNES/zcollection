@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     import fsspec
 
     from .. import dataset
-    from ..type_hints import ArrayLike, DTypeLike, NDArray
+    from ..type_hints import DTypeLike, NDArray
 
 #: Type representing a partitioning scheme.
 Partition = tuple[tuple[tuple[str, Any], ...], slice]
@@ -76,7 +76,7 @@ def _logical_or_reduce(
                                            dtype=numpy.bool_)
 
 
-def unique(arr: dask.array.core.Array) -> tuple[NDArray, NDArray]:
+def unique_dask(arr: dask.array.core.Array) -> tuple[NDArray, NDArray]:
     """Return the first element and index of each run of equal values.
 
     Args:
@@ -105,25 +105,19 @@ def unique(arr: dask.array.core.Array) -> tuple[NDArray, NDArray]:
     return arr[mask].compute(), indices[mask].compute()
 
 
-def unique_and_check_monotony(arr: ArrayLike) -> tuple[NDArray, NDArray]:
-    """Return unique values and their first indices, checking monotonicity.
+def unique_numpy(arr: NDArray) -> tuple[NDArray, NDArray]:
+    """Return the first element and index of each run of equal values.
 
     Args:
         arr: The input array.
 
     Returns:
-        The unique values and indices of their first occurrences.
-
-    Raises:
-        ValueError: If the values are not monotonic.
+        The first values of consecutive runs and their indices.
     """
-    index: NDArray
-    indices: NDArray
-
-    index, indices = numpy.unique(arr, axis=0, return_index=True)
-    if not numpy.all(numpy.diff(indices) > 0):
-        raise ValueError('index is not monotonic')
-    return index, indices
+    mask: NDArray = numpy.ones(arr.shape[0], dtype=numpy.bool_)
+    mask[1:] = (numpy.any(arr[1:] != arr[:-1], axis=1)
+                if arr.ndim > 1 else arr[1:] != arr[:-1])
+    return arr[mask], numpy.flatnonzero(mask)
 
 
 def difference(arr: NDArray) -> NDArray:

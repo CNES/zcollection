@@ -235,6 +235,23 @@ def test_no_monotonic(delayed: bool):
             }))
 
 
+@pytest.mark.parametrize('delayed', [False, True])
+def test_date_returning_after_another(delayed: bool):
+    """Reject a date that reappears after another date."""
+    dates = numpy.array(
+        ['2000-01-01T00:00', '2000-01-01T01:00', '2000-01-01T00:30'],
+        dtype='datetime64[m]')
+    partitioning = Date(('dates', ), 'h')
+
+    with pytest.raises(ValueError, match='is not monotonic'):
+        list(
+            partitioning._split({
+                'dates':
+                dask.array.core.from_array(  # type: ignore[arg-type]
+                    dates) if delayed else dates
+            }))
+
+
 def test_values_must_be_datetime64():
     """Reject values that are not datetime64."""
     dates = numpy.arange(numpy.datetime64('2000-01-01', 'h'),

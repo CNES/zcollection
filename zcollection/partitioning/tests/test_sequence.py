@@ -203,6 +203,21 @@ def test_multiple_sequence(delayed: bool) -> None:
         assert item[1] == slice(idx * 25, idx * 25 + 25)
 
 
+@pytest.mark.parametrize('delayed', [False, True])
+def test_key_returning_after_another(delayed: bool) -> None:
+    """Reject a key that reappears after another key."""
+    keys = numpy.array([1, 2, 1])
+    partitioning = Sequence(('key', ))
+
+    with pytest.raises(ValueError, match='index is not monotonic'):
+        list(
+            partitioning._split({
+                'key':
+                dask.array.core.from_array(  # type: ignore[dict-item]
+                    keys) if delayed else keys
+            }))
+
+
 def test_values_must_be_integer() -> None:
     """Reject noninteger partitioning values."""
     values = numpy.arange(0, 100, dtype='f8')
