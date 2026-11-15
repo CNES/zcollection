@@ -201,7 +201,8 @@ class PartitionIndex:
         }
         fs_utils.replace_file(
             self._fs, self.path,
-            gzip.compress(json.dumps(data, separators=(',', ':')).encode()))
+            gzip.compress(json.dumps(data, separators=(',', ':')).encode(),
+                          mtime=0))
 
     def add(self, paths: Iterable[str]) -> None:
         """Add partitions to the index.

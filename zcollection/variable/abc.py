@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
     from ..codecs import Codec
     from ..meta import Attribute
-    from ..type_hints import ArrayLike, NDArray, NDMaskedArray
+    from ..type_hints import ArrayLike, DTypeLike, NDArray, NDMaskedArray
 
 __all__ = ('Variable', )
 
@@ -568,5 +568,16 @@ class Variable(IVariable, abc.ABC):
     def __hash__(self) -> int:
         return hash(self.name)
 
-    def __array__(self) -> ArrayLike:
-        return self.values
+    def __array__(self,
+                  dtype: DTypeLike | None = None,
+                  copy: bool | None = None) -> NDArray | NDMaskedArray:
+        """Return the values with the requested NumPy dtype and copy policy.
+
+        A conversion without copying requires unmasked NumPy data and a
+        matching dtype. Other variables must compute or mask their values.
+        """
+        if copy is False and (not isinstance(self.array, numpy.ndarray)
+                              or self.fill_value is not None):
+            raise ValueError('This variable cannot be converted without '
+                             'a copy')
+        return numpy.array(self.values, dtype=dtype, copy=copy, subok=True)

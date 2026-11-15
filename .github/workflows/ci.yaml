@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix:
-        python-version: ['3.12', '3.13', '3.14']
+        python-version: ['3.12', '3.13', '3.14', '3.15']
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -48,17 +48,6 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
-    - name: Install MinIO
-      run: |
-        mkdir -p /opt/minio/bin
-        wget -nv -P /opt/minio/bin \
-          https://dl.min.io/server/minio/release/linux-amd64/minio
-        chmod +x /opt/minio/bin/minio
-
-    - name: Add MinIO To System Path
-      run: |
-        echo /opt/minio/bin >> $GITHUB_PATH
-
     - name: Setup Miniconda
       uses: mamba-org/setup-micromamba@v1
       with:
@@ -68,6 +57,7 @@ jobs:
             - conda-forge
         create-args: |
           python=3.12
+          minio-server=2025.10.15.17.29.55
         environment-name: ZCollection
         environment-file: conda/environment.yml
 

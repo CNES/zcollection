@@ -48,13 +48,14 @@ def test_as_dask_array() -> None:
             numpy.arange(numpy.datetime64(0, 'Y'),
                          numpy.datetime64(10, 'Y'),
                          dtype='M8[Y]'), numpy.datetime64(5, 'Y')),
-                       fill_value=numpy.datetime64('NaT'))
+                       fill_value=numpy.datetime64('NaT', 'Y'))
 
     dask_array, fill_value = _as_dask_array(numpy.ma.masked_equal(
         numpy.arange(numpy.datetime64(0, 'Y'),
                      numpy.datetime64(10, 'Y'),
-                     dtype='M8[Y]'), numpy.datetime64('NaT')),
-                                            fill_value=numpy.datetime64('NaT'))
+                     dtype='M8[Y]'), numpy.datetime64('NaT', 'Y')),
+                                            fill_value=numpy.datetime64(
+                                                'NaT', 'Y'))
     assert isinstance(dask_array, dask.array.core.Array)
 
 

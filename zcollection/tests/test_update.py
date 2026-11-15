@@ -380,6 +380,7 @@ def test_update_skips_an_absent_partition(
         update_target,
         distributed,
         dask_client,  # noqa: F811
+        pytestconfig,
         caplog) -> None:
     """A partition the index names and the store lacks is skipped with a
     warning, also when update infers the output variables, and is left out
@@ -389,14 +390,16 @@ def test_update_skips_an_absent_partition(
                                            'key=1'),
                         recursive=True)
 
-    if distributed:
+    # Thread workers share this process: caplog already captures their logs.
+    forward_logs = distributed and pytestconfig.getoption('processes')
+    if forward_logs:
         dask_client.forward_logging('zcollection.storage')
     try:
         written = update_target.update(
             lambda zds: {output: zds['source'].values},
             distributed=distributed)
     finally:
-        if distributed:
+        if forward_logs:
             dask_client.unforward_logging('zcollection.storage')
 
     assert written == ('key=2', 'key=3', 'key=4')

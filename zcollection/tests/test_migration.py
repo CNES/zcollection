@@ -20,6 +20,7 @@ use small collections in the current format.
 from __future__ import annotations
 
 from typing import Any, cast
+import contextlib
 import copy
 import dataclasses
 import hashlib
@@ -1061,7 +1062,8 @@ def test_a_chunk_holding_nothing_but_the_fill_value_is_not_written(
     """A fill-value-only chunk is omitted without losing metadata or values."""
     for name in PARTITIONS:
         fill_the_masked_variable(fs_utils.join_path(deprecated, name))
-    source = read_collection(deprecated, local)
+    with pytest.warns(UserWarning, match='written by an earlier release'):
+        source = read_collection(deprecated, local)
     target = str(tmp_path / 'target')
 
     migrate(deprecated, target, distributed=False)
@@ -1312,8 +1314,9 @@ def test_check_names_a_variable_the_target_masks_otherwise(
                              fs_utils.join_path(target, PARTITIONS[0],
                                                 'masked'),
                              mode='r+')
-    assert numpy.ma.getmaskarray(
-        read_collection(deprecated, local).variables['masked'].values).any()
+    with pytest.warns(UserWarning, match='written by an earlier release'):
+        source = read_collection(deprecated, local)
+    assert numpy.ma.getmaskarray(source.variables['masked'].values).any()
     array[...] = numpy.ones(array.shape, dtype=array.dtype)
 
     outcome = check(deprecated, target, distributed=False)
@@ -1397,7 +1400,8 @@ def test_view_migration_updates_an_existing_partition_index(
                  target,
                  filters='day == 1',
                  distributed=False)
-    zview = zcollection.open_view(target)
+    with pytest.warns(UserWarning, match='written by an earlier release'):
+        zview = zcollection.open_view(target)
     assert len(zview.reindex()) == 1
 
     outcome = migrate_view(deprecated_view,
@@ -1595,7 +1599,9 @@ def test_view_migration_resumes_with_a_compatible_target(
     assert outcome.done == PARTITIONS[1:]
     assert outcome.skipped == PARTITIONS[:1]
     assert not outcome.failed
-    zview = zcollection.open_view(target, filesystem=tested_fs.fs)
+    with contextlib.nullcontext() if use_reference else pytest.warns(
+            UserWarning, match='written by an earlier release'):
+        zview = zcollection.open_view(target, filesystem=tested_fs.fs)
     assert len(tuple(zview.partitions())) == len(PARTITIONS)
     zds = zview.load(delayed=False, distributed=False)
     assert zds is not None

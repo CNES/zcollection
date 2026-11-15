@@ -25,6 +25,28 @@ def test_numpy_conversion_of_scalar(value, dtype) -> None:
     numpy.testing.assert_array_equal(result, values, strict=True)
 
 
+@pytest.mark.parametrize('copy', [None, True])
+@pytest.mark.parametrize('fill_value', [None, 0])
+def test_numpy_conversion_respects_dtype_and_mask(copy, fill_value) -> None:
+    """NumPy conversion accepts its copy policy and preserves missing data."""
+    array = CompressedArray(numpy.arange(4), fill_value=fill_value)
+
+    result = numpy.array(array, dtype='float32', copy=copy, subok=True)
+
+    assert result.dtype == numpy.dtype('float32')
+    numpy.testing.assert_array_equal(numpy.ma.getdata(result), numpy.arange(4))
+    numpy.testing.assert_array_equal(numpy.ma.getmaskarray(result),
+                                     [fill_value == 0, False, False, False])
+    result[-1] = -1
+    assert array[-1] == 3
+
+
+def test_numpy_conversion_without_copy_is_refused() -> None:
+    """Compressed storage cannot supply a NumPy view without decompression."""
+    with pytest.raises(ValueError, match='without a copy'):
+        numpy.asarray(CompressedArray(numpy.arange(4)), copy=False)
+
+
 @pytest.mark.parametrize('indexer', [
     pytest.param(numpy.s_[...], id='all'),
     pytest.param(numpy.s_[0], id='first-axis'),

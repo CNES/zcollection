@@ -176,20 +176,28 @@ class CompressedArray(numpy.lib.mixins.NDArrayOperatorsMixin):
                                serializer=self._array.serializer,
                                fill_value=self._fill_value)
 
-    def __array__(self, dtype=None) -> Array:
+    def __array__(self, dtype=None, copy: bool | None = None) -> Array:
         """Return the array as a NumPy array.
 
         Args:
             dtype: The requested data type.
+            copy: Whether to copy the data. Decompression always creates a
+                new array, so ``False`` is not supported.
 
         Returns:
             A NumPy array, or a masked array if a fill value is defined.
+
+        Raises:
+            ValueError: If ``copy`` is ``False``.
         """
+        if copy is False:
+            raise ValueError('A compressed array cannot be converted without '
+                             'a copy')
         array: Array = numpy.asanyarray(self._array[...], dtype=self.dtype)
         if self._fill_value is not None:
             array = numpy.ma.masked_equal(array, self._fill_value)
         if dtype is not None:
-            array = array.astype(dtype)
+            array = array.astype(dtype, copy=False)
         return array
 
     def _cast(self, obj: Any) -> Any:

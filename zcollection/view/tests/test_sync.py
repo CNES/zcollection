@@ -167,7 +167,8 @@ def test_is_synced_reports_a_partition_it_cannot_check(
     assert list(info.value.failed) == ['key=2']
     assert info.value.completed == ('key=4', )
 
-    zview.validate_partitions(fix=True, distributed=False)
+    with pytest.warns(RuntimeWarning, match='Invalid partition: key=2'):
+        zview.validate_partitions(fix=True, distributed=False)
     assert zview.is_synced(filters='key <= 3', distributed=distributed)
 
 

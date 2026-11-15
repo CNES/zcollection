@@ -26,8 +26,9 @@ def test_variable_not_equal() -> None:
     assert not_equal(1, numpy.nan) is True
     assert not_equal(numpy.nan, numpy.nan) is False
     assert not_equal(numpy.nan, 1) is True
-    assert not_equal(numpy.datetime64('NaT'), numpy.datetime64('NaT')) is False
-    assert not_equal(numpy.datetime64('NaT'), 1) is True
+    assert not_equal(numpy.datetime64('NaT', 's'),
+                     numpy.datetime64('NaT', 's')) is False
+    assert not_equal(numpy.datetime64('NaT', 's'), 1) is True
 
 
 #: Name of the Zarr 2 attribute storing dimension names.
@@ -38,6 +39,51 @@ IMPLEMENTATIONS = [Array, DelayedArray]
 
 #: Zarr versions covered by these tests.
 FORMATS = [2, 3]
+
+
+@pytest.mark.parametrize('cls', IMPLEMENTATIONS)
+@pytest.mark.parametrize('copy', [None, True])
+def test_numpy_conversion_respects_dtype_and_mask(cls, copy) -> None:
+    """Converting a variable preserves its mask and accepts a target dtype."""
+    variable = cls('var', numpy.arange(4), ('row', ), fill_value=0)
+
+    result = numpy.array(variable, dtype='float32', copy=copy, subok=True)
+
+    assert result.dtype == numpy.dtype('float32')
+    numpy.testing.assert_array_equal(numpy.ma.getdata(result), numpy.arange(4))
+    numpy.testing.assert_array_equal(numpy.ma.getmaskarray(result),
+                                     [True, False, False, False])
+    result[-1] = -1
+    assert variable.values[-1] == 3
+
+
+def test_numpy_conversion_without_copy_shares_eager_data() -> None:
+    """An unmasked eager variable can expose its NumPy data without a copy."""
+    values = numpy.arange(4)
+    variable = Array('var', values, ('row', ))
+
+    result = numpy.asarray(variable, copy=False)
+
+    assert numpy.shares_memory(result, values)
+    with pytest.raises(ValueError, match='copy'):
+        numpy.asarray(variable, dtype='float32', copy=False)
+    copied = numpy.array(variable, copy=True)
+    assert not numpy.shares_memory(copied, values)
+
+
+@pytest.mark.parametrize(('cls', 'fill_value'), [
+    (Array, 0),
+    (DelayedArray, None),
+    (DelayedArray, 0),
+])
+def test_numpy_conversion_without_a_copy_refuses_materialization(
+        cls, fill_value) -> None:
+    """Computing or masking variable values needs a copy."""
+    variable = cls('var', numpy.arange(4), ('row', ), fill_value=fill_value)
+
+    with pytest.raises(ValueError, match='without a copy'):
+        numpy.asarray(variable, copy=False)
+
 
 #: Fill values whose encoded form differs from the value itself.
 ENCODED_FILL_VALUES = [
@@ -261,10 +307,10 @@ ABSENCES = [
                  'float64', [numpy.inf, 1.0, 2.0],
                  id='inf'),
     pytest.param(-999.0, 'float64', [-999.0, 1.0, 2.0], id='value'),
-    pytest.param(numpy.datetime64('NaT'),
+    pytest.param(numpy.datetime64('NaT', 's'),
                  'datetime64[s]', ['NaT', '2000-01-01', '2000-01-02'],
                  id='nat'),
-    pytest.param(numpy.timedelta64('NaT'),
+    pytest.param(numpy.timedelta64('NaT', 's'),
                  'timedelta64[s]', ['NaT', 1, 2],
                  id='nat-delta'),
 ]

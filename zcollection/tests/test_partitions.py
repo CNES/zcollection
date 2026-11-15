@@ -138,6 +138,25 @@ def test_an_insertion_writes_the_index(local_fs) -> None:  # noqa: F811
     assert len(data['partitions']) == len(tuple(zcol.partitions()))
 
 
+def test_index_bytes_do_not_depend_on_the_write_time(tmp_path) -> None:
+    """Writing the same keys at different times produces the same bytes."""
+    fs = fsspec.filesystem('file')
+    index = partitions.PartitionIndex(fs,
+                                      str(tmp_path),
+                                      PARTITIONINGS[0][0],
+                                      writable=True)
+    keys = ((2000, 1, 1), (2000, 1, 2))
+    with mock.patch('gzip.time.time', return_value=1700000000):
+        index.write(keys)
+        first = fs.cat_file(index.path)
+    with mock.patch('gzip.time.time', return_value=1700000001):
+        index.write(keys)
+
+    assert fs.cat_file(index.path) == first
+    assert int.from_bytes(first[4:8], 'little') == 0
+    assert index.keys() == keys
+
+
 def test_a_listing_reads_the_index(
         local_fs,  # noqa: F811
         monkeypatch) -> None:
