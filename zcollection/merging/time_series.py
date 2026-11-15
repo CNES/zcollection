@@ -59,7 +59,7 @@ def _merge_time_series(
 
         indices = numpy.nonzero(
             # Compare NumPy array values with datetime64 values.
-            existing_axis > intersection.end())[0]
+            existing_axis > inserted_period.last)[0]
 
         return inserted_ds.concat(
             existing_ds.isel({partitioning_dim: indices}), partitioning_dim)
@@ -83,7 +83,7 @@ def _merge_time_series(
         {partitioning_dim: slice(0, index[-1] + 1, None)})
 
     # Compare NumPy array values with datetime64 values.
-    index = numpy.nonzero(existing_axis > intersection.end())[0]
+    index = numpy.nonzero(existing_axis > inserted_period.last)[0]
 
     after: dataset.Dataset = existing_ds.isel(
         {partitioning_dim: slice(index[0], index[-1] + 1, None)})

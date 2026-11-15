@@ -7,9 +7,12 @@ from typing import TYPE_CHECKING
 import copy
 
 import numpy
+import pytest
 
 from .. import time_series
+from ... import dataset
 from ...tests import data
+from ...variable import Array
 
 if TYPE_CHECKING:
     from ...type_hints import NDArray
@@ -160,3 +163,39 @@ def test_intersection_with_tolerance() -> None:
     assert zds_with_gap.time.size == zds0.time.size - mask.sum()
     assert numpy.all((zds_gap_filled.variables['var1'].values[:, 0] < 0
                       ).sum() == zds1.dimensions['num_lines'])
+
+
+def _hourly(first: int, last: int, value: int) -> dataset.Dataset:
+    """Return hourly records from ``first`` to ``last`` holding ``value``."""
+    time = numpy.arange(first, last + 1).astype('datetime64[h]')
+    return dataset.Dataset([
+        Array('time', time, ('num_lines', )),
+        Array('var', numpy.full(time.size, value), ('num_lines', )),
+    ])
+
+
+@pytest.mark.parametrize(
+    ('existing', 'inserted'),
+    [
+        ((1, 5), (0, 2)),  # The inserted series starts before.
+        ((0, 5), (1, 2)),  # The inserted series lies inside.
+        ((0, 3), (1, 2)),  # A single existing record follows it.
+    ],
+    ids=['before-overlapping', 'inside', 'inside-one-after'])
+def test_merge_keeps_record_following_insert(existing, inserted) -> None:
+    """The existing record one step after the inserted series is kept.
+
+    The step of the series equals the unit of its axis.
+    """
+    zds = time_series.merge_time_series(_hourly(existing[0], existing[1], 0),
+                                        _hourly(inserted[0], inserted[1], 1),
+                                        'time', 'num_lines')
+
+    first = min(existing[0], inserted[0])
+    numpy.testing.assert_array_equal(
+        zds.variables['time'].values,
+        numpy.arange(first, existing[1] + 1).astype('datetime64[h]'))
+    numpy.testing.assert_array_equal(zds.variables['var'].values, [
+        int(inserted[0] <= hour <= inserted[1])
+        for hour in range(first, existing[1] + 1)
+    ])
