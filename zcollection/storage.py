@@ -13,7 +13,9 @@ import collections
 import functools
 import logging
 
+import dask
 import dask.array.core
+import dask.base
 import dask.distributed
 import dask.local
 import numcodecs.blosc
@@ -42,18 +44,16 @@ numcodecs.blosc.use_threads = False
 
 def execute_transaction(
     client: dask.distributed.Client,
-    synchronizer: sync.Sync,
     futures: Sequence[dask.distributed.Future | dask_Delayed],
     **kwargs: Any,
 ) -> Any:
-    """Compute a transaction using a Dask client under a synchronizer.
+    """Compute a transaction using a Dask client.
 
-    The synchronizer remains active while the tasks are computed. If a task
-    fails, wait for the submitted work to finish before raising the error.
+    If a task fails, wait for the submitted work to finish before raising
+    the error.
 
     Args:
         client: The Dask client.
-        synchronizer: The synchronizer for the transaction.
         futures: The lazy tasks to compute.
         **kwargs: Additional arguments passed to ``client.compute``.
 
@@ -64,10 +64,9 @@ def execute_transaction(
         return None
     awaitables: Iterable[Any] = []
     try:
-        with synchronizer:
-            awaitables = client.compute(futures,
-                                        **kwargs)  # type: ignore[arg-type]
-            return client.gather(awaitables)
+        awaitables = client.compute(futures,
+                                    **kwargs)  # type: ignore[arg-type]
+        return client.gather(awaitables)
     except:
         # Wait for all submitted tasks to finish before propagating the error.
         dask.distributed.wait(awaitables)
@@ -248,7 +247,6 @@ def write_zarr_group(
                     fs=fs)
                 execute_transaction(
                     client,
-                    sync.NoSync(),
                     futures,
                     workers=dask.distributed.get_worker().address)
         else:
@@ -262,6 +260,45 @@ def write_zarr_group(
                 ) for item in zds.variables.items())
 
         _write_meta(zds, dirname, fs)
+
+
+def write_dataset(
+    zds: dataset.Dataset,
+    dirname: str,
+    fs: fsspec.AbstractFileSystem,
+    *,
+    parallel: bool = True,
+) -> None:
+    """Write a dataset to a Zarr group from the calling process.
+
+    Each variable is written by its own task, run by the current Dask
+    scheduler. The variables are written first, followed by the group
+    attributes and consolidated metadata.
+
+    Args:
+        zds: The dataset to write.
+        dirname: The group directory.
+        fs: The file system where the group is stored.
+        parallel: Whether to write the variables in parallel. If ``False``,
+            the variables are written one after the other in the calling
+            process. Defaults to ``True``.
+    """
+    kwargs: dict[str, Any] = {
+        'chunks': zds.dim_chunks,
+        'block_size_limit': zds.block_size_limit,
+    }
+    if parallel:
+        write = dask.delayed(write_zarr_variable, pure=False)
+        # Pass each variable as is, so that each task reads and writes its
+        # data chunk by chunk.
+        dask.base.compute(
+            *(write(dask.delayed(item, traverse=False, pure=False), dirname,
+                    fs, **kwargs) for item in zds.variables.items()))
+    else:
+        for item in zds.variables.items():
+            write_zarr_variable(item, dirname, fs, **kwargs)
+
+    _write_meta(zds, dirname, fs)
 
 
 def write_zarr_group_missing(

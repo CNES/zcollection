@@ -14,6 +14,7 @@ import numpy
 import pytest
 
 from ..delayed_array import _as_dask_array
+from .data import delayed_array
 
 # pylint enable=unused-import
 
@@ -55,3 +56,14 @@ def test_as_dask_array() -> None:
                      dtype='M8[Y]'), numpy.datetime64('NaT')),
                                             fill_value=numpy.datetime64('NaT'))
     assert isinstance(dask_array, dask.array.core.Array)
+
+
+def test_persist() -> None:
+    """A persisted variable keeps a Dask array holding the same values."""
+    var = delayed_array()
+    expected = var.values
+
+    assert var.persist() is var
+    assert isinstance(var.array, dask.array.core.Array)
+    assert var.shape == expected.shape
+    numpy.testing.assert_array_equal(var.values, expected)

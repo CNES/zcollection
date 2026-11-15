@@ -27,7 +27,7 @@ def test_execute_transaction(
 ) -> None:
     """Test the execute_transaction function."""
     # First case: no transaction to execute
-    assert storage.execute_transaction(dask_client, sync.NoSync(), []) is None
+    assert storage.execute_transaction(dask_client, []) is None
 
     # General case: execute a transaction without error
     def func():
@@ -35,8 +35,7 @@ def test_execute_transaction(
 
     assert sum(
         storage.execute_transaction(
-            dask_client, sync.NoSync(),
-            [dask_client.submit(func) for i in range(10)])) == 10
+            dask_client, [dask_client.submit(func) for i in range(10)])) == 10
 
     # All submitted tasks finish before a transaction raises.
     def fail(data):
@@ -47,7 +46,7 @@ def test_execute_transaction(
 
     futures = [dask_client.submit(fail, i) for i in range(10)]
     with pytest.raises(ValueError, match='injected failure'):
-        storage.execute_transaction(dask_client, sync.NoSync(), futures)
+        storage.execute_transaction(dask_client, futures)
     assert all(future.done() for future in futures)
 
 

@@ -710,29 +710,51 @@ class Dataset:
         zds.copy_properties(self)
         return zds
 
+    @classmethod
+    def from_zarr(cls,
+                  path: str,
+                  fs: fsspec.AbstractFileSystem | None = None,
+                  *,
+                  delayed: bool = True) -> Dataset:
+        """Read a dataset from a Zarr group.
+
+        Args:
+            path: The group to read.
+            fs: The file system containing the group. Defaults to the local
+                file system.
+            delayed: Whether to load the variables lazily. Defaults to
+                ``True``.
+
+        Returns:
+            The dataset holding the variables and attributes of the group.
+        """
+        # Avoid circular import
+        from . import storage
+
+        return storage.open_zarr_group(path,
+                                       fs or fsspec.filesystem('file'),
+                                       delayed=delayed)
+
     def to_zarr(self,
                 path: str,
                 fs: fsspec.AbstractFileSystem | None = None,
                 parallel: bool = True) -> None:
-        """Write the dataset to a Zarr store.
+        """Write the dataset to a Zarr group.
 
         Args:
-            path: The destination Zarr store.
-            fs: The file system for the destination.
-            parallel: Whether to write the data in parallel.
+            path: The destination group.
+            fs: The file system for the destination. Defaults to the local
+                file system.
+            parallel: Whether to write the variables in parallel with the
+                current Dask scheduler. Defaults to ``True``.
         """
-        if not self.delayed:
-            raise ValueError('cannot write a non-delayed dataset to Zarr')
-
         # Avoid circular import
-        import storage
-        import sync
+        from . import storage
 
-        storage.write_zarr_group(self,
-                                 path,
-                                 fs or fsspec.filesystem('file'),
-                                 sync.NoSync(),
-                                 distributed=parallel)
+        storage.write_dataset(self,
+                              path,
+                              fs or fsspec.filesystem('file'),
+                              parallel=parallel)
 
     def __str__(self) -> str:
         return _dataset_repr(self)

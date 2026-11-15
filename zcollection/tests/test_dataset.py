@@ -359,6 +359,23 @@ def test_dataset_persist(factory, distributed, request) -> None:
                                              zds1[name].values)
 
 
+@pytest.mark.parametrize('factory', [array, delayed_array])
+@pytest.mark.parametrize('parallel', ['sequential', 'threads', 'distributed'])
+def test_dataset_to_zarr(factory, parallel, tmp_path, request) -> None:
+    """A dataset written to a Zarr group reads back unchanged."""
+    if parallel == 'distributed':
+        request.getfixturevalue('dask_client')
+    zds = create_delayed_dataset(factory)
+    zds.to_zarr(str(tmp_path), parallel=parallel != 'sequential')
+
+    written = dataset.Dataset.from_zarr(str(tmp_path),
+                                        delayed=factory is delayed_array)
+    assert written.delayed is (factory is delayed_array)
+    assert written.attrs == zds.attrs
+    for name, var in zds.variables.items():
+        numpy.testing.assert_array_equal(written[name].values, var.values)
+
+
 def test_variable_metadata_rejects_another_type() -> None:
     """Variable metadata conversion rejects unsupported objects."""
     with pytest.raises(TypeError, match=r'Expected a meta.VariableSchema'):

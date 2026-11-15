@@ -252,7 +252,7 @@ class DelayedArray(Variable):
         Returns:
             The variable.
         """
-        self.array = dask.base.persist(self.array, **kwargs)
+        (self.array, ) = dask.base.persist(self.array, **kwargs)
         return self
 
     def compute(self, **kwargs) -> NDArray | NDMaskedArray:
