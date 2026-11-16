@@ -60,7 +60,9 @@ check:
 
 test:
   extends: .test_template
-  # Only the automatic tests produce the coverage published by Pages.
+  when: manual
+  allow_failure: true
+  # Coverage reports are available as artifacts of this manual job.
   script:
     - >-
       pytest -v -ra
@@ -117,6 +119,7 @@ doc:
 
 conda-build:
   stage: build
+  needs: []
   before_script:
     - !reference [default, before_script]
     - mamba create -y -n build rattler-build
@@ -168,14 +171,11 @@ pages:
       when: manual
       allow_failure: true
   needs:
-    - job: test
-      artifacts: true
     - job: doc
       artifacts: true
   script:
     - mkdir public
     - cp -a docs/_build/html/. public/
-    - cp -a htmlcov public/coverage
   artifacts:
     paths:
       - public/
@@ -186,8 +186,9 @@ conda-deploy:
   image: alpine:3.24
   before_script: []
   when: manual
-  dependencies:
-    - conda-build
+  needs:
+    - job: conda-build
+      artifacts: true
   script:
     - apk add --no-cache curl
     - test -n "$CONDA_DEV_UPLOAD_URL"
