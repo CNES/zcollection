@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 import os
+import posixpath
 import uuid
 
 import fsspec
@@ -44,7 +45,9 @@ def normalize_path(fs: fsspec.AbstractFileSystem, path: str) -> str:
 
     if path == '':
         path = fs.sep
-    if fs.protocol in ('file', 'memory'):
+    if fs.protocol == 'memory':
+        return posixpath.normpath(path)
+    if fs.protocol == 'file':
         return os.path.normpath(path)
     return path
 

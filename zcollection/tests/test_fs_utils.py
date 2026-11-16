@@ -7,9 +7,10 @@ File system utility tests
 =========================
 """
 from typing import Any
-import os
+import ntpath
 import pathlib
 import platform
+from unittest import mock
 
 import fsspec
 import fsspec.implementations.local
@@ -129,12 +130,31 @@ def test_normalize_path() -> None:
                    str(pathlib.Path('.').resolve() / 'foo'))
 
     fs = fsspec.filesystem('memory')
-    assert fs_utils.normalize_path(fs, '/') == os.path.sep
-    assert fs_utils.normalize_path(fs, './foo') == f'{os.path.sep}foo'
+    assert fs_utils.normalize_path(fs, '/') == '/'
+    assert fs_utils.normalize_path(fs, './foo') == '/foo'
 
     fs = fsspec.filesystem('s3')
     assert fs_utils.normalize_path(fs, '/') == '/'
     assert fs_utils.normalize_path(fs, './foo') == './foo'
+
+
+@pytest.mark.parametrize('path', [
+    '/memory-path-on-windows',
+    r'C:\Users\runner\memory-path-on-windows',
+])
+def test_memory_paths_remain_readable_on_a_windows_host(path) -> None:
+    """Normalizing a memory path preserves its keys on every host OS."""
+    fs = fsspec.filesystem('memory')
+    fs.pipe_file(fs_utils.join_path(path, 'data'), b'content')
+    try:
+        with mock.patch.object(fs_utils, 'os') as windows_os:
+            windows_os.path = ntpath
+            normalized = fs_utils.normalize_path(fs, path)
+
+        assert fs.cat_file(fs_utils.join_path(normalized,
+                                              'data')) == b'content'
+    finally:
+        fs.rm(path, recursive=True)
 
 
 def test_copy_file(tmp_path) -> None:

@@ -1119,6 +1119,8 @@ def test_drop_partitions_reports_each_partition(
 @pytest.fixture
 def five_hours_ahead_of_utc(monkeypatch):
     """Set the local time zone five hours ahead of UTC."""
+    if not hasattr(time, 'tzset'):
+        pytest.skip('Changing the process time zone requires time.tzset')
     monkeypatch.setenv('TZ', 'Etc/GMT-5')
     time.tzset()
     yield
