@@ -126,6 +126,8 @@ def deprecated_view(deprecated, tmp_path) -> str:
     local = fs_utils.get_fs('file')
     config = read_view_config(local, path)
     del config['version']
+    config['metadata']['dimensions'] = list(zview.view_ref.metadata.dimensions)
+    config['metadata']['chunks'] = []
     write_view_config(local, path, config)
     # An earlier release wrote no index of the partitions.
     local.rm(fs_utils.join_path(path, PARTITION_INDEX))

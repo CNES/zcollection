@@ -310,13 +310,20 @@ class View(WritableCollection):
                 category=UserWarning,
                 stacklevel=2)
 
+        if deprecated:
+            ds = meta.DatasetSchema.from_deprecated_config(data['metadata'])
+            # Dimensions are defined by the reference collection.
+            ds.dimensions = {}
+        else:
+            ds = meta.DatasetSchema.from_config(data['metadata'])
+
         view_ref: dict[str, Any] = data['view_ref']
         return View(data['base_dir'],
                     ViewReference(
                         view_ref['path'],
                         fsspec.AbstractFileSystem.from_json(
                             json.dumps(view_ref['fs']))),
-                    ds=meta.DatasetSchema.from_config(data['metadata']),
+                    ds=ds,
                     filesystem=filesystem,
                     filters=_deserialize_filters(data['filters']),
                     synchronizer=synchronizer,
