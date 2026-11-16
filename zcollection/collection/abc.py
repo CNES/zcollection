@@ -1092,7 +1092,7 @@ class ReadOnlyCollection(BaseCollection):
         return self._properties.partition
 
     @property
-    def mode(self) -> Literal['r', 'w']:
+    def mode(self) -> str:
         """Return the collection access mode."""
         return self._settings.mode
 
