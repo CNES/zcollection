@@ -1,7 +1,7 @@
 name: ZCollection
 channels:
   - conda-forge
-  - defaults
+  - nodefaults
 dependencies:
   - dask-core
   - distributed

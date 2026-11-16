@@ -1,0 +1,54 @@
+schema_version: 1
+
+context:
+  name: zcollection
+  version: ${{ env.get("ZCOLLECTION_BUILD_VERSION", default="2026.12.0.dev0") }}
+  python_version: ${{ env.get("PYTHON_VERSION", default="3.12") }}
+
+package:
+  name: ${{ name }}
+  version: ${{ version }}
+
+source:
+  path: ..
+
+build:
+  noarch: python
+  number: 0
+  script:
+    - sed -i "s/^version = .*/version = ${{ version }}/" setup.cfg
+    - printf "__version__ = '%s'\n" "${{ version }}" > zcollection/version.py
+    - ${{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+
+requirements:
+  host:
+    - python ${{ python_version }}.*
+    - pip
+    - setuptools >=45
+    - setuptools-scm >=6.2
+    - wheel
+  run:
+    - python >=3.12
+    - dask >=2022.8.0
+    - distributed
+    - fasteners
+    - fsspec >=2024.12.0
+    - numcodecs
+    - numpy >=1.20
+    - xarray
+    - zarr >=3.4
+
+tests:
+  - python:
+      python_version: ${{ python_version }}.*
+      imports:
+        - zcollection
+      pip_check: true
+
+about:
+  homepage: https://github.com/CNES/zcollection
+  summary: Handle a collection of Zarr groups
+  license: BSD-3-Clause
+  license_file: LICENSE
+  documentation: https://zcollection.readthedocs.io/en/latest/
+  repository: https://github.com/CNES/zcollection

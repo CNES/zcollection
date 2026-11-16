@@ -1,0 +1,203 @@
+variables:
+  DEV_VERSION_BASE: "2026.12.0"
+  PYTHON_VERSION: "3.14"
+
+default:
+  image: condaforge/miniforge3:26.9.4-2
+  tags:
+    - "$RUNNER_TAG"
+  before_script:
+    - source "$CONDA_DIR/etc/profile.d/conda.sh"
+  retry:
+    max: 2
+    when: runner_system_failure
+
+workflow:
+  rules:
+    - if: '$CI_COMMIT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_BRANCH && $CI_PIPELINE_SOURCE == "web"'
+
+stages:
+  - quality
+  - doc_and_test
+  - build
+  - deploy
+
+.conda_environment:
+  before_script:
+    - !reference [default, before_script]
+    - mamba create -y -n ci -f conda/environment.yml "python=$PYTHON_VERSION" pip wheel pytest-cov
+    - VERSION_DATE="$(date -u -d "$CI_COMMIT_TIMESTAMP" +%Y%m%d%H%M%S)"
+    - PACKAGE_VERSION="${DEV_VERSION_BASE}.dev${VERSION_DATE}"
+    - sed -i "s/^version = .*/version = $PACKAGE_VERSION/" setup.cfg
+    - printf "__version__ = '%s'\n" "$PACKAGE_VERSION" > zcollection/version.py
+    - conda activate ci
+    - python -m pip install --no-deps --no-build-isolation -e .
+    - python -m pip check
+
+check:
+  stage: quality
+  script:
+    - mamba create -y -n quality "python=$PYTHON_VERSION" pre-commit
+    - conda activate quality
+    - pre-commit run --all-files --show-diff-on-failure
+
+.test_template:
+  extends: .conda_environment
+  stage: doc_and_test
+  script:
+    - >-
+      pytest -v -ra
+      --processes
+      --n_workers=2
+      --threads_per_worker=1
+      --junitxml=report.xml
+      zcollection
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+    expire_in: 1 month
+
+test:
+  extends: .test_template
+  # Only the automatic tests produce the coverage published by Pages.
+  script:
+    - >-
+      pytest -v -ra
+      --processes
+      --n_workers=2
+      --threads_per_worker=1
+      --cov=zcollection
+      --cov-report=term
+      --cov-report=html:htmlcov
+      --cov-report=xml:coverage.xml
+      --junitxml=report.xml
+      zcollection
+  coverage: '/(?i)TOTAL(?:\s+\d+){2,4}\s+(\d+)%/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - htmlcov/
+
+test-s3:
+  extends: .test_template
+  when: manual
+  allow_failure: true
+  script:
+    - mamba install -y minio-server
+    - >-
+      pytest -v -ra
+      --s3
+      --processes
+      --n_workers=2
+      --threads_per_worker=1
+      --junitxml=report.xml
+      zcollection
+
+test-compatibility:
+  extends: .test_template
+  when: manual
+  allow_failure: true
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.12", "3.15"]
+
+doc:
+  extends: .conda_environment
+  stage: doc_and_test
+  script:
+    - python -m sphinx -b html -W docs/source docs/_build/html
+  artifacts:
+    paths:
+      - docs/_build/html/
+    expire_in: 1 month
+
+conda-build:
+  stage: build
+  before_script:
+    - !reference [default, before_script]
+    - mamba create -y -n build rattler-build
+    - conda activate build
+    - VERSION_DATE="$(date -u -d "$CI_COMMIT_TIMESTAMP" +%Y%m%d%H%M%S)"
+    - PACKAGE_VERSION="${DEV_VERSION_BASE}.dev${VERSION_DATE}"
+    - export ZCOLLECTION_BUILD_VERSION="$PACKAGE_VERSION"
+  script:
+    - rattler-build build --recipe conda/recipe.yaml --output-dir build/conda_packages
+    # Install the built package and its declared dependencies in a fresh environment.
+    # PyArrow is optional for users, but required by the indexing tests.
+    # Path normalization needs s3fs even when no S3 server is started.
+    - >-
+      mamba create -y -n test_pkg
+      "python=$PYTHON_VERSION"
+      "zcollection=$PACKAGE_VERSION"
+      pytest pyarrow s3fs
+      -c "$CI_PROJECT_DIR/build/conda_packages"
+    - conda activate test_pkg
+    - SITE_PACKAGES="$(python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
+    # Run outside the checkout so imports use the installed package.
+    - TEST_ROOT="$(mktemp -d)"
+    # Tests are shipped inside the package; this link uses those installed files.
+    - ln -s "$SITE_PACKAGES/zcollection" "$TEST_ROOT/zcollection"
+    # Example tests expect an examples directory next to the package.
+    - ln -s "$CI_PROJECT_DIR/examples" "$TEST_ROOT/examples"
+    # The repository conftest provides shared fixtures and the Dask CLI options.
+    - cp "$CI_PROJECT_DIR/conftest.py" "$TEST_ROOT/conftest.py"
+    - cd "$TEST_ROOT"
+    - >-
+      pytest -v -ra
+      --processes
+      --n_workers=2
+      --threads_per_worker=1
+      zcollection
+    - conda deactivate
+  artifacts:
+    paths:
+      - build/conda_packages/*/*.conda
+    expire_in: 1 month
+
+pages:
+  stage: deploy
+  image: alpine:3.20
+  before_script: []
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH'
+      when: manual
+      allow_failure: true
+  needs:
+    - job: test
+      artifacts: true
+    - job: doc
+      artifacts: true
+  script:
+    - mkdir public
+    - cp -a docs/_build/html/. public/
+    - cp -a htmlcov public/coverage
+  artifacts:
+    paths:
+      - public/
+    expire_in: 1 month
+
+conda-deploy:
+  stage: deploy
+  image: alpine:3.20
+  before_script: []
+  when: manual
+  dependencies:
+    - conda-build
+  script:
+    - apk add --no-cache curl
+    - test -n "$CONDA_DEV_UPLOAD_URL"
+    - test -n "$CONDA_UPLOAD_USER"
+    - test -n "$CONDA_UPLOAD_PASSWORD"
+    - |
+      for PACKAGE_FILE in build/conda_packages/noarch/zcollection-*.conda; do
+        curl --fail --show-error \
+          --upload-file "$PACKAGE_FILE" \
+          --user "$CONDA_UPLOAD_USER:$CONDA_UPLOAD_PASSWORD" \
+          "$CONDA_DEV_UPLOAD_URL"
+      done
