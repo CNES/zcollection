@@ -29,8 +29,7 @@ stages:
     - mamba create -y -n ci -f conda/environment.yml "python=$PYTHON_VERSION" pip wheel pytest-cov
     - VERSION_DATE="$(date -u -d "$CI_COMMIT_TIMESTAMP" +%Y%m%d%H%M%S)"
     - PACKAGE_VERSION="${DEV_VERSION_BASE}.dev${VERSION_DATE}"
-    - sed -i "s/^version = .*/version = $PACKAGE_VERSION/" setup.cfg
-    - printf "__version__ = '%s'\n" "$PACKAGE_VERSION" > zcollection/version.py
+    - export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_ZCOLLECTION="$PACKAGE_VERSION"
     - conda activate ci
     - python -m pip install --no-deps --no-build-isolation -e .
     - python -m pip check
@@ -161,7 +160,7 @@ conda-build:
 
 pages:
   stage: deploy
-  image: alpine:3.20
+  image: alpine:3.24
   before_script: []
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
@@ -184,7 +183,7 @@ pages:
 
 conda-deploy:
   stage: deploy
-  image: alpine:3.20
+  image: alpine:3.24
   before_script: []
   when: manual
   dependencies:

@@ -16,16 +16,15 @@ build:
   noarch: python
   number: 0
   script:
-    - sed -i "s/^version = .*/version = ${{ version }}/" setup.cfg
-    - printf "__version__ = '%s'\n" "${{ version }}" > zcollection/version.py
+    - export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_ZCOLLECTION="${{ version }}"
     - ${{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
 
 requirements:
   host:
     - python ${{ python_version }}.*
     - pip
-    - setuptools >=45
-    - setuptools-scm >=6.2
+    - setuptools >=80
+    - setuptools-scm >=8
     - wheel
   run:
     - python >=3.12
@@ -34,7 +33,7 @@ requirements:
     - fasteners
     - fsspec >=2024.12.0
     - numcodecs
-    - numpy >=1.20
+    - numpy >=2
     - xarray
     - zarr >=3.4
 
