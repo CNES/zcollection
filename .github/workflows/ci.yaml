@@ -9,7 +9,7 @@ on:
 jobs:
   linux:
     name: ${{ matrix.python-version }}-posix
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -24,6 +24,7 @@ jobs:
       uses: mamba-org/setup-micromamba@v3.2.1
       with:
         cache-downloads: true
+        cache-downloads-key: downloads-linux-py${{ matrix.python-version }}-${{ hashFiles('conda/environment.yml') }}
         condarc: |
           channels:
             - conda-forge
@@ -42,7 +43,7 @@ jobs:
         pytest -v -ra --processes
 
   s3-fs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
     - name: Checkout
@@ -52,6 +53,7 @@ jobs:
       uses: mamba-org/setup-micromamba@v3.2.1
       with:
         cache-downloads: true
+        cache-downloads-key: downloads-s3-py3.12-${{ hashFiles('conda/environment.yml') }}
         condarc: |
           channels:
             - conda-forge
@@ -83,6 +85,7 @@ jobs:
       uses: mamba-org/setup-micromamba@v3.2.1
       with:
         cache-downloads: true
+        cache-downloads-key: downloads-win-py3.12-${{ hashFiles('conda/environment.yml') }}
         condarc: |
           channels:
             - conda-forge
