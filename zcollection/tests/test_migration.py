@@ -448,6 +448,122 @@ def test_the_reports_hold_the_fields_of_the_contract() -> None:
                                                               'pruned', 'lost')
 
 
+def test_unstable_types_are_reported_with_all_variable_names(caplog) -> None:
+    """One schema diagnostic names byte strings, including constants."""
+    schema = meta.DatasetSchema([], [
+        meta.VariableSchema('flag', 'S1', dimensions=('sample', )),
+        meta.VariableSchema('other_flag', 'S1', dimensions=('sample', )),
+        meta.VariableSchema('constant_label', 'S7'),
+        meta.VariableSchema('stable_values', 'float64'),
+    ])
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        with caplog.at_level(logging.WARNING, logger='zcollection.migration'):
+            migration.detail.warn_unstable_dtypes(schema, '/source')
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.WARNING
+    assert caplog.records[0].getMessage() == (
+        "Some variables in '/source' use data types whose storage format\n"
+        'is not yet standardized in Zarr V3:\n'
+        "  'constant_label' (|S7), 'flag' (|S1), 'other_flag' (|S1)\n\n"
+        'Migration will proceed without changing the source collection.\n'
+        'However, future Zarr versions or other Zarr libraries may not be\n'
+        'able to read these variables from the migrated collection.')
+
+
+def test_stable_types_need_no_preflight_warning(caplog) -> None:
+    """A stable schema emits no diagnostic."""
+    schema = meta.DatasetSchema([], [
+        meta.VariableSchema('time', 'datetime64[ns]'),
+        meta.VariableSchema('values', 'float64'),
+        meta.VariableSchema('counts', 'int32'),
+    ])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        with caplog.at_level(logging.WARNING, logger='zcollection.migration'):
+            migration.detail.warn_unstable_dtypes(schema, '/source')
+    assert not caught
+    assert not caplog.records
+
+
+@pytest.mark.parametrize('is_view', [False, True])
+def test_preflight_warns_before_reading_values_or_creating_the_target(
+        is_view, request, tmp_path, monkeypatch, caplog) -> None:
+    """The caller receives the diagnostic before any data is copied."""
+    source = request.getfixturevalue(
+        'deprecated_view' if is_view else 'deprecated')
+    config = (read_view_config if is_view else read_config)(local, source)
+    config['metadata' if is_view else 'dataset']['variables'].append(
+        meta.VariableSchema('label', 'S7',
+                            dimensions=(reference.DIMENSION, )).get_config())
+    (write_view_config if is_view else write_config)(local, source, config)
+
+    def forbid_read(*args, **kwargs):
+        pytest.fail('The preflight must not read array values.')
+
+    monkeypatch.setattr(zarr.Array, '__getitem__', forbid_read)
+    target = tmp_path / 'target'
+
+    def stop_before_target_creation(*args, **kwargs):
+        assert "'label' (|S7)" in caplog.text
+        assert not target.exists()
+        raise RuntimeError('stop before target creation')
+
+    if is_view:
+        monkeypatch.setattr(local, 'makedirs', stop_before_target_creation)
+    else:
+        monkeypatch.setattr(migration.detail, '_open_target',
+                            stop_before_target_creation)
+    with caplog.at_level(logging.WARNING, logger='zcollection.migration'):
+        with pytest.raises(RuntimeError, match='stop before target creation'):
+            (migrate_view if is_view else migrate)(source,
+                                                   str(target),
+                                                   distributed=False)
+    assert not target.exists()
+
+
+def test_byte_string_migration_has_one_preflight_diagnostic(
+        deprecated, tmp_path, caplog) -> None:
+    """Preflight reports once, while Zarr's own warnings remain available."""
+    config = read_config(local, deprecated)
+    config['dataset']['variables'].append(
+        meta.VariableSchema('label', 'S7',
+                            dimensions=(reference.DIMENSION, )).get_config())
+    write_config(local, deprecated, config)
+    for partition in PARTITIONS:
+        path = fs_utils.join_path(deprecated, partition)
+        array = zarr.create_array(
+            store=path,
+            name='label',
+            shape=(4, ),
+            dtype='S7',
+            zarr_format=2,
+            compressors=None,
+            fill_value=None,
+            attributes={'_ARRAY_DIMENSIONS': [reference.DIMENSION]})
+        array[...] = numpy.array([b'one', b'two', b'three', b'four'],
+                                 dtype='S7')
+        zarr.consolidate_metadata(path, zarr_format=2)
+
+    target = str(tmp_path / 'target')
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always',
+                              zarr.errors.UnstableSpecificationWarning)
+        with caplog.at_level(logging.WARNING, logger='zcollection.migration'):
+            outcome = migrate(deprecated, target, distributed=False)
+    assert outcome.done == PARTITIONS
+    assert not outcome.failed
+    preflight = [
+        item for item in caplog.records
+        if item.getMessage().startswith('Some variables in')
+    ]
+    assert len(preflight) == 1
+    assert "'label' (|S7)" in preflight[0].getMessage()
+    assert any('NullTerminatedBytes' in str(item.message) for item in caught)
+    assert check(deprecated, target, distributed=False).done == PARTITIONS
+
+
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 def test_the_values_of_every_variable_survive_the_copy(fs, request,
                                                        deprecated) -> None:

@@ -28,6 +28,8 @@ import dask.bag.core
 import fsspec
 import fsspec.implementations.local
 import numpy
+import zarr.dtype
+import zarr.errors
 
 from .. import (
     collection,
@@ -50,8 +52,6 @@ from .abc import Outcome, Status
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
-    import zarr
-
     from .. import dataset
     from ..collection import PartitionFilter
     from ..type_hints import NDArray
@@ -63,6 +63,48 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 #: in an array store are chunks.
 _METADATA_FILES = frozenset(
     {'.zarray', '.zattrs', '.zgroup', '.zmetadata', 'zarr.json'})
+
+
+def warn_unstable_dtypes(metadata: meta.DatasetSchema, source: str) -> None:
+    """Log variables with unstable Zarr 3 types before copying data.
+
+    Only the schema is inspected. Ask Zarr to serialize each distinct dtype
+    so the diagnostic follows the specifications supported by its installed
+    version. Unsupported types are left to the usual partition error handling.
+
+    Args:
+        metadata: The schema, including immutable variables for a collection.
+        source: The source collection or view path, for the diagnostic.
+    """
+    unstable: dict[numpy.dtype, bool] = {}
+    affected: list[str] = []
+    for name, variable in sorted(metadata.variables.items()):
+        dtype = variable.dtype
+        if dtype not in unstable:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter('always',
+                                      zarr.errors.UnstableSpecificationWarning)
+                try:
+                    zarr.dtype.parse_dtype(
+                        dtype, zarr_format=3).to_json(zarr_format=3)
+                except (TypeError, ValueError):
+                    continue
+            unstable[dtype] = any(
+                issubclass(item.category,
+                           zarr.errors.UnstableSpecificationWarning)
+                for item in caught)
+        if unstable[dtype]:
+            affected.append(f'{name!r} ({dtype})')
+
+    if affected:
+        _LOGGER.warning(
+            'Some variables in %r use data types whose storage format\n'
+            'is not yet standardized in Zarr V3:\n'
+            '  %s\n\n'
+            'Migration will proceed without changing the source collection.\n'
+            'However, future Zarr versions or other Zarr libraries may not be\n'
+            'able to read these variables from the migrated collection.',
+            source, ', '.join(affected))
 
 
 def _require_distinct_paths(

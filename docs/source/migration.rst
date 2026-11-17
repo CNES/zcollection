@@ -78,6 +78,17 @@ The migration preserves:
 
 Immutable variables are migrated once, under ``.immutable``.
 
+Before copying data, ``migrate`` and ``migrate_view`` inspect the source
+schema and log a message at ``WARNING`` level listing variables whose data
+types use storage formats that are not yet standardized in Zarr V3, as
+reported by the installed Zarr version. The message includes variable names
+and NumPy dtypes, including immutable variables for collections, without
+reading array values. For example, ``S1`` and ``S7`` identify fixed-length
+byte strings. Migration proceeds without changing the source collection.
+However, future Zarr versions or other Zarr libraries may not be able to
+read these variables from the migrated collection. Zarr may also emit its
+own warnings during the copy.
+
 The source and target can use different file systems, specified through
 ``source_filesystem`` and ``target_filesystem``.
 

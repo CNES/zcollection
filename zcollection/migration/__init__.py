@@ -90,6 +90,7 @@ def migrate(
     target_fs = fs_utils.get_fs(target_filesystem)
 
     src = detail._open_source(source, source_fs)
+    detail.warn_unstable_dtypes(src.metadata, source)
     zcol = detail._open_target(source, target, source_fs, target_fs)
 
     with zcol._index.updating():
@@ -312,6 +313,7 @@ def migrate_view(
 
     data = detail.read_view_config(source, source_fs)
     ds = detail._view_metadata(data)
+    detail.warn_unstable_dtypes(ds, source)
 
     view_ref: dict[str, Any] = data['view_ref']
     reference_fs: fsspec.AbstractFileSystem = (
