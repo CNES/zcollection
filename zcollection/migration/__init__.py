@@ -18,7 +18,7 @@ import json
 import fsspec
 
 from . import detail
-from .. import collection, fs_utils, view
+from .. import collection, execution, fs_utils, view
 from ..partitions import PartitionIndex
 from .abc import Outcome, Status
 
@@ -48,6 +48,7 @@ def migrate(
     target_filesystem: fsspec.AbstractFileSystem | str | None = None,
     filters: collection.PartitionFilter = None,
     selected_partitions: Iterable[str] | None = None,
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
     """Copy a collection into the current storage layout.
@@ -67,6 +68,9 @@ def migrate(
             reads it.
         selected_partitions: The partitions to copy, named by their path
             relative to the collection.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
             Defaults to ``True``.
 
@@ -77,8 +81,9 @@ def migrate(
         variables are reported as ``.immutable``.
 
     Raises:
-        ValueError: If the target configuration differs from
-            the configuration derived from the source.
+        ValueError: If ``npartitions`` is below one, or if the target
+            configuration differs from the configuration derived from
+            the source.
 
     Example:
         >>> import zcollection
@@ -86,6 +91,8 @@ def migrate(
         >>> outcome.failed
         ()
     """
+    execution.check_npartitions(npartitions)
+
     source_fs = fs_utils.get_fs(source_filesystem)
     target_fs = fs_utils.get_fs(target_filesystem)
 
@@ -100,6 +107,7 @@ def migrate(
             target_fs,
             filters=filters,
             selected_partitions=selected_partitions,
+            npartitions=npartitions,
             distributed=distributed)
         zcol._index.add(item for item in (*outcome.done, *outcome.skipped)
                         if item != collection.IMMUTABLE)
@@ -154,6 +162,7 @@ def check(
     target_filesystem: fsspec.AbstractFileSystem | str | None = None,
     filters: collection.PartitionFilter = None,
     selected_partitions: Iterable[str] | None = None,
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
     """Compare a collection with its migrated copy.
@@ -171,6 +180,9 @@ def check(
             reads it.
         selected_partitions: The partitions to compare, named by their path
             relative to the collection.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
             Defaults to ``True``.
 
@@ -181,9 +193,11 @@ def check(
         variables that differ.
 
     Raises:
-        ValueError: If either directory contains no collection, or if the
-            target is not a copy of the source.
+        ValueError: If ``npartitions`` is below one, either directory contains
+            no collection, or the target is not a copy of the source.
     """
+    execution.check_npartitions(npartitions)
+
     source_fs = fs_utils.get_fs(source_filesystem)
     target_fs = fs_utils.get_fs(target_filesystem)
 
@@ -195,6 +209,7 @@ def check(
                                    target_fs,
                                    filters=filters,
                                    selected_partitions=selected_partitions,
+                                   npartitions=npartitions,
                                    distributed=distributed)
 
 
@@ -206,6 +221,7 @@ def prune(
     target_filesystem: fsspec.AbstractFileSystem | str | None = None,
     filters: collection.PartitionFilter = None,
     selected_partitions: Iterable[str] | None = None,
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
     """Remove source partitions already copied to the target.
@@ -225,6 +241,9 @@ def prune(
             reads it.
         selected_partitions: The partitions to remove, named by their path
             relative to the collection.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
             Defaults to ``True``.
 
@@ -234,9 +253,12 @@ def prune(
         without a complete target copy under ``failed``, with the reason.
 
     Raises:
-        ValueError: If one of the two directories holds no collection, or
-            source and target identify the same location.
+        ValueError: If ``npartitions`` is below one, one of the two directories
+            holds no collection, or source and target identify the same
+            location.
     """
+    execution.check_npartitions(npartitions)
+
     source_fs = fs_utils.get_fs(source_filesystem)
     target_fs = fs_utils.get_fs(target_filesystem)
     detail._require_distinct_paths(source, target, source_fs, target_fs)
@@ -255,6 +277,7 @@ def prune(
             target_fs,
             filters=filters,
             selected_partitions=selected_partitions,
+            npartitions=npartitions,
             distributed=distributed)
         index.remove((*outcome.done, *outcome.skipped))
     return outcome
@@ -269,6 +292,7 @@ def migrate_view(
     target_filesystem: fsspec.AbstractFileSystem | str | None = None,
     filters: collection.PartitionFilter = None,
     selected_partitions: Iterable[str] | None = None,
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
     """Copy a view into the current storage layout.
@@ -290,6 +314,9 @@ def migrate_view(
             to ``None``, which copies every partition of the source.
         selected_partitions: The partitions to copy, named by their path
             relative to the view.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
             Defaults to ``True``.
 
@@ -299,8 +326,9 @@ def migrate_view(
         copies under ``failed`` with their error messages.
 
     Raises:
-        ValueError: If the source holds no view configuration, or the target
-            holds an incompatible schema or reference collection.
+        ValueError: If ``npartitions`` is below one, the source holds no view
+            configuration, or the target holds an incompatible schema or
+            reference collection.
 
     Example:
         >>> import zcollection
@@ -308,6 +336,8 @@ def migrate_view(
         ...     "/data/myview", "/data/myview.new",
         ...     reference="/data/mycollection.new")
     """
+    execution.check_npartitions(npartitions)
+
     source_fs = fs_utils.get_fs(source_filesystem)
     target_fs = fs_utils.get_fs(target_filesystem)
 
@@ -357,6 +387,7 @@ def migrate_view(
                                               selected_partitions),
             names=tuple(ds.variables),
             view_ref=zview.view_ref,
+            npartitions=npartitions,
             distributed=distributed)
         zview._index.add((*outcome.done, *outcome.skipped))
     return outcome
@@ -413,6 +444,7 @@ def prune_view(
     target_filesystem: fsspec.AbstractFileSystem | str | None = None,
     filters: collection.PartitionFilter = None,
     selected_partitions: Iterable[str] | None = None,
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
     """Remove source view partitions already copied to the target.
@@ -430,6 +462,9 @@ def prune_view(
             to ``None``, which removes every partition the copy holds.
         selected_partitions: The partitions to remove, named by their path
             relative to the view.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
             Defaults to ``True``.
 
@@ -439,14 +474,16 @@ def prune_view(
         without a complete target copy under ``failed``, with the reason.
 
     Raises:
-        ValueError: If the source holds no view configuration, or source
-            and target identify the same location.
+        ValueError: If ``npartitions`` is below one, the source holds no view
+            configuration, or source and target identify the same location.
 
     Example:
         >>> import zcollection
         >>> outcome = zcollection.migration.prune_view(
         ...     "/data/myview", "/data/myview.new")
     """
+    execution.check_npartitions(npartitions)
+
     source_fs = fs_utils.get_fs(source_filesystem)
     target_fs = fs_utils.get_fs(target_filesystem)
     detail._require_distinct_paths(source, target, source_fs, target_fs)
@@ -461,6 +498,7 @@ def prune_view(
             partitions=detail._view_selection(source_view, filters,
                                               selected_partitions),
             names=tuple(ds.variables),
+            npartitions=npartitions,
             distributed=distributed)
         source_view._index.remove((*outcome.done, *outcome.skipped))
     return outcome
@@ -474,6 +512,7 @@ def check_view(
     target_filesystem: fsspec.AbstractFileSystem | str | None = None,
     filters: collection.PartitionFilter = None,
     selected_partitions: Iterable[str] | None = None,
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> detail.Outcome:
     """Compare the variables of a view with their migrated copies.
@@ -492,6 +531,9 @@ def check_view(
             source.
         selected_partitions: The partitions to compare, named by their path
             relative to the view.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
             Defaults to ``True``.
 
@@ -502,13 +544,16 @@ def check_view(
         variables that differ.
 
     Raises:
-        ValueError: If the source holds no view configuration.
+        ValueError: If ``npartitions`` is below one, or the source holds no
+            view configuration.
 
     Example:
         >>> import zcollection
         >>> outcome = zcollection.migration.check_view(
         ...     "/data/myview", "/data/myview.new")
     """
+    execution.check_npartitions(npartitions)
+
     source_fs = fs_utils.get_fs(source_filesystem)
     target_fs = fs_utils.get_fs(target_filesystem)
     ds, source_view = detail._reference(source, source_fs)
@@ -521,4 +566,5 @@ def check_view(
         partitions=detail._view_selection(source_view, filters,
                                           selected_partitions),
         names=tuple(ds.variables),
+        npartitions=npartitions,
         distributed=distributed)

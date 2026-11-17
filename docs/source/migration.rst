@@ -301,11 +301,29 @@ additional files stored alongside them.
 Distributed execution
 ---------------------
 
-By default, migration processes partitions using a Dask cluster,
-with one task per partition.
+By default, migration uses a Dask cluster (``distributed=True``).
+Each partition is processed in a separate task on the cluster associated
+with the current Dask client.
+
+The ``npartitions`` parameter controls how many partition tasks can run
+concurrently. Each operation initially submits up to ``npartitions`` tasks,
+then submits another whenever one finishes.
+
+By default, ``npartitions=None`` uses the number of Dask workers. This
+parameter is available for ``migrate``, ``check``, and ``prune``, as well
+as their view equivalents: ``migrate_view``, ``check_view``, and
+``prune_view``.
+
+For example, to process up to two partitions concurrently:
+
+.. code-block:: python
+
+    outcome = migration.migrate(source, target, npartitions=2)
+    outcome = migration.migrate_view(view_source, view_target, npartitions=2)
 
 Set ``distributed=False`` to execute the operation in the calling
-process instead:
+process instead. Partitions then run sequentially regardless of
+``npartitions``:
 
 .. code-block:: python
 
@@ -313,7 +331,9 @@ process instead:
 
 A failure in one partition does not stop the migration of the others.
 The failed partition is recorded in ``outcome.failed``, together with
-its error as text.
+its error as text. For partition operations, this text includes a traceback.
+A failed comparison names the differing variables in a ``RuntimeError``
+message within that traceback.
 
 Call ``migrate`` again to retry partitions that did not complete.
 

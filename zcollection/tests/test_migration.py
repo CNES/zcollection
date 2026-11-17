@@ -1289,7 +1289,10 @@ def test_check_names_a_variable_whose_attributes_changed(deprecated,
 
     outcome = check(deprecated, target, distributed=False)
 
-    assert outcome.failed == ((PARTITIONS[0], 'counts'), )
+    assert len(outcome.failed) == 1
+    partition, error = outcome.failed[0]
+    assert partition == PARTITIONS[0]
+    assert error.endswith('RuntimeError: counts\n')
     assert outcome.done == PARTITIONS[1:]
 
 
@@ -1318,7 +1321,10 @@ def test_check_names_a_variable_whose_chunking_changed(deprecated,
 
     outcome = check(deprecated, target, distributed=False)
 
-    assert outcome.failed == ((PARTITIONS[0], 'plain'), )
+    assert len(outcome.failed) == 1
+    partition, error = outcome.failed[0]
+    assert partition == PARTITIONS[0]
+    assert error.endswith('RuntimeError: plain\n')
 
 
 def test_check_names_an_array_short_of_one_chunk_of_several(
@@ -1354,7 +1360,10 @@ def test_check_view_names_the_variables_the_target_changed(
 
     outcome = check_view(deprecated_view, target, distributed=False)
 
-    assert outcome.failed == ((PARTITIONS[0], VIEW_VARIABLE.name), )
+    assert len(outcome.failed) == 1
+    partition, error = outcome.failed[0]
+    assert partition == PARTITIONS[0]
+    assert error.endswith(f'RuntimeError: {VIEW_VARIABLE.name}\n')
     assert outcome.done == PARTITIONS[1:]
 
 
@@ -1370,7 +1379,10 @@ def test_check_names_the_attributes_of_a_group_that_changed(
 
     outcome = check(deprecated, target, distributed=False)
 
-    assert outcome.failed == ((PARTITIONS[0], 'attributes'), )
+    assert len(outcome.failed) == 1
+    partition, error = outcome.failed[0]
+    assert partition == PARTITIONS[0]
+    assert error.endswith('RuntimeError: attributes\n')
 
 
 def test_check_names_a_variable_whose_fill_value_changed(deprecated,
@@ -1393,7 +1405,10 @@ def test_check_names_a_variable_whose_fill_value_changed(deprecated,
 
     outcome = check(deprecated, target, distributed=False)
 
-    assert outcome.failed == ((PARTITIONS[0], 'counts, plain'), )
+    assert len(outcome.failed) == 1
+    partition, error = outcome.failed[0]
+    assert partition == PARTITIONS[0]
+    assert error.endswith('RuntimeError: counts, plain\n')
 
 
 def test_a_selection_that_holds_no_partition_writes_nothing(
@@ -1439,7 +1454,10 @@ def test_check_names_a_variable_the_target_masks_otherwise(
 
     outcome = check(deprecated, target, distributed=False)
 
-    assert outcome.failed == ((PARTITIONS[0], 'masked'), )
+    assert len(outcome.failed) == 1
+    partition, error = outcome.failed[0]
+    assert partition == PARTITIONS[0]
+    assert error.endswith('RuntimeError: masked\n')
 
 
 def test_a_filter_migrates_only_the_view_partitions_it_selects(

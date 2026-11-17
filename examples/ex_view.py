@@ -314,7 +314,6 @@ except ValueError as exc:
     print(str(exc))
 
 # %%
-# Close the Dask client and cluster to release their resources and
-# avoid warnings when running other examples.
+# Close the Dask client and cluster to release their resources.
 client.close()
 cluster.close()

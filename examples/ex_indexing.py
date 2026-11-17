@@ -260,7 +260,6 @@ assert selection is not None
 selection.to_xarray()
 
 # %%
-# Close the Dask client and cluster to release their resources and
-# avoid warnings when running other examples.
+# Close the Dask client and cluster to release their resources.
 client.close()
 cluster.close()

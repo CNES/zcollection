@@ -24,7 +24,6 @@ import pathlib
 import traceback
 import warnings
 
-import dask.bag.core
 import fsspec
 import fsspec.implementations.local
 import numpy
@@ -34,6 +33,7 @@ import zarr.errors
 from .. import (
     collection,
     dask_utils,
+    execution,
     fs_utils,
     meta,
     partitioning,
@@ -799,36 +799,82 @@ def _check_view_one(
     return Outcome((partition, ), (), ())
 
 
+def _run_one(
+    partition: str,
+    *,
+    func: Callable[..., Outcome],
+    **kwargs,
+) -> execution.Skipped | None:
+    """Translate a partition outcome into the executor's result protocol.
+
+    Args:
+        partition: The relative path of the partition to process.
+        func: The migration operation returning its outcome.
+        **kwargs: Keyword arguments passed to the operation.
+
+    Returns:
+        ``SKIPPED`` when the operation skipped its partition; otherwise
+        ``None`` for success.
+
+    Raises:
+        RuntimeError: If the operation reported a failure, using its reason
+            as the error message.
+    """
+    outcome = func(partition, **kwargs)
+    if outcome.failed:
+        raise RuntimeError(outcome.failed[0][1])
+    if outcome.skipped:
+        return execution.SKIPPED
+    return None
+
+
 def _run(
     func: Callable[..., Outcome],
     partitions: Sequence[str],
     *,
+    npartitions: int | None = None,
     distributed: bool,
     **kwargs,
 ) -> Outcome:
-    """Run an operation on each selected partition.
+    """Use the common partition executor and translate its report.
 
     Args:
         func: The function to apply. It returns an outcome for the
             partition it is given, and raises nothing.
         partitions: The paths of the partitions, relative to their
             collection.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
         **kwargs: The keyword arguments to pass to the function.
 
     Returns:
-        The combined outcome of all selected partitions.
+        The combined outcome of all selected partitions. Failed partitions
+        carry the tracebacks reported by the executor.
     """
     if not partitions:
         return Outcome((), (), ())
 
-    if distributed:
-        client = dask_utils.get_client()
-        bag: dask.bag.core.Bag = dask.bag.core.from_sequence(
-            partitions, npartitions=len(partitions))
-        return _merge(bag.map(func, **kwargs).compute(scheduler=client))
+    failed: dict[str, str] = {}
+    try:
+        completed = execution.run(
+            _run_one,
+            partitions,
+            partitions,
+            client=dask_utils.get_client() if distributed else None,
+            npartitions=npartitions,
+            stop_on_error=False,
+            kwargs={
+                'func': func,
+                **kwargs
+            })
+    except execution.PartitionErrors as err:
+        completed, failed = err.completed, err.failed
 
-    return _merge(func(item, **kwargs) for item in partitions)
+    skipped = set(partitions) - set(completed) - set(failed)
+    return Outcome(tuple(sorted(completed)), tuple(sorted(skipped)),
+                   tuple(sorted(failed.items())))
 
 
 def _selection(
@@ -864,6 +910,7 @@ def migrate_partitions(
     *,
     filters: PartitionFilter = None,
     selected_partitions: Iterable[str] | None = None,
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> Outcome:
     """Copy the selected partitions of a collection into the target.
@@ -875,6 +922,9 @@ def migrate_partitions(
         filters: The predicate selecting the partitions to copy.
         selected_partitions: The partitions to copy, named by their path
             relative to the collection.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
 
     Returns:
@@ -884,6 +934,7 @@ def migrate_partitions(
     """
     return _run(_migrate_one,
                 _selection(src, filters, selected_partitions),
+                npartitions=npartitions,
                 distributed=distributed,
                 source=src.partition_properties.dir,
                 target=target,
@@ -898,6 +949,7 @@ def migrate_collection(
     *,
     filters: PartitionFilter = None,
     selected_partitions: Iterable[str] | None = None,
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> Outcome:
     """Copy the immutable variables and the selected partitions.
@@ -909,6 +961,9 @@ def migrate_collection(
         filters: The predicate selecting the partitions to copy.
         selected_partitions: The partitions to copy, named by their path
             relative to the collection.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
 
     Returns:
@@ -921,6 +976,7 @@ def migrate_collection(
                            target_fs,
                            filters=filters,
                            selected_partitions=selected_partitions,
+                           npartitions=npartitions,
                            distributed=distributed),
     ))
 
@@ -1011,6 +1067,7 @@ def check_partitions(
     *,
     filters: PartitionFilter = None,
     selected_partitions: Iterable[str] | None = None,
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> Outcome:
     """Compare the values of the selected partitions with their copies.
@@ -1022,6 +1079,9 @@ def check_partitions(
         filters: The predicate selecting the partitions to compare.
         selected_partitions: The partitions to compare, named by their path
             relative to the collection.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
 
     Returns:
@@ -1038,6 +1098,7 @@ def check_partitions(
         check_immutable(src, target, target_fs),
         _run(_check_one,
              _selection(src, filters, selected_partitions),
+             npartitions=npartitions,
              distributed=distributed,
              source=src.partition_properties.dir,
              target=target,
@@ -1053,6 +1114,7 @@ def prune_partitions(
     *,
     filters: PartitionFilter = None,
     selected_partitions: Iterable[str] | None = None,
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> Outcome:
     """Remove the selected partitions from the source.
@@ -1064,6 +1126,9 @@ def prune_partitions(
         filters: The predicate selecting the partitions to remove.
         selected_partitions: The partitions to remove, named by their path
             relative to the collection.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
 
     Returns:
@@ -1073,6 +1138,7 @@ def prune_partitions(
     """
     return _run(_prune_one,
                 _selection(src, filters, selected_partitions),
+                npartitions=npartitions,
                 distributed=distributed,
                 source=src.partition_properties.dir,
                 target=target,
@@ -1089,6 +1155,7 @@ def migrate_view_partitions(
     partitions: Sequence[str],
     names: Sequence[str],
     view_ref: collection.Collection,
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> Outcome:
     """Copy selected view partitions into the target.
@@ -1102,6 +1169,9 @@ def migrate_view_partitions(
             to the view.
         names: The variables the view declares.
         view_ref: The collection the target view references.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
 
     Returns:
@@ -1111,6 +1181,7 @@ def migrate_view_partitions(
     """
     return _run(_migrate_view_one,
                 partitions,
+                npartitions=npartitions,
                 distributed=distributed,
                 source=source,
                 target=target,
@@ -1128,6 +1199,7 @@ def check_view_partitions(
     *,
     partitions: Sequence[str],
     names: Sequence[str],
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> Outcome:
     """Compare view variables with their migrated copies.
@@ -1140,6 +1212,9 @@ def check_view_partitions(
         partitions: The partitions to compare, named by their path
             relative to the view.
         names: The variables the view declares.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
 
     Returns:
@@ -1149,6 +1224,7 @@ def check_view_partitions(
     """
     return _run(_check_view_one,
                 partitions,
+                npartitions=npartitions,
                 distributed=distributed,
                 source=source,
                 target=target,
@@ -1165,6 +1241,7 @@ def prune_view_partitions(
     *,
     partitions: Sequence[str],
     names: Sequence[str],
+    npartitions: int | None = None,
     distributed: bool = True,
 ) -> Outcome:
     """Remove source view partitions that are complete in the target.
@@ -1177,6 +1254,9 @@ def prune_view_partitions(
         partitions: The partitions to remove, named by their path relative
             to the view.
         names: The variables the view declares.
+        npartitions: Maximum number of partition tasks in progress.
+            Defaults to the number of Dask workers. With
+            ``distributed=False``, partitions run sequentially.
         distributed: Whether to spread the partitions over a Dask cluster.
 
     Returns:
@@ -1186,6 +1266,7 @@ def prune_view_partitions(
     """
     return _run(_prune_view_one,
                 partitions,
+                npartitions=npartitions,
                 distributed=distributed,
                 source=source,
                 target=target,
