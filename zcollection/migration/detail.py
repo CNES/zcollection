@@ -43,6 +43,7 @@ from .. import (
     view,
 )
 from ..collection import IMMUTABLE
+from ..collection.detail import tuple_or_none
 from ..convenience import open_collection
 from ..fs_utils import join_path
 from ..variable.abc import read_dimensions
@@ -460,8 +461,9 @@ def differing_arrays(
         the target.
     """
     held = _nodes(target_fs, target_dirname)
-    differing = {name for name in names if name not in held}
-    for name in set(names) - differing:
+    expected = set(names)
+    differing = expected - held
+    for name in expected & held:
         if _differ(
                 store.open_ndarray(source_fs,
                                    fs_utils.join_path(source_dirname, name)),
@@ -893,12 +895,9 @@ def _selection(
     Returns:
         Partition paths relative to the source, sorted lexicographically.
     """
-    if selected_partitions is not None:
-        selected_partitions = tuple(selected_partitions)
-
     partitions: set[str] = set(
         src.partitions(filters=filters,
-                       selected_partitions=selected_partitions,
+                       selected_partitions=tuple_or_none(selected_partitions),
                        relative=True))
     return tuple(sorted(partitions))
 

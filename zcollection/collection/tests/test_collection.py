@@ -303,6 +303,16 @@ def test_partial_insert_preserves_filler_flags_for_merging(
                                      reference.count_values())
 
 
+def test_readonly_refuses_update_from(mutation_collection) -> None:
+    """Updating rows requires a writable collection."""
+    readonly = convenience.open_collection(
+        mutation_collection.partition_properties.dir,
+        filesystem=mutation_collection.fs,
+        mode='r')
+    with pytest.raises(io.UnsupportedOperation, match='not writable'):
+        readonly.update_from(reference.make_dataset(), align_on='time')
+
+
 @pytest.mark.parametrize('method', ['update_immutable', 'drop_dimension'])
 def test_readonly_refuses_schema_and_immutable_updates(mutation_collection,
                                                        method) -> None:
@@ -1086,6 +1096,21 @@ def test_drop_partitions(
         zcol.drop_partitions(distributed=distributed)
 
 
+def test_drop_partitions_by_path(local_fs) -> None:  # noqa: F811
+    """Only selected paths matching the filter are removed from the index."""
+    zcol = create_test_collection(local_fs, distributed=False)
+    paths = tuple(zcol.partitions(relative=True))
+
+    assert zcol.drop_partitions(selected_partitions=(),
+                                distributed=False) == ()
+    dropped = zcol.drop_partitions(selected_partitions=iter(paths[:2]),
+                                   filters='day > 1',
+                                   distributed=False)
+
+    assert dropped == (paths[1], )
+    assert tuple(zcol.partitions(relative=True)) == paths[:1] + paths[2:]
+
+
 @pytest.mark.usefixtures('dask_client')
 @pytest.mark.parametrize('distributed', [False, True])
 @pytest.mark.parametrize('stop_on_error', [True, False])
@@ -1162,15 +1187,18 @@ def test_drop_partitions_holds_the_lock(
     assert not zcol.is_locked()
 
 
+@pytest.mark.parametrize('timedelta', [None, datetime.timedelta(0)])
 def test_drop_partitions_skips_an_absent_partition(
-        local_fs) -> None:  # noqa: F811
+        local_fs,  # noqa: F811
+        timedelta) -> None:
     """A partition the index lists but the store does not hold is left out
-    of the paths ``drop_partitions`` returns."""
+    of the paths ``drop_partitions`` returns, also when partitions are
+    selected by age."""
     zcol = create_test_collection(local_fs, distributed=False)
     names = tuple(zcol.partitions(relative=True))
     local_fs.fs.rm(next(zcol.partitions()), recursive=True)
 
-    dropped = zcol.drop_partitions(distributed=False)
+    dropped = zcol.drop_partitions(timedelta=timedelta, distributed=False)
 
     assert dropped == names[1:]
     assert tuple(zcol.partitions()) == ()
@@ -1925,6 +1953,10 @@ def test_variables() -> None:
     assert len(variables) == 1
     assert variables[0].name == 'time'
 
+    variables = zcol.variables(iter(('var2', 'time')))
+    assert [var.name for var in variables] == ['time', 'var2']
+    assert zcol.variables(iter(())) == ()
+
 
 @pytest.mark.parametrize('fs', ['local_fs', 's3_fs'])
 @pytest.mark.parametrize('arrays_type', ['dask_arrays', 'numpy_arrays'])
@@ -2538,25 +2570,65 @@ def test_load_a_selection_that_matches_no_partition(
     assert 'lon' in loaded.variables
 
 
-def test_insert_returns_the_paths_a_selection_takes(request) -> None:
-    """Return partition paths from insertion that can be passed back to
-    ``selected_partitions``.
-    """
-    tested_fs = request.getfixturevalue('local_fs')
-    zds = next(create_test_dataset(delayed=False))
-    zcol = collection.Collection(axis='time',
-                                 ds=zds.metadata(),
-                                 partition_handler=partitioning.Date(
-                                     ('time', ), 'D'),
-                                 partition_base_dir=str(tested_fs.collection),
-                                 filesystem=tested_fs.fs)
+def test_load_with_iterators(tmp_path) -> None:
+    """Load rows, variables, and partitions selected by iterators."""
+    data = dataset.Dataset([
+        dataset.Array('key', numpy.repeat([1, 2], 3), ('row', )),
+        dataset.Array('value', numpy.arange(6), ('row', )),
+        dataset.Array('pixel', numpy.array([10, 20]), ('pixel', )),
+    ])
+    zcol = convenience.create_collection('key', data,
+                                         partitioning.Sequence(('key', )),
+                                         str(tmp_path / 'collection'))
+    zcol.insert(data, distributed=False)
+
+    indexer = (((('key', key), ), slice(1, 3)) for key in (1, 2))
+    result = zcol.load(indexer=indexer,
+                       selected_variables=iter(('value', 'pixel')),
+                       selected_partitions=iter(('key=1', 'key=2')),
+                       distributed=False)
+
+    assert result is not None
+    assert set(result.variables) == {'value', 'pixel'}
+    numpy.testing.assert_array_equal(result['value'].values, [1, 2, 4, 5])
+    numpy.testing.assert_array_equal(result['pixel'].values, [10, 20])
+
+
+@pytest.mark.parametrize(('handler', 'key', 'expected'), [
+    (partitioning.Date(
+        ('time', ), 'D'), (2000, 1, 5), 'year=2000/month=01/day=05'),
+    (partitioning.Sequence(('cycle', 'pass')), (2, 7), 'cycle=2/pass=7'),
+    (partitioning.GroupedSequence(
+        ('cycle', 'pass'), size=5), (2, 5), 'cycle=2/pass=5'),
+])
+def test_insert_returns_the_paths_a_selection_takes(
+        local_fs,  # noqa: F811
+        handler: partitioning.Partitioning,
+        key: tuple[int, ...],
+        expected: str) -> None:
+    """A partition key gives the relative path used by insert and load."""
+    dates = numpy.array(['2000-01-05', '2000-01-05', '2000-01-06'],
+                        dtype='datetime64[ns]')
+    zds = dataset.Dataset([
+        dataset.Array('time', dates, ('line', )),
+        dataset.Array('cycle', numpy.array([2, 2, 2]), ('line', )),
+        dataset.Array('pass', numpy.array([7, 8, 12]), ('line', )),
+    ],
+                          delayed=False)
+    zcol = convenience.create_collection('time',
+                                         zds,
+                                         handler,
+                                         str(local_fs.collection),
+                                         filesystem=local_fs.fs)
+    path = zcol.partition_path(key)
+    assert path == expected
 
     written = zcol.insert(zds, distributed=False)
 
-    assert written
+    assert written[0] == path
     assert set(written) == set(zcol.partitions(relative=True))
 
-    read = zcol.load(selected_partitions=written[:1],
+    read = zcol.load(selected_partitions=[path],
                      delayed=False,
                      distributed=False)
     assert read is not None

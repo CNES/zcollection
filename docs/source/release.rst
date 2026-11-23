@@ -8,10 +8,15 @@ New features
 ^^^^^^^^^^^^
 
 * Collections can be read and written without a Dask cluster (:pr:`16`).
-* ``partitions``, ``load``, ``update``, ``map``, and ``map_overlap`` accept
-  ``selected_partitions`` to select partitions by path. A path that matches
-  the partitioning scheme but does not exist is skipped with a warning naming
-  it, for both collections and views.
+* ``partitions``, ``load``, ``update``, ``map``, and ``map_overlap``
+  accept ``selected_partitions`` on both collections and views.
+  :py:meth:`.Collection.drop_partitions` also accepts it on collections.
+  Paths matching the partitioning scheme but missing from storage are
+  skipped and logged as warnings.
+* :py:meth:`.Collection.partition_path` returns the path of a partition,
+  relative to the collection, from its key values.
+* :py:meth:`.Dataset.from_zarr` reads back a dataset written by
+  :py:meth:`.Dataset.to_zarr`.
 * :py:meth:`.Collection.update_from` and :py:meth:`.View.update_from` update
   existing partitions using values from a dataset. Rows are matched by
   ``align_on``; views read this variable from their reference collection. Other
@@ -52,7 +57,8 @@ Storage and migration
   Collections written with a newer layout version cannot be opened.
 * ``zcollection.migration`` supports selective migration of collections and
   views, progress reporting, data comparison, and pruning. Interrupted
-  migrations can be resumed.
+  migrations can be resumed. ``npartitions`` limits the number of
+  partitions processed at once.
 * Collections and views maintain a partition index. When the index contains
   partitions missing from storage, ``load``, ``map``, ``map_overlap``, and
   ``update`` skip them with a warning. :py:meth:`.Collection.copy` also skips
@@ -167,6 +173,10 @@ Variables and datasets
 * Errors when writing a partition identify variables missing from its
   storage directory. Errors when concatenating datasets identify variables
   that differ between the datasets.
+* When ``selected_variables`` is empty, the ``variables`` method of
+  collections and views returns no variables, consistent with the
+  selection behavior of ``load`` and ``map``. Earlier releases returned
+  all variables.
 
 Callbacks and synchronization
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -241,9 +251,9 @@ Requirements
 ^^^^^^^^^^^^
 
 * Python 3.12 or later.
+* NumPy 2 or later.
 * Zarr 3.4 or later, and fsspec 2024.12.0 or later. The upper bounds on
-  ``fsspec`` and ``numcodecs`` have been removed, and ``pandas`` is no
-  longer required.
+  ``fsspec`` and ``numcodecs`` have been removed.
 
 
 2026.6.0

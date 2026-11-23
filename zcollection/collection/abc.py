@@ -46,6 +46,7 @@ from .detail import (
     map_partitions,
     note_failed_removal,
     prepare_partition_operation,
+    tuple_or_none,
     update_partition_from,
     warn_empty_update,
 )
@@ -1127,6 +1128,23 @@ class ReadOnlyCollection(BaseCollection):
         """Return the configuration path."""
         return fs_utils.join_path(partition_base_dir, cls.CONFIG)
 
+    def partition_path(self, key: tuple[int, ...]) -> str:
+        """Return the path of a partition from its key values.
+
+        Args:
+            key: One integer per partition key, in the order defined
+                by the partitioning scheme.
+
+        Returns:
+            The path relative to the collection, whether or not the
+            partition exists.
+
+        Raises:
+            ValueError: If the number of values does not match the
+                number of partition keys.
+        """
+        return self._index.path_of(key)
+
     def _indexed_partitions(self) -> tuple[str, ...]:
         """Return the paths of the partitions listed in the index.
 
@@ -1331,6 +1349,7 @@ class ReadOnlyCollection(BaseCollection):
         if delayed is None:
             delayed = distributed
 
+        selected_variables = tuple_or_none(selected_variables)
         array: dataset.Dataset | None = None
 
         if indexer is None:
@@ -1392,7 +1411,7 @@ class ReadOnlyCollection(BaseCollection):
         ds_im = storage.open_zarr_group(self._immutable,
                                         self.fs,
                                         delayed=delayed,
-                                        selected_variables=selected_variables)
+                                        selected_variables=var_im)
         if not ds_im.variables:
             return ds
 

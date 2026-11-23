@@ -66,8 +66,8 @@ class Skipped:
     """The result of a task that skipped its partition."""
 
 
-#: Result returned when a task skips its partition. ``run`` excludes the
-#: partition from its return value and from PartitionErrors.
+#: Marker returned by a task to skip its partition. Skipped partitions
+#: are omitted from results and ``PartitionErrors``.
 SKIPPED = Skipped()
 
 
@@ -119,6 +119,39 @@ def run(func: Callable[..., Any],
         ValueError: If ``npartitions`` is below one.
         PartitionErrors: If a partition fails.
     """
+    results = collect(func,
+                      items,
+                      names,
+                      client=client,
+                      npartitions=npartitions,
+                      stop_on_error=stop_on_error,
+                      kwargs=kwargs)
+    return tuple(name for name, _ in results)
+
+
+def collect(
+        func: Callable[..., Any],
+        items: Iterable[Any],
+        names: Sequence[str],
+        *,
+        client: distributed.Client | None,
+        npartitions: int | None,
+        stop_on_error: bool,
+        kwargs: Mapping[str, Any] | None = None
+) -> tuple[tuple[str, Any], ...]:
+    """Process each partition with ``func`` and return its results.
+
+    Uses the same arguments and execution rules as :func:`run`.
+
+    Returns:
+        ``(name, result)`` pairs, in the order of ``items``. Partitions
+        whose task returns :data:`SKIPPED` are omitted; any other result,
+        including ``None``, is kept.
+
+    Raises:
+        ValueError: If ``npartitions`` is below one.
+        PartitionErrors: If a partition fails.
+    """
     check_npartitions(npartitions)
     items = list(items)
     kwargs = dict(kwargs or {})
@@ -129,10 +162,7 @@ def run(func: Callable[..., Any],
             client, func, items, npartitions
             or dask_utils.dask_workers(client, cores_only=True), stop_on_error,
             kwargs)
-    completed, failed, not_attempted = _report(outcomes, names)
-    if failed:
-        raise PartitionErrors(completed, failed, not_attempted)
-    return completed
+    return _checked_results(outcomes, names)
 
 
 def check_npartitions(npartitions: int | None) -> None:
@@ -145,26 +175,25 @@ def check_npartitions(npartitions: int | None) -> None:
         raise ValueError('npartitions must be at least one')
 
 
-def _report(
-    outcomes: Mapping[int, Any], names: Sequence[str]
-) -> tuple[tuple[str, ...], dict[str, str], tuple[str, ...]]:
-    """Return the partitions completed, failed and not attempted.
-
-    Args:
-        outcomes: The result of each submitted partition, by its index.
-        names: The name of each partition.
-    """
-    completed: list[str] = []
+def _checked_results(outcomes: Mapping[int, Any],
+                     names: Sequence[str]) -> tuple[tuple[str, Any], ...]:
+    """Pair successful values with their partition names or report failures."""
+    completed: list[tuple[str, Any]] = []
     failed: dict[str, str] = {}
     not_attempted: list[str] = []
     for index, name in enumerate(names):
         if index not in outcomes:
             not_attempted.append(name)
-        elif isinstance(outcomes[index], _Failure):
-            failed[name] = outcomes[index].trace
-        elif not isinstance(outcomes[index], Skipped):
-            completed.append(name)
-    return tuple(completed), failed, tuple(not_attempted)
+            continue
+        value = outcomes[index]
+        if isinstance(value, _Failure):
+            failed[name] = value.trace
+        elif not isinstance(value, Skipped):
+            completed.append((name, value))
+    if failed:
+        raise PartitionErrors([name for name, _ in completed], failed,
+                              not_attempted)
+    return tuple(completed)
 
 
 def _run_sequential(func: Callable[..., Any], items: list[Any],

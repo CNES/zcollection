@@ -30,7 +30,7 @@ from .. import (
     sync,
 )
 from ..collection.abc import WritableCollection, warn_missing_partitions
-from ..collection.detail import infer_variables, wrap_update
+from ..collection.detail import infer_variables, tuple_or_none, wrap_update
 from ..convenience import collection as convenience
 from ..partitions import PartitionIndex
 from .detail import (
@@ -131,6 +131,7 @@ class View(WritableCollection):
                 'reindex',
                 'sync',
                 'update',
+                'update_from',
             ))
 
         if not self.fs.exists(self.base_dir):
@@ -555,6 +556,8 @@ class View(WritableCollection):
 
         array: dataset.Dataset | None = None
         datasets: list[tuple[dataset.Dataset, str]]
+        indexer = tuple_or_none(indexer)
+        selected_variables = tuple_or_none(selected_variables)
         partitions = self.partitions(filters=filters,
                                      indexer=indexer,
                                      selected_partitions=selected_partitions)
@@ -571,6 +574,9 @@ class View(WritableCollection):
             arguments = tuple((self.view_ref.partitioning.parse(item), [])
                               for item in partitions)
 
+        reference_variables = self.view_ref.metadata.select_variables(
+            selected_variables)
+        view_variables = self.metadata.select_variables(selected_variables)
         if distributed:
             client: dask.distributed.Client = dask_utils.get_client()
             futures: list[dask.distributed.Future] = client.map(
@@ -579,10 +585,9 @@ class View(WritableCollection):
                 base_dir=self.base_dir,
                 delayed=delayed,
                 fs=self.fs,
-                selected_variables=self.view_ref.metadata.select_variables(
-                    selected_variables),
+                selected_variables=reference_variables,
                 view_ref=client.scatter(self.view_ref),
-                variables=self.metadata.select_variables(selected_variables))
+                variables=view_variables)
             datasets = [
                 item for item in client.gather(futures) if item is not None
             ]
@@ -593,11 +598,9 @@ class View(WritableCollection):
                                       base_dir=self.base_dir,
                                       delayed=delayed,
                                       fs=self.fs,
-                                      selected_variables=self.view_ref.metadata
-                                      .select_variables(selected_variables),
+                                      selected_variables=reference_variables,
                                       view_ref=self.view_ref,
-                                      variables=self.metadata.select_variables(
-                                          selected_variables))
+                                      variables=view_variables)
                     for arg in arguments) if item is not None
             ]
 

@@ -716,7 +716,7 @@ class Dataset:
                   fs: fsspec.AbstractFileSystem | None = None,
                   *,
                   delayed: bool = True) -> Dataset:
-        """Read a dataset from a Zarr group.
+        """Read a dataset written by :meth:`to_zarr`.
 
         Args:
             path: The group to read.
@@ -791,13 +791,14 @@ def get_dataset_variable_properties(
 
     Args:
         metadata: The dataset schema.
-        selected_variables: The variables to include. If ``None`` or empty,
-            all variables are included.
+        selected_variables: The variables to include. If ``None``, all
+            variables are included.
 
     Returns:
         The variables with empty arrays and the properties from the schema.
     """
-    selected_variables = selected_variables or metadata.variables.keys()
+    selected = (None
+                if selected_variables is None else set(selected_variables))
     return tuple(
         Array(v.name,
               numpy.ndarray((0, ) * len(v.dimensions), v.dtype),
@@ -806,7 +807,7 @@ def get_dataset_variable_properties(
               compressor=v.compressor,
               fill_value=v.fill_value,
               filters=v.filters) for k, v in metadata.variables.items()
-        if k in selected_variables)
+        if selected is None or k in selected)
 
 
 @dataclasses.dataclass

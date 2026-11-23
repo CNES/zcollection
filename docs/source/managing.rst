@@ -143,23 +143,26 @@ Removing partitions
 -------------------
 
 :py:meth:`~zcollection.collection.Collection.drop_partitions` removes
-partitions from a collection. Partitions can be selected using
-``filters``, ``timedelta``, or both:
+partitions from a collection. The following criteria can be combined:
 
 - ``filters`` selects partitions based on their partition keys.
+- ``selected_partitions`` selects partitions by their paths, relative to
+  the collection. An empty iterable selects no partitions.
 - ``timedelta`` selects partitions older than the specified duration,
   based on timestamps reported by the file system.
 
-When both parameters are provided, only partitions matching both
-conditions are removed. If neither is specified, all partitions are
-removed, while the collection's configuration and immutable variables
-are preserved.
+Partitions must match all supplied criteria. Omitting all three removes
+all partitions and preserves the collection's configuration and immutable
+variables.
 
-For example, remove the partition where ``segment == 2``:
+For example, to remove the partition for segment 2, use
+:py:meth:`~zcollection.collection.Collection.partition_path` to build
+its path from the partition key values:
 
 .. jupyter-execute::
 
-    collection.drop_partitions(filters='segment == 2', distributed=False)
+    path = collection.partition_path((2,))
+    collection.drop_partitions(selected_partitions=[path], distributed=False)
 
 The remaining partitions can be listed with:
 
@@ -168,7 +171,7 @@ The remaining partitions can be listed with:
     list(collection.partitions(relative=True))
 
 The method returns the paths of the removed partitions, relative to the
-collection. Partitions listed in the index but missing from the store
+collection. Partitions listed in the index but missing from storage
 are excluded from the returned paths.
 
 See :doc:`failures` for details on how to retry a failed
@@ -178,8 +181,8 @@ See :doc:`failures` for details on how to retry a failed
 File system timestamps
 ^^^^^^^^^^^^^^^^^^^^^^
 
-The ``timedelta`` parameter relies on timestamps provided by the
-underlying file system.
+The ``timedelta`` parameter uses the creation time reported by the
+file system for each selected partition directory.
 
 - **S3:** Creation timestamps are not available, so using ``timedelta``
   raises ``NotImplementedError``.
@@ -187,6 +190,8 @@ underlying file system.
   last change to the partition directory rather than its actual
   creation time. Inserting data into a partition, for example, resets
   its age.
+- **fsspec in-memory file system (``memory://``):** Partition directories
+  have no timestamps, so using ``timedelta`` raises ``FileNotFoundError``.
 
 
 Distributed execution

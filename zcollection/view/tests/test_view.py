@@ -142,6 +142,43 @@ def test_view_callbacks_with_distinct_filesystems(
     numpy.testing.assert_array_equal(loaded['derived'].values, expected)
 
 
+def test_load_with_iterators(tmp_path) -> None:
+    """Load rows, view and reference variables, and partitions selected by
+    iterators."""
+    data = dataset.Dataset([
+        dataset.Array('key', numpy.repeat([1, 2], 3), ('row', )),
+        dataset.Array('value', numpy.arange(6), ('row', )),
+        dataset.Array('pixel', numpy.array([10, 20]), ('pixel', )),
+    ])
+    reference = str(tmp_path / 'reference')
+    zcol = convenience.create_collection('key', data,
+                                         partitioning.Sequence(('key', )),
+                                         reference)
+    zcol.insert(data, distributed=False)
+    zview = convenience.create_view(str(tmp_path / 'view'),
+                                    view.ViewReference(reference),
+                                    distributed=False)
+    zview.add_variable(meta.VariableSchema('quality',
+                                           'int64',
+                                           dimensions=('row', )),
+                       distributed=False)
+    zview.update(lambda ds: {'quality': ds['value'].values + 10},
+                 distributed=False)
+
+    indexer = (((('key', key), ), slice(1, 3)) for key in (1, 2))
+    result = zview.load(indexer=indexer,
+                        selected_variables=iter(('quality', 'pixel', 'value')),
+                        selected_partitions=iter(('key=1', 'key=2')),
+                        distributed=False)
+
+    assert result is not None
+    assert set(result.variables) == {'quality', 'pixel', 'value'}
+    numpy.testing.assert_array_equal(result['value'].values, [1, 2, 4, 5])
+    numpy.testing.assert_array_equal(result['quality'].values,
+                                     [11, 12, 14, 15])
+    numpy.testing.assert_array_equal(result['pixel'].values, [10, 20])
+
+
 @pytest.mark.parametrize('selection', [
     {
         'selected_partitions': []

@@ -244,6 +244,7 @@ class Collection(ReadOnlyCollection, WritableCollection):
             'insert',
             'reindex',
             'update',
+            'update_from',
             'update_immutable',
         ))
 
@@ -541,22 +542,26 @@ class Collection(ReadOnlyCollection, WritableCollection):
         self,
         *,
         filters: PartitionFilter = None,
+        selected_partitions: Iterable[str] | None = None,
         timedelta: datetime.timedelta | None = None,
         npartitions: int | None = None,
         distributed: bool = True,
         stop_on_error: bool = True,
     ) -> tuple[str, ...]:
-        """Remove the partitions selected by ``filters`` and ``timedelta``.
+        """Remove partitions matching all supplied selection criteria.
 
-        When both are provided, a partition must match the filter and be
-        older than ``timedelta``. Without either, all partitions are removed.
+        With no selection criteria, all partitions are removed. An empty
+        ``selected_partitions`` iterable selects no partitions.
 
         Args:
-            filters: Predicate selecting partitions by their keys. See
-                :meth:`partitions` for supported predicates.
-            timedelta: Select partitions older than the specified duration,
-                relative to the current time. Requires a file system
-                implementing ``fs.created()``.
+            filters: Predicate selecting partitions by key.
+                See :meth:`partitions`.
+            selected_partitions: Partition paths to select, relative to
+                the collection.
+            timedelta: Select partitions older than the specified
+                duration, relative to the current time. The file system
+                must return a time for partition directories through
+                ``fs.created()``.
             npartitions: Maximum number of partition tasks in progress.
                 Defaults to the number of Dask workers. With
                 ``distributed=False``, partitions run sequentially.
@@ -572,6 +577,11 @@ class Collection(ReadOnlyCollection, WritableCollection):
         Raises:
             ValueError: If ``npartitions`` is below one and at least one
                 partition is selected.
+            NotImplementedError: If ``timedelta`` is set and the file
+                system provides no creation times, for example S3.
+            FileNotFoundError: If ``timedelta`` is set and partition
+                directories have no timestamps, for example on the fsspec
+                in-memory file system.
             PartitionErrors: If a partition fails. A subsequent listing
                 reports the partitions still present in storage.
 
@@ -584,13 +594,22 @@ class Collection(ReadOnlyCollection, WritableCollection):
 
         def is_created_before(path: str) -> bool:
             """Return whether the partition was created longer than
-            `timedelta` ago."""
+            `timedelta` ago, or is absent from storage."""
+            try:
+                created = self.fs.created(path)
+            except FileNotFoundError:
+                if self.fs.exists(path):
+                    raise
+                # Its task skips it, and its index entry is removed.
+                return True
             # A time without a time zone is taken as local time.
-            created = self.fs.created(path).astimezone(datetime.UTC)
+            created = created.astimezone(datetime.UTC)
             return now - created > cast('datetime.timedelta', timedelta)
 
         with self.synchronizer:
-            paths = list(self.partitions(filters=filters))
+            paths = list(
+                self.partitions(filters=filters,
+                                selected_partitions=selected_partitions))
             if timedelta is not None:
                 paths = [path for path in paths if is_created_before(path)]
             return self._drop_partitions(paths,

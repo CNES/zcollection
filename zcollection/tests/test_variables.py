@@ -172,8 +172,8 @@ def test_a_missing_client_leaves_the_schema(target) -> None:
 
 @KINDS
 def test_a_vanished_partition_is_skipped(target) -> None:
-    """add_variable and drop_variable skip a partition listed in the index
-    but missing from the store."""
+    """``add_variable`` and ``drop_variable`` skip partitions listed in
+    the index but missing from storage."""
     vanished = list(target.partitions())[1]
     target.fs.rm(vanished, recursive=True)
     target.fs.invalidate_cache()

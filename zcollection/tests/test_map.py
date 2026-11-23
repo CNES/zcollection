@@ -396,7 +396,8 @@ def test_mapping_rejects_negative_depth(
 @pytest.mark.parametrize('mapping_target', TARGETS, indirect=True)
 @pytest.mark.parametrize('method', METHODS)
 def test_mapping_reuses_variable_selection(mapping_target, method):
-    """A one-shot selection survives all partition and immutable reads."""
+    """A variable selection passed as an iterator is preserved across
+    reads of partitions and immutable variables."""
 
     def callback(zds, *, partition_info):
         assert set(zds.variables) == {'x', 'constant'}

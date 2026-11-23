@@ -8,7 +8,7 @@ Implementation details.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 import dataclasses
 import sys
 import time
@@ -47,6 +47,8 @@ if TYPE_CHECKING:
         WrappedPartitionCallable,
     )
 
+_T = TypeVar('_T')
+
 #: Partition's type.
 PartitionSlice = tuple[tuple[str, ...], dict[str, slice]]
 
@@ -82,6 +84,11 @@ def _get_slices(variable: meta.VariableSchema, dim: str,
     return tuple(slices)
 
 
+def tuple_or_none(items: Iterable[_T] | None) -> tuple[_T, ...] | None:
+    """Materialize an iterable while preserving an unspecified selection."""
+    return None if items is None else tuple(items)
+
+
 def prepare_partition_operation(
     func: Callable,
     depth: int,
@@ -93,8 +100,7 @@ def prepare_partition_operation(
         raise TypeError('func must be a callable')
     if depth < 0:
         raise ValueError('Depth must be non-negative.')
-    return tuple(
-        selected_variables) if selected_variables is not None else None
+    return tuple_or_none(selected_variables)
 
 
 def _get_partition_info(

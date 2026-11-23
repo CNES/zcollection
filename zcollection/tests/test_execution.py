@@ -99,6 +99,33 @@ def test_npartitions_below_one_is_refused() -> None:
                       stop_on_error=True)
 
 
+def test_collect_returns_values_in_input_order(client) -> None:
+    """Results follow the order of ``items``, excluding skipped partitions."""
+    values = {'full': (3, 5), 'empty': (), 'skip': execution.SKIPPED}
+    results = execution.collect(values.get,
+                                ('full', 'skip', 'empty', 'missing'),
+                                ('p3', 'p1', 'p2', 'p0'),
+                                client=client,
+                                npartitions=2,
+                                stop_on_error=True)
+    assert results == (('p3', (3, 5)), ('p2', ()), ('p0', None))
+
+
+def test_collect_reports_empty_result_as_completed(client) -> None:
+    """A partition whose task returns an empty result counts as completed."""
+    values = {'empty': (), 'skip': execution.SKIPPED}
+    with pytest.raises(execution.PartitionErrors) as info:
+        execution.collect(values.__getitem__,
+                          ('empty', 'skip', 'missing', 'later'),
+                          NAMES[:4],
+                          client=client,
+                          npartitions=1,
+                          stop_on_error=True)
+    assert info.value.completed == ('p0', )
+    assert tuple(info.value.failed) == ('p2', )
+    assert info.value.not_attempted == ('p3', )
+
+
 @pytest.mark.parametrize(
     ('stop_on_error', 'completed', 'failed', 'not_attempted'), [
         (True, NAMES[:3], ['p3'], NAMES[4:]),

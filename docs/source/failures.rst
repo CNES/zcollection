@@ -108,11 +108,15 @@ Some operations give ``completed`` a specific meaning:
 - After a failed ``validate_partitions`` check, it lists invalid
   partitions found during the check. None of these partitions is repaired.
 
-Missing partitions are handled separately. If a partition is listed in
-the index but absent from storage, ``update`` and ``copy`` skip it with
-a warning, while ``drop_partitions`` skips it silently.
+``update``, ``copy``, ``add_variable``, ``drop_variable``, and
+``drop_partitions`` skip partitions missing from storage. Skipped
+partitions are not included in the ``completed``, ``failed``, or
+``not_attempted`` attributes of ``PartitionErrors``.
 
-Such partitions appear in none of the three report attributes.
+Missing paths specified in ``selected_partitions`` are reported in
+warning log messages. For other missing partitions listed in the index,
+``update`` and ``copy`` log warnings, while the remaining operations
+skip them silently.
 
 
 Stopping on the first failure
@@ -202,12 +206,13 @@ on recovery.
 
 A failed ``drop_variable`` can be completed by calling it again.
 
-To retry ``drop_partitions``, call it again with the same ``filters``
-and ``timedelta`` parameters. Partitions already removed are no longer
-listed, so the operation processes those that remain.
+To retry ``drop_partitions``, pass the paths from ``failed`` and
+``not_attempted`` to ``selected_partitions``, as for ``update``.
 
-Keep in mind that ``timedelta`` is evaluated relative to the time of
-each call. A retry may therefore select additional partitions.
+You can also retry with the same ``filters`` and ``timedelta``, since
+removed partitions are no longer listed. However, ``timedelta`` is
+evaluated again at the time of the retry, which may select additional
+partitions.
 
 To retry ``copy``, remove the target collection or choose another
 destination.

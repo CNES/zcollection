@@ -1769,6 +1769,7 @@ def test_a_deprecated_view_refuses_what_writes(deprecated,
         zview.reindex,
         zview.sync,
         lambda: zview.update(double_the_plain_variable, VIEW_VARIABLE.name),
+        lambda: zview.update_from(reference.make_dataset(), align_on='time'),
     )
     for call in calls:
         with pytest.raises(io.UnsupportedOperation, match='not writable'):

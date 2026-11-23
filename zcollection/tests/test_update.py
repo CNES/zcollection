@@ -104,8 +104,9 @@ def test_update_modes_and_selection(update_target, distributed, delayed):
             assert dask.distributed.get_worker() is not None
         return {output: zds['source'].values + increment}
 
-    # A one-shot selection must survive inference. The first stored partition
-    # is deliberately excluded.
+    # Variable and partition selections passed as iterators must remain
+    # usable after inference. Excluding the first stored partition checks
+    # that inference reads the selected one.
     target.update(callback,
                   5,
                   expected_key=3,
